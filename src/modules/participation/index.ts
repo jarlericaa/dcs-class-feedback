@@ -140,8 +140,18 @@ export async function getParticipationOverview(
   };
 }
 
+/**
+ * CSV-escape a value, and neutralize spreadsheet formula injection.
+ *
+ * These exports carry student-authored text straight into a staff member's
+ * spreadsheet. Excel and Sheets evaluate any cell starting with =, +, - or @
+ * as a formula, so a submitted answer could execute in the reader's
+ * spreadsheet. Prefixing with an apostrophe forces a literal string; the
+ * apostrophe is not shown by the spreadsheet.
+ */
 function csvEscape(value: string | number | null | undefined): string {
-  const s = value === null || value === undefined ? "" : String(value);
+  let s = value === null || value === undefined ? "" : String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

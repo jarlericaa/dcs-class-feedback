@@ -17,6 +17,7 @@ import {
   requireCourseOwner,
   requireCourseStaff,
   requirePlatformAdmin,
+  requireNonTaSectionStaff,
   requireSectionStaff,
   requireTeacher,
   SECTION_PERMISSIONS,
@@ -359,9 +360,9 @@ export async function updateSection(
   sectionId: string,
   rawInput: unknown,
 ) {
-  // No TA permission flag covers section settings, so requireSectionStaff
-  // without a flag admits only teachers/co-teachers/course staff.
-  await requireSectionStaff(db, actorUserId, sectionId);
+  // No TA permission flag covers section settings, so this is deliberately
+  // limited to teachers, co-teachers and course staff.
+  await requireNonTaSectionStaff(db, actorUserId, sectionId);
   const input = sectionUpdateSchema.parse(rawInput);
   const before = await db.query.classSections.findFirst({
     where: eq(classSections.id, sectionId),

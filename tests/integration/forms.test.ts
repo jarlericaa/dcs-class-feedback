@@ -7,12 +7,11 @@ import {
   makeSection,
   makeUser,
 } from "./fixtures";
+import { formQuestions, recurrenceSchedules, weeklyCycles } from "@/db/schema";
 import {
-  formQuestions,
-  recurrenceSchedules,
-  weeklyCycles,
-} from "@/db/schema";
-import { createTemplate, createTemplateVersion } from "@/modules/forms/templates";
+  createTemplate,
+  createTemplateVersion,
+} from "@/modules/forms/templates";
 import {
   closeDueCycles,
   generateCyclesForSchedule,
@@ -31,7 +30,12 @@ async function setupSectionWithSchedule() {
     courseId: course.id,
     title: "Weekly check-in",
     questions: [
-      { prompt: "How was the pace?", type: "short_answer", required: true, displayOrder: 0 },
+      {
+        prompt: "How was the pace?",
+        type: "short_answer",
+        required: true,
+        displayOrder: 0,
+      },
       {
         prompt: "Rate the lecture",
         type: "linear_scale",
@@ -92,7 +96,12 @@ describe("weekly cycles + template snapshots", () => {
 
     // Edit the template → NEW version; existing cycle untouched.
     await createTemplateVersion(teacher.id, template.id, [
-      { prompt: "Completely different question", type: "paragraph", required: true, displayOrder: 0 },
+      {
+        prompt: "Completely different question",
+        type: "paragraph",
+        required: true,
+        displayOrder: 0,
+      },
     ]);
     const after = await db.query.formQuestions.findMany({
       where: eq(formQuestions.cycleId, cycle.id),

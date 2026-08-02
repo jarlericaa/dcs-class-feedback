@@ -13,7 +13,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 import {
-  anonymityWarnings,
+  AnonymityCheckRequired,
   cancelScheduledPublication,
   listPublicationQueue,
   publishNow,
@@ -78,15 +78,16 @@ export default async function PublicationsPage({
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
     const answerId = String(formData.get("answerId"));
-    const question = String(formData.get("publicQuestion") ?? "");
-    const sourceCount = Number(formData.get("sourceCount") ?? 1);
-    const warnings = anonymityWarnings(question, sourceCount);
-    if (warnings.length > 0 && formData.get("acknowledged") !== "yes") {
-      redirect(backTo(sectionId, warnings.join(" | "), "warn"));
-    }
+    // No question text or source count comes from the form: publishNow reads
+    // both from the database, so a tampered field cannot dodge the warning.
     try {
-      await publishNow(uid, answerId);
+      await publishNow(uid, answerId, {
+        anonymityAcknowledged: formData.get("acknowledged") === "yes",
+      });
     } catch (err) {
+      if (err instanceof AnonymityCheckRequired) {
+        redirect(backTo(sectionId, err.warnings.join(" | "), "warn"));
+      }
       redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
@@ -102,8 +103,15 @@ export default async function PublicationsPage({
     if (!when)
       redirect(backTo(sectionId, "Pick a date and time to schedule.", "error"));
     try {
-      await schedulePublication(uid, answerId, new Date(when));
+      // Scheduling is the last human moment before the background executor
+      // publishes, so the anonymity check is enforced here too.
+      await schedulePublication(uid, answerId, new Date(when), {
+        anonymityAcknowledged: formData.get("acknowledged") === "yes",
+      });
     } catch (err) {
+      if (err instanceof AnonymityCheckRequired) {
+        redirect(backTo(sectionId, err.warnings.join(" | "), "warn"));
+      }
       redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
@@ -260,16 +268,6 @@ export default async function PublicationsPage({
                     </p>
                     <form action={publish}>
                       <input type="hidden" name="answerId" value={answer.id} />
-                      <input
-                        type="hidden"
-                        name="publicQuestion"
-                        value={answer.publicQuestionText}
-                      />
-                      <input
-                        type="hidden"
-                        name="sourceCount"
-                        value={sourceCount}
-                      />
                       <label className="choice">
                         <input
                           type="checkbox"
@@ -309,6 +307,14 @@ export default async function PublicationsPage({
                         name="scheduledAt"
                         required
                       />
+                      <label className="choice">
+                        <input
+                          type="checkbox"
+                          name="acknowledged"
+                          value="yes"
+                        />
+                        <span>I have checked the public wording</span>
+                      </label>
                       <button
                         className="button button--secondary"
                         type="submit"

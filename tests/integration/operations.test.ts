@@ -12,7 +12,10 @@ import {
 } from "./fixtures";
 import { auditEvents, publicAnswers, recurrenceSchedules } from "@/db/schema";
 import { AuthzError } from "@/modules/authz";
-import { createTemplate, listTemplatesForCourse } from "@/modules/forms/templates";
+import {
+  createTemplate,
+  listTemplatesForCourse,
+} from "@/modules/forms/templates";
 import {
   configureRecurrence,
   deactivateSchedule,
@@ -248,9 +251,8 @@ async function makeSubmittedItem() {
   const course = await makeCourse(teacher.id);
   const section = await makeSection(course.id);
   await addSectionStaff(section.id, teacher.id, "teacher");
-  const { weeklyCycles, studentSubmissionItems, formResponses } = await import(
-    "@/db/schema"
-  );
+  const { weeklyCycles, studentSubmissionItems, formResponses } =
+    await import("@/db/schema");
   const now = new Date();
   const [cycle] = await db
     .insert(weeklyCycles)
@@ -273,7 +275,8 @@ async function makeSubmittedItem() {
       responseId: response!.id,
       submissionType: "question",
       category: "content",
-      originalText: "I could not read the slides from the back of my Tuesday lab.",
+      originalText:
+        "I could not read the slides from the back of my Tuesday lab.",
     })
     .returning();
   return { teacher, course, section, cycle: cycle!, user, record, item: item! };
@@ -309,12 +312,13 @@ describe("publication queue", () => {
       teacher.id,
       draft.id,
       new Date(Date.now() + 86_400_000),
+      { anonymityAcknowledged: true },
     );
     const queue2 = await listPublicationQueue(teacher.id, section.id);
     expect(queue2.drafts).toHaveLength(0);
     expect(queue2.scheduled).toHaveLength(1);
 
-    await publishNow(teacher.id, draft.id);
+    await publishNow(teacher.id, draft.id, { anonymityAcknowledged: true });
     const queue3 = await listPublicationQueue(teacher.id, section.id);
     expect(queue3.scheduled).toHaveLength(0);
     expect(queue3.published).toHaveLength(1);
@@ -328,7 +332,12 @@ describe("publication queue", () => {
       publicQuestionText: "Q",
       answerBody: "A",
     });
-    await schedulePublication(teacher.id, draft.id, new Date(Date.now() + 1000));
+    await schedulePublication(
+      teacher.id,
+      draft.id,
+      new Date(Date.now() + 1000),
+      { anonymityAcknowledged: true },
+    );
     await db
       .update(publicAnswers)
       .set({ publishFailed: true, publishFailureReason: "simulated failure" })
@@ -336,9 +345,11 @@ describe("publication queue", () => {
 
     const queue = await listPublicationQueue(teacher.id, section.id);
     expect(queue.failed).toHaveLength(1);
-    expect(queue.failed[0]!.answer.publishFailureReason).toBe("simulated failure");
+    expect(queue.failed[0]!.answer.publishFailureReason).toBe(
+      "simulated failure",
+    );
 
-    await publishNow(teacher.id, draft.id);
+    await publishNow(teacher.id, draft.id, { anonymityAcknowledged: true });
     const after = await listPublicationQueue(teacher.id, section.id);
     expect(after.failed).toHaveLength(0);
     expect(after.published).toHaveLength(1);
@@ -529,9 +540,9 @@ describe("participation overview", () => {
     await enroll(section.id, dropped.id, "deactivated");
 
     const overview = await getParticipationOverview(teacher.id, section.id);
-    expect(overview.students.some((s) => s.studentRecordId === dropped.id)).toBe(
-      true,
-    );
+    expect(
+      overview.students.some((s) => s.studentRecordId === dropped.id),
+    ).toBe(true);
     expect(overview.summary.deactivatedStudentCount).toBe(1);
     expect(overview.summary.activeStudentCount).toBe(1);
   });

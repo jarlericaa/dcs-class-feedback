@@ -16,7 +16,10 @@ import {
   weeklyCycles,
 } from "@/db/schema";
 import { createTemplate } from "@/modules/forms/templates";
-import { generateCyclesForSchedule, openDueCycles } from "@/modules/forms/cycles";
+import {
+  generateCyclesForSchedule,
+  openDueCycles,
+} from "@/modules/forms/cycles";
 import { recurrenceSchedules } from "@/db/schema";
 import { submitResponse } from "@/modules/forms/submission";
 import {
@@ -46,7 +49,12 @@ async function fullSetup() {
     courseId: course.id,
     title: "T",
     questions: [
-      { prompt: "Pace?", type: "short_answer", required: true, displayOrder: 0 },
+      {
+        prompt: "Pace?",
+        type: "short_answer",
+        required: true,
+        displayOrder: 0,
+      },
     ],
   });
   const [schedule] = await db
@@ -104,8 +112,20 @@ describe("review + publishing + source links", () => {
 
   it("merged public answer links every source; each asker sees 'answered'; archive stays anonymous", async () => {
     const { teacher, section, cycle, question } = await fullSetup();
-    const a = await submitWithItem(section.id, teacher.id, cycle.id, question.id, "What is recursion?");
-    const b = await submitWithItem(section.id, teacher.id, cycle.id, question.id, "Please explain recursion again");
+    const a = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "What is recursion?",
+    );
+    const b = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "Please explain recursion again",
+    );
 
     const answer = await draftPublicAnswer(teacher.id, {
       sectionId: section.id,
@@ -123,7 +143,7 @@ describe("review + publishing + source links", () => {
     const items = await db.query.studentSubmissionItems.findMany();
     expect(items.every((i) => i.disposition === "merged")).toBe(true);
 
-    await publishNow(teacher.id, answer.id);
+    await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
 
     // Each asker sees "answered" + the reworded public version.
     for (const s of [a, b]) {
@@ -147,7 +167,13 @@ describe("review + publishing + source links", () => {
 
   it("rewording updates the public text only; the original student wording is immutable", async () => {
     const { teacher, section, cycle, question } = await fullSetup();
-    const a = await submitWithItem(section.id, teacher.id, cycle.id, question.id, "my ORIGINAL words");
+    const a = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "my ORIGINAL words",
+    );
     const answer = await draftPublicAnswer(teacher.id, {
       sectionId: section.id,
       itemIds: [a.studentItemId!],
@@ -168,7 +194,13 @@ describe("review + publishing + source links", () => {
 
   it("drafts and scheduled answers are invisible to students; scheduled publish is idempotent", async () => {
     const { teacher, section, cycle, question } = await fullSetup();
-    const a = await submitWithItem(section.id, teacher.id, cycle.id, question.id, "question A");
+    const a = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "question A",
+    );
     const answer = await draftPublicAnswer(teacher.id, {
       sectionId: section.id,
       itemIds: [a.studentItemId!],
@@ -181,7 +213,12 @@ describe("review + publishing + source links", () => {
     let history = await getStudentHistory(a.student.user.id, section.id);
     expect(history[0]!.items[0]!.status).toBe("submitted");
 
-    await schedulePublication(teacher.id, answer.id, new Date("2026-01-07T00:00:00Z"));
+    await schedulePublication(
+      teacher.id,
+      answer.id,
+      new Date("2026-01-07T00:00:00Z"),
+      { anonymityAcknowledged: true },
+    );
     expect(await listSectionQa(a.student.user.id, section.id)).toHaveLength(0);
 
     // Due publication publishes exactly once (idempotent re-run).
@@ -194,14 +231,26 @@ describe("review + publishing + source links", () => {
 
   it("private responses are visible to the asker only; students never see validity", async () => {
     const { teacher, section, cycle, question } = await fullSetup();
-    const a = await submitWithItem(section.id, teacher.id, cycle.id, question.id, "private question");
+    const a = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "private question",
+    );
     const other = await makeEnrolledStudent(section.id, teacher.id);
 
-    await createPrivateResponse(teacher.id, a.studentItemId!, "here is a private reply");
+    await createPrivateResponse(
+      teacher.id,
+      a.studentItemId!,
+      "here is a private reply",
+    );
     await setValidity(teacher.id, a.responseId, "invalid", "spam", "test note");
 
     const own = await getStudentHistory(a.student.user.id, section.id);
-    expect(own[0]!.items[0]!.privateResponses[0]!.body).toMatch(/private reply/);
+    expect(own[0]!.items[0]!.privateResponses[0]!.body).toMatch(
+      /private reply/,
+    );
     // Neutral projection: no validity/invalidation anywhere in the payload.
     expect(JSON.stringify(own)).not.toMatch(/invalid|spam|validity/i);
 
@@ -212,7 +261,13 @@ describe("review + publishing + source links", () => {
 
   it("unauthorized users cannot draft/publish/list; TA flags gate publishing", async () => {
     const { teacher, section, cycle, question } = await fullSetup();
-    const a = await submitWithItem(section.id, teacher.id, cycle.id, question.id, "q");
+    const a = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "q",
+    );
     const outsiderTeacher = await makeUser({ isTeacher: true });
 
     await expect(
@@ -233,8 +288,10 @@ describe("review + publishing + source links", () => {
       publicQuestionText: "reworded",
       answerBody: "body",
     });
-    await expect(publishNow(ta.id, answer.id)).rejects.toBeInstanceOf(AuthzError);
-    await publishNow(teacher.id, answer.id); // teacher may
+    await expect(
+      publishNow(ta.id, answer.id, { anonymityAcknowledged: true }),
+    ).rejects.toBeInstanceOf(AuthzError);
+    await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true }); // teacher may
   });
 
   it("review list masks identity for TAs without viewStudentIdentities", async () => {
@@ -252,7 +309,13 @@ describe("review + publishing + source links", () => {
 
   it("invalidating requires a reason and is audited", async () => {
     const { teacher, section, cycle, question } = await fullSetup();
-    const a = await submitWithItem(section.id, teacher.id, cycle.id, question.id, "q");
+    const a = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "q",
+    );
     await expect(
       setValidity(teacher.id, a.responseId, "invalid"),
     ).rejects.toThrow(/reason/);
@@ -266,7 +329,9 @@ describe("review + publishing + source links", () => {
   });
 
   it("anonymityWarnings flags personal wording and single-source publishes", () => {
-    expect(anonymityWarnings("Why did my grade drop?", 1).length).toBeGreaterThan(0);
+    expect(
+      anonymityWarnings("Why did my grade drop?", 1).length,
+    ).toBeGreaterThan(0);
     expect(anonymityWarnings("How does recursion work?", 3)).toHaveLength(0);
     expect(
       anonymityWarnings("A student asked about arrays", 2).length,

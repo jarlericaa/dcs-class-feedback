@@ -79,10 +79,14 @@ describe("authorization (deny-by-default, resource-scoped)", () => {
     await expect(
       requireSectionStaff(db, ta.id, section.id, "markValidity"),
     ).rejects.toBeInstanceOf(AuthzError);
-    // TA with no flag asked for a generic staff check → denied
+    // Asking for no named permission means "any staff member of this
+    // section", which a TA satisfies — they hold standing on the section even
+    // when a specific flag is absent. Capabilities that are deliberately not
+    // delegable to a TA (section settings, audit history) use
+    // requireNonTaSectionStaff instead, covered in review-findings.test.ts.
     await expect(
       requireSectionStaff(db, ta.id, section.id),
-    ).rejects.toBeInstanceOf(AuthzError);
+    ).resolves.toBeTruthy();
   });
 
   it("co_teacher role passes all section permissions", async () => {

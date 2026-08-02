@@ -9,7 +9,11 @@ import {
 } from "./fixtures";
 import { formQuestions, recurrenceSchedules, weeklyCycles } from "@/db/schema";
 import { createTemplate } from "@/modules/forms/templates";
-import { generateCyclesForSchedule, openDueCycles, closeDueCycles } from "@/modules/forms/cycles";
+import {
+  generateCyclesForSchedule,
+  openDueCycles,
+  closeDueCycles,
+} from "@/modules/forms/cycles";
 import { submitResponse } from "@/modules/forms/submission";
 import { setValidity } from "@/modules/review";
 import {
@@ -50,7 +54,10 @@ describe("derived participation + exports", () => {
         timezone: "Asia/Manila",
       })
       .returning();
-    await generateCyclesForSchedule(schedule!, new Date("2026-01-31T00:00:00Z"));
+    await generateCyclesForSchedule(
+      schedule!,
+      new Date("2026-01-31T00:00:00Z"),
+    );
     // open both weeks' cycles (week1 will be closed later)
     await openDueCycles(new Date("2026-01-12T01:00:00Z"));
     const cycles = await db.query.weeklyCycles.findMany({
@@ -105,7 +112,12 @@ describe("derived participation + exports", () => {
     expect(bobRow.totalWeeks).toBe(1);
 
     // Invalidation immediately removes that week's credit.
-    await setValidity(teacher.id, aliceR1.responseId, "invalid", "empty_or_meaningless");
+    await setValidity(
+      teacher.id,
+      aliceR1.responseId,
+      "invalid",
+      "empty_or_meaningless",
+    );
     matrix = await deriveParticipation(section.id);
     expect(
       matrix.students.find((s) => s.studentRecordId === alice.record.id)!
@@ -147,7 +159,9 @@ describe("derived participation + exports", () => {
 
     const csv = await weeklyMatrixCsv(teacher.id, section.id);
     const lines = csv.trim().split("\r\n");
-    expect(lines[0]).toMatch(/Student number,Student name,Week 1.*Week 2.*Total weeks/);
+    expect(lines[0]).toMatch(
+      /Student number,Student name,Week 1.*Week 2.*Total weeks/,
+    );
     expect(lines).toHaveLength(2);
     expect(lines[1]).toMatch(/,1,0,1$/);
 

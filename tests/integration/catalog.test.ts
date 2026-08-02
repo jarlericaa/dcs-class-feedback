@@ -1,12 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, truncateAll } from "./helpers";
-import {
-  addSectionStaff,
-  makeCourse,
-  makeSection,
-  makeUser,
-} from "./fixtures";
+import { addSectionStaff, makeCourse, makeSection, makeUser } from "./fixtures";
 import {
   auditEvents,
   classSections,
@@ -167,7 +162,10 @@ describe("catalog: courses, sections, and staff assignment", () => {
         assignSectionStaff(ta.id, section.id, {
           email: ta.email,
           role: "ta",
-          permissions: { exportParticipation: true, viewStudentIdentities: true },
+          permissions: {
+            exportParticipation: true,
+            viewStudentIdentities: true,
+          },
         }),
       ).rejects.toBeInstanceOf(AuthzError);
 
@@ -360,7 +358,10 @@ describe("catalog: courses, sections, and staff assignment", () => {
       const owner = await makeUser({ isTeacher: true });
       const course = await makeCourse(owner.id);
       const section = await makeSection(course.id);
-      await db.update(users).set({ active: false }).where(eq(users.id, owner.id));
+      await db
+        .update(users)
+        .set({ active: false })
+        .where(eq(users.id, owner.id));
       expect(await getSectionAccess(db, owner.id, section.id)).toBeNull();
     });
   });

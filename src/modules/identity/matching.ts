@@ -206,6 +206,15 @@ export async function rejectMatch(actorUserId: string, matchId: string) {
     where: eq(accountMatches.id, matchId),
   });
   if (!match || !match.studentRecordId) throw new AuthzError("Match not found");
+  // Only a PROPOSAL can be rejected. Without this guard a confirmed binding
+  // could be flipped to `rejected`, silently revoking a verified student's
+  // access to their own section. Undoing a confirmed match is a correction,
+  // which correctMatch handles with the full before/after audit trail.
+  if (!["candidate", "ambiguous"].includes(match.state)) {
+    throw new Error(
+      `Cannot reject a match in state ${match.state}. Use a correction to change a confirmed identity.`,
+    );
+  }
   await requireStaffForMatchRecord(actorUserId, match.studentRecordId);
   await db.transaction(async (tx) => {
     await tx

@@ -15,7 +15,7 @@ import {
   users,
   weeklyCycles,
 } from "@/db/schema";
-import { requireSectionStaff } from "@/modules/authz";
+import { requireNonTaSectionStaff } from "@/modules/authz";
 
 /**
  * Append-only audit log (domain-model.md §4). INSERT-only — the application
@@ -112,7 +112,7 @@ export async function listSectionAuditEvents(
   sectionId: string,
   opts: { limit?: number; action?: string } = {},
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId);
+  await requireNonTaSectionStaff(db, actorUserId, sectionId);
 
   const cycles = await db.query.weeklyCycles.findMany({
     where: eq(weeklyCycles.sectionId, sectionId),

@@ -23,9 +23,7 @@ export async function truncateAll() {
     SELECT tablename FROM pg_tables
     WHERE schemaname = 'public' AND tablename NOT LIKE '__drizzle%'
   `);
-  const names = tables.rows
-    .map((r) => `"${r.tablename}"`)
-    .join(", ");
+  const names = tables.rows.map((r) => `"${r.tablename}"`).join(", ");
   if (names.length > 0) {
     await db.execute(sql.raw(`TRUNCATE TABLE ${names} CASCADE`));
   }

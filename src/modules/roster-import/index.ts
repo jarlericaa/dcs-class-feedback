@@ -163,7 +163,7 @@ export async function previewRosterImport(
   sectionId: string,
   parsed: ParsedRoster,
 ): Promise<ImportPreview> {
-  await requireSectionStaff(db, actorUserId, sectionId);
+  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities");
   if (parsed.fileError) {
     return {
       actions: [],
@@ -262,7 +262,7 @@ export async function commitRosterImport(
   parsed: ParsedRoster,
   sourceDescription: string,
 ): Promise<ImportSummary> {
-  await requireSectionStaff(db, actorUserId, sectionId);
+  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities");
   if (parsed.fileError) throw new Error(parsed.fileError);
 
   return db.transaction(async (tx) => {

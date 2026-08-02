@@ -131,6 +131,21 @@ export async function generateCyclesForSchedule(
 
   for (const w of windows) {
     await db.transaction(async (tx) => {
+      // The (scheduleId, cycleIndex) unique index makes re-running THIS
+      // schedule idempotent, but it cannot see cycles belonging to a previous,
+      // now-retired schedule for the same section. Reconfiguring a schedule
+      // creates a new row whose indices restart at 1, so without this check a
+      // replacement would generate a second cycle covering a week that already
+      // exists — letting one student submit twice for the same week and
+      // producing duplicate participation columns.
+      const overlapping = await tx.query.weeklyCycles.findFirst({
+        where: and(
+          eq(weeklyCycles.sectionId, schedule.sectionId),
+          eq(weeklyCycles.openAt, w.openAt),
+        ),
+      });
+      if (overlapping) return; // that week is already materialized
+
       const snapshot = await getLatestTemplateVersion(tx, schedule.templateId);
       const [cycle] = await tx
         .insert(weeklyCycles)

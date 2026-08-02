@@ -56,7 +56,20 @@ export async function submitResponse(
   rawInput: unknown,
   now: Date = new Date(),
 ) {
-  const input = submissionInputSchema.parse(rawInput);
+  // Shape errors must reach the student as a recoverable field error, not as a
+  // raw ZodError escaping to the error boundary — over-long text or a tampered
+  // enum would otherwise crash the page and lose everything they typed.
+  const parsed = submissionInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    throw new SubmissionError(
+      "Some of your answers could not be accepted",
+      parsed.error.issues.map((issue) => ({
+        questionId: issue.path.includes("studentItem") ? "item" : null,
+        message: issue.message,
+      })),
+    );
+  }
+  const input = parsed.data;
 
   const cycle = await db.query.weeklyCycles.findFirst({
     where: eq(weeklyCycles.id, cycleId),

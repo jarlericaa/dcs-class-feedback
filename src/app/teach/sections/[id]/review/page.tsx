@@ -23,7 +23,7 @@ import {
   type ReviewFilter,
 } from "@/modules/review";
 import {
-  anonymityWarnings,
+  AnonymityCheckRequired,
   draftPublicAnswer,
   publishNow,
 } from "@/modules/publishing";
@@ -167,19 +167,6 @@ export default async function ReviewPage({
       fail("An answer is required before publishing.");
     }
 
-    if (intent === "publish") {
-      // Pre-publish anonymity check (Risk R2): specific wording can still
-      // identify the asker even though the name is never shown.
-      const warnings = anonymityWarnings(publicQuestionText, 1);
-      if (warnings.length > 0 && formData.get("acknowledged") !== "yes") {
-        redirect(
-          `/teach/sections/${sectionId}/review?selected=${selected}&warn=${encodeURIComponent(
-            warnings.join(" | "),
-          )}`,
-        );
-      }
-    }
-
     const answer = await draftPublicAnswer(uid, {
       sectionId,
       itemIds: [itemId],
@@ -187,7 +174,24 @@ export default async function ReviewPage({
       answerBody: answerBody || undefined,
     });
     if (intent === "publish") {
-      await publishNow(uid, answer.id);
+      // The anonymity check lives in publishNow, which reads the PERSISTED
+      // question text and the real source-link count. The checkbox only
+      // carries the acknowledgment; it cannot describe what is being
+      // published.
+      try {
+        await publishNow(uid, answer.id, {
+          anonymityAcknowledged: formData.get("acknowledged") === "yes",
+        });
+      } catch (err) {
+        if (err instanceof AnonymityCheckRequired) {
+          redirect(
+            `/teach/sections/${sectionId}/review?selected=${selected}&warn=${encodeURIComponent(
+              err.warnings.join(" | "),
+            )}`,
+          );
+        }
+        throw err;
+      }
     }
     revalidatePath(`/teach/sections/${sectionId}/review`);
     redirect(

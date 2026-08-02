@@ -161,23 +161,63 @@ export async function requireSectionStaff(
       eq(sectionStaff.userId, userId),
     ),
   });
+
+  // Course staff (incl. the owner) administer the course's sections. Checked
+  // BEFORE the TA branch: a course owner who also holds a `ta` row on their
+  // own section must not be locked out of it by their own narrower row.
+  let isCourseStaff = false;
+  try {
+    await requireCourseStaff(dbx, userId, section.courseId);
+    isCourseStaff = true;
+  } catch {
+    isCourseStaff = false;
+  }
+  if (isCourseStaff) return section;
+
   if (membership) {
     if (membership.role === "teacher" || membership.role === "co_teacher") {
       return section;
     }
-    // TA: deny unless the specific flag was granted.
-    if (permission ? membership[permission] : false) return section;
-    if (!permission) throw new AuthzError("Permission required");
+    // TA: `membership` alone proves standing on the section. A named
+    // permission must have been granted; asking for none means "any staff
+    // member of this section", which a TA satisfies.
+    if (!permission) return section;
+    if (membership[permission]) return section;
     throw new AuthzError(`Missing section permission: ${permission}`);
   }
 
-  // Course staff (incl. owner) administer the course's sections.
-  try {
-    await requireCourseStaff(dbx, userId, section.courseId);
-    return section;
-  } catch {
-    throw new AuthzError("No access to this section");
+  throw new AuthzError("No access to this section");
+}
+
+/**
+ * Section staff EXCLUDING teaching assistants: teachers, co-teachers, and
+ * course staff. Used for capabilities that are deliberately not delegable
+ * because the MVP permission catalog has no flag for them — section settings
+ * and audit browsing.
+ */
+export async function requireNonTaSectionStaff(
+  dbx: DbOrTx,
+  userId: string,
+  sectionId: string,
+) {
+  const section = await requireSectionStaff(dbx, userId, sectionId);
+  const membership = await dbx.query.sectionStaff.findFirst({
+    where: and(
+      eq(sectionStaff.sectionId, sectionId),
+      eq(sectionStaff.userId, userId),
+    ),
+  });
+  if (membership?.role === "ta") {
+    // A course-staff TA is still course staff; only a section-scoped TA is out.
+    try {
+      await requireCourseStaff(dbx, userId, section.courseId);
+    } catch {
+      throw new AuthzError(
+        "This action is limited to teachers and co-teachers",
+      );
+    }
   }
+  return section;
 }
 
 /**

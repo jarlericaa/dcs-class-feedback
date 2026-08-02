@@ -281,6 +281,7 @@ export function WeeklyForm({
             className="textarea-field"
             name="item_text"
             rows={4}
+            maxLength={10000}
             value={itemText}
             onChange={(e) => setItemText(e.target.value)}
             placeholder="Ask anything about this week, or tell your teacher what would help."

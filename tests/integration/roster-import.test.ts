@@ -2,17 +2,16 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, truncateAll } from "./helpers";
 import { makeCourse, makeSection, makeUser } from "./fixtures";
-import {
-  accountMatches,
-  enrollments,
-  studentRecords,
-} from "@/db/schema";
+import { accountMatches, enrollments, studentRecords } from "@/db/schema";
 import {
   commitRosterImport,
   parseRosterCsv,
   previewRosterImport,
 } from "@/modules/roster-import";
-import { generateMatchCandidates, confirmMatch } from "@/modules/identity/matching";
+import {
+  generateMatchCandidates,
+  confirmMatch,
+} from "@/modules/identity/matching";
 import { AuthzError } from "@/modules/authz";
 
 const CSV_V1 =
@@ -61,7 +60,12 @@ describe("roster CSV import", () => {
 
   it("re-import: absent students are deactivated, never deleted; re-listing reactivates", async () => {
     const { teacher, section } = await setup();
-    await commitRosterImport(teacher.id, section.id, parseRosterCsv(CSV_V1), "v1");
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v1",
+    );
 
     const v2 = parseRosterCsv(
       "student number,full name\n2026-001,Juan Dela Cruz\n",
@@ -86,7 +90,12 @@ describe("roster CSV import", () => {
 
   it("canonical name updates only while unmatched, and is audited", async () => {
     const { teacher, section } = await setup();
-    await commitRosterImport(teacher.id, section.id, parseRosterCsv(CSV_V1), "v1");
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v1",
+    );
 
     // Typo fix while NO confirmed match exists → canonical name updates.
     const fix = parseRosterCsv(
@@ -114,7 +123,9 @@ describe("roster CSV import", () => {
       "student number,full name\n2026-001,Different Person\n2026-002,Maria Santos\n",
     );
     const preview = await previewRosterImport(teacher.id, section.id, rename);
-    expect(preview.actions.some((a) => a.kind === "name_diff_locked")).toBe(true);
+    expect(preview.actions.some((a) => a.kind === "name_diff_locked")).toBe(
+      true,
+    );
 
     const s3 = await commitRosterImport(teacher.id, section.id, rename, "v3");
     expect(s3.nameDiffsLocked).toBe(1);
@@ -135,7 +146,12 @@ describe("roster CSV import", () => {
 
   it("confirmed matches survive re-import (keyed on student number)", async () => {
     const { teacher, section } = await setup();
-    await commitRosterImport(teacher.id, section.id, parseRosterCsv(CSV_V1), "v1");
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v1",
+    );
     const student = await makeUser({ displayName: "Maria Santos" });
     await generateMatchCandidates(student.id);
     const row = (await db.query.accountMatches.findFirst({
@@ -143,7 +159,12 @@ describe("roster CSV import", () => {
     }))!;
     await confirmMatch(teacher.id, row.id);
 
-    await commitRosterImport(teacher.id, section.id, parseRosterCsv(CSV_V1), "v2");
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v2",
+    );
 
     const still = await db.query.accountMatches.findFirst({
       where: and(

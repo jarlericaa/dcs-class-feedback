@@ -292,7 +292,19 @@ export async function getSubmissionDetail(
     : null;
 
   return {
-    response,
+    // Projected, not the raw row: formResponses carries studentRecordId, which
+    // is the identity binding itself. Returning it to a TA without
+    // view_student_identities would defeat the masking below.
+    response: {
+      id: response.id,
+      cycleId: response.cycleId,
+      submittedAt: response.submittedAt,
+      state: response.state,
+      validity: response.validity,
+      invalidationReason: response.invalidationReason,
+      invalidationNote: response.invalidationNote,
+      studentRecordId: canSeeIdentities ? response.studentRecordId : null,
+    },
     cycle,
     student: record
       ? { fullName: record.fullName, studentNumber: record.studentNumber }

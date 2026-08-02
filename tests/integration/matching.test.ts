@@ -92,7 +92,9 @@ describe("account matching (teacher-confirm-all)", () => {
     });
     expect(after.find((r) => r.id === pick.id)!.state).toBe("confirmed");
     expect(
-      after.filter((r) => r.id !== pick.id).every((r) => r.state === "rejected"),
+      after
+        .filter((r) => r.id !== pick.id)
+        .every((r) => r.state === "rejected"),
     ).toBe(true);
 
     const audit = await db.query.auditEvents.findFirst({

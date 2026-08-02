@@ -145,6 +145,14 @@ export async function rewordPublicQuestion(
   });
   if (!answer) throw new Error("Public answer not found");
   await requireSectionStaff(db, actorUserId, answer.sectionId, "rewordPublicQuestions");
+  // A scheduled answer already carries an acknowledged anonymity check for its
+  // current wording. Allowing an edit here would let different text go out
+  // under that acknowledgment, so the schedule must be cancelled first.
+  if (answer.state !== "draft") {
+    throw new Error(
+      `Cannot edit an answer in state ${answer.state}. Cancel the schedule first.`,
+    );
+  }
 
   await db.transaction(async (tx) => {
     await tx
@@ -172,6 +180,11 @@ export async function updateAnswerBody(
   });
   if (!answer) throw new Error("Public answer not found");
   await requireSectionStaff(db, actorUserId, answer.sectionId, "draftPublicAnswers");
+  if (answer.state !== "draft") {
+    throw new Error(
+      `Cannot edit an answer in state ${answer.state}. Cancel the schedule first.`,
+    );
+  }
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
@@ -222,7 +235,44 @@ export function anonymityWarnings(
   return warnings;
 }
 
-export async function publishNow(actorUserId: string, publicAnswerId: string) {
+/**
+ * Raised when a publication would go out without the anonymity check having
+ * been acknowledged. Carries the warnings so the UI can show exactly what to
+ * look at rather than a generic refusal.
+ */
+export class AnonymityCheckRequired extends Error {
+  constructor(readonly warnings: string[]) {
+    super("The anonymity check has not been acknowledged");
+    this.name = "AnonymityCheckRequired";
+  }
+}
+
+/**
+ * Enforce the pre-publish anonymity check at the SERVICE boundary
+ * (Risk R2), using the persisted question text and the real source-link
+ * count. Doing it in the page instead would trust client-submitted values:
+ * the acknowledgment form could otherwise claim a benign question or a
+ * merged source count and dodge the warning entirely.
+ */
+async function requireAnonymityAcknowledged(
+  publicAnswerId: string,
+  publicQuestionText: string,
+  acknowledged: boolean,
+) {
+  const links = await db.query.sourceLinks.findMany({
+    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+  });
+  const warnings = anonymityWarnings(publicQuestionText, links.length);
+  if (warnings.length > 0 && !acknowledged) {
+    throw new AnonymityCheckRequired(warnings);
+  }
+}
+
+export async function publishNow(
+  actorUserId: string,
+  publicAnswerId: string,
+  opts: { anonymityAcknowledged?: boolean } = {},
+) {
   const answer = await db.query.publicAnswers.findFirst({
     where: eq(publicAnswers.id, publicAnswerId),
   });
@@ -234,6 +284,11 @@ export async function publishNow(actorUserId: string, publicAnswerId: string) {
   if (!answer.answerBody?.trim()) {
     throw new Error("Cannot publish without an answer body");
   }
+  await requireAnonymityAcknowledged(
+    publicAnswerId,
+    answer.publicQuestionText,
+    opts.anonymityAcknowledged ?? false,
+  );
 
   await db.transaction(async (tx) => {
     await tx
@@ -262,6 +317,7 @@ export async function schedulePublication(
   actorUserId: string,
   publicAnswerId: string,
   scheduledAt: Date,
+  opts: { anonymityAcknowledged?: boolean } = {},
 ) {
   const answer = await db.query.publicAnswers.findFirst({
     where: eq(publicAnswers.id, publicAnswerId),
@@ -274,6 +330,14 @@ export async function schedulePublication(
   if (!answer.answerBody?.trim()) {
     throw new Error("Cannot schedule without an answer body");
   }
+  // Scheduling is the last human moment before the answer goes out: the
+  // background executor publishes without asking anyone. The check therefore
+  // has to happen here, not only on the publish-now path.
+  await requireAnonymityAcknowledged(
+    publicAnswerId,
+    answer.publicQuestionText,
+    opts.anonymityAcknowledged ?? false,
+  );
 
   await db.transaction(async (tx) => {
     await tx
