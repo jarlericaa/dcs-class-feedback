@@ -1,6 +1,7 @@
 # MVP Scope
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Product scope specification. The current implementation covers a
+> foundation subset; see [CURRENT_STATE.md](CURRENT_STATE.md).
 > These lists reproduce the owner's stated MVP / post-MVP / out-of-scope boundary. **No item is silently added or promoted.** Where an item is a recommendation rather than a confirmed requirement, it is tagged and linked to [open-decisions.md](open-decisions.md).
 > See [product-requirements.md](product-requirements.md) for goals and [AGENTS.md](../AGENTS.md) for the rule that recommendations are not requirements.
 

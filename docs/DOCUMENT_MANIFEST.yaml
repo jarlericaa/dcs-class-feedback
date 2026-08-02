@@ -1,0 +1,233 @@
+version: 1
+last_updated: 2026-08-02
+project: dcs-class-feedback
+
+documents:
+  - path: PROJECT_CONTEXT.md
+    audience: all
+    authority: founding_intent
+    status: current
+    maintainer: product_and_technical_owner
+    update_trigger: scope_or_goal_change
+  - path: docs/PROJECT_OVERVIEW.md
+    audience: all
+    authority: product_summary
+    status: current
+    maintainer: product_owner
+    update_trigger: product_scope_change
+  - path: docs/CURRENT_STATE.md
+    audience: developers_and_agents
+    authority: implementation_snapshot
+    status: current
+    maintainer: technical_owner
+    update_trigger: route_module_schema_or_test_change
+  - path: docs/ARCHITECTURE.md
+    audience: developers_and_agents
+    authority: current_architecture
+    status: current
+    maintainer: technical_owner
+    update_trigger: runtime_data_or_integration_change
+  - path: docs/REPOSITORY_MAP.md
+    audience: developers_and_agents
+    authority: repository_orientation
+    status: current
+    maintainer: technical_owner
+    update_trigger: route_module_schema_test_or_command_change
+  - path: docs/DEVELOPMENT.md
+    audience: developers
+    authority: operational_setup
+    status: current
+    maintainer: technical_owner
+    update_trigger: command_env_or_local_workflow_change
+  - path: docs/DEPLOYMENT.md
+    audience: developers_and_operators
+    authority: deployment_contract
+    status: recommended
+    maintainer: technical_owner
+    update_trigger: hosting_release_backup_or_runtime_change
+  - path: docs/TESTING.md
+    audience: developers_and_qa
+    authority: quality_strategy
+    status: current
+    maintainer: technical_owner
+    update_trigger: test_layer_or_invariant_change
+  - path: docs/SECURITY.md
+    audience: developers_and_reviewers
+    authority: security_invariants
+    status: current
+    maintainer: technical_owner
+    update_trigger: auth_privacy_or_data_access_change
+  - path: docs/WEB-APP-BUILD-PLAN.md
+    audience: product_design_and_engineering
+    authority: delivery_plan
+    status: proposed
+    maintainer: product_and_technical_owner
+    update_trigger: build_order_or_acceptance_change
+  - path: docs/UX-DESIGN-BRIEF.md
+    audience: product_design_and_engineering
+    authority: design_direction
+    status: proposed
+    maintainer: product_and_design_owner
+    update_trigger: design_review_or_usability_finding
+  - path: docs/DESIGN-RESEARCH.md
+    audience: product_design_and_engineering
+    authority: external_inspiration
+    status: research
+    maintainer: product_and_design_owner
+    update_trigger: new_research_or_design_decision
+  - path: docs/ED_DISCUSSION_REFERENCE_PACK.md
+    audience: product_design_and_engineering
+    authority: visual_reference_pack
+    status: research
+    maintainer: product_and_design_owner
+    update_trigger: new_screenshot_reference_or_design_decision
+  - path: docs/prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md
+    audience: implementation_agents
+    authority: approved_implementation_prompt
+    status: current
+    maintainer: product_and_technical_owner
+    update_trigger: build_scope_or_ui_acceptance_change
+  - path: docs/SPEC-RECONCILIATION.md
+    audience: owners_and_technical_leads
+    authority: drift_and_open_questions
+    status: current
+    maintainer: technical_owner
+    update_trigger: spec_or_implementation_drift
+  - path: docs/decisions/
+    audience: owners_and_technical_leads
+    authority: architecture_decision_records_directory
+    status: current
+    maintainer: technical_owner
+    update_trigger: durable_architecture_or_privacy_decision
+  - path: docs/decisions/README.md
+    audience: owners_and_technical_leads
+    authority: architecture_decision_record_policy
+    status: current
+    maintainer: technical_owner
+    update_trigger: adr_policy_change
+  - path: docs/decisions/ADR-0001-current-stack-and-scheduler.md
+    audience: developers_and_technical_leads
+    authority: architecture_decision_record
+    status: accepted_provisional
+    maintainer: technical_owner
+    update_trigger: stack_or_scheduler_decision
+  - path: docs/decisions/ADR-0002-section-scoped-public-qa.md
+    audience: product_design_and_engineering
+    authority: privacy_decision_record
+    status: accepted
+    maintainer: product_and_technical_owner
+    update_trigger: publication_privacy_or_authorization_decision
+  - path: docs/decisions/ADR-0003-course-owner-controls-staff-permissions.md
+    audience: developers_and_technical_leads
+    authority: authorization_decision_record
+    status: accepted_provisional
+    maintainer: technical_owner
+    update_trigger: staff_assignment_or_permission_catalog_decision
+  - path: docs/CLAUDE_IMPLEMENTATION_PLAN.md
+    audience: implementation_agents
+    authority: session_implementation_plan
+    status: current
+    maintainer: technical_owner
+    update_trigger: implementation_slice_change
+  - path: docs/CLAUDE_IMPLEMENTATION_REPORT.md
+    audience: developers_and_technical_leads
+    authority: implementation_handoff_report
+    status: current
+    maintainer: technical_owner
+    update_trigger: implementation_pass_completion
+  - path: docs/product-requirements.md
+    audience: product_and_engineering
+    authority: detailed_product_requirements
+    status: current_with_open_items
+    maintainer: product_owner
+    update_trigger: owner_decision_or_scope_change
+  - path: docs/mvp-scope.md
+    audience: product_and_engineering
+    authority: scope_boundary
+    status: current_with_open_items
+    maintainer: product_owner
+    update_trigger: scope_change
+  - path: docs/open-decisions.md
+    audience: owners_and_technical_leads
+    authority: decision_register
+    status: current
+    maintainer: product_and_technical_owner
+    update_trigger: decision_resolution
+  - path: docs/account-matching.md
+    audience: product_and_engineering
+    authority: identity_and_matching_rules
+    status: current_with_open_items
+    maintainer: product_and_technical_owner
+    update_trigger: identity_or_roster_policy_change
+  - path: docs/ai-future-plan.md
+    audience: product_and_engineering
+    authority: deferred_ai_constraints
+    status: deferred
+    maintainer: product_and_technical_owner
+    update_trigger: ai_scope_or_privacy_decision
+  - path: docs/architecture-proposal.md
+    audience: owners_and_technical_leads
+    authority: historical_architecture_rationale
+    status: historical
+    maintainer: technical_owner
+    update_trigger: architecture_alternative_or_stack_decision
+  - path: docs/domain-model.md
+    audience: product_and_engineering
+    authority: domain_and_state_model
+    status: current_with_open_items
+    maintainer: product_and_technical_owner
+    update_trigger: entity_state_or_audit_change
+  - path: docs/legacy-question-import.md
+    audience: product_and_engineering
+    authority: legacy_import_rules
+    status: current_with_open_items
+    maintainer: product_owner
+    update_trigger: import_scope_or_provenance_change
+  - path: docs/participation-rules.md
+    audience: product_and_engineering
+    authority: participation_rules
+    status: current_with_open_items
+    maintainer: product_owner
+    update_trigger: validity_or_export_change
+  - path: docs/public-qa-and-source-linking.md
+    audience: product_and_engineering
+    authority: publication_and_privacy_rules
+    status: current_with_open_items
+    maintainer: product_and_technical_owner
+    update_trigger: response_publication_or_privacy_change
+  - path: docs/question-backlog.md
+    audience: product_and_engineering
+    authority: backlog_rules
+    status: current_with_open_items
+    maintainer: product_owner
+    update_trigger: backlog_lifecycle_change
+  - path: docs/roles-and-permissions.md
+    audience: product_and_engineering
+    authority: role_and_authorization_rules
+    status: current_with_open_items
+    maintainer: technical_owner
+    update_trigger: role_or_permission_change
+  - path: docs/weekly-form-workflow.md
+    audience: product_and_engineering
+    authority: weekly_form_workflow_rules
+    status: current_with_open_items
+    maintainer: product_owner
+    update_trigger: cycle_template_or_submission_change
+  - path: README.md
+    audience: all
+    authority: human_repository_entry
+    status: current
+    maintainer: product_and_technical_owner
+    update_trigger: setup_script_scope_or_navigation_change
+  - path: AGENTS.md
+    audience: implementation_agents
+    authority: repository_agent_guidance
+    status: current
+    maintainer: technical_owner
+    update_trigger: workflow_authority_or_validation_change
+  - path: CLAUDE.md
+    audience: implementation_agents
+    authority: claude_code_wrapper
+    status: current
+    maintainer: technical_owner
+    update_trigger: claude_workflow_or_root_guidance_change

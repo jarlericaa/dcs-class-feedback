@@ -1,6 +1,8 @@
 # Account Matching & Class-List Import
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Product/security specification with an implemented foundation.
+> Current route and service coverage is tracked in
+> [CURRENT_STATE.md](CURRENT_STATE.md).
 > This document **owns** authentication/enrollment, the name-matching design, and the class-list CSV import flow. This is the **highest-risk area** of the system (Risk R1). Match states are in [domain-model.md](domain-model.md#38-account-match-state).
 > Label key as in [product-requirements.md](product-requirements.md).
 

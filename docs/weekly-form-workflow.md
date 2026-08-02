@@ -1,6 +1,6 @@
 # Weekly Form Workflow
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Product workflow specification with an implemented foundation.
 > This document **owns** the recurring-schedule model, cycle generation & auto-open behavior, the dynamic form/question schema, template semantics, and the submission flow. State definitions live in [domain-model.md](domain-model.md#3-state-models); scheduling infrastructure in [architecture-proposal.md](architecture-proposal.md#scheduling).
 > Label key as in [product-requirements.md](product-requirements.md).
 

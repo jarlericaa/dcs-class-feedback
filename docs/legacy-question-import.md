@@ -1,6 +1,7 @@
 # Legacy Question Import
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Product rule specification; implementation is partial and tracked
+> in [CURRENT_STATE.md](CURRENT_STATE.md).
 > This document **owns** the import of historical questions and its privacy defaults. Backlog behavior: [question-backlog.md](question-backlog.md). Roster CSV import is separate — see [account-matching.md](account-matching.md#9-class-list-csv-import).
 > Label key as in [product-requirements.md](product-requirements.md).
 

@@ -1,6 +1,6 @@
 # Public Q&A & Source Linking
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Product/privacy rule specification with an implemented foundation.
 > This document **owns** private/public responses, rewording rules, source-link invariants, small-class anonymity rules, scheduled publication, the public archive, and the student submission-history view. States: [domain-model.md](domain-model.md#3-state-models). Scheduling infrastructure: [architecture-proposal.md](architecture-proposal.md#scheduling).
 > Label key as in [product-requirements.md](product-requirements.md).
 

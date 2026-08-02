@@ -1,6 +1,9 @@
 # Domain Model
 
-> **Status:** Planning / pre-implementation. Conceptual model only — **no schema, SQL, or migrations.** A future implementation phase derives tables from this.
+> **Status:** Domain specification aligned with the current Drizzle schema and
+> migrations. The model remains the conceptual owner of relationships and state
+> rules; current implementation coverage is tracked in
+> [CURRENT_STATE.md](CURRENT_STATE.md).
 > This document **owns** the entity model, identity rules, all state dimensions, and the audit-event shape. Other docs link here rather than redefining these.
 > Label key as in [product-requirements.md](product-requirements.md).
 

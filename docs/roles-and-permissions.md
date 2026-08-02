@@ -1,6 +1,6 @@
 # Roles & Permissions
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Authorization specification with an implemented foundation.
 > This document **owns** the role definitions, the authorization model, and the TA permission catalog. Entity references are defined in [domain-model.md](domain-model.md).
 > Label key as in [product-requirements.md](product-requirements.md).
 

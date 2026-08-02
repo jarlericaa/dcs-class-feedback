@@ -1,7 +1,9 @@
 # Architecture Proposal
 
-> **Status:** Planning / pre-implementation. **Everything here is a recommendation, not an approved requirement.**
-> The **final stack requires owner approval before implementation** — and is **contingent on the "Fable" clarification** ([Open D1](open-decisions.md)). See [AGENTS.md](../AGENTS.md).
+> **Status:** Architecture rationale and future-options document. The current
+> implementation baseline is documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+> Recommendations here do not silently become product requirements. See
+> [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md) for stale planning assumptions.
 > Label key as in [product-requirements.md](product-requirements.md).
 
 ## 0. "Fable" caveat — read first
@@ -11,7 +13,10 @@ The owner mentioned "using Fable." This planning work does **not** assume that m
 - If **"Fable" = the Claude Fable model/tooling only**, the TypeScript recommendation below stands as the *current recommended web stack*.
 - If **"Fable" = a desired F#/Fable implementation stack**, the recommendation must change to (or add) an F# option (e.g. F# + Fable/Feliz frontend + a .NET/F# backend, SAFE-stack style).
 
-Until clarified ([Open D1](open-decisions.md)), TypeScript is presented as the current recommendation, **not** as final.
+The repository is already implemented in TypeScript. If “Fable” means an
+F#/Fable implementation stack, pause and resolve [Open D1](open-decisions.md)
+before expanding the UI; otherwise, continue with the current TypeScript
+baseline.
 
 ## 1. Architectural style **[Recommended]**
 
@@ -31,7 +36,7 @@ Until clarified ([Open D1](open-decisions.md)), TypeScript is presented as the c
 | **participation & export** | derived participation, CSV exports | [participation-rules.md](participation-rules.md) |
 | **audit** | append-only audit events | [domain-model.md](domain-model.md#audit-events) |
 
-## 2. Recommended stack (primary) **[Recommended — pending D1 + owner approval]**
+## 2. Stack comparison and current baseline
 
 TypeScript end-to-end:
 
@@ -42,10 +47,10 @@ TypeScript end-to-end:
 | Database | **PostgreSQL** | [Confirmed] target; relational fit for this model; strong constraints for the uniqueness/idempotency rules. |
 | ORM / data layer | **Drizzle ORM** (single primary pick) | SQL-transparent, lightweight, easy for a student team to learn relational modeling; typed queries. |
 | Auth | **Auth.js (Google provider)** | Google OAuth support with minimal glue; restrict to university domain. |
-| Job scheduling | **pg-boss** (Postgres-backed) | DB-backed jobs — no message broker; matches the [Confirmed] "prefer DB-backed scheduling" rule. |
+| Job scheduling | **Reconciliation poller [Implemented]** | Current repository mechanism for cycle transitions and due publication; a queue can be evaluated later. |
 | Validation | **Zod** | Shared client/server schemas; server-side validation is authoritative. |
 | Dev environment | **Docker Compose** | App + Postgres locally; reproducible. |
-| Migrations | Drizzle migrations | Versioned schema (built in the implementation phase, not now). |
+| Migrations | Drizzle migrations **[Implemented]** | Versioned schema under `drizzle/`. |
 | Testing | **Vitest** (unit/integration) + **Playwright** (e2e) | Covers the name-matching pipeline, authz, scheduling idempotency, exports. |
 
 > **ORM note:** Drizzle is the single primary recommendation. **Prisma is the main alternative** — see §3.1. Do not leave this unresolved in code: if the owner prefers Prisma, that is [Open D11](open-decisions.md).
@@ -86,7 +91,9 @@ Requirements this design must meet:
 - **Scheduler-down behavior / reconciliation** — a poller runs on startup and periodically: opens cycles past `open-at` still `Scheduled`; closes cycles past deadline still `Open`; publishes `Scheduled` answers past `scheduled-at`. Late actions are flagged **late** in the audit log.
 - **Failed-publication recovery** — a failed publish leaves the answer `Scheduled` with a failure flag/reason, surfaced in-app (no notifications in MVP) with retry/resolve actions for staff.
 
-pg-boss provides the job queue, retries, and unique-job semantics on Postgres; the reconciliation poller is a periodic sweep that backstops missed timers.
+The reconciliation poller is the current scheduler. A queue such as pg-boss may
+provide more granular retries later, but it is not part of the current
+dependency set and is not required for the first usable release.
 
 ## 5. Authorization enforcement **[Recommended]** {#authorization}
 
@@ -118,8 +125,8 @@ Priority coverage: the name-matching pipeline (deterministic, unit-tested with a
 
 ## 10. Open decisions affecting architecture
 
-- [Open D1] "Fable" meaning → gates the whole stack.
-- [Open D11] ORM (Drizzle vs Prisma) if owner disagrees.
+- [Open D1] "Fable" meaning → blocks only if F#/Fable is intended.
+- [Open D11] ORM (Drizzle vs Prisma) if the team wants to replace the already-implemented Drizzle baseline.
 - [Open D12] Deployment target.
 
 See [open-decisions.md](open-decisions.md).

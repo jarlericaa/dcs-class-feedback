@@ -1,6 +1,7 @@
 # Course-Level Question Backlog
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Product rule specification; implementation is partial and tracked
+> in [CURRENT_STATE.md](CURRENT_STATE.md).
 > This document **owns** the course-level backlog concept and its per-section publish flow. Backlog states: [domain-model.md](domain-model.md#37-backlog-question-state). Legacy sourcing detail: [legacy-question-import.md](legacy-question-import.md).
 > Label key as in [product-requirements.md](product-requirements.md).
 

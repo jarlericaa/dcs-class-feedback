@@ -1,6 +1,7 @@
 # AI Future Plan
 
-> **Status:** Planning / pre-implementation. **AI is post-MVP and low priority.** Nothing here is an MVP requirement.
+> **Status:** Future-direction document. **AI is post-MVP and low priority.**
+> Nothing here is an MVP requirement.
 > This document **owns** the AI direction and its hard constraints, plus the (small) things MVP should do now to stay AI-ready.
 > Label key as in [product-requirements.md](product-requirements.md).
 

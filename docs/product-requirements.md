@@ -1,7 +1,9 @@
 # Product Requirements
 
-> **Status:** Planning / pre-implementation. No code exists yet.
-> **Label key:** Every substantive statement is tagged **[Confirmed]** (owner-stated requirement), **[Recommended]** (proposed by this planning work, not yet approved), **[Assumption]** (inferred, needs validation), or **[Open]** (unresolved — see [open-decisions.md](open-decisions.md)).
+> **Status:** Detailed product specification. The repository now contains an
+> implementation foundation; current behavior is tracked in
+> [CURRENT_STATE.md](CURRENT_STATE.md). Some decisions remain open.
+> **Label key:** Every substantive statement is tagged **[Confirmed]** (owner-stated requirement), **[Implemented]** (evidenced by the repository), **[Recommended]** (proposed, not yet approved), **[Assumption]** (inferred, needs validation), **[Deferred]** (intentionally postponed), or **[Open]** (unresolved — see [open-decisions.md](open-decisions.md)).
 > Recommendations must never be treated as approved requirements. See [AGENTS.md](../AGENTS.md).
 
 This is the master requirements document. It states the problem, goals, and confirmed requirements at a high level, then links to the owning document for each area. Detailed rules live in the linked docs — this file avoids duplicating them.

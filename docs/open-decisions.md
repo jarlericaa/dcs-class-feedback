@@ -1,6 +1,7 @@
 # Open Decisions
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Active decision register. The repository has an implementation
+> baseline, but unresolved product, privacy, and operational choices remain.
 > Every unresolved product/technical decision. **Agents must read this before any implementation work** ([AGENTS.md](../AGENTS.md)) and must not resolve a "wait for owner" item on their own.
 > Each entry: **Question · Options · Trade-offs · Recommended choice · Wait for owner approval?**
 
@@ -11,8 +12,12 @@
 - **Question:** Does "using Fable" refer to the Claude Fable model/tooling, or does the owner want the implementation stack to use F#/Fable?
 - **Options:** (a) Claude tooling only → keep TypeScript recommendation; (b) F#/Fable stack → change/extend the architecture to an F# option (e.g. SAFE-stack).
 - **Trade-offs:** TS = larger help/hiring pool, strong Claude Code familiarity; F#/Fable = owner preference if intended, but steeper learning curve and smaller ecosystem for a student team.
-- **Recommended choice:** Treat as (a) Claude tooling **until confirmed**; do not present TypeScript as final. See [architecture-proposal.md](architecture-proposal.md#0-fable-caveat--read-first).
-- **Wait for owner approval?** **Yes** — this gates the entire stack decision.
+- **Current working choice:** Continue the existing TypeScript implementation.
+  This remains conditional only if the owner intended an F#/Fable application
+  stack rather than a coding tool/model reference. See
+  [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md).
+- **Wait for owner approval?** **Only if F#/Fable is intended.** Otherwise this
+  decision can be closed as “TypeScript baseline.”
 
 ## D2. Account-match auto-confirm policy (highest-risk)
 
@@ -59,8 +64,11 @@
 - **Question:** One institution timezone, or per-section override?
 - **Options:** (a) single institution timezone (MVP); (b) per-section override.
 - **Trade-offs:** (a) simplest and correct for one campus; (b) needed only for multi-timezone offerings.
-- **Recommended choice:** (a) single institution timezone for MVP; per-section override post-MVP.
-- **Wait for owner approval?** **Yes** (need the actual timezone value, e.g. Asia/Manila).
+- **Current working choice:** (a) single institution timezone for MVP; the
+  repository default is `Asia/Manila`. Confirm the value before production and
+  defer per-section overrides.
+- **Wait for owner approval?** **Yes before pilot/production** if the institution
+  uses a different timezone.
 
 ## D8. Merge scope
 
@@ -91,8 +99,10 @@
 - **Question:** Which ORM if the recommended Drizzle is not preferred?
 - **Options:** (a) Drizzle (recommended); (b) Prisma.
 - **Trade-offs:** Drizzle = SQL-transparent, teaches DB concepts; Prisma = higher-level, faster start, hides SQL. See [architecture-proposal.md](architecture-proposal.md#31-prisma-vs-drizzle-the-orm-decision).
-- **Recommended choice:** (a) Drizzle.
-- **Wait for owner approval?** Yes if the team prefers Prisma — otherwise proceed with Drizzle once the stack (D1) is confirmed.
+- **Current working choice:** (a) Drizzle; it is already the repository's ORM
+  and migration source of truth.
+- **Wait for owner approval?** Only if the team wants to replace Drizzle with
+  Prisma; do not reopen this merely to start the UI.
 
 ## D12. Deployment target
 

@@ -1,6 +1,6 @@
 # Participation Rules
 
-> **Status:** Planning / pre-implementation.
+> **Status:** Product rule specification with an implemented foundation.
 > This document **owns** the participation model, the validity/invalidation rules, participation derivation, and the CSV export specifications. States are defined in [domain-model.md](domain-model.md#3-state-models).
 > Label key as in [product-requirements.md](product-requirements.md).
 
