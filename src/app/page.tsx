@@ -12,6 +12,8 @@ import { generateMatchCandidates } from "@/modules/identity/matching";
 import { getOpenCycleForStudent } from "@/modules/forms/submission";
 import { getReviewQueue } from "@/modules/review";
 import { requireUser, toShellUser } from "@/lib/session";
+import { currentUserId } from "@/auth";
+import { Landing } from "@/components/marketing/landing";
 
 /**
  * Role-aware home. Shows the next useful action per section using REAL data
@@ -53,7 +55,11 @@ async function staffSectionAttention(userId: string, sectionId: string) {
   }
 }
 
-export default async function DashboardPage() {
+export default async function HomePage() {
+  // Signed out: the public landing page rather than a bounce to /signin, so
+  // someone arriving at the root can find out what this is first.
+  if (!(await currentUserId())) return <Landing />;
+
   const user = await requireUser();
 
   // First visit by a non-staff account with no match rows yet: run the
