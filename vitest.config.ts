@@ -1,25 +1,33 @@
 import { defineConfig } from "vitest/config";
-import path from "path";
+import path from "node:path";
 
 export default defineConfig({
-  test: {
-    environment: "node",
-    globals: true,
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "json", "html"],
-      exclude: [
-        "node_modules/",
-        "dist/",
-        ".next/",
-        "**/*.config.*",
-        "**/index.ts",
-      ],
-    },
-  },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(__dirname, "src"),
     },
+  },
+  test: {
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          include: ["tests/unit/**/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "integration",
+          include: ["tests/integration/**/*.test.ts"],
+          setupFiles: ["tests/integration/setup-env.ts"],
+          // Integration tests share one Postgres database; run serially.
+          maxConcurrency: 1,
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
+        },
+      },
+    ],
   },
 });

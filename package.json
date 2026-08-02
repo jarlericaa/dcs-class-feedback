@@ -1,37 +1,42 @@
 {
-  "name": "class-feedback",
+  "name": "dcs-class-feedback",
   "version": "0.1.0",
   "private": true,
-  "description": "Class feedback and Q&A platform",
-  "packageManager": "pnpm@9.0.0",
-  "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
-  },
+  "description": "Recurring weekly class feedback platform (MVP foundation)",
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
-    "test": "turbo run test",
-    "test:watch": "turbo run test:watch",
-    "test:e2e": "turbo run test:e2e",
-    "lint": "turbo run lint",
-    "format": "turbo run format",
-    "format:check": "turbo run format:check",
-    "type-check": "turbo run type-check",
-    "clean": "turbo run clean && rm -rf node_modules .turbo",
-    "db:migrate": "pnpm -F database prisma migrate deploy",
-    "db:migrate:dev": "pnpm -F database prisma migrate dev",
-    "db:push": "pnpm -F database prisma db push",
-    "db:studio": "pnpm -F database prisma studio"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "scheduler:dev": "tsx scripts/scheduler.ts",
+    "test": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:watch": "vitest --project unit"
+  },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "drizzle-orm": "^0.44.2",
+    "next": "^15.3.4",
+    "next-auth": "5.0.0-beta.29",
+    "pg": "^8.16.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.67"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.5.0",
-    "@typescript-eslint/parser": "^8.5.0",
-    "eslint": "^8.56.0",
-    "eslint-config-next": "^15.0.3",
-    "eslint-config-prettier": "^9.1.0",
-    "prettier": "^3.1.0",
-    "turbo": "^2.0.11",
-    "typescript": "^5.4.5"
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.4",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "drizzle-kit": "^0.31.1",
+    "eslint": "^9.29.0",
+    "eslint-config-next": "^15.3.4",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
   }
 }

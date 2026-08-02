@@ -1,128 +1,111 @@
 # Class Feedback Platform
 
-A comprehensive feedback and Q&A platform for classes, built with modern web technologies.
+A centralized web platform for recurring weekly class feedback — replaces a
+Google Forms + manually-compiled answer-document workflow. Students submit one
+weekly form per class section; teachers review, respond privately, publish
+anonymous Q&A to the class, track participation, and manage a course-level
+question backlog.
 
-## Tech Stack
+Product/architecture documentation lives in [docs/](docs/) and
+[AGENTS.md](AGENTS.md). This README covers running the implementation.
 
-- **Frontend**: Next.js 15, React 18, Tailwind CSS, shadcn/ui
-- **Backend**: NestJS with Express
-- **Database**: PostgreSQL with Prisma ORM
-- **Background Jobs**: pg-boss
-- **Email**: Resend
-- **Authentication**: Supabase Google OAuth
-- **Validation**: Zod
-- **Testing**: Vitest, Playwright, Testcontainers
-- **Package Manager**: pnpm
-- **Monorepo**: Turborepo
+## Stack
 
-## Project Structure
+TypeScript · Next.js (App Router) · PostgreSQL · Drizzle ORM · Auth.js
+(Google) · Zod · Docker Compose · Vitest. Modular monolith — modules under
+[src/modules/](src/modules/) match the documented domains (identity &
+matching, catalog, forms, review, publishing, backlog & import, participation
+& export, audit, scheduling).
 
+## Local setup
+
+Prerequisites: Node 20+, Docker.
+
+```bash
+npm install
+cp .env.example .env          # then edit — see below
+docker compose up -d          # Postgres on :5432 (dev) and :5433 (tests)
+npm run db:migrate            # apply migrations to the dev DB
+TEST_DATABASE_URL= npm run db:migrate  # optional: see "Tests" for the test DB
+npm run db:seed               # demo course/section/roster/schedule + users
+npm run dev                   # app on http://localhost:3000
+npm run scheduler:dev         # (separate terminal) reconciliation poller
 ```
-├── apps/
-│   ├── api/           # NestJS REST API server
-│   ├── web/           # Next.js frontend application
-│   └── worker/        # Background job worker
-├── packages/
-│   ├── database/      # Prisma ORM and migrations
-│   ├── contracts/     # Shared types and validation
-│   ├── permissions/   # Role-based authorization
-│   ├── email/         # Email service and templates
-│   ├── ui/            # Shared React components
-│   └── config/        # Shared configuration
-├── docs/              # Project documentation
-└── docker-compose.yml # Local development infrastructure
+
+Migrate the test database once before running integration tests:
+
+```bash
+DATABASE_URL=postgres://feedback:feedback@localhost:5433/feedback_test npm run db:migrate
 ```
 
-## Getting Started
+### Environment variables (`.env`)
 
-### Prerequisites
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres connection string |
+| `TEST_DATABASE_URL` | Separate DB used only by integration tests |
+| `AUTH_SECRET` | Auth.js session secret (`openssl rand -base64 32`) |
+| `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | Google OAuth client (redirect URI `http://localhost:3000/api/auth/callback/google`). If unset, Google sign-in is unavailable but the app still runs. |
+| `ALLOWED_EMAIL_DOMAINS` | Comma-separated university domains allowed to sign in |
+| `INSTITUTION_TIMEZONE` | Single institution timezone (default `Asia/Manila`) |
+| `SCHEDULER_SECRET` | Shared secret for `POST /api/internal/scheduler/tick` |
+| `DEV_AUTH_ENABLED` | **Local development only.** See warning below. |
 
-- Node.js >= 20.0.0
-- pnpm >= 9.0.0
-- Docker and Docker Compose
+### Dev login (local development ONLY)
 
-### Setup
+With `DEV_AUTH_ENABLED=true` and a non-production `NODE_ENV`, the sign-in page
+shows a "dev login" that signs in an existing user by email (no password) so
+the app can be exercised without Google OAuth credentials. It is **disabled by
+default**, **never creates users**, and is **impossible to enable in
+production** — the provider is not registered when `NODE_ENV=production`
+regardless of environment variables. Do not deploy with it in mind.
 
-1. Clone the repository
-2. Copy `.env.example` to `.env.local` and fill in required values:
-   ```bash
-   cp .env.example .env.local
-   ```
+Seeded users: `teacher@up.edu.ph` (teacher), `sa@up.edu.ph` (SA with limited flags),
+`admin@up.edu.ph` (platform admin), `student@up.edu.ph` (unverified student named
+Juan Dela Cruz — confirm on the teacher's Matches page).
 
-3. Install dependencies:
-   ```bash
-   pnpm install
-   ```
+## Scripts
 
-4. Start PostgreSQL:
-   ```bash
-   docker-compose up -d
-   ```
+| Command | What it does |
+|---|---|
+| `npm run dev` / `build` / `start` | Next.js |
+| `npm run lint` / `typecheck` | ESLint / `tsc --noEmit` |
+| `npm run db:generate` | Generate SQL migration from Drizzle schema |
+| `npm run db:migrate` | Apply migrations |
+| `npm run db:seed` | Idempotent demo seed |
+| `npm run scheduler:dev` | Reconciliation poller loop (60 s) |
+| `npm test` | Unit tests (pure logic, no DB) |
+| `npm run test:integration` | Integration tests (needs the `db-test` container) |
 
-5. Set up the database:
-   ```bash
-   pnpm db:migrate:dev
-   ```
+## Scheduling model
 
-6. Start development servers:
-   ```bash
-   pnpm dev
-   ```
+DB-backed, poller-only for this phase: `reconcile()`
+([src/modules/scheduling/index.ts](src/modules/scheduling/index.ts)) generates
+cycles from recurrence schedules (unique `(schedule, cycle_index)` constraint
+→ idempotent), opens/closes cycles past their times (state-guarded
+transitions; late actions audit-flagged), and publishes due scheduled public
+answers (failures flag the answer, staff retry). Run it via
+`npm run scheduler:dev` or an external cron hitting
+`POST /api/internal/scheduler/tick` with header `x-scheduler-secret`.
 
-   This will start:
-   - Web app: http://localhost:3000
-   - API: http://localhost:3001 (with Swagger docs at /api/docs)
-   - Worker: Background job processor
+## Provisional decisions in this implementation
 
-## Development Scripts
+Marked **provisional** pending owner sign-off (see
+[docs/open-decisions.md](docs/open-decisions.md)):
 
-- `pnpm build` - Build all packages
-- `pnpm dev` - Start all development servers
-- `pnpm test` - Run all tests
-- `pnpm test:watch` - Run tests in watch mode
-- `pnpm test:e2e` - Run E2E tests
-- `pnpm lint` - Lint all code
-- `pnpm format` - Format all code
-- `pnpm type-check` - Type-check all code
-- `pnpm clean` - Clean all build artifacts
+- **D2** teacher-confirm-all account matching (docs' recommended default; no auto-confirm path exists).
+- **D3** platform admin grants the Teacher role (`users.isTeacher`); teachers self-serve courses/sections.
+- **D4** structural edit-lock after first submission (helper `cycleHasSubmissions`; full edit UI not built yet).
+- **D5** hard deadline, no grace; staff reopen is audited.
+- **D7** timezone `Asia/Manila` via `INSTITUTION_TIMEZONE` (owner-confirmed value).
+- **D8** merge within one section, across cycles.
+- **D10** roster re-import deactivates (never deletes) absent students.
+- **Scheduler**: reconciliation poller instead of pg-boss for this pass.
 
-## Database
+## Remaining work (not in this foundation pass)
 
-- `pnpm db:migrate` - Run pending migrations in production
-- `pnpm db:migrate:dev` - Create and run migrations in development
-- `pnpm db:push` - Push schema changes to database
-- `pnpm db:studio` - Open Prisma Studio
-
-## Features (MVP)
-
-- Google authentication with school domains
-- Course management with CRS roster import
-- Reusable feedback templates with scheduled releases
-- Student submissions with drafting and editing
-- Submission validity tracking and bonus credit calculation
-- Student question triage and backlog management
-- Private and public Q&A with anonymization
-- Email notifications for key events
-- Instructor exports for responses and bonus records
-- Comprehensive audit logging
-
-## Documentation
-
-- [PROJECT_SPEC.md](docs/project-specs.md) - Product specification and requirements
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture and design decisions
-- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - Developer guide and conventions
-
-## Code Quality
-
-- TypeScript with strict mode
-- ESLint for linting
-- Prettier for formatting
-- Vitest for unit/integration tests
-- Playwright for E2E tests
-- Testcontainers for real database testing
-
-All code must pass linting, formatting, and type checking before commit.
-
-## License
-
-Proprietary
+pg-boss job queue (docs' recommended queue; the poller meets the same
+idempotency requirements meanwhile) · richer template/cycle editing UI +
+enforced edit-lock flow · backlog management UI (services exist) ·
+Playwright e2e · notifications, AI features, unpublish, course-material
+management (post-MVP by scope).
