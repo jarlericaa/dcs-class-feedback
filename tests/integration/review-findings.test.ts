@@ -36,6 +36,13 @@ import {
   schedulePublication,
 } from "@/modules/publishing";
 import { detailedResponseCsv } from "@/modules/participation";
+import {
+  importLegacyEntries,
+  listBacklogForCourse,
+  setBacklogState,
+} from "@/modules/backlog";
+import { listPublicationQueue } from "@/modules/publishing";
+import { zonedTimeToUtc } from "@/modules/forms/timezone";
 
 /**
  * Regression tests for the findings raised in the code review of this branch.
@@ -420,5 +427,127 @@ describe("CSV export neutralizes spreadsheet formulas", () => {
     const csv = await detailedResponseCsv(teacher.id, section.id);
     expect(csv).not.toMatch(/(^|,)"?=HYPERLINK/m);
     expect(csv).toContain("'=HYPERLINK");
+  });
+});
+
+/* ------------------------------------------------------------------------ */
+/* Second review round                                                       */
+/* ------------------------------------------------------------------------ */
+
+describe("section-scoped grants make advertised permissions usable", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  it("lets a section TA with manage_backlog_imports use the course backlog", async () => {
+    const { course, section } = await makeSectionWithSubmission();
+    const ta = await makeUser();
+    await addSectionStaff(section.id, ta.id, "ta", {
+      manageBacklogImports: true,
+    });
+
+    await expect(listBacklogForCourse(ta.id, course.id)).resolves.toBeTruthy();
+    const imported = await importLegacyEntries(
+      ta.id,
+      course.id,
+      [{ text: "Will the finals be cumulative?" }],
+      "previous semester",
+    );
+    expect(imported.created).toHaveLength(1);
+    await expect(
+      setBacklogState(ta.id, imported.created[0]!.id, "needs_review"),
+    ).resolves.not.toThrow();
+  });
+
+  it("still refuses a section TA without the flag", async () => {
+    const { course, section } = await makeSectionWithSubmission();
+    const ta = await makeUser();
+    await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
+    await expect(listBacklogForCourse(ta.id, course.id)).rejects.toBeInstanceOf(
+      AuthzError,
+    );
+  });
+
+  it("still refuses staff of an unrelated course", async () => {
+    const a = await makeSectionWithSubmission();
+    const b = await makeSectionWithSubmission();
+    await expect(
+      listBacklogForCourse(b.teacher.id, a.course.id),
+    ).rejects.toBeInstanceOf(AuthzError);
+  });
+
+  it("lets a publish-only TA read the publication queue", async () => {
+    const { section } = await makeSectionWithSubmission();
+    const ta = await makeUser();
+    await addSectionStaff(section.id, ta.id, "ta", {
+      publishPublicAnswers: true,
+    });
+    await expect(listPublicationQueue(ta.id, section.id)).resolves.toBeTruthy();
+  });
+
+  it("still refuses a TA with no publication capability", async () => {
+    const { section } = await makeSectionWithSubmission();
+    const ta = await makeUser();
+    await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
+    await expect(
+      listPublicationQueue(ta.id, section.id),
+    ).rejects.toBeInstanceOf(AuthzError);
+  });
+});
+
+describe("detailed CSV reports publication accurately", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  it("does not report a draft or a scheduled answer as published", async () => {
+    const { teacher, section, item } = await makeSectionWithSubmission();
+    const answer = await draftPublicAnswer(teacher.id, {
+      sectionId: section.id,
+      itemIds: [item.id],
+      publicQuestionText: "Will the slides be posted?",
+      answerBody: "Yes.",
+    });
+
+    let csv = await detailedResponseCsv(teacher.id, section.id);
+    let itemRow = csv.split("\r\n").find((r) => r.includes("Tuesday lab"))!;
+    expect(itemRow.endsWith(",no")).toBe(true);
+
+    await schedulePublication(
+      teacher.id,
+      answer.id,
+      new Date(Date.now() + 86_400_000),
+      { anonymityAcknowledged: true },
+    );
+    csv = await detailedResponseCsv(teacher.id, section.id);
+    itemRow = csv.split("\r\n").find((r) => r.includes("Tuesday lab"))!;
+    expect(itemRow.endsWith(",no")).toBe(true);
+
+    await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
+    csv = await detailedResponseCsv(teacher.id, section.id);
+    itemRow = csv.split("\r\n").find((r) => r.includes("Tuesday lab"))!;
+    expect(itemRow.endsWith(",yes")).toBe(true);
+  });
+});
+
+describe("scheduling honours the section timezone", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  it("converts a datetime-local wall clock in the section zone, not the server zone", () => {
+    // 14:30 in Asia/Manila (UTC+8) is 06:30 UTC, whatever the server zone is.
+    const manila = zonedTimeToUtc(2026, 8, 5, 14, 30, 0, "Asia/Manila");
+    expect(manila.toISOString()).toBe("2026-08-05T06:30:00.000Z");
+
+    // The same wall clock in another zone is a different instant, which is
+    // the whole point: `new Date("2026-08-05T14:30")` resolves against
+    // whatever zone the server happens to run in. Asserting against the
+    // server's own parse would pass or fail depending on the machine — this
+    // suite's host is UTC+8, which is exactly why the bug was invisible here.
+    const utcZone = zonedTimeToUtc(2026, 8, 5, 14, 30, 0, "UTC");
+    expect(utcZone.toISOString()).toBe("2026-08-05T14:30:00.000Z");
+    expect(manila.getTime()).not.toBe(utcZone.getTime());
+    expect(utcZone.getTime() - manila.getTime()).toBe(8 * 3600 * 1000);
   });
 });

@@ -10,7 +10,10 @@ import {
   studentSubmissionItems,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
-import { requireCourseStaff, requireSectionStaff } from "@/modules/authz";
+import {
+  requireCourseStaffOrSectionGrant,
+  requireSectionStaff,
+} from "@/modules/authz";
 import { getItemWithSection } from "@/modules/review";
 
 /**
@@ -24,16 +27,23 @@ import { getItemWithSection } from "@/modules/review";
  */
 
 /**
- * Course backlog for the triage board. Course-staff only: the backlog carries
+ * Course backlog for the triage board. Staff-only: the backlog carries
  * question text that has not been vetted for publication, and provenance that
- * students must never see.
+ * students must never see. Course staff qualify, and so does a section
+ * assistant holding `manage_backlog_imports` on any section of the course —
+ * that flag would otherwise be unusable.
  */
 export async function listBacklogForCourse(
   actorUserId: string,
   courseId: string,
   opts: { state?: string; search?: string } = {},
 ) {
-  await requireCourseStaff(db, actorUserId, courseId);
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "manageBacklogImports",
+  );
   const rows = await db.query.backlogQuestions.findMany({
     where: eq(backlogQuestions.courseId, courseId),
     orderBy: desc(backlogQuestions.updatedAt),
@@ -86,7 +96,6 @@ export async function copyOrMoveToBacklog(
 ) {
   const { item, sectionId } = await getItemWithSection(itemId);
   await requireSectionStaff(db, actorUserId, sectionId, "manageBacklogImports");
-  await requireCourseStaff(db, actorUserId, courseId);
   const section = await db.query.classSections.findFirst({
     where: eq(classSections.id, sectionId),
   });
@@ -151,7 +160,12 @@ export async function importLegacyEntries(
   entries: LegacyEntry[],
   sourceDescription: string,
 ) {
-  await requireCourseStaff(db, actorUserId, courseId);
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "manageBacklogImports",
+  );
 
   const errors: { index: number; message: string }[] = [];
   const valid: LegacyEntry[] = [];
@@ -238,7 +252,12 @@ export async function setBacklogState(
     where: eq(backlogQuestions.id, backlogQuestionId),
   });
   if (!question) throw new Error("Backlog question not found");
-  await requireCourseStaff(db, actorUserId, question.courseId);
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    question.courseId,
+    "manageBacklogImports",
+  );
   if (!BACKLOG_TRANSITIONS[question.state]?.includes(state)) {
     throw new Error(`Invalid backlog transition ${question.state} → ${state}`);
   }
@@ -271,7 +290,6 @@ export async function makeVisibleToSection(
     where: eq(backlogQuestions.id, backlogQuestionId),
   });
   if (!question) throw new Error("Backlog question not found");
-  await requireCourseStaff(db, actorUserId, question.courseId);
   await requireSectionStaff(db, actorUserId, sectionId, "manageBacklogImports");
   const section = await db.query.classSections.findFirst({
     where: eq(classSections.id, sectionId),
@@ -319,7 +337,6 @@ export async function draftFromBacklog(
     where: eq(backlogQuestions.id, backlogQuestionId),
   });
   if (!question) throw new Error("Backlog question not found");
-  await requireCourseStaff(db, actorUserId, question.courseId);
   await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
   if (!["answerable", "drafting"].includes(question.state)) {
     throw new Error(

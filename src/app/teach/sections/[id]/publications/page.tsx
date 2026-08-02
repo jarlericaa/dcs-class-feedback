@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { loadStaffSection } from "@/lib/staff-section";
+import { loadStaffSectionAny } from "@/lib/staff-section";
 import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
@@ -21,7 +21,8 @@ import {
   schedulePublication,
   updateAnswerBody,
 } from "@/modules/publishing";
-import { AuthzError } from "@/modules/authz";
+import { AuthzError, PUBLICATION_PERMISSIONS } from "@/modules/authz";
+import { zonedTimeToUtc } from "@/modules/forms/timezone";
 import { toShellUser } from "@/lib/session";
 
 /**
@@ -40,7 +41,9 @@ export default async function PublicationsPage({
 }) {
   const { id: sectionId } = await params;
   const { ok, error, warn } = await searchParams;
-  const ctx = await loadStaffSection(sectionId, "draftPublicAnswers");
+  // Reading the queue needs any publication capability, not specifically
+  // draftPublicAnswers — listPublicationQueue enforces the same rule.
+  const ctx = await loadStaffSectionAny(sectionId, PUBLICATION_PERMISSIONS);
   if (!ctx.ok) {
     return (
       <AppShell
@@ -55,6 +58,9 @@ export default async function PublicationsPage({
   }
   const { user, access, section, course, can } = ctx;
   const queue = await listPublicationQueue(user.id, sectionId);
+  // A server action may only close over serializable values, so pull the
+  // timezone out as a string rather than capturing `section`.
+  const timezone = section.timezone;
 
   async function saveDraft(formData: FormData) {
     "use server";
@@ -105,9 +111,19 @@ export default async function PublicationsPage({
     try {
       // Scheduling is the last human moment before the background executor
       // publishes, so the anonymity check is enforced here too.
-      await schedulePublication(uid, answerId, new Date(when), {
-        anonymityAcknowledged: formData.get("acknowledged") === "yes",
-      });
+      //
+      // `when` is a datetime-local value with no offset ("2026-08-05T14:30").
+      // new Date() would read it in the SERVER's timezone, so a UTC deployment
+      // would publish hours early or late. Interpret it in the section's
+      // timezone, which is what the staff member saw next to the field.
+      await schedulePublication(
+        uid,
+        answerId,
+        parseLocalToUtc(when, timezone),
+        {
+          anonymityAcknowledged: formData.get("acknowledged") === "yes",
+        },
+      );
     } catch (err) {
       if (err instanceof AnonymityCheckRequired) {
         redirect(backTo(sectionId, err.warnings.join(" | "), "warn"));
@@ -394,4 +410,25 @@ function backTo(
   kind: "ok" | "error" | "warn" = "ok",
 ): string {
   return `/teach/sections/${sectionId}/publications?${kind}=${encodeURIComponent(message)}`;
+}
+
+/**
+ * Interpret a `datetime-local` value (no offset) as wall-clock time in the
+ * section's timezone and return the corresponding UTC instant.
+ */
+function parseLocalToUtc(value: string, timeZone: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
+    value,
+  );
+  if (!match) return new Date(value);
+  const [, y, mo, d, h, mi, sec] = match;
+  return zonedTimeToUtc(
+    Number(y),
+    Number(mo),
+    Number(d),
+    Number(h),
+    Number(mi),
+    Number(sec ?? "0"),
+    timeZone,
+  );
 }

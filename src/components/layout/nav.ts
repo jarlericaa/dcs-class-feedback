@@ -53,7 +53,14 @@ export function staffSectionNav(
       icon: "⌂",
     });
   }
-  if (perms.draftPublicAnswers) {
+  // Any publication capability can READ the queue; each action inside is
+  // gated by its own flag, so a publish-only assistant still sees their work.
+  if (
+    perms.draftPublicAnswers ||
+    perms.rewordPublicQuestions ||
+    perms.publishPublicAnswers ||
+    perms.schedulePublication
+  ) {
     items.push({
       href: `/teach/sections/${id}/publications`,
       label: "Publication queue",

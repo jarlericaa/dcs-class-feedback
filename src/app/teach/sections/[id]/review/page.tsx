@@ -24,6 +24,7 @@ import {
 } from "@/modules/review";
 import {
   AnonymityCheckRequired,
+  anonymityWarnings,
   draftPublicAnswer,
   publishNow,
 } from "@/modules/publishing";
@@ -167,6 +168,24 @@ export default async function ReviewPage({
       fail("An answer is required before publishing.");
     }
 
+    const acknowledged = formData.get("acknowledged") === "yes";
+
+    // Check anonymity BEFORE writing anything. publishNow enforces the same
+    // rule against the persisted row and stays the real backstop, but reaching
+    // it with an unacknowledged draft would leave that draft (and its source
+    // link) behind on every rejected attempt, so a staff member correcting
+    // their wording would pile up duplicates.
+    if (intent === "publish" && !acknowledged) {
+      const warnings = anonymityWarnings(publicQuestionText, 1);
+      if (warnings.length > 0) {
+        redirect(
+          `/teach/sections/${sectionId}/review?selected=${selected}&warn=${encodeURIComponent(
+            warnings.join(" | "),
+          )}`,
+        );
+      }
+    }
+
     const answer = await draftPublicAnswer(uid, {
       sectionId,
       itemIds: [itemId],
@@ -174,18 +193,16 @@ export default async function ReviewPage({
       answerBody: answerBody || undefined,
     });
     if (intent === "publish") {
-      // The anonymity check lives in publishNow, which reads the PERSISTED
-      // question text and the real source-link count. The checkbox only
-      // carries the acknowledgment; it cannot describe what is being
-      // published.
       try {
         await publishNow(uid, answer.id, {
-          anonymityAcknowledged: formData.get("acknowledged") === "yes",
+          anonymityAcknowledged: acknowledged,
         });
       } catch (err) {
         if (err instanceof AnonymityCheckRequired) {
+          // The draft is already saved, so send the user to it rather than
+          // leaving an invisible orphan behind.
           redirect(
-            `/teach/sections/${sectionId}/review?selected=${selected}&warn=${encodeURIComponent(
+            `/teach/sections/${sectionId}/publications?warn=${encodeURIComponent(
               err.warnings.join(" | "),
             )}`,
           );

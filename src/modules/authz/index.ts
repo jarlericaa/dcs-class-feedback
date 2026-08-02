@@ -279,6 +279,83 @@ export async function requireSectionQaAccess(
   return { role: "student" };
 }
 
+/**
+ * Course-level access for a capability that is granted per SECTION.
+ *
+ * The backlog belongs to the course, but `manage_backlog_imports` is a
+ * section flag. Requiring course staff alone would make the advertised
+ * permission unusable for a section TA. This admits course staff, or anyone
+ * holding the flag on at least one section of that course — which is exactly
+ * the scope the flag describes.
+ */
+export async function requireCourseStaffOrSectionGrant(
+  dbx: DbOrTx,
+  userId: string,
+  courseId: string,
+  permission: SectionPermission,
+) {
+  try {
+    return await requireCourseStaff(dbx, userId, courseId);
+  } catch {
+    // fall through to the per-section grant
+  }
+  await requireActiveUser(dbx, userId);
+  const sections = await dbx.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+  });
+  for (const section of sections) {
+    const membership = await dbx.query.sectionStaff.findFirst({
+      where: and(
+        eq(sectionStaff.sectionId, section.id),
+        eq(sectionStaff.userId, userId),
+      ),
+    });
+    if (!membership) continue;
+    if (
+      membership.role === "teacher" ||
+      membership.role === "co_teacher" ||
+      membership[permission]
+    ) {
+      return (
+        (await dbx.query.courses.findFirst({ where: eq(courses.id, courseId) }))!
+      );
+    }
+  }
+  throw new AuthzError("No access to this course");
+}
+
+/**
+ * Any capability that lets a staff member work with the publication queue.
+ * Reading the queue must not require `draft_public_answers` specifically, or a
+ * publish-only or schedule-only assistant cannot see what they are meant to
+ * act on. Individual actions remain gated by their own flag.
+ */
+export const PUBLICATION_PERMISSIONS = [
+  "draftPublicAnswers",
+  "rewordPublicQuestions",
+  "publishPublicAnswers",
+  "schedulePublication",
+] as const satisfies readonly SectionPermission[];
+
+export async function requireAnySectionPermission(
+  dbx: DbOrTx,
+  userId: string,
+  sectionId: string,
+  permissions: readonly SectionPermission[],
+) {
+  let lastError: unknown;
+  for (const permission of permissions) {
+    try {
+      return await requireSectionStaff(dbx, userId, sectionId, permission);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof AuthzError
+    ? lastError
+    : new AuthzError("No access to this section");
+}
+
 export type EffectivePermissions = Record<SectionPermission, boolean>;
 
 function allPermissions(value: boolean): EffectivePermissions {

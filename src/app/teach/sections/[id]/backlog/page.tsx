@@ -148,6 +148,10 @@ export default async function BacklogPage({
         backTo(sectionId, "Add at least one question to import.", "error"),
       );
     }
+    // redirect() signals by throwing, so it must sit OUTSIDE the try: inside,
+    // the success redirect is caught by the catch below and reported as a
+    // failure even though the import committed.
+    let summary: string;
     try {
       const result = await importLegacyEntries(
         uid,
@@ -155,18 +159,14 @@ export default async function BacklogPage({
         lines.map((text) => ({ text })),
         String(formData.get("source") || "pasted legacy questions"),
       );
-      revalidatePath(`/teach/sections/${sectionId}/backlog`);
-      redirect(
-        backTo(
-          sectionId,
-          `${result.created.length} question(s) imported anonymously${
-            result.errors.length > 0 ? `, ${result.errors.length} skipped` : ""
-          }.`,
-        ),
-      );
+      summary = `${result.created.length} question(s) imported anonymously${
+        result.errors.length > 0 ? `, ${result.errors.length} skipped` : ""
+      }.`;
     } catch (err) {
       redirect(backTo(sectionId, describe(err), "error"));
     }
+    revalidatePath(`/teach/sections/${sectionId}/backlog`);
+    redirect(backTo(sectionId, summary));
   }
 
   return (

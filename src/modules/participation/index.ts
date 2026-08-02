@@ -5,6 +5,7 @@ import {
   formQuestions,
   formResponses,
   privateResponses,
+  publicAnswers,
   questionAnswers,
   sourceLinks,
   studentRecords,
@@ -327,6 +328,18 @@ export async function detailedResponseCsv(
       const links = await db.query.sourceLinks.findMany({
         where: eq(sourceLinks.itemId, item.id),
       });
+      // A source link is created as soon as a DRAFT exists, so its presence
+      // alone does not mean the class ever saw the answer. Report "yes" only
+      // when a linked answer actually reached the published state.
+      const linkedAnswerIds = links.map((l) => l.publicAnswerId);
+      const publishedLinks = linkedAnswerIds.length
+        ? await db.query.publicAnswers.findMany({
+            where: and(
+              inArray(publicAnswers.id, linkedAnswerIds),
+              eq(publicAnswers.state, "published"),
+            ),
+          })
+        : [];
       rows.push([
         ...base,
         null,
@@ -339,7 +352,7 @@ export async function detailedResponseCsv(
         response.validity,
         response.invalidationReason,
         privateCount.length > 0 ? "yes" : "no",
-        links.length > 0 ? "yes" : "no",
+        publishedLinks.length > 0 ? "yes" : "no",
       ]);
     }
   }

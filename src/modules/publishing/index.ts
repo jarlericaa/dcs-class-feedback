@@ -12,6 +12,8 @@ import {
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import {
+  PUBLICATION_PERMISSIONS,
+  requireAnySectionPermission,
   requireEnrolledStudent,
   requireSectionQaAccess,
   requireSectionStaff,
@@ -405,7 +407,12 @@ export async function listPublicationQueue(
   actorUserId: string,
   sectionId: string,
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
+  await requireAnySectionPermission(
+    db,
+    actorUserId,
+    sectionId,
+    PUBLICATION_PERMISSIONS,
+  );
   const rows = await db.query.publicAnswers.findMany({
     where: eq(publicAnswers.sectionId, sectionId),
     orderBy: desc(publicAnswers.updatedAt),
@@ -455,7 +462,12 @@ export async function getPublicAnswerForEditing(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "draftPublicAnswers");
+  await requireAnySectionPermission(
+    db,
+    actorUserId,
+    answer.sectionId,
+    PUBLICATION_PERMISSIONS,
+  );
   const links = await db.query.sourceLinks.findMany({
     where: eq(sourceLinks.publicAnswerId, publicAnswerId),
   });
