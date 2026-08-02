@@ -1,6 +1,17 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
+import { requireUser } from "@/lib/session";
+import { formatDeadline, timeRemaining } from "@/lib/datetime";
+import { AppShell } from "@/components/layout/app-shell";
+import { studentSectionNav } from "@/components/layout/nav";
+import { AccessDenied, Alert, Badge, EmptyState } from "@/components/ui";
+import {
+  WeeklyForm,
+  type FormQuestionView,
+  type SubmitState,
+} from "@/components/student/weekly-form";
 import {
   getOpenCycleForStudent,
   submitResponse,
@@ -8,57 +19,161 @@ import {
 } from "@/modules/forms/submission";
 import type { QuestionOption } from "@/modules/forms/questions";
 import { AuthzError } from "@/modules/authz";
+import { getSectionWithCourse } from "@/modules/catalog";
 
-/** Student weekly form for the currently-open cycle of this section. */
+/**
+ * Student weekly form for the currently-open cycle of this section.
+ *
+ * Everything authoritative happens in modules/forms/submission: authorization,
+ * open-window and deadline enforcement, validation, the one-per-cycle rule and
+ * the audit write. This page only renders and relays.
+ */
 export default async function SectionFormPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ submitted?: string }>;
 }) {
-  const userId = await currentUserId();
-  if (!userId) redirect("/signin");
+  const user = await requireUser();
   const { id: sectionId } = await params;
-  const { error } = await searchParams;
+  const { submitted } = await searchParams;
 
-  let current;
+  let current: Awaited<ReturnType<typeof getOpenCycleForStudent>>;
   try {
-    current = await getOpenCycleForStudent(userId, sectionId);
+    current = await getOpenCycleForStudent(user.id, sectionId);
   } catch (err) {
     if (err instanceof AuthzError) {
-      return <main><p>You do not have access to this section.</p></main>;
+      return (
+        <AppShell
+          user={user}
+          workspace="student"
+          navGroups={[]}
+          title="Class section"
+        >
+          <AccessDenied what="this class section" />
+        </AppShell>
+      );
     }
     throw err;
   }
 
+  const { section, course } = await getSectionWithCourse(sectionId);
+  const shell = {
+    user,
+    workspace: "student" as const,
+    navGroups: studentSectionNav(sectionId, `/sections/${sectionId}`),
+    contextLabel: section.title,
+  };
+
   if (!current) {
     return (
-      <main>
-        <h1>Weekly form</h1>
-        <p>No form is open right now.</p>
-      </main>
+      <AppShell
+        {...shell}
+        eyebrow={`${course.code} · ${section.term}`}
+        title={section.title}
+        description="There is no feedback form open for this class right now."
+      >
+        <EmptyState title="No form is open at the moment">
+          Your teacher opens a new weekly form on a schedule. When one opens it
+          will appear here, and you can always read past answers in the class
+          Q&amp;A archive.
+        </EmptyState>
+        <div className="row-gap" style={{ marginTop: 16, justifyContent: "center" }}>
+          <Link className="button button--secondary" href={`/sections/${sectionId}/qa`}>
+            Class Q&amp;A archive
+          </Link>
+          <Link
+            className="button button--quiet"
+            href={`/sections/${sectionId}/history`}
+          >
+            My submissions
+          </Link>
+        </div>
+      </AppShell>
     );
   }
-  if (current.alreadySubmitted) {
+
+  const { cycle, questions, alreadySubmitted } = current;
+
+  if (alreadySubmitted) {
     return (
-      <main>
-        <h1>Weekly form</h1>
-        <p>
-          Submitted. You have already completed this week&apos;s form —
-          submissions cannot be edited.
-        </p>
-      </main>
+      <AppShell
+        {...shell}
+        eyebrow={`${course.code} · Week ${cycle.cycleIndex}`}
+        title="You have completed this week's form"
+        description="Thanks — that is everything we need from you this week."
+      >
+        <div className="stack-gap">
+          {submitted === "1" && (
+            <Alert variant="success" title="Submitted">
+              Your response was recorded. Submissions cannot be edited, so
+              nothing here can be changed or withdrawn.
+            </Alert>
+          )}
+          <section className="card card--padded">
+            <div className="row-gap" style={{ justifyContent: "space-between" }}>
+              <div>
+                <p className="section-kicker">Week {cycle.cycleIndex}</p>
+                <h2 style={{ margin: "4px 0 6px", fontSize: 20 }}>
+                  Submitted · edits are closed
+                </h2>
+                <p className="muted" style={{ margin: 0 }}>
+                  Closed {formatDeadline(cycle.deadlineAt, section.timezone)}.
+                  If a staff member replies to your question, it appears in your
+                  submissions.
+                </p>
+              </div>
+              <Badge tone="green">Submitted</Badge>
+            </div>
+            <div className="row-gap" style={{ marginTop: 18 }}>
+              <Link
+                className="button button--primary"
+                href={`/sections/${sectionId}/history`}
+              >
+                See my submissions
+              </Link>
+              <Link
+                className="button button--secondary"
+                href={`/sections/${sectionId}/qa`}
+              >
+                Class Q&amp;A archive
+              </Link>
+            </div>
+          </section>
+        </div>
+      </AppShell>
     );
   }
 
-  const { cycle, questions } = current;
+  const questionViews: FormQuestionView[] = questions.map((q) => ({
+    id: q.id,
+    prompt: q.prompt,
+    description: q.description,
+    type: q.type,
+    required: q.required,
+    options: ((q.options ?? []) as QuestionOption[]).map((o) => ({
+      stableId: o.stableId,
+      label: o.label,
+    })),
+    scale: q.scale
+      ? {
+          min: (q.scale as { min: number }).min,
+          max: (q.scale as { max: number }).max,
+          step: (q.scale as { step?: number }).step ?? 1,
+        }
+      : null,
+  }));
 
-  async function submit(formData: FormData) {
+  async function submit(
+    _prev: SubmitState,
+    formData: FormData,
+  ): Promise<SubmitState> {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    const answers = questions.map((q) => {
+
+    const answers = questionViews.map((q) => {
       const raw = formData.getAll(`q_${q.id}`).map(String).filter(Boolean);
       switch (q.type) {
         case "short_answer":
@@ -82,129 +197,68 @@ export default async function SectionFormPage({
           return { questionId: q.id, timeValue: raw[0] || undefined };
       }
     });
+
     const itemText = String(formData.get("item_text") ?? "").trim();
     try {
       await submitResponse(uid, cycle.id, {
         answers,
         studentItem: itemText
           ? {
-              submissionType: String(formData.get("item_type")) as "question",
-              category: String(formData.get("item_category")) as "content",
+              submissionType: String(formData.get("item_type") ?? "question"),
+              category: String(formData.get("item_category") ?? "content"),
               text: itemText,
             }
           : undefined,
       });
     } catch (err) {
       if (err instanceof SubmissionError) {
-        const detail = err.details[0]?.message ?? err.message;
-        redirect(`/sections/${sectionId}?error=${encodeURIComponent(detail)}`);
+        // Map per-question errors back onto the fields so the student keeps
+        // everything they typed and sees exactly what to fix.
+        const errors: Record<string, string> = {};
+        for (const detail of err.details) {
+          errors[detail.questionId ?? ""] = detail.message;
+        }
+        if (err.details.length === 0) errors[""] = err.message;
+        return { status: "error", errors };
+      }
+      if (err instanceof AuthzError) {
+        return {
+          status: "error",
+          errors: { "": "You are not able to submit for this section." },
+        };
       }
       throw err;
     }
+
     revalidatePath(`/sections/${sectionId}`);
-    redirect(`/sections/${sectionId}/history`);
+    redirect(`/sections/${sectionId}?submitted=1`);
   }
 
   return (
-    <main>
-      <h1>Weekly form — week {cycle.cycleIndex}</h1>
-      <p>Deadline: {cycle.deadlineAt.toLocaleString()}</p>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      <form action={submit}>
-        {questions.map((q) => (
-          <fieldset key={q.id} style={{ margin: "1rem 0" }}>
-            <legend>
-              {q.prompt} {q.required && <em>(required)</em>}
-            </legend>
-            {q.description && <p>{q.description}</p>}
-            {(q.type === "short_answer" || q.type === "paragraph") && (
-              <textarea name={`q_${q.id}`} rows={q.type === "paragraph" ? 4 : 1} />
-            )}
-            {(q.type === "multiple_choice" || q.type === "checkboxes") &&
-              ((q.options ?? []) as QuestionOption[]).map((opt) => (
-                <label key={opt.stableId} style={{ display: "block" }}>
-                  <input
-                    type={q.type === "checkboxes" ? "checkbox" : "radio"}
-                    name={`q_${q.id}`}
-                    value={opt.stableId}
-                  />
-                  {opt.label}
-                </label>
-              ))}
-            {q.type === "dropdown" && (
-              <select name={`q_${q.id}`} defaultValue="">
-                <option value="" disabled>
-                  Select…
-                </option>
-                {((q.options ?? []) as QuestionOption[]).map((opt) => (
-                  <option key={opt.stableId} value={opt.stableId}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            )}
-            {q.type === "linear_scale" &&
-              (() => {
-                const scale = q.scale as {
-                  min: number;
-                  max: number;
-                  step?: number;
-                };
-                const values = [];
-                for (let v = scale.min; v <= scale.max; v += scale.step ?? 1) {
-                  values.push(v);
-                }
-                return values.map((v) => (
-                  <label key={v} style={{ marginRight: "0.75rem" }}>
-                    <input type="radio" name={`q_${q.id}`} value={v} /> {v}
-                  </label>
-                ));
-              })()}
-            {q.type === "yes_no" && (
-              <>
-                <label>
-                  <input type="radio" name={`q_${q.id}`} value="yes" /> Yes
-                </label>{" "}
-                <label>
-                  <input type="radio" name={`q_${q.id}`} value="no" /> No
-                </label>
-              </>
-            )}
-            {q.type === "date" && <input type="date" name={`q_${q.id}`} />}
-            {q.type === "time" && <input type="time" name={`q_${q.id}`} />}
-          </fieldset>
-        ))}
-
-        <fieldset style={{ margin: "1rem 0" }}>
-          <legend>Your question or feedback (optional)</legend>
-          <label>
-            Type:{" "}
-            <select name="item_type" defaultValue="question">
-              <option value="question">Question</option>
-              <option value="feedback">Feedback</option>
-              <option value="concern">Concern</option>
-              <option value="clarification">Clarification</option>
-              <option value="suggestion">Suggestion</option>
-            </select>
-          </label>{" "}
-          <label>
-            Category:{" "}
-            <select name="item_category" defaultValue="content">
-              <option value="content">Content</option>
-              <option value="logistics">Logistics</option>
-              <option value="misc">Miscellaneous</option>
-            </select>
-          </label>
-          <textarea
-            name="item_text"
-            rows={3}
-            style={{ display: "block", width: "100%", marginTop: "0.5rem" }}
-            placeholder="Ask a question or leave feedback…"
+    <AppShell
+      {...shell}
+      eyebrow={`${course.code} · ${section.term}`}
+      title={`Week ${cycle.cycleIndex} feedback`}
+      description="Answer your teacher's questions, and add anything of your own. It takes a couple of minutes."
+      actions={<Badge tone="amber">Open · {timeRemaining(cycle.deadlineAt)}</Badge>}
+    >
+      <section className="card form-card">
+        <div className="form-card__top">
+          <h2>{section.title}</h2>
+          <p>
+            Closes {formatDeadline(cycle.deadlineAt, section.timezone)}. Your
+            teacher sees your name with your answers. Anything published to the
+            class is anonymous and reworded first.
+          </p>
+        </div>
+        <div className="form-body">
+          <WeeklyForm
+            questions={questionViews}
+            action={submit}
+            deadlineLabel={formatDeadline(cycle.deadlineAt, section.timezone)}
           />
-        </fieldset>
-
-        <button type="submit">Submit (cannot be edited afterwards)</button>
-      </form>
-    </main>
+        </div>
+      </section>
+    </AppShell>
   );
 }

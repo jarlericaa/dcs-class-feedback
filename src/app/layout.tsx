@@ -1,24 +1,17 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Class Feedback",
-  description: "Recurring weekly class feedback platform",
+  description:
+    "Weekly class feedback for university sections: submit, review, answer privately, and publish anonymous answers to your class.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body
-        style={{
-          fontFamily: "system-ui, sans-serif",
-          maxWidth: "56rem",
-          margin: "0 auto",
-          padding: "1rem",
-        }}
-      >
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
