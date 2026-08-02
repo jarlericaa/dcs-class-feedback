@@ -102,6 +102,45 @@ For changes touching PostgreSQL, authz, scheduling, roster matching, or
 student-visible data, also run the relevant integration tests and update the
 documentation listed in [DOCUMENT_MANIFEST.yaml](DOCUMENT_MANIFEST.yaml).
 
+## Troubleshooting
+
+### The app renders as unstyled HTML
+
+The stylesheet 404s and every page falls back to browser defaults. This
+happens after running `npm run build` and then `npm run dev` in the same
+checkout: both write to `.next`, and the dev server serves a CSS asset path
+that the production build left behind.
+
+```bash
+rm -rf .next
+npm run dev
+```
+
+Then hard-reload the browser (`Ctrl`/`Cmd` + `Shift` + `R`) — the 404 response
+is usually cached. Confirm the fix by checking that the stylesheet resolves:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "http://localhost:3000$(curl -s http://localhost:3000/signin \
+   | grep -oE '/_next/static/css/[^"?]*' | head -1)"   # expect 200
+```
+
+### Nothing appears on the dashboard after signing in
+
+An account only sees sections it is enrolled in or staffs, and a student
+account stays empty until a teacher confirms its roster match on
+`/teach/sections/[id]/matches`. This is the intended teacher-confirm-all
+behaviour, not a bug — see [account-matching.md](account-matching.md).
+
+### The weekly form says no cycle is open
+
+Cycles open and close through the reconciliation poller. Run it alongside the
+dev server, or re-run the seed which reconciles once:
+
+```bash
+npm run scheduler:dev
+```
+
 ## Development rules
 
 - Keep business rules in `src/modules/`, not in page components.
