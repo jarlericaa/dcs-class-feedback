@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/session";
+
 import { formatDate } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav, studentSectionNav } from "@/components/layout/nav";
@@ -7,6 +7,7 @@ import { AccessDenied, Badge, EmptyState } from "@/components/ui";
 import { listSectionQa } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
+import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * Section Q&A archive — a list/detail knowledge archive, not a social feed.
@@ -35,7 +36,12 @@ export default async function QaArchivePage({
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
-        <AppShell user={user} workspace="student" navGroups={[]} title="Class Q&A">
+        <AppShell
+          user={toShellUser(user)}
+          workspace="student"
+          navGroups={[]}
+          title="Class Q&A"
+        >
           <AccessDenied what="this section's Q&A archive" />
         </AppShell>
       );
@@ -54,7 +60,7 @@ export default async function QaArchivePage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace={isStaff ? "staff" : "student"}
       navGroups={
         isStaff && access
@@ -108,7 +114,9 @@ export default async function QaArchivePage({
         {entries.length === 0 ? (
           <EmptyState
             title={
-              isFiltered ? "No answers match your search" : "No published answers yet"
+              isFiltered
+                ? "No answers match your search"
+                : "No published answers yet"
             }
           >
             {isFiltered
@@ -132,7 +140,9 @@ export default async function QaArchivePage({
                   <span className="qa-row__meta">
                     <span>{categoryLabel(entry.category)}</span>
                     <span aria-hidden="true">·</span>
-                    <span>{formatDate(entry.publishedAt, section.timezone)}</span>
+                    <span>
+                      {formatDate(entry.publishedAt, section.timezone)}
+                    </span>
                     {entry.sourceOrigin === "legacy" && (
                       <Badge tone="neutral">Earlier semester</Badge>
                     )}
@@ -144,15 +154,18 @@ export default async function QaArchivePage({
             </section>
 
             {active && (
-              <article className="card answer-panel" aria-label="Selected answer">
+              <article
+                className="card answer-panel"
+                aria-label="Selected answer"
+              >
                 <p className="section-kicker">
                   {categoryLabel(active.category)} ·{" "}
                   {formatDate(active.publishedAt, section.timezone)}
                 </p>
                 <h2>{active.question}</h2>
                 <p className="muted small">
-                  Asked by a student in this section. Their identity and original
-                  wording are never shown.
+                  Asked by a student in this section. Their identity and
+                  original wording are never shown.
                 </p>
                 <div className="answer-panel__answer">
                   <strong>Answer from the teaching team</strong>

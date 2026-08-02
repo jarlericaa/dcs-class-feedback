@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { requireUser } from "@/lib/session";
+
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
 import { AccessDenied, Alert, Badge, EmptyState } from "@/components/ui";
@@ -13,6 +13,7 @@ import {
   listCoursesForUser,
 } from "@/modules/catalog";
 import { AuthzError } from "@/modules/authz";
+import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * Course and section setup. Creating a course requires the teacher capability
@@ -30,7 +31,7 @@ export default async function CoursesPage({
   if (!user.isTeacher) {
     return (
       <AppShell
-        user={user}
+        user={toShellUser(user)}
         workspace="home"
         navGroups={homeNav("/teach/courses", {
           isTeacher: false,
@@ -39,7 +40,10 @@ export default async function CoursesPage({
         title="My courses"
       >
         <AccessDenied what="course management" />
-        <p className="muted small" style={{ marginTop: 12, textAlign: "center" }}>
+        <p
+          className="muted small"
+          style={{ marginTop: 12, textAlign: "center" }}
+        >
           A platform administrator grants the teacher role.
         </p>
       </AppShell>
@@ -85,7 +89,7 @@ export default async function CoursesPage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
       navGroups={homeNav("/teach/courses", {
         isTeacher: true,
@@ -174,7 +178,9 @@ export default async function CoursesPage({
                     />
                   </div>
                   <div className="field-row">
-                    <label htmlFor={`sectitle-${course.id}`}>Section name</label>
+                    <label htmlFor={`sectitle-${course.id}`}>
+                      Section name
+                    </label>
                     <input
                       id={`sectitle-${course.id}`}
                       className="field"
@@ -234,7 +240,8 @@ export default async function CoursesPage({
 }
 
 function describe(err: unknown): string {
-  if (err instanceof CatalogError || err instanceof AuthzError) return err.message;
+  if (err instanceof CatalogError || err instanceof AuthzError)
+    return err.message;
   if (err instanceof Error && err.name === "ZodError") {
     return "Check the values you entered and try again.";
   }

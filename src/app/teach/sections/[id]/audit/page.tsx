@@ -10,6 +10,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 import { listSectionAuditEvents } from "@/modules/audit";
+import { toShellUser } from "@/lib/session";
 
 /**
  * Audit history for one section.
@@ -31,7 +32,12 @@ export default async function AuditPage({
   const ctx = await loadStaffSection(sectionId);
   if (!ctx.ok || ctx.access.staff?.role === "ta") {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Audit history">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Audit history"
+      >
         <AccessDenied what="this section's audit history" />
       </AppShell>
     );
@@ -46,7 +52,7 @@ export default async function AuditPage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
       navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/audit`)}
       contextLabel={section.title}
@@ -104,7 +110,9 @@ export default async function AuditPage({
                     <span className="data-list__main">
                       <strong>{event.action.replace(/[._]/g, " ")}</strong>
                       <small>
-                        {actor ? `${actor.displayName} (${actor.email})` : "System"}{" "}
+                        {actor
+                          ? `${actor.displayName} (${actor.email})`
+                          : "System"}{" "}
                         · {formatDateTime(event.createdAt, section.timezone)} ·{" "}
                         {event.entityType.replace(/_/g, " ")}
                       </small>

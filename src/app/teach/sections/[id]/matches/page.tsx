@@ -20,6 +20,7 @@ import {
   rejectMatch,
 } from "@/modules/identity/matching";
 import { listSectionRoster } from "@/modules/catalog";
+import { toShellUser } from "@/lib/session";
 
 /**
  * Teacher-confirm-all account matching (Open D2).
@@ -39,7 +40,12 @@ export default async function MatchesPage({
   const ctx = await loadStaffSection(sectionId, "viewStudentIdentities");
   if (!ctx.ok) {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Account matches">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Account matches"
+      >
         <AccessDenied what="student identities in this section" />
       </AppShell>
     );
@@ -51,7 +57,9 @@ export default async function MatchesPage({
 
   const userIds = [...new Set(pending.map((m) => m.userId))];
   const recordIds = [
-    ...new Set(pending.map((m) => m.studentRecordId).filter((v): v is string => !!v)),
+    ...new Set(
+      pending.map((m) => m.studentRecordId).filter((v): v is string => !!v),
+    ),
   ];
   const userById = new Map(
     (userIds.length
@@ -77,9 +85,6 @@ export default async function MatchesPage({
     byAccount.set(match.userId, list);
   }
 
-  const back = (message: string, kind: "ok" | "error" = "ok") =>
-    `/teach/sections/${sectionId}/matches?${kind}=${encodeURIComponent(message)}`;
-
   async function confirm(formData: FormData) {
     "use server";
     const uid = await currentUserId();
@@ -87,10 +92,21 @@ export default async function MatchesPage({
     try {
       await confirmMatch(uid, String(formData.get("matchId")));
     } catch (err) {
-      redirect(back(err instanceof Error ? err.message : "Could not confirm", "error"));
+      redirect(
+        backTo(
+          sectionId,
+          err instanceof Error ? err.message : "Could not confirm",
+          "error",
+        ),
+      );
     }
     revalidatePath(`/teach/sections/${sectionId}/matches`);
-    redirect(back("Identity confirmed. The student can now use this section."));
+    redirect(
+      backTo(
+        sectionId,
+        "Identity confirmed. The student can now use this section.",
+      ),
+    );
   }
 
   async function reject(formData: FormData) {
@@ -100,19 +116,28 @@ export default async function MatchesPage({
     try {
       await rejectMatch(uid, String(formData.get("matchId")));
     } catch (err) {
-      redirect(back(err instanceof Error ? err.message : "Could not reject", "error"));
+      redirect(
+        backTo(
+          sectionId,
+          err instanceof Error ? err.message : "Could not reject",
+          "error",
+        ),
+      );
     }
     revalidatePath(`/teach/sections/${sectionId}/matches`);
-    redirect(back("Suggestion rejected."));
+    redirect(backTo(sectionId, "Suggestion rejected."));
   }
 
   const linkedCount = roster.filter((r) => r.accountLinked).length;
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/matches`)}
+      navGroups={staffSectionNav(
+        access,
+        `/teach/sections/${sectionId}/matches`,
+      )}
       contextLabel={section.title}
       breadcrumbs={
         <Breadcrumbs
@@ -159,7 +184,10 @@ export default async function MatchesPage({
                 const ambiguous = matches.length > 1;
                 return (
                   <article className="card card--padded" key={accountId}>
-                    <div className="row-gap" style={{ justifyContent: "space-between" }}>
+                    <div
+                      className="row-gap"
+                      style={{ justifyContent: "space-between" }}
+                    >
                       <div>
                         <p className="section-kicker">Signed-in account</p>
                         <h3 style={{ margin: "2px 0 0", fontSize: 16 }}>
@@ -191,8 +219,9 @@ export default async function MatchesPage({
                         const record = match.studentRecordId
                           ? recordById.get(match.studentRecordId)
                           : null;
-                        const score = (match.confidence as { score?: number } | null)
-                          ?.score;
+                        const score = (
+                          match.confidence as { score?: number } | null
+                        )?.score;
                         return (
                           <li key={match.id}>
                             <span className="data-list__main">
@@ -209,7 +238,11 @@ export default async function MatchesPage({
                             </span>
                             <span className="row-gap">
                               <form action={confirm} className="inline-form">
-                                <input type="hidden" name="matchId" value={match.id} />
+                                <input
+                                  type="hidden"
+                                  name="matchId"
+                                  value={match.id}
+                                />
                                 <button
                                   className="button button--primary button--small"
                                   type="submit"
@@ -218,7 +251,11 @@ export default async function MatchesPage({
                                 </button>
                               </form>
                               <form action={reject} className="inline-form">
-                                <input type="hidden" name="matchId" value={match.id} />
+                                <input
+                                  type="hidden"
+                                  name="matchId"
+                                  value={match.id}
+                                />
                                 <button
                                   className="button button--quiet button--small"
                                   type="submit"
@@ -290,4 +327,16 @@ export default async function MatchesPage({
       </div>
     </AppShell>
   );
+}
+
+/**
+ * Module scope on purpose: a server action serializes everything it closes
+ * over, so it may not capture a helper defined inside the page component.
+ */
+function backTo(
+  sectionId: string,
+  message: string,
+  kind: "ok" | "error" = "ok",
+): string {
+  return `/teach/sections/${sectionId}/matches?${kind}=${encodeURIComponent(message)}`;
 }

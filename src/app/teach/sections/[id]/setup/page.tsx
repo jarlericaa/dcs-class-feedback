@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
@@ -56,7 +57,12 @@ export default async function SetupPage({
   const ctx = await loadStaffSection(sectionId);
   if (!ctx.ok) {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Section setup">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Section setup"
+      >
         <AccessDenied what="this section's settings" />
       </AppShell>
     );
@@ -67,15 +73,17 @@ export default async function SetupPage({
 
   const staff = await listSectionStaff(user.id, sectionId);
   const active = canManageCycles ? await getActiveSchedule(sectionId) : null;
-  const cycles = canManageCycles ? await listCyclesForSection(user.id, sectionId) : [];
+  const cycles = canManageCycles
+    ? await listCyclesForSection(user.id, sectionId)
+    : [];
   const templates = canManageCycles
     ? await listTemplatesForSection(user.id, sectionId, course.id)
     : [];
 
-  const back = (message: string, kind: "ok" | "error" = "ok") =>
-    `/teach/sections/${sectionId}/setup?${kind}=${encodeURIComponent(message)}`;
-
   // --- server actions ------------------------------------------------------
+  // NB: everything a "use server" closure captures is serialized, so these
+  // actions may only close over plain values such as sectionId — never over a
+  // helper function defined in this component.
 
   async function saveDetails(formData: FormData) {
     "use server";
@@ -87,17 +95,18 @@ export default async function SetupPage({
         term: String(formData.get("term") ?? ""),
       });
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(back("Section details saved."));
+    redirect(backTo(sectionId, "Section details saved."));
   }
 
   async function saveStaff(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    const role = String(formData.get("role") ?? "ta") as "teacher" | "ta" | "co_teacher";
+    const role = String(formData.get("role") ?? "ta") as
+      "teacher" | "ta" | "co_teacher";
     const permissions = Object.fromEntries(
       SECTION_PERMISSIONS.map((p) => [p, formData.get(`perm_${p}`) === "on"]),
     );
@@ -108,10 +117,10 @@ export default async function SetupPage({
         permissions,
       });
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(back("Teaching staff updated."));
+    redirect(backTo(sectionId, "Teaching staff updated."));
   }
 
   async function dropStaff(formData: FormData) {
@@ -121,10 +130,10 @@ export default async function SetupPage({
     try {
       await removeSectionStaff(uid, sectionId, String(formData.get("staffId")));
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(back("Staff member removed from this section."));
+    redirect(backTo(sectionId, "Staff member removed from this section."));
   }
 
   async function saveSchedule(formData: FormData) {
@@ -140,16 +149,18 @@ export default async function SetupPage({
         deadlineDayOfWeek: String(formData.get("deadlineDayOfWeek") ?? "0"),
         deadlineTime: String(formData.get("deadlineTime") ?? ""),
         startDate: String(formData.get("startDate") ?? ""),
-        occurrenceCount: String(formData.get("occurrenceCount") ?? "") || undefined,
+        occurrenceCount:
+          String(formData.get("occurrenceCount") ?? "") || undefined,
         endDate: String(formData.get("endDate") ?? "") || undefined,
       });
       generated = result.cyclesGenerated;
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/setup`);
     redirect(
-      back(
+      backTo(
+        sectionId,
         `Schedule saved. ${generated} upcoming week${generated === 1 ? "" : "s"} generated.`,
       ),
     );
@@ -162,10 +173,12 @@ export default async function SetupPage({
     try {
       await deactivateSchedule(uid, sectionId);
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(back("Schedule stopped. Existing weeks are unchanged."));
+    redirect(
+      backTo(sectionId, "Schedule stopped. Existing weeks are unchanged."),
+    );
   }
 
   async function cycleAction(formData: FormData) {
@@ -180,17 +193,17 @@ export default async function SetupPage({
         await skipCycle(uid, cycleId);
       }
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(back("Cycle updated."));
+    redirect(backTo(sectionId, "Cycle updated."));
   }
 
   // --- render --------------------------------------------------------------
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
       navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/setup`)}
       contextLabel={section.title}
@@ -274,7 +287,10 @@ export default async function SetupPage({
                 {isOwner && account?.id !== course.ownerUserId && (
                   <form action={dropStaff} className="inline-form">
                     <input type="hidden" name="staffId" value={row.id} />
-                    <button className="button button--danger button--small" type="submit">
+                    <button
+                      className="button button--danger button--small"
+                      type="submit"
+                    >
                       Remove
                     </button>
                   </form>
@@ -289,9 +305,9 @@ export default async function SetupPage({
                 Add or reconfigure a staff member
               </h3>
               <p className="muted small" style={{ margin: "0 0 14px" }}>
-                They must have signed in at least once. Granting
-                &ldquo;export participation&rdquo; lets them download files
-                containing student names and numbers.
+                They must have signed in at least once. Granting &ldquo;export
+                participation&rdquo; lets them download files containing student
+                names and numbers.
               </p>
               <form action={saveStaff} className="stack-gap">
                 <div className="form-grid">
@@ -390,7 +406,11 @@ export default async function SetupPage({
                     cycle.
                   </EmptyState>
                 ) : (
-                  <form action={saveSchedule} className="stack-gap" style={{ marginTop: 16 }}>
+                  <form
+                    action={saveSchedule}
+                    className="stack-gap"
+                    style={{ marginTop: 16 }}
+                  >
                     <div className="form-grid">
                       <div className="field-row">
                         <label htmlFor="templateId">Form template</label>
@@ -429,7 +449,9 @@ export default async function SetupPage({
                           id="openDayOfWeek"
                           className="select-field"
                           name="openDayOfWeek"
-                          defaultValue={String(active?.schedule.openDayOfWeek ?? 1)}
+                          defaultValue={String(
+                            active?.schedule.openDayOfWeek ?? 1,
+                          )}
                         >
                           {DAY_NAMES.map((day, index) => (
                             <option key={day} value={index}>
@@ -445,7 +467,9 @@ export default async function SetupPage({
                           className="field"
                           type="time"
                           name="openTime"
-                          defaultValue={(active?.schedule.openTime ?? "08:00:00").slice(0, 5)}
+                          defaultValue={(
+                            active?.schedule.openTime ?? "08:00:00"
+                          ).slice(0, 5)}
                           required
                         />
                       </div>
@@ -455,7 +479,9 @@ export default async function SetupPage({
                           id="deadlineDayOfWeek"
                           className="select-field"
                           name="deadlineDayOfWeek"
-                          defaultValue={String(active?.schedule.deadlineDayOfWeek ?? 0)}
+                          defaultValue={String(
+                            active?.schedule.deadlineDayOfWeek ?? 0,
+                          )}
                         >
                           {DAY_NAMES.map((day, index) => (
                             <option key={day} value={index}>
@@ -471,7 +497,9 @@ export default async function SetupPage({
                           className="field"
                           type="time"
                           name="deadlineTime"
-                          defaultValue={(active?.schedule.deadlineTime ?? "23:59:00").slice(0, 5)}
+                          defaultValue={(
+                            active?.schedule.deadlineTime ?? "23:59:00"
+                          ).slice(0, 5)}
                           required
                         />
                       </div>
@@ -524,7 +552,10 @@ export default async function SetupPage({
               {active && (
                 <div className="card__footer">
                   <form action={stopSchedule} className="inline-form">
-                    <button className="button button--danger button--small" type="submit">
+                    <button
+                      className="button button--danger button--small"
+                      type="submit"
+                    >
                       Stop generating new weeks
                     </button>
                     <span className="muted small">
@@ -568,48 +599,85 @@ export default async function SetupPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {cycles.map(({ cycle, submissionCount, validCount, editLocked }) => (
-                        <tr key={cycle.id}>
-                          <th scope="row">Week {cycle.cycleIndex}</th>
-                          <td>
-                            <CycleStateBadge state={cycle.state} />
-                          </td>
-                          <td>{formatDateTime(cycle.openAt, section.timezone)}</td>
-                          <td>{formatDateTime(cycle.deadlineAt, section.timezone)}</td>
-                          <td>
-                            {submissionCount}
-                            {submissionCount !== validCount &&
-                              ` (${validCount} valid)`}
-                          </td>
-                          <td>{editLocked ? "Locked" : "Open"}</td>
-                          <td>
-                            {cycle.state === "closed" && (
-                              <form action={cycleAction} className="inline-form">
-                                <input type="hidden" name="cycleId" value={cycle.id} />
-                                <input type="hidden" name="intent" value="reopen" />
-                                <button
-                                  className="button button--secondary button--small"
-                                  type="submit"
+                      {cycles.map(
+                        ({
+                          cycle,
+                          submissionCount,
+                          validCount,
+                          editLocked,
+                        }) => (
+                          <tr key={cycle.id}>
+                            <th scope="row">Week {cycle.cycleIndex}</th>
+                            <td>
+                              <CycleStateBadge state={cycle.state} />
+                            </td>
+                            <td>
+                              {formatDateTime(cycle.openAt, section.timezone)}
+                            </td>
+                            <td>
+                              {formatDateTime(
+                                cycle.deadlineAt,
+                                section.timezone,
+                              )}
+                            </td>
+                            <td>
+                              {submissionCount}
+                              {submissionCount !== validCount &&
+                                ` (${validCount} valid)`}
+                            </td>
+                            <td>{editLocked ? "Locked" : "Open"}</td>
+                            <td>
+                              {cycle.state === "closed" && (
+                                <form
+                                  action={cycleAction}
+                                  className="inline-form"
                                 >
-                                  Reopen
-                                </button>
-                              </form>
-                            )}
-                            {(cycle.state === "scheduled" || cycle.state === "draft") && (
-                              <form action={cycleAction} className="inline-form">
-                                <input type="hidden" name="cycleId" value={cycle.id} />
-                                <input type="hidden" name="intent" value="skip" />
-                                <button
-                                  className="button button--quiet button--small"
-                                  type="submit"
+                                  <input
+                                    type="hidden"
+                                    name="cycleId"
+                                    value={cycle.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="intent"
+                                    value="reopen"
+                                  />
+                                  <button
+                                    className="button button--secondary button--small"
+                                    type="submit"
+                                  >
+                                    Reopen
+                                  </button>
+                                </form>
+                              )}
+                              {(cycle.state === "scheduled" ||
+                                cycle.state === "draft") && (
+                                <form
+                                  action={cycleAction}
+                                  className="inline-form"
                                 >
-                                  Skip
-                                </button>
-                              </form>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                                  <input
+                                    type="hidden"
+                                    name="cycleId"
+                                    value={cycle.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="intent"
+                                    value="skip"
+                                  />
+                                  <button
+                                    className="button button--quiet button--small"
+                                    type="submit"
+                                  >
+                                    Skip
+                                  </button>
+                                </form>
+                              )}
+                            </td>
+                          </tr>
+                        ),
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -625,7 +693,10 @@ export default async function SetupPage({
             </p>
           </>
         ) : (
-          <Alert variant="info" title="Schedule and cycles are not available to you">
+          <Alert
+            variant="info"
+            title="Schedule and cycles are not available to you"
+          >
             Managing weekly cycles needs the &ldquo;manage cycles and
             recurrence&rdquo; permission on this section.
           </Alert>
@@ -633,6 +704,18 @@ export default async function SetupPage({
       </div>
     </AppShell>
   );
+}
+
+/**
+ * Module scope on purpose: a server action serializes everything it closes
+ * over, so it may not capture a helper defined inside the page component.
+ */
+function backTo(
+  sectionId: string,
+  message: string,
+  kind: "ok" | "error" = "ok",
+): string {
+  return `/teach/sections/${sectionId}/setup?${kind}=${encodeURIComponent(message)}`;
 }
 
 function describe(err: unknown): string {

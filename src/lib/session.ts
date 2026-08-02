@@ -20,3 +20,17 @@ export async function requireUser() {
 }
 
 export type SessionUser = Awaited<ReturnType<typeof requireUser>>;
+
+/**
+ * Narrow the user row down to what the shell renders.
+ *
+ * Passing the whole row to a component serializes every column into the RSC
+ * payload sent to the browser — including google_sub and the admin flags. The
+ * shell only needs a name and an email, so only those cross the wire.
+ */
+export function toShellUser(user: SessionUser): {
+  displayName: string;
+  email: string;
+} {
+  return { displayName: user.displayName, email: user.email };
+}

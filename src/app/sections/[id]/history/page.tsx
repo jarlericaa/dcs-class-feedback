@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/session";
+
 import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { studentSectionNav } from "@/components/layout/nav";
@@ -7,6 +7,7 @@ import { AccessDenied, Badge, EmptyState } from "@/components/ui";
 import { getStudentHistory } from "@/modules/publishing";
 import { AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
+import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * The student's own record: their answers, private replies to them, and
@@ -30,7 +31,12 @@ export default async function HistoryPage({
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
-        <AppShell user={user} workspace="student" navGroups={[]} title="My submissions">
+        <AppShell
+          user={toShellUser(user)}
+          workspace="student"
+          navGroups={[]}
+          title="My submissions"
+        >
           <AccessDenied what="this class section" />
         </AppShell>
       );
@@ -45,7 +51,7 @@ export default async function HistoryPage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="student"
       navGroups={studentSectionNav(sectionId, `/sections/${sectionId}/history`)}
       contextLabel={section.title}
@@ -56,7 +62,10 @@ export default async function HistoryPage({
       {history.length === 0 ? (
         <EmptyState
           title="You have not submitted anything yet"
-          action={{ href: `/sections/${sectionId}`, label: "Go to this week's form" }}
+          action={{
+            href: `/sections/${sectionId}`,
+            label: "Go to this week's form",
+          }}
         >
           Once you complete a weekly form it appears here, together with any
           reply from your teacher.
@@ -70,11 +79,15 @@ export default async function HistoryPage({
           <section className="card">
             {history.map((entry) => (
               <article className="history-item" key={entry.responseId}>
-                <div className="row-gap" style={{ justifyContent: "space-between" }}>
+                <div
+                  className="row-gap"
+                  style={{ justifyContent: "space-between" }}
+                >
                   <div>
                     <h2>Week {entry.cycleIndex}</h2>
                     <p className="history-item__meta">
-                      Submitted {formatDateTime(entry.submittedAt, section.timezone)}
+                      Submitted{" "}
+                      {formatDateTime(entry.submittedAt, section.timezone)}
                     </p>
                   </div>
                   <Badge tone="green">Submitted</Badge>
@@ -129,7 +142,9 @@ export default async function HistoryPage({
                           {item.publicAnswer.rewordedQuestion}
                         </p>
                         {item.publicAnswer.answer && (
-                          <p style={{ marginTop: 8 }}>{item.publicAnswer.answer}</p>
+                          <p style={{ marginTop: 8 }}>
+                            {item.publicAnswer.answer}
+                          </p>
                         )}
                         <p className="muted small" style={{ marginTop: 6 }}>
                           Published{" "}

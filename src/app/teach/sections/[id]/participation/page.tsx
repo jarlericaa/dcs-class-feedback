@@ -11,6 +11,7 @@ import {
   Stat,
 } from "@/components/ui";
 import { getParticipationOverview } from "@/modules/participation";
+import { toShellUser } from "@/lib/session";
 
 /**
  * Participation dashboard. Derived entirely from valid responses — there is no
@@ -29,7 +30,12 @@ export default async function ParticipationPage({
   const ctx = await loadStaffSection(sectionId, "exportParticipation");
   if (!ctx.ok) {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Participation">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Participation"
+      >
         <AccessDenied what="participation records for this section" />
       </AppShell>
     );
@@ -45,9 +51,12 @@ export default async function ParticipationPage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/participation`)}
+      navGroups={staffSectionNav(
+        access,
+        `/teach/sections/${sectionId}/participation`,
+      )}
       contextLabel={section.title}
       breadcrumbs={
         <Breadcrumbs
@@ -63,7 +72,10 @@ export default async function ParticipationPage({
       description="A student participated in a week if they have one valid submission for it. Nothing here is visible to students."
     >
       <div className="stack-gap">
-        <Alert variant="warning" title="These files contain student names and numbers">
+        <Alert
+          variant="warning"
+          title="These files contain student names and numbers"
+        >
           Every download is recorded in the audit history with your name.
         </Alert>
 
@@ -85,13 +97,22 @@ export default async function ParticipationPage({
             </div>
           </div>
           <div className="card__body row-gap">
-            <a className="button button--secondary" href={exportHref("weekly_matrix")}>
+            <a
+              className="button button--secondary"
+              href={exportHref("weekly_matrix")}
+            >
               Weekly matrix CSV
             </a>
-            <a className="button button--secondary" href={exportHref("participants")}>
+            <a
+              className="button button--secondary"
+              href={exportHref("participants")}
+            >
               Participating students CSV
             </a>
-            <a className="button button--secondary" href={exportHref("detailed")}>
+            <a
+              className="button button--secondary"
+              href={exportHref("detailed")}
+            >
               Detailed responses CSV
             </a>
           </div>
@@ -156,7 +177,9 @@ export default async function ParticipationPage({
                           <td key={cycle.id}>
                             <span
                               aria-label={
-                                participated ? "participated" : "did not participate"
+                                participated
+                                  ? "participated"
+                                  : "did not participate"
                               }
                             >
                               {participated ? "Yes" : "—"}

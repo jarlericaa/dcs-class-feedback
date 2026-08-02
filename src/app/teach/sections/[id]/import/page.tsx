@@ -16,6 +16,7 @@ import {
   previewRosterImport,
 } from "@/modules/roster-import";
 import { AuthzError } from "@/modules/authz";
+import { toShellUser } from "@/lib/session";
 
 /**
  * Roster CSV import. Preview applies nothing; the commit re-derives the plan
@@ -31,14 +32,22 @@ export default async function ImportPage({
   const ctx = await loadStaffSection(sectionId, "viewStudentIdentities");
   if (!ctx.ok) {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Roster import">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Roster import"
+      >
         <AccessDenied what="this section's roster" />
       </AppShell>
     );
   }
   const { user, access, section, course } = ctx;
 
-  async function run(_prev: ImportState, formData: FormData): Promise<ImportState> {
+  async function run(
+    _prev: ImportState,
+    formData: FormData,
+  ): Promise<ImportState> {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
@@ -68,17 +77,15 @@ export default async function ImportPage({
         csv,
         fileError: preview.fileError,
         rowErrors: preview.errors,
-        actions: preview.actions.map(
-          (action): PreviewAction => ({
-            kind: action.kind,
-            studentNumber: action.row.studentNumber,
-            fullName: action.row.fullName,
-            currentName:
-              action.kind === "update_name" || action.kind === "name_diff_locked"
-                ? action.currentName
-                : undefined,
-          }),
-        ),
+        actions: preview.actions.map((action): PreviewAction => ({
+          kind: action.kind,
+          studentNumber: action.row.studentNumber,
+          fullName: action.row.fullName,
+          currentName:
+            action.kind === "update_name" || action.kind === "name_diff_locked"
+              ? action.currentName
+              : undefined,
+        })),
         deactivations: preview.toDeactivate.map((d) => ({
           studentNumber: d.studentNumber,
           name: d.name,
@@ -97,7 +104,7 @@ export default async function ImportPage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
       navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/import`)}
       contextLabel={section.title}

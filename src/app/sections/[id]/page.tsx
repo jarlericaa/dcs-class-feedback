@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { requireUser } from "@/lib/session";
+
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { studentSectionNav } from "@/components/layout/nav";
@@ -20,6 +20,7 @@ import {
 import type { QuestionOption } from "@/modules/forms/questions";
 import { AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
+import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * Student weekly form for the currently-open cycle of this section.
@@ -46,7 +47,7 @@ export default async function SectionFormPage({
     if (err instanceof AuthzError) {
       return (
         <AppShell
-          user={user}
+          user={toShellUser(user)}
           workspace="student"
           navGroups={[]}
           title="Class section"
@@ -60,7 +61,7 @@ export default async function SectionFormPage({
 
   const { section, course } = await getSectionWithCourse(sectionId);
   const shell = {
-    user,
+    user: toShellUser(user),
     workspace: "student" as const,
     navGroups: studentSectionNav(sectionId, `/sections/${sectionId}`),
     contextLabel: section.title,
@@ -79,8 +80,14 @@ export default async function SectionFormPage({
           will appear here, and you can always read past answers in the class
           Q&amp;A archive.
         </EmptyState>
-        <div className="row-gap" style={{ marginTop: 16, justifyContent: "center" }}>
-          <Link className="button button--secondary" href={`/sections/${sectionId}/qa`}>
+        <div
+          className="row-gap"
+          style={{ marginTop: 16, justifyContent: "center" }}
+        >
+          <Link
+            className="button button--secondary"
+            href={`/sections/${sectionId}/qa`}
+          >
             Class Q&amp;A archive
           </Link>
           <Link
@@ -112,7 +119,10 @@ export default async function SectionFormPage({
             </Alert>
           )}
           <section className="card card--padded">
-            <div className="row-gap" style={{ justifyContent: "space-between" }}>
+            <div
+              className="row-gap"
+              style={{ justifyContent: "space-between" }}
+            >
               <div>
                 <p className="section-kicker">Week {cycle.cycleIndex}</p>
                 <h2 style={{ margin: "4px 0 6px", fontSize: 20 }}>
@@ -240,7 +250,9 @@ export default async function SectionFormPage({
       eyebrow={`${course.code} · ${section.term}`}
       title={`Week ${cycle.cycleIndex} feedback`}
       description="Answer your teacher's questions, and add anything of your own. It takes a couple of minutes."
-      actions={<Badge tone="amber">Open · {timeRemaining(cycle.deadlineAt)}</Badge>}
+      actions={
+        <Badge tone="amber">Open · {timeRemaining(cycle.deadlineAt)}</Badge>
+      }
     >
       <section className="card form-card">
         <div className="form-card__top">

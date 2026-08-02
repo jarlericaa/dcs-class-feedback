@@ -1,13 +1,18 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { requireUser } from "@/lib/session";
+
 import { formatDate } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
 import { AccessDenied, Alert, Badge, Breadcrumbs } from "@/components/ui";
-import { CatalogError, listAccountsForAdmin, setTeacherRole } from "@/modules/catalog";
+import {
+  CatalogError,
+  listAccountsForAdmin,
+  setTeacherRole,
+} from "@/modules/catalog";
 import { AuthzError } from "@/modules/authz";
+import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * Platform administration (Open D3, provisional: an admin grants the teacher
@@ -27,7 +32,7 @@ export default async function AdminPage({
   if (!user.isPlatformAdmin) {
     return (
       <AppShell
-        user={user}
+        user={toShellUser(user)}
         workspace="home"
         navGroups={homeNav("/admin", {
           isTeacher: user.isTeacher,
@@ -62,14 +67,16 @@ export default async function AdminPage({
     revalidatePath("/admin");
     redirect(
       `/admin?ok=${encodeURIComponent(
-        grant ? `${email} can now create courses.` : `Teacher role removed from ${email}.`,
+        grant
+          ? `${email} can now create courses.`
+          : `Teacher role removed from ${email}.`,
       )}`,
     );
   }
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="admin"
       navGroups={homeNav("/admin", {
         isTeacher: user.isTeacher,
@@ -77,7 +84,10 @@ export default async function AdminPage({
       })}
       breadcrumbs={
         <Breadcrumbs
-          items={[{ href: "/", label: "Overview" }, { label: "Platform admin" }]}
+          items={[
+            { href: "/", label: "Overview" },
+            { label: "Platform admin" },
+          ]}
         />
       }
       eyebrow="Platform administration"
@@ -131,7 +141,9 @@ export default async function AdminPage({
                   </small>
                 </span>
                 <span className="row-gap">
-                  {account.isPlatformAdmin && <Badge tone="neutral">Admin</Badge>}
+                  {account.isPlatformAdmin && (
+                    <Badge tone="neutral">Admin</Badge>
+                  )}
                   {account.isTeacher ? (
                     <Badge tone="green">Teacher</Badge>
                   ) : (
@@ -147,11 +159,15 @@ export default async function AdminPage({
                     />
                     <button
                       className={`button button--small ${
-                        account.isTeacher ? "button--quiet" : "button--secondary"
+                        account.isTeacher
+                          ? "button--quiet"
+                          : "button--secondary"
                       }`}
                       type="submit"
                     >
-                      {account.isTeacher ? "Remove teacher role" : "Make teacher"}
+                      {account.isTeacher
+                        ? "Remove teacher role"
+                        : "Make teacher"}
                     </button>
                   </form>
                 </span>

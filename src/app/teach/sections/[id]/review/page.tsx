@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
@@ -62,7 +63,12 @@ export default async function ReviewPage({
   const ctx = await loadStaffSection(sectionId, "reviewResponses");
   if (!ctx.ok) {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Review">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Review"
+      >
         <AccessDenied what="this section's submissions" />
       </AppShell>
     );
@@ -77,7 +83,8 @@ export default async function ReviewPage({
     { filter, cycleId: sp.cycle },
   );
 
-  const selectedRow = rows.find((r) => r.response.id === sp.selected) ?? rows[0];
+  const selectedRow =
+    rows.find((r) => r.response.id === sp.selected) ?? rows[0];
   const detail = selectedRow
     ? await getSubmissionDetail(user.id, selectedRow.response.id)
     : null;
@@ -143,7 +150,9 @@ export default async function ReviewPage({
     if (!uid) redirect("/signin");
     const itemId = String(formData.get("itemId"));
     const selected = String(formData.get("selected") ?? "");
-    const publicQuestionText = String(formData.get("publicQuestion") ?? "").trim();
+    const publicQuestionText = String(
+      formData.get("publicQuestion") ?? "",
+    ).trim();
     const answerBody = String(formData.get("answerBody") ?? "").trim();
     const intent = String(formData.get("intent") ?? "draft");
 
@@ -152,7 +161,8 @@ export default async function ReviewPage({
         `/teach/sections/${sectionId}/review?selected=${selected}&error=${encodeURIComponent(message)}`,
       );
 
-    if (!publicQuestionText) fail("Write the public version of the question first.");
+    if (!publicQuestionText)
+      fail("Write the public version of the question first.");
     if (intent === "publish" && !answerBody) {
       fail("An answer is required before publishing.");
     }
@@ -193,7 +203,7 @@ export default async function ReviewPage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
       navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/review`)}
       contextLabel={section.title}
@@ -220,14 +230,15 @@ export default async function ReviewPage({
                 <li key={index}>{warning}</li>
               ))}
             </ul>
-            Tick &ldquo;I have checked the public wording&rdquo; to publish anyway.
+            Tick &ldquo;I have checked the public wording&rdquo; to publish
+            anyway.
           </Alert>
         )}
 
         {!canSeeIdentities && (
           <Alert variant="info" title="Identities are hidden for your account">
-            You can review and respond, but you have not been granted
-            &ldquo;see student identities&rdquo; on this section.
+            You can review and respond, but you have not been granted &ldquo;see
+            student identities&rdquo; on this section.
           </Alert>
         )}
 
@@ -270,7 +281,10 @@ export default async function ReviewPage({
           </EmptyState>
         ) : (
           <div className="review-layout">
-            <section className="card review-queue" aria-label="Submission queue">
+            <section
+              className="card review-queue"
+              aria-label="Submission queue"
+            >
               <div className="review-queue__header">
                 <h2>Queue</h2>
                 <div className="queue-tabs">
@@ -278,7 +292,10 @@ export default async function ReviewPage({
                     <Link
                       key={option.key}
                       className={`queue-tab ${filter === option.key ? "queue-tab--active" : ""}`}
-                      href={queryFor({ filter: option.key, selected: undefined })}
+                      href={queryFor({
+                        filter: option.key,
+                        selected: undefined,
+                      })}
                       aria-current={filter === option.key ? "true" : undefined}
                     >
                       {option.label}
@@ -309,7 +326,12 @@ export default async function ReviewPage({
                   >
                     <span className="review-row__meta">
                       <span>Week {row.cycleIndex}</span>
-                      <span>{formatDateTime(row.response.submittedAt, section.timezone)}</span>
+                      <span>
+                        {formatDateTime(
+                          row.response.submittedAt,
+                          section.timezone,
+                        )}
+                      </span>
                     </span>
                     <h3>
                       {row.student
@@ -345,15 +367,23 @@ export default async function ReviewPage({
               ) : (
                 <>
                   <article className="card detail-card">
-                    <div className="row-gap" style={{ justifyContent: "space-between" }}>
+                    <div
+                      className="row-gap"
+                      style={{ justifyContent: "space-between" }}
+                    >
                       <div>
-                        <p className="section-kicker">Week {selectedRow.cycleIndex}</p>
+                        <p className="section-kicker">
+                          Week {selectedRow.cycleIndex}
+                        </p>
                         <h2>
                           {selectedRow.student
                             ? selectedRow.student.fullName
                             : "Identity hidden"}
                         </h2>
-                        <p className="muted small" style={{ margin: "4px 0 0" }}>
+                        <p
+                          className="muted small"
+                          style={{ margin: "4px 0 0" }}
+                        >
                           {selectedRow.student
                             ? `${selectedRow.student.studentNumber} · `
                             : ""}
@@ -396,16 +426,23 @@ export default async function ReviewPage({
                               style={{ maxWidth: 260 }}
                             >
                               <option value="spam">Spam</option>
-                              <option value="abusive_content">Abusive content</option>
+                              <option value="abusive_content">
+                                Abusive content
+                              </option>
                               <option value="empty_or_meaningless">
                                 Empty or meaningless
                               </option>
-                              <option value="irrelevant">Completely irrelevant</option>
+                              <option value="irrelevant">
+                                Completely irrelevant
+                              </option>
                               <option value="bad_faith_credit_attempt">
                                 Bad-faith credit attempt
                               </option>
                             </select>
-                            <button className="button button--danger" type="submit">
+                            <button
+                              className="button button--danger"
+                              type="submit"
+                            >
                               Mark invalid
                             </button>
                             <span className="muted small">
@@ -420,7 +457,10 @@ export default async function ReviewPage({
                               name="responseId"
                               value={selectedRow.response.id}
                             />
-                            <button className="button button--secondary" type="submit">
+                            <button
+                              className="button button--secondary"
+                              type="submit"
+                            >
                               Restore participation credit
                             </button>
                           </form>
@@ -434,17 +474,23 @@ export default async function ReviewPage({
                         <dl style={{ margin: 0 }}>
                           {detail.answers.map((answer, index) => (
                             <div key={index} style={{ marginBottom: 8 }}>
-                              <dt className="muted small" style={{ fontWeight: 700 }}>
+                              <dt
+                                className="muted small"
+                                style={{ fontWeight: 700 }}
+                              >
                                 {answer.prompt}
                               </dt>
-                              <dd style={{ margin: 0 }}>{renderAnswer(answer)}</dd>
+                              <dd style={{ margin: 0 }}>
+                                {renderAnswer(answer)}
+                              </dd>
                             </div>
                           ))}
                         </dl>
                         {detail.unansweredCount > 0 && (
                           <p className="muted small" style={{ marginTop: 8 }}>
                             {detail.unansweredCount} optional question
-                            {detail.unansweredCount === 1 ? "" : "s"} left blank.
+                            {detail.unansweredCount === 1 ? "" : "s"} left
+                            blank.
                           </p>
                         )}
                       </div>
@@ -458,173 +504,212 @@ export default async function ReviewPage({
                     </Alert>
                   )}
 
-                  {selectedRow.items.map(({ item, privateResponses, publicAnswers }) => (
-                    <article className="card detail-card" key={item.id}>
-                      <div className="row-gap" style={{ justifyContent: "space-between" }}>
-                        <h3 style={{ fontSize: 15, margin: 0 }}>
-                          Student {item.submissionType} · {item.category}
-                        </h3>
-                        <Badge
-                          tone={
-                            item.reviewState === "resolved" ? "green" : "neutral"
-                          }
+                  {selectedRow.items.map(
+                    ({ item, privateResponses, publicAnswers }) => (
+                      <article className="card detail-card" key={item.id}>
+                        <div
+                          className="row-gap"
+                          style={{ justifyContent: "space-between" }}
                         >
-                          {item.reviewState.replace(/_/g, " ")}
-                        </Badge>
-                      </div>
-
-                      <div className="source-box source-box--original">
-                        <p className="source-box__label">
-                          Original wording · never shown to other students
-                        </p>
-                        <p>{item.originalText}</p>
-                      </div>
-
-                      {privateResponses.map((reply) => (
-                        <div className="source-box source-box--private" key={reply.id}>
-                          <p className="source-box__label">
-                            Private reply sent{" "}
-                            {formatDateTime(reply.createdAt, section.timezone)}
-                          </p>
-                          <p>{reply.body}</p>
+                          <h3 style={{ fontSize: 15, margin: 0 }}>
+                            Student {item.submissionType} · {item.category}
+                          </h3>
+                          <Badge
+                            tone={
+                              item.reviewState === "resolved"
+                                ? "green"
+                                : "neutral"
+                            }
+                          >
+                            {item.reviewState.replace(/_/g, " ")}
+                          </Badge>
                         </div>
-                      ))}
 
-                      {publicAnswers.map((answer) => (
-                        <div className="source-box" key={answer.id}>
+                        <div className="source-box source-box--original">
                           <p className="source-box__label">
-                            Public answer · {answer.state}
-                            {answer.publishFailed ? " · publication failed" : ""}
+                            Original wording · never shown to other students
                           </p>
-                          <p style={{ fontWeight: 650 }}>{answer.publicQuestionText}</p>
-                          {answer.answerBody && (
-                            <p style={{ marginTop: 6 }}>{answer.answerBody}</p>
-                          )}
-                          {answer.state !== "published" && can("draftPublicAnswers") && (
-                            <Link
-                              className="button button--secondary button--small"
-                              href={`/teach/sections/${sectionId}/publications`}
-                              style={{ marginTop: 10 }}
-                            >
-                              Open in publication queue
-                            </Link>
-                          )}
+                          <p>{item.originalText}</p>
                         </div>
-                      ))}
 
-                      <div className="composer-grid" style={{ marginTop: 18 }}>
-                        {can("sendPrivateResponses") && (
-                          <div className="composer-card">
-                            <h3>Reply privately</h3>
-                            <p>
-                              Visible to this student and authorized staff only.
+                        {privateResponses.map((reply) => (
+                          <div
+                            className="source-box source-box--private"
+                            key={reply.id}
+                          >
+                            <p className="source-box__label">
+                              Private reply sent{" "}
+                              {formatDateTime(
+                                reply.createdAt,
+                                section.timezone,
+                              )}
                             </p>
-                            <form action={sendPrivate}>
-                              <input type="hidden" name="itemId" value={item.id} />
-                              <input
-                                type="hidden"
-                                name="selected"
-                                value={selectedRow.response.id}
-                              />
-                              <label
-                                className="visually-hidden"
-                                htmlFor={`private-${item.id}`}
-                              >
-                                Private reply
-                              </label>
-                              <textarea
-                                id={`private-${item.id}`}
-                                className="textarea-field"
-                                name="body"
-                                rows={4}
-                                placeholder="Answer this student directly…"
-                                required
-                              />
-                              <button className="button button--secondary" type="submit">
-                                Send private reply
-                              </button>
-                            </form>
+                            <p>{reply.body}</p>
                           </div>
-                        )}
+                        ))}
 
-                        {can("draftPublicAnswers") && (
-                          <div className="composer-card">
-                            <h3>Answer the whole class</h3>
-                            <p>
-                              The original wording above stays private. Write a
-                              version that cannot identify the asker.
+                        {publicAnswers.map((answer) => (
+                          <div className="source-box" key={answer.id}>
+                            <p className="source-box__label">
+                              Public answer · {answer.state}
+                              {answer.publishFailed
+                                ? " · publication failed"
+                                : ""}
                             </p>
-                            <form action={draftOrPublish}>
-                              <input type="hidden" name="itemId" value={item.id} />
-                              <input
-                                type="hidden"
-                                name="selected"
-                                value={selectedRow.response.id}
-                              />
-                              <div className="field-row">
-                                <label htmlFor={`pubq-${item.id}`}>
-                                  Public question
+                            <p style={{ fontWeight: 650 }}>
+                              {answer.publicQuestionText}
+                            </p>
+                            {answer.answerBody && (
+                              <p style={{ marginTop: 6 }}>
+                                {answer.answerBody}
+                              </p>
+                            )}
+                            {answer.state !== "published" &&
+                              can("draftPublicAnswers") && (
+                                <Link
+                                  className="button button--secondary button--small"
+                                  href={`/teach/sections/${sectionId}/publications`}
+                                  style={{ marginTop: 10 }}
+                                >
+                                  Open in publication queue
+                                </Link>
+                              )}
+                          </div>
+                        ))}
+
+                        <div
+                          className="composer-grid"
+                          style={{ marginTop: 18 }}
+                        >
+                          {can("sendPrivateResponses") && (
+                            <div className="composer-card">
+                              <h3>Reply privately</h3>
+                              <p>
+                                Visible to this student and authorized staff
+                                only.
+                              </p>
+                              <form action={sendPrivate}>
+                                <input
+                                  type="hidden"
+                                  name="itemId"
+                                  value={item.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="selected"
+                                  value={selectedRow.response.id}
+                                />
+                                <label
+                                  className="visually-hidden"
+                                  htmlFor={`private-${item.id}`}
+                                >
+                                  Private reply
                                 </label>
                                 <textarea
-                                  id={`pubq-${item.id}`}
+                                  id={`private-${item.id}`}
                                   className="textarea-field"
-                                  name="publicQuestion"
-                                  rows={2}
-                                  defaultValue={item.originalText}
+                                  name="body"
+                                  rows={4}
+                                  placeholder="Answer this student directly…"
                                   required
                                 />
-                              </div>
-                              <div className="field-row">
-                                <label htmlFor={`puba-${item.id}`}>
-                                  Public answer
-                                </label>
-                                <textarea
-                                  id={`puba-${item.id}`}
-                                  className="textarea-field"
-                                  name="answerBody"
-                                  rows={4}
-                                />
-                              </div>
-                              <Alert variant="warning" title="Before you publish">
-                                This answer will be visible to students in this
-                                section. The original wording stays private, but
-                                specific details can still identify the asker.
-                                Review the public wording before publishing.
-                              </Alert>
-                              <label className="choice">
-                                <input
-                                  type="checkbox"
-                                  name="acknowledged"
-                                  value="yes"
-                                />
-                                <span>I have checked the public wording</span>
-                              </label>
-                              <div className="row-gap">
                                 <button
                                   className="button button--secondary"
                                   type="submit"
-                                  name="intent"
-                                  value="draft"
                                 >
-                                  Save as draft
+                                  Send private reply
                                 </button>
-                                {can("publishPublicAnswers") && (
+                              </form>
+                            </div>
+                          )}
+
+                          {can("draftPublicAnswers") && (
+                            <div className="composer-card">
+                              <h3>Answer the whole class</h3>
+                              <p>
+                                The original wording above stays private. Write
+                                a version that cannot identify the asker.
+                              </p>
+                              <form action={draftOrPublish}>
+                                <input
+                                  type="hidden"
+                                  name="itemId"
+                                  value={item.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="selected"
+                                  value={selectedRow.response.id}
+                                />
+                                <div className="field-row">
+                                  <label htmlFor={`pubq-${item.id}`}>
+                                    Public question
+                                  </label>
+                                  <textarea
+                                    id={`pubq-${item.id}`}
+                                    className="textarea-field"
+                                    name="publicQuestion"
+                                    rows={2}
+                                    defaultValue={item.originalText}
+                                    required
+                                  />
+                                </div>
+                                <div className="field-row">
+                                  <label htmlFor={`puba-${item.id}`}>
+                                    Public answer
+                                  </label>
+                                  <textarea
+                                    id={`puba-${item.id}`}
+                                    className="textarea-field"
+                                    name="answerBody"
+                                    rows={4}
+                                  />
+                                </div>
+                                <Alert
+                                  variant="warning"
+                                  title="Before you publish"
+                                >
+                                  This answer will be visible to students in
+                                  this section. The original wording stays
+                                  private, but specific details can still
+                                  identify the asker. Review the public wording
+                                  before publishing.
+                                </Alert>
+                                <label className="choice">
+                                  <input
+                                    type="checkbox"
+                                    name="acknowledged"
+                                    value="yes"
+                                  />
+                                  <span>I have checked the public wording</span>
+                                </label>
+                                <div className="row-gap">
                                   <button
-                                    className="button button--primary"
+                                    className="button button--secondary"
                                     type="submit"
                                     name="intent"
-                                    value="publish"
+                                    value="draft"
                                   >
-                                    Publish to this section
+                                    Save as draft
                                   </button>
-                                )}
-                              </div>
-                            </form>
-                          </div>
-                        )}
-                      </div>
-                    </article>
-                  ))}
+                                  {can("publishPublicAnswers") && (
+                                    <button
+                                      className="button button--primary"
+                                      type="submit"
+                                      name="intent"
+                                      value="publish"
+                                    >
+                                      Publish to this section
+                                    </button>
+                                  )}
+                                </div>
+                              </form>
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    ),
+                  )}
                 </>
               )}
             </div>
@@ -635,7 +720,10 @@ export default async function ReviewPage({
   );
 }
 
-function renderAnswer(answer: { value: unknown; freeText: string | null }): string {
+function renderAnswer(answer: {
+  value: unknown;
+  freeText: string | null;
+}): string {
   if (answer.freeText) return answer.freeText;
   const value = (answer.value ?? {}) as {
     optionLabels?: string[];

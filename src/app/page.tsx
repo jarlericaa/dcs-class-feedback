@@ -2,7 +2,7 @@ import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { accountMatches } from "@/db/schema";
-import { requireUser } from "@/lib/session";
+
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
@@ -11,6 +11,7 @@ import { listSectionsForUser } from "@/modules/catalog";
 import { generateMatchCandidates } from "@/modules/identity/matching";
 import { getOpenCycleForStudent } from "@/modules/forms/submission";
 import { getReviewQueue } from "@/modules/review";
+import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * Role-aware home. Shows the next useful action per section using REAL data
@@ -88,7 +89,7 @@ export default async function DashboardPage() {
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace={staffCards.length > 0 ? "staff" : "student"}
       navGroups={homeNav("/", {
         isTeacher: user.isTeacher,

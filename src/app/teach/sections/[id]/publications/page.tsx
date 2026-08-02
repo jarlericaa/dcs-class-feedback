@@ -22,6 +22,7 @@ import {
   updateAnswerBody,
 } from "@/modules/publishing";
 import { AuthzError } from "@/modules/authz";
+import { toShellUser } from "@/lib/session";
 
 /**
  * Publication queue: drafts, scheduled answers, failed publications and what
@@ -42,16 +43,18 @@ export default async function PublicationsPage({
   const ctx = await loadStaffSection(sectionId, "draftPublicAnswers");
   if (!ctx.ok) {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Publication queue">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Publication queue"
+      >
         <AccessDenied what="this section's public answers" />
       </AppShell>
     );
   }
   const { user, access, section, course, can } = ctx;
   const queue = await listPublicationQueue(user.id, sectionId);
-
-  const back = (message: string, kind: "ok" | "error" | "warn" = "ok") =>
-    `/teach/sections/${sectionId}/publications?${kind}=${encodeURIComponent(message)}`;
 
   async function saveDraft(formData: FormData) {
     "use server";
@@ -64,10 +67,10 @@ export default async function PublicationsPage({
       if (question) await rewordPublicQuestion(uid, answerId, question);
       await updateAnswerBody(uid, answerId, body);
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
-    redirect(back("Draft saved."));
+    redirect(backTo(sectionId, "Draft saved."));
   }
 
   async function publish(formData: FormData) {
@@ -79,15 +82,15 @@ export default async function PublicationsPage({
     const sourceCount = Number(formData.get("sourceCount") ?? 1);
     const warnings = anonymityWarnings(question, sourceCount);
     if (warnings.length > 0 && formData.get("acknowledged") !== "yes") {
-      redirect(back(warnings.join(" | "), "warn"));
+      redirect(backTo(sectionId, warnings.join(" | "), "warn"));
     }
     try {
       await publishNow(uid, answerId);
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
-    redirect(back("Published to this section."));
+    redirect(backTo(sectionId, "Published to this section."));
   }
 
   async function schedule(formData: FormData) {
@@ -96,14 +99,17 @@ export default async function PublicationsPage({
     if (!uid) redirect("/signin");
     const answerId = String(formData.get("answerId"));
     const when = String(formData.get("scheduledAt") ?? "");
-    if (!when) redirect(back("Pick a date and time to schedule.", "error"));
+    if (!when)
+      redirect(backTo(sectionId, "Pick a date and time to schedule.", "error"));
     try {
       await schedulePublication(uid, answerId, new Date(when));
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
-    redirect(back("Scheduled. The reconciliation poller publishes it."));
+    redirect(
+      backTo(sectionId, "Scheduled. The reconciliation poller publishes it."),
+    );
   }
 
   async function cancel(formData: FormData) {
@@ -113,19 +119,22 @@ export default async function PublicationsPage({
     try {
       await cancelScheduledPublication(uid, String(formData.get("answerId")));
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
-    redirect(back("Schedule cancelled. It is a draft again."));
+    redirect(backTo(sectionId, "Schedule cancelled. It is a draft again."));
   }
 
   const editable = [...queue.failed, ...queue.drafts, ...queue.scheduled];
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/publications`)}
+      navGroups={staffSectionNav(
+        access,
+        `/teach/sections/${sectionId}/publications`,
+      )}
       contextLabel={section.title}
       breadcrumbs={
         <Breadcrumbs
@@ -169,10 +178,14 @@ export default async function PublicationsPage({
         ) : (
           editable.map(({ answer, sourceCount }) => (
             <section className="card card--padded" key={answer.id}>
-              <div className="row-gap" style={{ justifyContent: "space-between" }}>
+              <div
+                className="row-gap"
+                style={{ justifyContent: "space-between" }}
+              >
                 <div>
                   <p className="section-kicker">
-                    {sourceCount} source submission{sourceCount === 1 ? "" : "s"}
+                    {sourceCount} source submission
+                    {sourceCount === 1 ? "" : "s"}
                     {sourceCount > 1 && " · merged"}
                   </p>
                   <h2 style={{ margin: "2px 0 0", fontSize: 17 }}>
@@ -183,7 +196,8 @@ export default async function PublicationsPage({
                   <Badge tone="red">Publication failed</Badge>
                 ) : answer.state === "scheduled" ? (
                   <Badge tone="amber">
-                    Scheduled {formatDateTime(answer.scheduledAt, section.timezone)}
+                    Scheduled{" "}
+                    {formatDateTime(answer.scheduledAt, section.timezone)}
                   </Badge>
                 ) : (
                   <Badge tone="neutral">Draft</Badge>
@@ -198,7 +212,11 @@ export default async function PublicationsPage({
                 </div>
               )}
 
-              <form action={saveDraft} className="stack-gap" style={{ marginTop: 16 }}>
+              <form
+                action={saveDraft}
+                className="stack-gap"
+                style={{ marginTop: 16 }}
+              >
                 <input type="hidden" name="answerId" value={answer.id} />
                 <div className="field-row">
                   <label htmlFor={`q-${answer.id}`}>Public question</label>
@@ -247,9 +265,17 @@ export default async function PublicationsPage({
                         name="publicQuestion"
                         value={answer.publicQuestionText}
                       />
-                      <input type="hidden" name="sourceCount" value={sourceCount} />
+                      <input
+                        type="hidden"
+                        name="sourceCount"
+                        value={sourceCount}
+                      />
                       <label className="choice">
-                        <input type="checkbox" name="acknowledged" value="yes" />
+                        <input
+                          type="checkbox"
+                          name="acknowledged"
+                          value="yes"
+                        />
                         <span>I have checked the public wording</span>
                       </label>
                       <button className="button button--primary" type="submit">
@@ -283,13 +309,22 @@ export default async function PublicationsPage({
                         name="scheduledAt"
                         required
                       />
-                      <button className="button button--secondary" type="submit">
-                        {answer.state === "scheduled" ? "Reschedule" : "Schedule"}
+                      <button
+                        className="button button--secondary"
+                        type="submit"
+                      >
+                        {answer.state === "scheduled"
+                          ? "Reschedule"
+                          : "Schedule"}
                       </button>
                     </form>
                     {answer.state === "scheduled" && (
                       <form action={cancel} style={{ marginTop: 10 }}>
-                        <input type="hidden" name="answerId" value={answer.id} />
+                        <input
+                          type="hidden"
+                          name="answerId"
+                          value={answer.id}
+                        />
                         <button
                           className="button button--quiet button--small"
                           type="submit"
@@ -310,9 +345,7 @@ export default async function PublicationsPage({
             <div className="card__header">
               <div>
                 <h2>Recently published</h2>
-                <p>
-                  Published answers cannot be withdrawn in this release.
-                </p>
+                <p>Published answers cannot be withdrawn in this release.</p>
               </div>
             </div>
             <ul className="data-list">
@@ -324,7 +357,8 @@ export default async function PublicationsPage({
                       Published{" "}
                       {formatDateTime(answer.publishedAt, section.timezone)} ·{" "}
                       {sourceCount} source{sourceCount === 1 ? "" : "s"}
-                      {answer.publishedLate && " · published late by reconciliation"}
+                      {answer.publishedLate &&
+                        " · published late by reconciliation"}
                     </small>
                   </span>
                   <Badge tone="green">Live to this section</Badge>
@@ -342,4 +376,16 @@ function describe(err: unknown): string {
   if (err instanceof AuthzError) return err.message;
   if (err instanceof Error) return err.message;
   throw err;
+}
+
+/**
+ * Module scope on purpose: a server action serializes everything it closes
+ * over, so it may not capture a helper defined inside the page component.
+ */
+function backTo(
+  sectionId: string,
+  message: string,
+  kind: "ok" | "error" | "warn" = "ok",
+): string {
+  return `/teach/sections/${sectionId}/publications?${kind}=${encodeURIComponent(message)}`;
 }

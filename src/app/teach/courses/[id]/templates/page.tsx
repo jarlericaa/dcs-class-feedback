@@ -5,15 +5,18 @@ import { eq } from "drizzle-orm";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courses } from "@/db/schema";
-import { requireUser } from "@/lib/session";
+
 import { formatDate } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { AccessDenied, Alert, Badge, Breadcrumbs, EmptyState } from "@/components/ui";
 import {
-  emptyQuestion,
-  TemplateEditor,
-} from "@/components/staff/template-editor";
+  AccessDenied,
+  Alert,
+  Badge,
+  Breadcrumbs,
+  EmptyState,
+} from "@/components/ui";
+import { TemplateEditor } from "@/components/staff/template-editor";
 import {
   createTemplate,
   createTemplateVersion,
@@ -22,6 +25,7 @@ import {
 } from "@/modules/forms/templates";
 import { AuthzError } from "@/modules/authz";
 import type { QuestionDefinition } from "@/modules/forms/questions";
+import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * Course-level template authoring.
@@ -47,7 +51,12 @@ export default async function TemplatesPage({
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
-        <AppShell user={user} workspace="staff" navGroups={[]} title="Templates">
+        <AppShell
+          user={toShellUser(user)}
+          workspace="staff"
+          navGroups={[]}
+          title="Templates"
+        >
           <AccessDenied what="this course's templates" />
         </AppShell>
       );
@@ -59,9 +68,6 @@ export default async function TemplatesPage({
     where: eq(courses.id, courseId),
   });
   const editing = edit ? await getTemplateDetail(user.id, edit) : null;
-
-  const back = (message: string, kind: "ok" | "error" = "ok") =>
-    `/teach/courses/${courseId}/templates?${kind}=${encodeURIComponent(message)}`;
 
   async function addTemplate(formData: FormData) {
     "use server";
@@ -76,10 +82,10 @@ export default async function TemplatesPage({
         questions: parseQuestions(formData.get("questions")),
       });
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(courseId, describe(err), "error"));
     }
     revalidatePath(`/teach/courses/${courseId}/templates`);
-    redirect(back("Template created."));
+    redirect(backTo(courseId, "Template created."));
   }
 
   async function addVersion(formData: FormData) {
@@ -94,11 +100,12 @@ export default async function TemplatesPage({
         parseQuestions(formData.get("questions")),
       );
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(courseId, describe(err), "error"));
     }
     revalidatePath(`/teach/courses/${courseId}/templates`);
     redirect(
-      back(
+      backTo(
+        courseId,
         "New template version saved. Weeks already generated keep their original questions.",
       ),
     );
@@ -106,7 +113,7 @@ export default async function TemplatesPage({
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
       navGroups={homeNav("/teach/courses", {
         isTeacher: user.isTeacher,
@@ -151,11 +158,15 @@ export default async function TemplatesPage({
                     <small>
                       {questionCount} question{questionCount === 1 ? "" : "s"} ·
                       version {latestVersion?.versionNumber ?? 0} ·{" "}
-                      {formatDate(latestVersion?.createdAt ?? template.createdAt)}
+                      {formatDate(
+                        latestVersion?.createdAt ?? template.createdAt,
+                      )}
                     </small>
                   </span>
                   <span className="row-gap">
-                    {template.archived && <Badge tone="neutral">Archived</Badge>}
+                    {template.archived && (
+                      <Badge tone="neutral">Archived</Badge>
+                    )}
                     <Link
                       className="button button--secondary button--small"
                       href={`/teach/courses/${courseId}/templates?edit=${template.id}`}
@@ -179,7 +190,11 @@ export default async function TemplatesPage({
               {(editing.versions[0]?.versionNumber ?? 0) + 1}.
             </p>
             <form action={addVersion}>
-              <input type="hidden" name="templateId" value={editing.template.id} />
+              <input
+                type="hidden"
+                name="templateId"
+                value={editing.template.id}
+              />
               <TemplateEditor
                 showTitleFields={false}
                 submitLabel="Save as a new version"
@@ -210,7 +225,7 @@ export default async function TemplatesPage({
             </p>
             <form action={addTemplate}>
               <TemplateEditor
-                initialQuestions={[emptyQuestion(0)]}
+                initialQuestions={[]}
                 submitLabel="Create template"
               />
             </form>
@@ -247,4 +262,16 @@ function describe(err: unknown): string {
   }
   if (err instanceof Error) return err.message;
   throw err;
+}
+
+/**
+ * Module scope on purpose: a server action serializes everything it closes
+ * over, so it may not capture a helper defined inside the page component.
+ */
+function backTo(
+  courseId: string,
+  message: string,
+  kind: "ok" | "error" = "ok",
+): string {
+  return `/teach/courses/${courseId}/templates?${kind}=${encodeURIComponent(message)}`;
 }

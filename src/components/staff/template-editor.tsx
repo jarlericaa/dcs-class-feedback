@@ -54,7 +54,12 @@ export interface DraftQuestion {
   scaleMax: number;
 }
 
-export function emptyQuestion(index: number): DraftQuestion {
+/**
+ * Not exported on purpose: exports of a "use client" module become client
+ * references on the server, so a server component cannot call this to build a
+ * default row. The editor seeds its own empty row when given none.
+ */
+function emptyQuestion(index: number): DraftQuestion {
   return {
     key: `q${index}-${Math.round(index * 7919) % 9973}`,
     prompt: "",

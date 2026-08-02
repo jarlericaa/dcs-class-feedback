@@ -20,6 +20,7 @@ import {
   setBacklogState,
 } from "@/modules/backlog";
 import { AuthzError } from "@/modules/authz";
+import { toShellUser } from "@/lib/session";
 
 /**
  * Course question backlog, triaged from a section.
@@ -48,14 +49,24 @@ export default async function BacklogPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ state?: string; q?: string; ok?: string; error?: string }>;
+  searchParams: Promise<{
+    state?: string;
+    q?: string;
+    ok?: string;
+    error?: string;
+  }>;
 }) {
   const { id: sectionId } = await params;
   const sp = await searchParams;
   const ctx = await loadStaffSection(sectionId, "manageBacklogImports");
   if (!ctx.ok) {
     return (
-      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Question backlog">
+      <AppShell
+        user={toShellUser(ctx.user)}
+        workspace="staff"
+        navGroups={[]}
+        title="Question backlog"
+      >
         <AccessDenied what="this course's question backlog" />
       </AppShell>
     );
@@ -71,16 +82,18 @@ export default async function BacklogPage({
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
-        <AppShell user={user} workspace="staff" navGroups={[]} title="Question backlog">
+        <AppShell
+          user={toShellUser(user)}
+          workspace="staff"
+          navGroups={[]}
+          title="Question backlog"
+        >
           <AccessDenied what="this course's question backlog" />
         </AppShell>
       );
     }
     throw err;
   }
-
-  const back = (message: string, kind: "ok" | "error" = "ok") =>
-    `/teach/sections/${sectionId}/backlog?${kind}=${encodeURIComponent(message)}`;
 
   async function advance(formData: FormData) {
     "use server";
@@ -93,10 +106,10 @@ export default async function BacklogPage({
         String(formData.get("state")) as "answerable",
       );
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/backlog`);
-    redirect(back("Backlog question updated."));
+    redirect(backTo(sectionId, "Backlog question updated."));
   }
 
   async function draftHere(formData: FormData) {
@@ -111,11 +124,14 @@ export default async function BacklogPage({
         {},
       );
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/backlog`);
     redirect(
-      back("Draft created for this section. Finish it in the publication queue."),
+      backTo(
+        sectionId,
+        "Draft created for this section. Finish it in the publication queue.",
+      ),
     );
   }
 
@@ -128,7 +144,9 @@ export default async function BacklogPage({
       .map((line) => line.trim())
       .filter(Boolean);
     if (lines.length === 0) {
-      redirect(back("Add at least one question to import.", "error"));
+      redirect(
+        backTo(sectionId, "Add at least one question to import.", "error"),
+      );
     }
     try {
       const result = await importLegacyEntries(
@@ -139,22 +157,26 @@ export default async function BacklogPage({
       );
       revalidatePath(`/teach/sections/${sectionId}/backlog`);
       redirect(
-        back(
+        backTo(
+          sectionId,
           `${result.created.length} question(s) imported anonymously${
             result.errors.length > 0 ? `, ${result.errors.length} skipped` : ""
           }.`,
         ),
       );
     } catch (err) {
-      redirect(back(describe(err), "error"));
+      redirect(backTo(sectionId, describe(err), "error"));
     }
   }
 
   return (
     <AppShell
-      user={user}
+      user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/backlog`)}
+      navGroups={staffSectionNav(
+        access,
+        `/teach/sections/${sectionId}/backlog`,
+      )}
       contextLabel={section.title}
       breadcrumbs={
         <Breadcrumbs
@@ -222,7 +244,8 @@ export default async function BacklogPage({
                     <small>
                       {question.provenance.replace(/_/g, " ")} ·{" "}
                       {formatDate(question.createdAt)}
-                      {question.previouslyAnswered && " · has a previous answer"}
+                      {question.previouslyAnswered &&
+                        " · has a previous answer"}
                       {visibleSectionIds.includes(sectionId) &&
                         " · already shared with this section"}
                     </small>
@@ -233,8 +256,16 @@ export default async function BacklogPage({
                     </Badge>
                     {question.state === "imported" && (
                       <form action={advance} className="inline-form">
-                        <input type="hidden" name="questionId" value={question.id} />
-                        <input type="hidden" name="state" value="needs_review" />
+                        <input
+                          type="hidden"
+                          name="questionId"
+                          value={question.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="state"
+                          value="needs_review"
+                        />
                         <button
                           className="button button--quiet button--small"
                           type="submit"
@@ -246,8 +277,16 @@ export default async function BacklogPage({
                     {question.state === "needs_review" && (
                       <>
                         <form action={advance} className="inline-form">
-                          <input type="hidden" name="questionId" value={question.id} />
-                          <input type="hidden" name="state" value="answerable" />
+                          <input
+                            type="hidden"
+                            name="questionId"
+                            value={question.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="state"
+                            value="answerable"
+                          />
                           <button
                             className="button button--secondary button--small"
                             type="submit"
@@ -256,8 +295,16 @@ export default async function BacklogPage({
                           </button>
                         </form>
                         <form action={advance} className="inline-form">
-                          <input type="hidden" name="questionId" value={question.id} />
-                          <input type="hidden" name="state" value="not_suitable" />
+                          <input
+                            type="hidden"
+                            name="questionId"
+                            value={question.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="state"
+                            value="not_suitable"
+                          />
                           <button
                             className="button button--quiet button--small"
                             type="submit"
@@ -267,17 +314,22 @@ export default async function BacklogPage({
                         </form>
                       </>
                     )}
-                    {question.state === "answerable" && can("draftPublicAnswers") && (
-                      <form action={draftHere} className="inline-form">
-                        <input type="hidden" name="questionId" value={question.id} />
-                        <button
-                          className="button button--primary button--small"
-                          type="submit"
-                        >
-                          Draft for this section
-                        </button>
-                      </form>
-                    )}
+                    {question.state === "answerable" &&
+                      can("draftPublicAnswers") && (
+                        <form action={draftHere} className="inline-form">
+                          <input
+                            type="hidden"
+                            name="questionId"
+                            value={question.id}
+                          />
+                          <button
+                            className="button button--primary button--small"
+                            type="submit"
+                          >
+                            Draft for this section
+                          </button>
+                        </form>
+                      )}
                   </span>
                 </li>
               ))}
@@ -290,8 +342,8 @@ export default async function BacklogPage({
             Import questions from a previous semester
           </h2>
           <p className="muted small" style={{ margin: "0 0 14px" }}>
-            One question per line. Everything imported this way is anonymous:
-            no student identity is attached, and imported questions never count
+            One question per line. Everything imported this way is anonymous: no
+            student identity is attached, and imported questions never count
             towards anyone&apos;s participation.
           </p>
           <form action={importLegacy} className="stack-gap">
@@ -302,7 +354,9 @@ export default async function BacklogPage({
                 className="textarea-field"
                 name="entries"
                 rows={6}
-                placeholder={"Why do we normalise database tables?\nWill the finals be cumulative?"}
+                placeholder={
+                  "Why do we normalise database tables?\nWill the finals be cumulative?"
+                }
                 required
               />
             </div>
@@ -339,4 +393,16 @@ function describe(err: unknown): string {
   if (err instanceof AuthzError) return err.message;
   if (err instanceof Error) return err.message;
   throw err;
+}
+
+/**
+ * Module scope on purpose: a server action serializes everything it closes
+ * over, so it may not capture a helper defined inside the page component.
+ */
+function backTo(
+  sectionId: string,
+  message: string,
+  kind: "ok" | "error" = "ok",
+): string {
+  return `/teach/sections/${sectionId}/backlog?${kind}=${encodeURIComponent(message)}`;
 }
