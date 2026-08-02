@@ -20,5 +20,8 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  // docs/ holds design-reference .tsx/.css drafts that are documentation, not
+  // application code — they intentionally reference components that may not
+  // exist and must not be type-checked or bundled.
+  "exclude": ["node_modules", "docs"]
 }
