@@ -1,3 +1,4 @@
+import { redirect, unstable_rethrow } from "next/navigation";
 import { signIn } from "@/auth";
 import { env } from "@/env";
 import { Alert } from "@/components/ui";
@@ -78,7 +79,9 @@ export function EntryScreen({ error }: { error?: string }) {
               <Alert variant="error" title="Sign-in failed">
                 {error === "AccessDenied"
                   ? "That account is not allowed to sign in. Use your university Google account."
-                  : "Something went wrong signing you in. Try again, and tell your teacher if it keeps happening."}
+                  : error === "DevLogin"
+                    ? "No active account matches that email. Development sign-in only works for an account that already exists — try one of the seeded addresses."
+                    : "Something went wrong signing you in. Try again, and tell your teacher if it keeps happening."}
               </Alert>
             </div>
           )}
@@ -88,7 +91,14 @@ export function EntryScreen({ error }: { error?: string }) {
               <form
                 action={async () => {
                   "use server";
-                  await signIn("google", { redirectTo: "/" });
+                  try {
+                    await signIn("google", { redirectTo: "/" });
+                  } catch (err) {
+                    // signIn signals success by throwing a redirect, so hand
+                    // Next's own control-flow errors straight back.
+                    unstable_rethrow(err);
+                    redirect("/signin?error=Google");
+                  }
                 }}
               >
                 <button className="entry__btn entry__btn--primary" type="submit">
@@ -119,10 +129,19 @@ export function EntryScreen({ error }: { error?: string }) {
               <form
                 action={async (formData: FormData) => {
                   "use server";
-                  await signIn("dev-login", {
-                    email: String(formData.get("email") ?? ""),
-                    redirectTo: "/",
-                  });
+                  try {
+                    await signIn("dev-login", {
+                      email: String(formData.get("email") ?? ""),
+                      redirectTo: "/",
+                    });
+                  } catch (err) {
+                    // A successful sign-in throws a redirect, so hand Next's
+                    // own control-flow errors back untouched. Anything else
+                    // means the credentials were rejected: show a message
+                    // rather than a 500 page.
+                    unstable_rethrow(err);
+                    redirect("/signin?error=DevLogin");
+                  }
                 }}
               >
                 <label className="visually-hidden" htmlFor="dev-email">
