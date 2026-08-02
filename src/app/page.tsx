@@ -13,7 +13,7 @@ import { getOpenCycleForStudent } from "@/modules/forms/submission";
 import { getReviewQueue } from "@/modules/review";
 import { requireUser, toShellUser } from "@/lib/session";
 import { currentUserId } from "@/auth";
-import { Landing } from "@/components/marketing/landing";
+import { EntryScreen } from "@/components/marketing/entry-screen";
 
 /**
  * Role-aware home. Shows the next useful action per section using REAL data
@@ -56,9 +56,9 @@ async function staffSectionAttention(userId: string, sectionId: string) {
 }
 
 export default async function HomePage() {
-  // Signed out: the public landing page rather than a bounce to /signin, so
-  // someone arriving at the root can find out what this is first.
-  if (!(await currentUserId())) return <Landing />;
+  // Signed out: render the entry screen here instead of bouncing to /signin,
+  // so the root is a finished screen rather than a redirect.
+  if (!(await currentUserId())) return <EntryScreen />;
 
   const user = await requireUser();
 
