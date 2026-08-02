@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
   backlogQuestions,
@@ -22,6 +22,55 @@ import { getItemWithSection } from "@/modules/review";
  * - backlog/legacy items never count toward participation (they never create
  *   FormResponses at all)
  */
+
+/**
+ * Course backlog for the triage board. Course-staff only: the backlog carries
+ * question text that has not been vetted for publication, and provenance that
+ * students must never see.
+ */
+export async function listBacklogForCourse(
+  actorUserId: string,
+  courseId: string,
+  opts: { state?: string; search?: string } = {},
+) {
+  await requireCourseStaff(db, actorUserId, courseId);
+  const rows = await db.query.backlogQuestions.findMany({
+    where: eq(backlogQuestions.courseId, courseId),
+    orderBy: desc(backlogQuestions.updatedAt),
+    limit: 300,
+  });
+  const term = opts.search?.trim().toLowerCase();
+  const filtered = rows.filter(
+    (row) =>
+      (!opts.state || row.state === opts.state) &&
+      (!term || row.text.toLowerCase().includes(term)),
+  );
+  const visibility = rows.length
+    ? await db.query.sectionBacklogVisibility.findMany({
+        where: inArray(
+          sectionBacklogVisibility.backlogQuestionId,
+          rows.map((r) => r.id),
+        ),
+      })
+    : [];
+  const visibleSections = new Map<string, string[]>();
+  for (const row of visibility) {
+    const list = visibleSections.get(row.backlogQuestionId) ?? [];
+    list.push(row.sectionId);
+    visibleSections.set(row.backlogQuestionId, list);
+  }
+  const counts: Record<string, number> = {};
+  for (const row of rows) counts[row.state] = (counts[row.state] ?? 0) + 1;
+
+  return {
+    questions: filtered.map((question) => ({
+      question,
+      visibleSectionIds: visibleSections.get(question.id) ?? [],
+    })),
+    counts,
+    total: rows.length,
+  };
+}
 
 /**
  * Copy or move a current student submission item into the course backlog.

@@ -1,8 +1,8 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import { formQuestions, formTemplates, templateVersions } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
-import { requireCourseStaff } from "@/modules/authz";
+import { requireCourseStaff, requireSectionStaff } from "@/modules/authz";
 import { questionDefinitionSchema, type QuestionDefinition } from "./questions";
 
 /**
@@ -137,6 +137,86 @@ export async function createTemplateVersion(
     });
     return version!;
   });
+}
+
+/**
+ * Templates of a course with their latest version and question count, for the
+ * template list and the schedule picker. Course-staff only.
+ */
+export async function listTemplatesForCourse(
+  actorUserId: string,
+  courseId: string,
+) {
+  await requireCourseStaff(db, actorUserId, courseId);
+  const templates = await db.query.formTemplates.findMany({
+    where: eq(formTemplates.courseId, courseId),
+    orderBy: asc(formTemplates.title),
+  });
+  const detailed = [];
+  for (const template of templates) {
+    const latest = await getLatestTemplateVersion(db, template.id);
+    detailed.push({
+      template,
+      latestVersion: latest?.version ?? null,
+      questionCount: latest?.questions.length ?? 0,
+    });
+  }
+  return detailed;
+}
+
+/**
+ * Templates usable by a section's schedule picker. Section staff with
+ * `manage_weekly_cycles` need to choose a template even when they are not
+ * course staff, so this authorizes on the SECTION and then reads only the
+ * templates of that section's own course.
+ */
+export async function listTemplatesForSection(
+  actorUserId: string,
+  sectionId: string,
+  courseId: string,
+) {
+  await requireSectionStaff(db, actorUserId, sectionId, "manageWeeklyCycles");
+  const templates = await db.query.formTemplates.findMany({
+    where: and(
+      eq(formTemplates.courseId, courseId),
+      eq(formTemplates.archived, false),
+    ),
+    orderBy: asc(formTemplates.title),
+  });
+  const detailed = [];
+  for (const template of templates) {
+    const latest = await getLatestTemplateVersion(db, template.id);
+    detailed.push({
+      template,
+      latestVersion: latest?.version ?? null,
+      questionCount: latest?.questions.length ?? 0,
+    });
+  }
+  return detailed;
+}
+
+/** One template with every version and the latest version's questions. */
+export async function getTemplateDetail(
+  actorUserId: string,
+  templateId: string,
+) {
+  const template = await db.query.formTemplates.findFirst({
+    where: eq(formTemplates.id, templateId),
+  });
+  if (!template) throw new Error("Template not found");
+  await requireCourseStaff(db, actorUserId, template.courseId);
+  const versions = await db.query.templateVersions.findMany({
+    where: eq(templateVersions.templateId, templateId),
+    orderBy: desc(templateVersions.versionNumber),
+  });
+  const latest = await getLatestTemplateVersion(db, templateId);
+  return {
+    template,
+    versions,
+    questions: (latest?.questions ?? []).sort(
+      (a, b) => a.displayOrder - b.displayOrder,
+    ),
+  };
 }
 
 export async function getLatestTemplateVersion(

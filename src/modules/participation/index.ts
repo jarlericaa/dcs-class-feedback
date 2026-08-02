@@ -97,6 +97,49 @@ export async function deriveParticipation(
   };
 }
 
+/**
+ * Participation dashboard read model. Identity-bearing, so it needs the same
+ * `export_participation` capability as the CSVs (Risk R4). Viewing is not
+ * audited; producing a file is — see auditExport.
+ */
+export async function getParticipationOverview(
+  actorUserId: string,
+  sectionId: string,
+) {
+  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation");
+  const matrix = await deriveParticipation(sectionId);
+  const activeEnrollments = await db.query.enrollments.findMany({
+    where: and(
+      eq(enrollments.sectionId, sectionId),
+      eq(enrollments.status, "active"),
+    ),
+  });
+  const activeIds = new Set(activeEnrollments.map((e) => e.studentRecordId));
+  const cycleCount = matrix.cycles.length;
+  const students = matrix.students.map((s) => ({
+    ...s,
+    active: activeIds.has(s.studentRecordId),
+    rate: cycleCount === 0 ? 0 : s.totalWeeks / cycleCount,
+  }));
+  const activeStudents = students.filter((s) => s.active);
+  return {
+    cycles: matrix.cycles,
+    students,
+    summary: {
+      cycleCount,
+      activeStudentCount: activeStudents.length,
+      deactivatedStudentCount: students.length - activeStudents.length,
+      /** mean weeks participated across ACTIVE students only */
+      averageWeeks:
+        activeStudents.length === 0
+          ? 0
+          : activeStudents.reduce((sum, s) => sum + s.totalWeeks, 0) /
+            activeStudents.length,
+      neverParticipated: activeStudents.filter((s) => s.totalWeeks === 0).length,
+    },
+  };
+}
+
 function csvEscape(value: string | number | null | undefined): string {
   const s = value === null || value === undefined ? "" : String(value);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

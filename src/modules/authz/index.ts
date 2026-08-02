@@ -31,20 +31,43 @@ export class AuthzError extends Error {
   }
 }
 
-/** TA permission catalog flags = boolean columns on section_staff. */
-export type SectionPermission =
-  | "viewStudentIdentities"
-  | "reviewResponses"
-  | "sendPrivateResponses"
-  | "draftPublicAnswers"
-  | "rewordPublicQuestions"
-  | "publishPublicAnswers"
-  | "schedulePublication"
-  | "markValidity"
-  | "exportParticipation"
-  | "manageWeeklyCycles"
-  | "manageTemplates"
-  | "manageBacklogImports";
+/**
+ * TA permission catalog (roles-and-permissions.md §2.3) = boolean columns on
+ * section_staff. `manage_course_materials` is deliberately absent: course
+ * material management is post-MVP.
+ */
+export const SECTION_PERMISSIONS = [
+  "viewStudentIdentities",
+  "reviewResponses",
+  "sendPrivateResponses",
+  "draftPublicAnswers",
+  "rewordPublicQuestions",
+  "publishPublicAnswers",
+  "schedulePublication",
+  "markValidity",
+  "exportParticipation",
+  "manageWeeklyCycles",
+  "manageTemplates",
+  "manageBacklogImports",
+] as const;
+
+export type SectionPermission = (typeof SECTION_PERMISSIONS)[number];
+
+/** Human labels for the permission editor. Keep in sync with the catalog. */
+export const SECTION_PERMISSION_LABELS: Record<SectionPermission, string> = {
+  viewStudentIdentities: "See student identities on responses",
+  reviewResponses: "Review form responses",
+  sendPrivateResponses: "Send private replies",
+  draftPublicAnswers: "Draft public answers",
+  rewordPublicQuestions: "Edit public question wording",
+  publishPublicAnswers: "Publish immediately",
+  schedulePublication: "Schedule publication",
+  markValidity: "Mark responses valid/invalid",
+  exportParticipation: "Export participation CSVs (identity-bearing)",
+  manageWeeklyCycles: "Manage cycles and recurrence",
+  manageTemplates: "Manage templates",
+  manageBacklogImports: "Manage the backlog and imports",
+};
 
 export async function requireActiveUser(dbx: DbOrTx, userId: string) {
   const user = await dbx.query.users.findFirst({ where: eq(users.id, userId) });
@@ -77,6 +100,40 @@ export async function requireCourseStaff(dbx: DbOrTx, userId: string, courseId: 
   });
   if (!membership) throw new AuthzError("No access to this course");
   return course;
+}
+
+/**
+ * Course OWNER only. Staff assignment and the TA permission catalog are the
+ * class owner's call (roles-and-permissions.md §2.3), so course staff who are
+ * not the owner cannot escalate their own or anyone else's permissions.
+ */
+export async function requireCourseOwner(
+  dbx: DbOrTx,
+  userId: string,
+  courseId: string,
+) {
+  await requireActiveUser(dbx, userId);
+  const course = await dbx.query.courses.findFirst({
+    where: eq(courses.id, courseId),
+  });
+  if (!course || course.ownerUserId !== userId) {
+    throw new AuthzError("Only the course owner can do this");
+  }
+  return course;
+}
+
+/**
+ * Teacher capability (Open D3, provisional: a platform admin grants
+ * `users.isTeacher`; teachers self-serve courses and sections thereafter).
+ * This is a capability check, not resource access — every course/section
+ * action still resolves membership on the specific resource.
+ */
+export async function requireTeacher(dbx: DbOrTx, userId: string) {
+  const user = await requireActiveUser(dbx, userId);
+  if (!user.isTeacher) {
+    throw new AuthzError("A teacher role is required to do this");
+  }
+  return user;
 }
 
 /**
@@ -182,12 +239,119 @@ export async function requireSectionQaAccess(
   return { role: "student" };
 }
 
+export type EffectivePermissions = Record<SectionPermission, boolean>;
+
+function allPermissions(value: boolean): EffectivePermissions {
+  return Object.fromEntries(
+    SECTION_PERMISSIONS.map((p) => [p, value]),
+  ) as EffectivePermissions;
+}
+
+export interface SectionAccess {
+  section: typeof classSections.$inferSelect;
+  /** staff capacity on this section, if any */
+  staff: {
+    role: "teacher" | "ta" | "co_teacher" | "course_staff";
+    isCourseOwner: boolean;
+    permissions: EffectivePermissions;
+  } | null;
+  /** the confirmed student record with an active enrolment here, if any */
+  studentRecordId: string | null;
+}
+
+/**
+ * READ MODEL ONLY — resolves what a user may see in navigation for a section.
+ *
+ * This never authorizes a mutation. Hiding a link is not authorization: every
+ * action still calls requireSectionStaff / requireEnrolledStudent, which is
+ * the only enforcement point. Returns null when the user has no access at all.
+ */
+export async function getSectionAccess(
+  dbx: DbOrTx,
+  userId: string,
+  sectionId: string,
+): Promise<SectionAccess | null> {
+  const user = await dbx.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user || !user.active) return null;
+  const section = await dbx.query.classSections.findFirst({
+    where: eq(classSections.id, sectionId),
+  });
+  if (!section) return null;
+
+  const course = await dbx.query.courses.findFirst({
+    where: eq(courses.id, section.courseId),
+  });
+  const isOwner = course?.ownerUserId === userId;
+  const courseMembership = isOwner
+    ? true
+    : !!(await dbx.query.courseStaff.findFirst({
+        where: and(
+          eq(courseStaff.courseId, section.courseId),
+          eq(courseStaff.userId, userId),
+        ),
+      }));
+
+  const membership = await dbx.query.sectionStaff.findFirst({
+    where: and(
+      eq(sectionStaff.sectionId, sectionId),
+      eq(sectionStaff.userId, userId),
+    ),
+  });
+
+  let staff: SectionAccess["staff"] = null;
+  if (membership && (membership.role === "teacher" || membership.role === "co_teacher")) {
+    staff = {
+      role: membership.role,
+      isCourseOwner: isOwner,
+      permissions: allPermissions(true),
+    };
+  } else if (membership) {
+    // TA: exactly the granted flags. Course staff of the parent course still
+    // administer the section, so union the two rather than downgrading them.
+    const granted = Object.fromEntries(
+      SECTION_PERMISSIONS.map((p) => [p, courseMembership || membership[p]]),
+    ) as EffectivePermissions;
+    staff = {
+      role: courseMembership ? "course_staff" : "ta",
+      isCourseOwner: isOwner,
+      permissions: granted,
+    };
+  } else if (courseMembership) {
+    staff = {
+      role: "course_staff",
+      isCourseOwner: isOwner,
+      permissions: allPermissions(true),
+    };
+  }
+
+  const record = await getConfirmedStudentRecord(dbx, userId);
+  let studentRecordId: string | null = null;
+  if (record) {
+    const enrollment = await dbx.query.enrollments.findFirst({
+      where: and(
+        eq(enrollments.sectionId, sectionId),
+        eq(enrollments.studentRecordId, record.id),
+        eq(enrollments.status, "active"),
+      ),
+    });
+    if (enrollment) studentRecordId = record.id;
+  }
+
+  if (!staff && !studentRecordId) return null;
+  return { section, staff, studentRecordId };
+}
+
 /** Convenience wrappers bound to the app db. */
 export const authz = {
   requireActiveUser: (userId: string) => requireActiveUser(db, userId),
   requirePlatformAdmin: (userId: string) => requirePlatformAdmin(db, userId),
   requireCourseStaff: (userId: string, courseId: string) =>
     requireCourseStaff(db, userId, courseId),
+  requireCourseOwner: (userId: string, courseId: string) =>
+    requireCourseOwner(db, userId, courseId),
+  requireTeacher: (userId: string) => requireTeacher(db, userId),
+  getSectionAccess: (userId: string, sectionId: string) =>
+    getSectionAccess(db, userId, sectionId),
   requireSectionStaff: (
     userId: string,
     sectionId: string,

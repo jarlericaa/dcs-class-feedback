@@ -330,6 +330,91 @@ export async function cancelScheduledPublication(
 }
 
 /**
+ * Publication queue: drafts, scheduled answers, failed publications and the
+ * most recent published entries for one section. Staff-only — it carries the
+ * source-link counts and failure reasons that never reach students.
+ *
+ * `publishFailed` rows stay in `scheduled` state by design (see
+ * publishing/publish.ts), so staff can retry with publishNow or reschedule.
+ */
+export async function listPublicationQueue(
+  actorUserId: string,
+  sectionId: string,
+) {
+  await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
+  const rows = await db.query.publicAnswers.findMany({
+    where: eq(publicAnswers.sectionId, sectionId),
+    orderBy: desc(publicAnswers.updatedAt),
+  });
+  if (rows.length === 0) {
+    return { drafts: [], scheduled: [], failed: [], published: [] };
+  }
+  const links = await db.query.sourceLinks.findMany({
+    where: inArray(
+      sourceLinks.publicAnswerId,
+      rows.map((r) => r.id),
+    ),
+  });
+  const sourceCount = new Map<string, number>();
+  for (const link of links) {
+    sourceCount.set(
+      link.publicAnswerId,
+      (sourceCount.get(link.publicAnswerId) ?? 0) + 1,
+    );
+  }
+  const decorated = rows.map((answer) => ({
+    answer,
+    sourceCount: sourceCount.get(answer.id) ?? 0,
+  }));
+  return {
+    drafts: decorated.filter((d) => d.answer.state === "draft"),
+    scheduled: decorated.filter(
+      (d) => d.answer.state === "scheduled" && !d.answer.publishFailed,
+    ),
+    failed: decorated.filter((d) => d.answer.publishFailed),
+    published: decorated
+      .filter((d) => d.answer.state === "published")
+      .slice(0, 20),
+  };
+}
+
+/**
+ * One public answer with the ORIGINAL wording of its sources, for the staff
+ * editor. The originals are staff-only context: they are never part of any
+ * student-facing projection.
+ */
+export async function getPublicAnswerForEditing(
+  actorUserId: string,
+  publicAnswerId: string,
+) {
+  const answer = await db.query.publicAnswers.findFirst({
+    where: eq(publicAnswers.id, publicAnswerId),
+  });
+  if (!answer) throw new Error("Public answer not found");
+  await requireSectionStaff(db, actorUserId, answer.sectionId, "draftPublicAnswers");
+  const links = await db.query.sourceLinks.findMany({
+    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+  });
+  const itemIds = links.map((l) => l.itemId).filter((v): v is string => !!v);
+  const items = itemIds.length
+    ? await db.query.studentSubmissionItems.findMany({
+        where: inArray(studentSubmissionItems.id, itemIds),
+      })
+    : [];
+  return {
+    answer,
+    sources: items.map((item) => ({
+      id: item.id,
+      submissionType: item.submissionType,
+      category: item.category,
+      originalText: item.originalText,
+    })),
+    backlogSourceCount: links.filter((l) => l.backlogQuestionId).length,
+    warnings: anonymityWarnings(answer.publicQuestionText, links.length),
+  };
+}
+
+/**
  * Section Q&A archive — the class-facing read model. Access limited to that
  * section's enrolled students and staff. The projection is intentionally
  * identity-free: no source links, no student data, no drafts.
