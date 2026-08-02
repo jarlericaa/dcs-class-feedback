@@ -1,132 +1,127 @@
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { AuthzError } from "@/modules/authz";
+import { loadStaffSection } from "@/lib/staff-section";
+import { AppShell } from "@/components/layout/app-shell";
+import { staffSectionNav } from "@/components/layout/nav";
+import { AccessDenied, Alert, Breadcrumbs } from "@/components/ui";
+import {
+  RosterImport,
+  type ImportState,
+  type PreviewAction,
+} from "@/components/staff/roster-import";
 import {
   commitRosterImport,
   parseRosterCsv,
   previewRosterImport,
-  type ImportPreview,
 } from "@/modules/roster-import";
+import { AuthzError } from "@/modules/authz";
 
-/** Roster CSV import: paste → preview → confirm. Nothing applies at preview. */
+/**
+ * Roster CSV import. Preview applies nothing; the commit re-derives the plan
+ * from current data inside its own transaction, and deactivation never
+ * deletes a student's history.
+ */
 export default async function ImportPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ done?: string }>;
 }) {
-  const userId = await currentUserId();
-  if (!userId) redirect("/signin");
   const { id: sectionId } = await params;
-  const { done } = await searchParams;
-
-  async function preview(formData: FormData) {
-    "use server";
-    // Round-trip the CSV so the confirm step re-validates from scratch.
-    const csv = String(formData.get("csv") ?? "");
-    redirect(
-      `/teach/sections/${sectionId}/import?` +
-        new URLSearchParams({ csv }).toString(),
+  const ctx = await loadStaffSection(sectionId, "viewStudentIdentities");
+  if (!ctx.ok) {
+    return (
+      <AppShell user={ctx.user} workspace="staff" navGroups={[]} title="Roster import">
+        <AccessDenied what="this section's roster" />
+      </AppShell>
     );
   }
+  const { user, access, section, course } = ctx;
 
-  async function confirm(formData: FormData) {
+  async function run(_prev: ImportState, formData: FormData): Promise<ImportState> {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
     const csv = String(formData.get("csv") ?? "");
-    const summary = await commitRosterImport(
-      uid,
-      sectionId,
-      parseRosterCsv(csv),
-      String(formData.get("source") || "pasted CSV"),
-    );
-    redirect(
-      `/teach/sections/${sectionId}/import?done=${encodeURIComponent(
-        JSON.stringify(summary),
-      )}`,
-    );
-  }
+    const intent = String(formData.get("intent") ?? "preview");
+    const parsed = parseRosterCsv(csv);
 
-  const sp = await searchParams;
-  const csv = (sp as Record<string, string>).csv ?? "";
-  let previewResult: ImportPreview | null = null;
-  if (csv) {
     try {
-      previewResult = await previewRosterImport(userId, sectionId, parseRosterCsv(csv));
+      if (intent === "commit") {
+        const summary = await commitRosterImport(
+          uid,
+          sectionId,
+          parsed,
+          String(formData.get("source") || "pasted CSV"),
+        );
+        revalidatePath(`/teach/sections/${sectionId}/import`);
+        return {
+          status: "done",
+          csv: "",
+          summary: summary as unknown as Record<string, number | string>,
+        };
+      }
+
+      const preview = await previewRosterImport(uid, sectionId, parsed);
+      return {
+        status: "preview",
+        csv,
+        fileError: preview.fileError,
+        rowErrors: preview.errors,
+        actions: preview.actions.map(
+          (action): PreviewAction => ({
+            kind: action.kind,
+            studentNumber: action.row.studentNumber,
+            fullName: action.row.fullName,
+            currentName:
+              action.kind === "update_name" || action.kind === "name_diff_locked"
+                ? action.currentName
+                : undefined,
+          }),
+        ),
+        deactivations: preview.toDeactivate.map((d) => ({
+          studentNumber: d.studentNumber,
+          name: d.name,
+        })),
+      };
     } catch (err) {
       if (err instanceof AuthzError) {
-        return <main><p>You do not have access to this section.</p></main>;
+        return { status: "error", csv, message: err.message };
+      }
+      if (err instanceof Error) {
+        return { status: "error", csv, message: err.message };
       }
       throw err;
     }
   }
 
   return (
-    <main>
-      <h1>Import class roster (CSV)</h1>
-      <p>
-        Required columns: <code>student number</code>, <code>full name</code>.
-        Preview first — nothing changes until you confirm.
-      </p>
-      {done && (
-        <p style={{ color: "green" }}>Import complete: {done}</p>
-      )}
-      <form action={preview}>
-        <textarea
-          name="csv"
-          rows={8}
-          style={{ width: "100%" }}
-          defaultValue={csv}
-          placeholder={"student number,full name\n2026-001,Juan Dela Cruz"}
-          required
+    <AppShell
+      user={user}
+      workspace="staff"
+      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/import`)}
+      contextLabel={section.title}
+      breadcrumbs={
+        <Breadcrumbs
+          items={[
+            { href: "/", label: "Overview" },
+            { label: `${course.code} · ${section.term}` },
+            { label: "Roster import" },
+          ]}
         />
-        <button type="submit">Preview</button>
-      </form>
-
-      {previewResult && (
-        <section>
-          <h2>Preview</h2>
-          {previewResult.fileError && (
-            <p style={{ color: "crimson" }}>{previewResult.fileError}</p>
-          )}
-          <ul>
-            {previewResult.actions.map((a, i) => (
-              <li key={i}>
-                {a.kind === "create" &&
-                  `CREATE ${a.row.fullName} (${a.row.studentNumber})`}
-                {a.kind === "enroll_existing" &&
-                  `ENROLL existing record ${a.row.studentNumber}`}
-                {a.kind === "reactivate" && `REACTIVATE ${a.row.studentNumber}`}
-                {a.kind === "unchanged" && `unchanged ${a.row.studentNumber}`}
-                {a.kind === "update_name" &&
-                  `RENAME ${a.row.studentNumber}: "${a.currentName}" → "${a.row.fullName}"`}
-                {a.kind === "name_diff_locked" &&
-                  `LOCKED name difference for verified student ${a.row.studentNumber}: roster says "${a.row.fullName}", canonical stays "${a.currentName}" (correct manually if needed)`}
-              </li>
-            ))}
-            {previewResult.toDeactivate.map((d) => (
-              <li key={d.studentRecordId} style={{ color: "darkorange" }}>
-                DEACTIVATE {d.name} ({d.studentNumber}) — absent from new list
-                (kept, never deleted)
-              </li>
-            ))}
-            {previewResult.errors.map((e, i) => (
-              <li key={`e${i}`} style={{ color: "crimson" }}>
-                Line {e.line}: {e.message}
-              </li>
-            ))}
-          </ul>
-          {!previewResult.fileError && (
-            <form action={confirm}>
-              <input type="hidden" name="csv" value={csv} />
-              <input name="source" placeholder="Source description (e.g. registrar list v2)" />
-              <button type="submit">Confirm import</button>
-            </form>
-          )}
-        </section>
-      )}
-    </main>
+      }
+      eyebrow="Staff only"
+      title="Import the class list"
+      description="Paste the registrar's CSV, check the plan, then confirm. Nothing changes until you confirm."
+    >
+      <div className="stack-gap">
+        <Alert variant="info" title="How matching works">
+          Class lists only have a student number and a name, so the platform
+          proposes account matches but never confirms one. You confirm every
+          student on the account matches page.
+        </Alert>
+        <RosterImport action={run} />
+      </div>
+    </AppShell>
   );
 }
