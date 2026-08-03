@@ -236,7 +236,7 @@ export async function listCyclesForSection(
   actorUserId: string,
   sectionId: string,
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "manageWeeklyCycles");
+  await requireSectionStaff(db, actorUserId, sectionId, "manageWeeklyCycles", { allowArchived: true });
   const cycles = await db.query.weeklyCycles.findMany({
     where: eq(weeklyCycles.sectionId, sectionId),
     orderBy: [desc(weeklyCycles.cycleIndex), asc(weeklyCycles.openAt)],

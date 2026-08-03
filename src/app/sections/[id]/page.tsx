@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 
-import { formatDeadline, timeRemaining } from "@/lib/datetime";
+import { formatDateTime, formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { studentSectionNav } from "@/components/layout/nav";
 import { AccessDenied, Alert, Badge, EmptyState } from "@/components/ui";
@@ -13,11 +13,14 @@ import {
   type SubmitState,
 } from "@/components/student/weekly-form";
 import {
-  getOpenCycleForStudent,
+  editSubmittedResponse,
+  getStudentFormState,
+  saveDraft,
   submitResponse,
   SubmissionError,
 } from "@/modules/forms/submission";
 import type { QuestionOption } from "@/modules/forms/questions";
+import { renderRichText } from "@/modules/richtext/render";
 import { AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
 import { requireUser, toShellUser } from "@/lib/session";
@@ -40,9 +43,9 @@ export default async function SectionFormPage({
   const { id: sectionId } = await params;
   const { submitted } = await searchParams;
 
-  let current: Awaited<ReturnType<typeof getOpenCycleForStudent>>;
+  let current: Awaited<ReturnType<typeof getStudentFormState>>;
   try {
-    current = await getOpenCycleForStudent(user.id, sectionId);
+    current = await getStudentFormState(user.id, sectionId);
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
@@ -101,9 +104,9 @@ export default async function SectionFormPage({
     );
   }
 
-  const { cycle, questions, alreadySubmitted } = current;
+  const { cycle, questions, config, response, canEdit } = current;
 
-  if (alreadySubmitted) {
+  if (response && !canEdit) {
     return (
       <AppShell
         {...shell}
@@ -156,10 +159,14 @@ export default async function SectionFormPage({
     );
   }
 
-  const questionViews: FormQuestionView[] = questions.map((q) => ({
+  // Rendered here, on the server, so the client form never runs a sanitizer.
+  const questionViews: FormQuestionView[] = await Promise.all(
+    questions.map(async (q) => ({
     id: q.id,
     prompt: q.prompt,
     description: q.description,
+    promptHtml: await renderRichText(q.prompt),
+    descriptionHtml: await renderRichText(q.description),
     type: q.type,
     required: q.required,
     options: ((q.options ?? []) as QuestionOption[]).map((o) => ({
@@ -173,7 +180,31 @@ export default async function SectionFormPage({
           step: (q.scale as { step?: number }).step ?? 1,
         }
       : null,
-  }));
+    })),
+  );
+
+  /**
+   * Restore the student's saved answers into the shape the form control uses, so
+   * reopening a draft shows exactly what they typed.
+   */
+  const initialAnswers: Record<string, string | string[]> = {};
+  for (const answer of response?.answers ?? []) {
+    const value = (answer.value ?? {}) as {
+      optionIds?: string[];
+      scaleValue?: number;
+      boolValue?: boolean;
+      dateValue?: string;
+      timeValue?: string;
+    };
+    if (answer.freeText) initialAnswers[answer.questionId] = answer.freeText;
+    else if (value.optionIds) initialAnswers[answer.questionId] = value.optionIds;
+    else if (value.scaleValue !== undefined)
+      initialAnswers[answer.questionId] = String(value.scaleValue);
+    else if (value.boolValue !== undefined)
+      initialAnswers[answer.questionId] = value.boolValue ? "yes" : "no";
+    else if (value.dateValue) initialAnswers[answer.questionId] = value.dateValue;
+    else if (value.timeValue) initialAnswers[answer.questionId] = value.timeValue;
+  }
 
   async function submit(
     _prev: SubmitState,
@@ -208,40 +239,66 @@ export default async function SectionFormPage({
       }
     });
 
-    const itemText = String(formData.get("item_text") ?? "").trim();
+    // The client posts its item blocks as one JSON field. Untrusted input: the
+    // service re-validates the shape, the count against the template, and the
+    // ownership of every itemId.
+    let items: unknown = [];
     try {
-      await submitResponse(uid, cycle.id, {
-        answers,
-        studentItem: itemText
-          ? {
-              submissionType: String(formData.get("item_type") ?? "question"),
-              category: String(formData.get("item_category") ?? "content"),
-              text: itemText,
-            }
-          : undefined,
-      });
+      items = JSON.parse(String(formData.get("items") ?? "[]"));
+    } catch {
+      items = [];
+    }
+    const expectedRevisionRaw = formData.get("expectedRevision");
+    const payload = {
+      answers,
+      items,
+      expectedRevision: expectedRevisionRaw
+        ? Number(expectedRevisionRaw)
+        : undefined,
+    };
+
+    const intent = String(formData.get("intent") ?? "submit");
+    try {
+      if (intent === "draft") {
+        await saveDraft(uid, cycle.id, payload);
+        revalidatePath(`/sections/${sectionId}`);
+        return {
+          status: "saved",
+          errors: {},
+          message:
+            "Your draft is saved. It does not count until you submit, and only you can see it.",
+        };
+      }
+      const result =
+        intent === "edit"
+          ? await editSubmittedResponse(uid, cycle.id, payload)
+          : await submitResponse(uid, cycle.id, payload);
+      revalidatePath(`/sections/${sectionId}`);
+      return {
+        status: "submitted",
+        errors: {},
+        message:
+          result.rejectedItemIds.length > 0
+            ? "Saved. Some questions could not be changed because staff have already acted on them."
+            : intent === "edit"
+              ? "Your changes are saved. You can keep editing until the deadline."
+              : "Submitted. You can still edit until the deadline.",
+        rejectedItemIds: result.rejectedItemIds,
+      };
     } catch (err) {
       if (err instanceof SubmissionError) {
-        // Map per-question errors back onto the fields so the student keeps
-        // everything they typed and sees exactly what to fix.
         const errors: Record<string, string> = {};
         for (const detail of err.details) {
           errors[detail.questionId ?? ""] = detail.message;
         }
-        if (err.details.length === 0) errors[""] = err.message;
+        if (Object.keys(errors).length === 0) errors[""] = err.message;
         return { status: "error", errors };
       }
       if (err instanceof AuthzError) {
-        return {
-          status: "error",
-          errors: { "": "You are not able to submit for this section." },
-        };
+        return { status: "error", errors: { "": err.message } };
       }
       throw err;
     }
-
-    revalidatePath(`/sections/${sectionId}`);
-    redirect(`/sections/${sectionId}?submitted=1`);
   }
 
   return (
@@ -268,6 +325,26 @@ export default async function SectionFormPage({
             questions={questionViews}
             action={submit}
             deadlineLabel={formatDeadline(cycle.deadlineAt, section.timezone)}
+            config={config}
+            lifecycle={response?.lifecycle ?? "new"}
+            revision={response?.revision}
+            initialAnswers={initialAnswers}
+            initialItems={
+              response?.items.map((item) => ({
+                clientKey: item.id,
+                itemId: item.id,
+                kind: item.kind,
+                submissionType: item.submissionType,
+                category: item.category,
+                text: item.text,
+                editable: item.editable,
+              })) ?? []
+            }
+            lastEditedLabel={
+              response?.lastEditedAt
+                ? formatDateTime(response.lastEditedAt, section.timezone)
+                : undefined
+            }
           />
         </div>
       </section>
