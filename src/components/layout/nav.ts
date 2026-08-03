@@ -134,6 +134,13 @@ export function studentSectionNav(
 ): NavGroup[] {
   return [
     {
+      label: "Workspace",
+      items: mark(
+        [{ href: "/", label: "Overview", icon: "⌂" }],
+        currentPath,
+      ),
+    },
+    {
       label: "This class",
       items: mark(
         [
