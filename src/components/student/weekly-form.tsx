@@ -277,8 +277,8 @@ export function WeeklyForm({
               onChange={(e) => setItemCategory(e.target.value)}
             >
               <option value="content">Course content</option>
-              <option value="logistics">Logistics</option>
-              <option value="misc">Something else</option>
+              <option value="logistics">Class logistics</option>
+              <option value="misc">Other</option>
             </select>
           </div>
         </div>

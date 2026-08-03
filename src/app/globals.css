@@ -1385,6 +1385,7 @@ button.button {
 .cat--midterm { background: #06b6d4; }
 .cat--final-exam { background: #ec4899; }
 .cat--social { background: #84cc16; }
+.cat--all { background: #64748b; }
 .cat--content { background: #16a34a; }
 .cat--logistics { background: #f59e0b; }
 .cat--misc { background: #a855f7; }
@@ -1548,6 +1549,13 @@ button.button {
   flex: 0 0 auto;
   color: #7b838c;
   font-size: 14px;
+  line-height: 1;
+}
+.ws-rail__active-mark {
+  flex: 0 0 auto;
+  color: var(--link);
+  font-size: 13px;
+  font-weight: 800;
   line-height: 1;
 }
 .ws-rail__footer {

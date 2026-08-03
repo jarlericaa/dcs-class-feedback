@@ -46,7 +46,7 @@ export function EntryScreen({ error }: { error?: string }) {
             <div className="entry__preview-row">
               <b>Can the slide font be larger?</b>
               <span>
-                <span className="entry__preview-tag">Logistics</span> · Anonymous
+                <span className="entry__preview-tag">Class logistics</span> · Anonymous
                 · answered
               </span>
             </div>

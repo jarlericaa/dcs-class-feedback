@@ -57,12 +57,9 @@ export default async function QaArchivePage({
   const { id: sectionId } = await params;
   const sp = await searchParams;
 
-  let entries;
+  let allEntries;
   try {
-    entries = await listSectionQa(user.id, sectionId, {
-      search: sp.q,
-      category: sp.category as "content" | "logistics" | "misc" | undefined,
-    });
+    allEntries = await listSectionQa(user.id, sectionId, { search: sp.q });
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
@@ -73,6 +70,10 @@ export default async function QaArchivePage({
     }
     throw err;
   }
+
+  const entries = allEntries.filter(
+    (entry) => !sp.category || entry.category === sp.category,
+  );
 
   const { section, course } = await getSectionWithCourse(sectionId);
   const access = await authz.getSectionAccess(user.id, sectionId);
@@ -114,6 +115,23 @@ export default async function QaArchivePage({
         return true;
     }
   });
+  const categoryCounts = new Map(
+    QUESTION_CATEGORIES.map((category) => [category.slug, 0]),
+  );
+  for (const entry of allEntries) {
+    const at = entry.publishedAt?.getTime() ?? 0;
+    const includedByTime =
+      filter === "all" ||
+      (filter === "week" && now - at < 7 * 86_400_000) ||
+      (filter === "month" && now - at < 30 * 86_400_000) ||
+      (filter === "legacy" && entry.sourceOrigin === "legacy");
+    if (includedByTime && entry.category && categoryCounts.has(entry.category)) {
+      categoryCounts.set(
+        entry.category,
+        categoryCounts.get(entry.category)! + 1,
+      );
+    }
+  }
 
   const active =
     visible.find((entry) => entry.id === sp.selected) ?? visible[0] ?? null;
@@ -146,16 +164,31 @@ export default async function QaArchivePage({
         active: s.id === sectionId,
       }))}
       navGroups={navGroups}
-      categories={QUESTION_CATEGORIES.map((c) => ({
-        slug: c.slug,
-        label: c.label,
-        href: link({ category: c.slug, selected: undefined }),
-        clearHref: link({ category: undefined, selected: undefined }),
-        active: sp.category === c.slug,
-      }))}
-      railFooter={
-        <span>Visible to this section only. Askers are always anonymous.</span>
-      }
+      categories={[
+        {
+          slug: "all",
+          label: "All",
+          count: allEntries.filter((entry) => {
+            const at = entry.publishedAt?.getTime() ?? 0;
+            return (
+              filter === "all" ||
+              (filter === "week" && now - at < 7 * 86_400_000) ||
+              (filter === "month" && now - at < 30 * 86_400_000) ||
+              (filter === "legacy" && entry.sourceOrigin === "legacy")
+            );
+          }).length,
+          href: link({ category: undefined, selected: undefined }),
+          active: !sp.category,
+        },
+        ...QUESTION_CATEGORIES.map((c) => ({
+          slug: c.slug,
+          label: c.label,
+          count: categoryCounts.get(c.slug) ?? 0,
+          href: link({ category: c.slug, selected: undefined }),
+          clearHref: link({ category: undefined, selected: undefined }),
+          active: sp.category === c.slug,
+        })),
+      ]}
       selection={{
         active: !!sp.selected,
         backHref: link({ selected: undefined }),

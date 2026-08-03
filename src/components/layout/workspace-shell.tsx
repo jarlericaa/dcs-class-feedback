@@ -36,7 +36,9 @@ export interface RailCategory {
   label: string;
   slug: string;
   active?: boolean;
-  /** href that clears the filter, shown as an × on the active row */
+  /** real count for the current view */
+  count?: number;
+  /** href that clears the filter when the active row is clicked */
   clearHref?: string;
 }
 
@@ -103,9 +105,12 @@ function Rail({
                 aria-hidden="true"
               />
               <span>{category.label}</span>
+              {category.count !== undefined && (
+                <span className="ws-rail__count">{category.count}</span>
+              )}
               {category.active && (
-                <span className="ws-rail__clear" aria-hidden="true">
-                  ×
+                <span className="ws-rail__active-mark" aria-hidden="true">
+                  ✓
                 </span>
               )}
             </Link>

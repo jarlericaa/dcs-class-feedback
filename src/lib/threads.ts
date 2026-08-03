@@ -24,8 +24,8 @@ export type CategorySlug =
 
 export const QUESTION_CATEGORIES = [
   { slug: "content" as const, label: "Course content" },
-  { slug: "logistics" as const, label: "Logistics" },
-  { slug: "misc" as const, label: "Something else" },
+  { slug: "logistics" as const, label: "Class logistics" },
+  { slug: "misc" as const, label: "Other" },
 ];
 
 export function categoryLabel(value: string | null | undefined): string {
@@ -40,7 +40,7 @@ export function categoryShortLabel(value: string | null | undefined): string {
     case "content":
       return "Content";
     case "logistics":
-      return "Logistics";
+      return "Class logistics";
     case "misc":
       return "Other";
     default:

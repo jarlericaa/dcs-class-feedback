@@ -93,13 +93,7 @@ export default async function ReviewPage({
   // Category and free-text narrowing happen here rather than in the service:
   // both are presentation filters over an already-authorized result set.
   const term = sp.q?.trim().toLowerCase();
-  const visibleRows = rows.filter((row) => {
-    if (
-      sp.category &&
-      !row.items.some((i) => i.item.category === sp.category)
-    ) {
-      return false;
-    }
+  const searchRows = rows.filter((row) => {
     if (
       term &&
       !row.items.some((i) =>
@@ -111,6 +105,23 @@ export default async function ReviewPage({
     }
     return true;
   });
+  const visibleRows = searchRows.filter(
+    (row) =>
+      !sp.category || row.items.some((i) => i.item.category === sp.category),
+  );
+  const categoryCounts = new Map(
+    QUESTION_CATEGORIES.map((category) => [category.slug, 0]),
+  );
+  for (const row of searchRows) {
+    for (const item of row.items) {
+      if (categoryCounts.has(item.item.category)) {
+        categoryCounts.set(
+          item.item.category,
+          categoryCounts.get(item.item.category)! + 1,
+        );
+      }
+    }
+  }
   const groups = groupByDay(
     visibleRows,
     (row) => row.response.submittedAt,
@@ -278,13 +289,23 @@ export default async function ReviewPage({
         active: s.id === sectionId,
         count: counts.needsReview || undefined,
       }))}
-      categories={QUESTION_CATEGORIES.map((c) => ({
-        slug: c.slug,
-        label: c.label,
-        href: queryFor({ category: c.slug, selected: undefined }),
-        clearHref: queryFor({ category: undefined, selected: undefined }),
-        active: sp.category === c.slug,
-      }))}
+      categories={[
+        {
+          slug: "all",
+          label: "All",
+          count: searchRows.reduce((count, row) => count + row.items.length, 0),
+          href: queryFor({ category: undefined, selected: undefined }),
+          active: !sp.category,
+        },
+        ...QUESTION_CATEGORIES.map((c) => ({
+          slug: c.slug,
+          label: c.label,
+          count: categoryCounts.get(c.slug) ?? 0,
+          href: queryFor({ category: c.slug, selected: undefined }),
+          clearHref: queryFor({ category: undefined, selected: undefined }),
+          active: sp.category === c.slug,
+        })),
+      ]}
       navGroups={[
         ...(cycles.length > 0
           ? [
