@@ -184,6 +184,7 @@ export default async function ReviewPage({
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
     await confirmFlag(uid, String(formData.get("responseId")), {
+      reason: String(formData.get("reason")) as "spam",
       studentVisibleReason: String(formData.get("studentVisibleReason") ?? ""),
       note: String(formData.get("note") ?? "") || undefined,
     });
@@ -665,6 +666,22 @@ export default async function ReviewPage({
                             name="responseId"
                             value={selectedRow.response.id}
                           />
+                          <label className="visually-hidden" htmlFor="confirm-reason">
+                            Internal reason for confirming the flag
+                          </label>
+                          <select
+                            id="confirm-reason"
+                            className="select-field"
+                            name="reason"
+                            defaultValue="empty_or_meaningless"
+                            style={{ maxWidth: 240 }}
+                          >
+                            {REASON_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
                           <label className="visually-hidden" htmlFor="confirm-student-reason">
                             Reason the student will see
                           </label>
