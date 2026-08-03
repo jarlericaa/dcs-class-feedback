@@ -31,11 +31,54 @@
 2. **Matching produces candidates only.** The name pipeline (§5) proposes zero or more `StudentRecord` candidates with a confidence signal; it never finalizes.
 3. **No silent verification under any uncertainty.**
 4. **Teacher confirmation is required for ambiguous matches** — **[Confirmed]** when two students have identical or very similar names, require manual teacher confirmation.
-5. **Recommended MVP stance: teacher-confirm-all** — a teacher confirms every match before a student is bound, even exact-unique matches. Safest; higher teacher effort.
-6. **Alternative (open):** exact-unique-match auto-confirm with audit + teacher notification, teacher-confirm only for ambiguous/none. Lower effort; small residual impersonation risk. This is **[Open D2](open-decisions.md)** — do not implement auto-confirm without owner approval.
+5. **Shipped policy: teacher-confirm-all** — a teacher confirms every match before a student is
+   bound, even exact-unique matches. Safest; higher teacher effort.
+6. **Auto-confirm is implemented but disabled.** High-confidence unique matches can be
+   auto-confirmed, gated by the `ROSTER_CLAIM_AUTO_CONFIRM` configuration flag (default **off**)
+   and a configurable minimum name score (default: the strong-match threshold). Enabling it later
+   is a configuration change, not a code change. **[D2 — closed](open-decisions.md).**
 7. **Optional extra factor (open):** a section join code / teacher-provided verification token the student enters at first login, as a second factor beyond name. **[Open D9](open-decisions.md)** — not an approved requirement; documented as an option.
 
 After confirmation, the **student number is the permanent internal identity** ([Assumption A2]); later display-name changes do not unlink the match.
+
+## 4A. Student-initiated roster claim **[Confirmed — project-specs.md §6.1]**
+
+The CRS class list carries no email address, so the student initiates the link:
+
+1. The student signs in with a school Google account. Sign-in grants no course access.
+2. The student enters **their student number** on the claim page.
+3. The system compares the Google account display name against that single unclaimed roster entry
+   using the pipeline in §5.
+4. Under the default policy the claim is recorded as pending and surfaced to staff. With
+   auto-confirm enabled, a unique high-confidence match links immediately.
+5. Mismatches, ambiguous names, duplicate claims, already-claimed entries, and unknown numbers all
+   go to staff review.
+6. A roster entry can never be linked to two accounts — enforced by a partial unique index, not
+   only by service logic.
+
+**Non-disclosure rule.** Every outcome that is not an immediate auto-confirm returns the **same**
+response to the student. An unknown number, a number belonging to someone else, a mismatched name,
+and an ambiguous name are indistinguishable, so the claim page cannot be used to enumerate student
+numbers or discover another student's name. The precise reason is recorded for staff only.
+
+Claim attempts are rate-limited per account, and a new claim supersedes the account's pending one.
+
+## 4B. Unlinking **[Confirmed]**
+
+Staff may **unlink** a confirmed match, with a required reason. Unlinking releases the roster
+record and the account so either can be re-linked, revokes the student's section access
+immediately, and **deletes nothing**: responses stay attached to the roster record, so a
+re-link restores the student's own history intact. Unlinking is audited with before/after bindings.
+
+## 4C. Student numbers at rest **[Confirmed — project-specs.md §11]**
+
+A student number is stored as AES-256-GCM ciphertext (bound to its own row so a ciphertext cannot
+be moved between records) plus a keyed HMAC-SHA256 lookup hash that carries the uniqueness
+constraint and serves every lookup, plus the last four characters in clear for staff list views.
+Normalization strips punctuation and case but **preserves leading zeroes**. Full plaintext is
+revealed only behind `view_student_identities`, and producing a file that contains it is audited.
+Key configuration, rotation, and the backfill procedure are in [SECURITY.md](SECURITY.md) and
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## 5. Name-normalization pipeline **[Recommended]**
 
@@ -72,20 +115,40 @@ Outcomes map to `AccountMatch` states ([domain-model.md](domain-model.md#38-acco
 
 Audit-log every: account-to-student match, manual match correction, and the confirming actor — with before/after bindings, actor, and timestamp ([domain-model.md](domain-model.md#audit-events)).
 
-## 9. Class-list CSV import **[Confirmed]**
+## 9. Class-list import **[Confirmed — project-specs.md §6.1]**
 
-Teachers import official class lists via CSV. Required fields: **student number**, **full name**.
+Teachers upload the official **CRS-style XLSX** class list. Pasted **CSV** remains supported as a
+fallback. Required fields: **student number** and a name.
+
+### 9.0 Fields the importer stores
+
+Student number, family name, first name, lived/preferred name, preferred pronoun, program,
+enrollment status (both the verbatim spreadsheet value and a normalized status), and enlistment
+date.
+
+**`Sex Assigned at Birth` is never persisted.** It is on an explicit column denylist and is not
+mapped into a row at all, so it cannot reach the database; the preview reports it among the ignored
+columns.
+
+Student numbers are identifiers, not numbers. An `.xlsx` numeric cell has already lost any leading
+zero at the file level, so the importer prefers the cell's formatted text, and where it can only
+see a bare number it **flags the row for correction rather than zero-padding silently**.
 
 ### 9.1 Import flow
 
-1. **File validation** — format, encoding, required columns present.
-2. **Column mapping** — map CSV columns to student number / full name.
-3. **Duplicate detection** — within the file and against existing enrollment.
-4. **Preview before confirmation** — show what will be created/updated/skipped.
-5. **Row-level errors** — per-row problems surfaced, not a whole-file failure.
-6. **Import summary** — counts of created/updated/skipped/errored.
-7. **Safe re-import** — re-importing an updated list must not corrupt existing data.
-8. **Audit logging** — an `ImportBatch` records the event.
+1. **File validation** — extension, size cap, ZIP signature, required columns present.
+2. **Column mapping** — CRS header synonyms are recognized; unmapped and denied columns are reported.
+3. **Course-metadata detection** — code, title, section, term, units, instructor, shown for confirmation.
+4. **Row validation** — malformed and duplicate student numbers (with the first line each was seen
+   on), unknown and non-enrolled statuses, missing required fields, and conflicts with existing
+   records are all flagged.
+5. **Editable preview before confirmation** — staff correct rows in place and see exactly what will
+   be created, enrolled, reactivated, renamed, or deactivated. Edited rows are re-validated as
+   untrusted input at commit time and re-resolved against live data inside the commit transaction.
+6. **Row-level errors** — per-row problems surfaced, never a whole-file failure.
+7. **Import summary** — counts of created/updated/skipped/errored/warned/edited.
+8. **Safe re-import** — re-importing an updated list must not corrupt existing data.
+9. **Audit logging** — an `ImportBatch` records the event, and preview edits are audited separately.
 
 ### 9.2 Safety rules
 
@@ -93,11 +156,14 @@ Teachers import official class lists via CSV. Required fields: **student number*
 - **[Recommended]** Re-import reconciles by student number: new rows create `StudentRecord`/`Enrollment`; matching rows update names only with a visible diff in preview; rows **absent** from the new list are **deactivated, not deleted** (data preserved). Whether deactivated students keep read access is [Open D10](open-decisions.md).
 - **[Recommended]** Confirmed `AccountMatch`es survive re-import because they key on student number, not name.
 
-## 10. Open decisions affecting matching
+## 10. Decisions affecting matching
 
-- [Open D2] Auto-confirm exact-unique matches vs teacher-confirm-all.
+- **D2 — closed:** teacher-confirm-all is the default; auto-confirm ships behind a configuration flag.
+- **D10 — closed:** a dropped student's enrollment is deactivated and their own history stays readable.
 - [Open D9] Section join code / verification token as an extra factor.
-- [Open D10] Deactivated-student access after roster re-import.
+- **Deferred, needs the registrar's code list:** the exact CRS enrollment-status → normalized-status
+  mapping (`project-specs.md` §14). Until it is filled in, an unlisted code is normalized to
+  `unknown` and every such row is flagged for review — safe, but noisy.
 
 See [open-decisions.md](open-decisions.md).
 

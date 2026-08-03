@@ -52,6 +52,40 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 - **SectionBacklogVisibility** — records that a BacklogQuestion has been made visible/publishable to a specific ClassSection. Fields: → BacklogQuestion, → ClassSection, made-visible-by. Explicit and per-section; no automatic public exposure.
 - **ImportBatch** — a roster or legacy import event. Fields: kind (roster/legacy), source description, → Course or → ClassSection, importer → User, row counts/summary, timestamp. See [account-matching.md](account-matching.md) and [legacy-question-import.md](legacy-question-import.md).
 
+### Added 2026-08-03 for the full `project-specs.md` scope
+
+- **RosterClaim** — a student's attempt to claim a roster entry by typing their student number.
+  Fields: → User, sealed typed number + keyed lookup hash + last 4, → matched StudentRecord,
+  → resulting AccountMatch, Google display name at claim time, name score, state, reason, resolver,
+  timestamps. The typed number is never stored in plaintext, and the response given to the student
+  is identical whether the number is unknown, already claimed, or ambiguous.
+- **FormResponseRevision** — the content trail for §3.1a. Fields: → FormResponse, revision number,
+  action, actor (null = system lock), before/after snapshots, timestamp.
+- **SubmissionValidityEvent** — the per-response validity timeline for §3.3, including the separate
+  student-visible reason channel.
+- **BonusPeriod** — a **course-scoped** long-exam bucket. Fields: → Course, name, required valid
+  count, start/end dates, default flag, archived flag. A WeeklyCycle carries → BonusPeriod plus an
+  assignment source (`auto`/`staff_override`) so an override is never overwritten.
+- **PromptAnalysisNote** — a staff-authored summary/theme note on one prompt (identified by the
+  question's stable key so it survives template re-snapshots). No AI involvement.
+- **BacklogRecommendation** — an SA's recommendation to add or remove a backlog question, plus the
+  Instructor's decision. Partial uniqueness on pending rows makes repeated `Will Answer` idempotent.
+- **QuestionMergeGroup / QuestionMergeMember** — the durable, reversible merge object. Members are
+  never deleted; each records its pre-merge disposition and review state, which is what makes
+  unmerge lossless. `SourceLink` remains the publication projection.
+- **PublicQARevision** — prior public question text, prior answer body, editor, timestamp, for every
+  edit of a published entry.
+- **PublicAnswerApproval** — the requested/approved/rejected decision record naming the responsible
+  Instructor.
+- **EmailOutbox** — one queued notification. Fields: event type, idempotency key (unique),
+  → recipient User (never an address), scope ids, content-free subject, body, authenticated link
+  path, delivery state, attempts, availability time, lease owner/expiry, provider message id, error.
+- **LegacyImportRow** — one staged legacy row. Always retains the verbatim source text, so per-row
+  errors never discard the rest of the file.
+- **PublicAnswerReaction / PublicAnswerComment** — course-only reactions and moderated comments.
+  Commenters are pseudonymous to classmates (`Student N`, scoped per answer) and identifiable to
+  staff. Comments are `Pending` until staff approve.
+
 ### Future (post-MVP, model kept compatible only)
 
 - **CourseMaterial** — post-MVP entity. Not managed in MVP; the model reserves course-level ownership and topic tagging so materials can attach later. See [ai-future-plan.md](ai-future-plan.md).
@@ -101,7 +135,32 @@ States: `Draft`, `Scheduled`, `Open`, `Closed`, `Archived`, `Skipped`.
 - Invalid: `Skipped → Open`; `Archived → *` (except un-archive if later supported). Students may submit only while `Open` and before deadline.
 - Student-visible: whether the current cycle is open and its deadline. Not `Draft`/`Skipped` internals.
 
-### 3.2 Form response state
+### 3.1a Response lifecycle
+
+States: `Draft`, `Submitted`, `Locked`. Independent of §3.2 and §3.3.
+
+| From | To | Actor / trigger |
+|------|-----|-----------------|
+| (none) | Draft | student saves a draft |
+| (none) | Submitted | student submits without ever saving a draft |
+| Draft | Submitted | student submits |
+| Submitted | Submitted | student edits before the deadline (revision increments) |
+| Submitted | Locked | cycle closes at the deadline (same transaction as `Open → Closed`) |
+| Locked | Submitted | staff reopens the cycle (`manage_weekly_cycles`, audited — the only post-deadline edit path) |
+
+- A `Draft` never earns participation credit and never appears in any staff review queue, export,
+  or student history.
+- `submittedAt` is written **once**, on the first submit, and is the participation anchor — editing
+  cannot mint a second credit.
+- Every draft save, submit, edit, lock, and unlock writes a `FormResponseRevision` (before/after)
+  plus an `AuditEvent` in the same transaction.
+- Original student wording is immutable: an edit may replace an *untouched* submission item by
+  withdrawing and superseding it, and is refused for an item that already has a private reply, a
+  source link, or a non-`New` review state.
+- Student-visible: whether their response is a draft, submitted (with a last-edited time), or
+  locked.
+
+### 3.2 Form response review state
 
 States: `Submitted`, `Under review`, `Reviewed`, `Archived`.
 
@@ -116,10 +175,28 @@ States: `Submitted`, `Under review`, `Reviewed`, `Archived`.
 
 ### 3.3 Participation validity
 
-States: `Valid`, `Invalid`. Independent of §3.2.
+States: `Valid`, `Flagged`, `Invalid`. Independent of §3.1a and §3.2.
 
-- Default on submit: `Valid` (a complete submitted form counts). `Valid → Invalid` and back by authorized staff, **always audited**, with an invalidation reason (staff-only). See [participation-rules.md](participation-rules.md).
-- Student-visible: **nothing** in MVP — students do not see validity or the reason. **[Confirmed]**
+| From | To | Action | Actor |
+|------|-----|--------|-------|
+| Valid | Flagged | `flag` (reason required) | SA with `flag_validity`, or an Instructor |
+| Flagged | Invalid | `confirm_flag` (student-visible reason required) | **Instructor only** |
+| Flagged | Valid | `reject_flag` | **Instructor only** |
+| Valid | Invalid | `invalidate` (both reasons required) | **Instructor only** |
+| Invalid | Valid | `restore` | **Instructor only** |
+
+- Default on submit: `Valid`.
+- `Flagged` **keeps** participation credit — a flag is an unconfirmed suspicion, so credit changes
+  exactly once, when an Instructor decides (decision D15).
+- A Student Assistant can never finalize invalidation, and cannot acquire that power through the
+  `mark_validity` flag: finalizing additionally requires a non-TA section role.
+- Every transition writes a `SubmissionValidityEvent` (actor, actor role, timestamp, prior value,
+  new value, internal reason, staff note, student-visible reason) **and** an `AuditEvent`, in the
+  same transaction, behind a state guard so two concurrent decisions cannot both apply.
+- Student-visible: the student sees the validity of **their own** submission and, when `Invalid`,
+  the separate student-visible reason. They never see the `Flagged` state, the internal reason
+  enum, the staff note, the actor, or any other student's validity. **[Confirmed —
+  project-specs.md §4.3, §6.5]**
 
 ### 3.4 Student-question review state
 
@@ -143,20 +220,30 @@ States: `Undecided`, `Private response`, `Public response`, `Private and public 
 
 ### 3.6 Public-answer state
 
-States: `No draft`, `Draft`, `Scheduled`, `Published`, `Unpublished` (**future only — [Open D6](open-decisions.md); not an MVP promise**).
+States: `No draft`, `Draft`, `Awaiting approval`, `Scheduled`, `Published`, `Unpublished`.
 
 | From | To | Actor / trigger |
 |------|-----|-----------------|
-| No draft | Draft | staff drafts a public answer |
+| No draft | Draft | staff drafts a public answer (idempotent per request token) |
+| Draft | Awaiting approval | a Student Assistant submits their draft for review |
+| Awaiting approval | Published | **Instructor** approves and publishes |
+| Awaiting approval | Draft | **Instructor** rejects with a required reason |
 | Draft | Scheduled | staff schedules publication |
-| Draft | Published | staff publishes immediately |
+| Draft | Published | staff publishes immediately — refused for a TA-authored draft, which must go through approval |
 | Scheduled | Published | scheduler at scheduled-at (idempotent; failure → see below) |
 | Scheduled | Draft | staff cancels/edits schedule |
 | Scheduled | (Scheduled, failure-flagged) | job fails; staff resolves/retries |
-| Published | Unpublished | **future only** |
+| Published | Published | **Instructor or `publish_public_answers` holder** edits — writes a `PublicQARevision` and bumps the last-updated time |
+| Published | Unpublished | **Instructor only**, reason required, audited |
+| Unpublished | Published | **Instructor only** (restore), audited |
 
 - Scheduled-publication failure handling and idempotency are detailed in [public-qa-and-source-linking.md](public-qa-and-source-linking.md) and [architecture-proposal.md](architecture-proposal.md).
-- Student-visible (to the asker, via source link): whether their question reached `Published`, plus the reworded public text and the answer. Drafts/schedules are not shown.
+- Student-visible (to the asker, via source link): whether their question reached `Published`, plus
+  the reworded public text, the answer, and a last-updated timestamp. Drafts, drafts awaiting
+  approval, rejected drafts, schedules, unpublished entries, revision text, the editor's identity,
+  and the revision count are **never** shown.
+- Unpublishing removes the entry from the class archive **and** from the linked asker's history
+  (decision D16). The private thread and the asker's immutable original question survive.
 
 ### 3.7 Backlog question state
 
@@ -194,7 +281,21 @@ States: `Unmatched`, `Candidate`, `Ambiguous`, `Confirmed`, `Rejected`, `Correct
 
 **[Confirmed]** Every important action produces an **AuditEvent** recording: **actor** (→ User), **action** (typed), **timestamp**, **affected entity** (type + id), and **important before/after values**. Audit records are staff/admin-visible only; never student-visible (R6).
 
-Audited actions **[Confirmed]** include: course creation; class creation; class-list import; student-account matching; manual match correction; staff-permission changes; template creation/edits; recurrence-config changes; weekly-cycle generation; form submission; validity changes; private responses; public-question rewording; answer edits; merging; moving/copying to backlog; legacy question import; source-link creation/correction; scheduled publication; publication; unpublishing (if later supported).
+Audited actions **[Confirmed]** include: course creation; class creation; class-list import
+(including preview edits); student-account matching, manual correction, and **unlinking**; roster
+**claim** submission/confirmation/rejection; staff-permission changes; template creation/edits;
+recurrence-config changes; per-occurrence window overrides; weekly-cycle generation; **draft save,
+submission, edit, lock, and unlock**; every validity transition; bonus-period creation/edit and
+cycle-to-period assignment; private responses **and student follow-ups**; comment moderation and
+discussion locks; public-question rewording; **submit-for-approval, approval, and rejection**;
+answer edits (with a revision record); merging **and unmerging**; backlog recommendations and
+**Instructor confirmations**; moving/copying to backlog; legacy question import (stage, per-row
+edit, identity-preservation choice, commit); source-link creation/correction; scheduled
+publication; publication; **unpublishing and restoration**; **course archive, restore, and clone**;
+every export; and each email send attempt.
+
+Audit rows never carry private message bodies, comment bodies, or student numbers — only
+identifiers, state transitions, reasons, and content lengths/digests.
 
 Audit implementation approach (append-only, before/after capture) is discussed in [architecture-proposal.md](architecture-proposal.md#audit).
 

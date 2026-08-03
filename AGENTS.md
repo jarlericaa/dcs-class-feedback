@@ -2,7 +2,13 @@
 
 High-level guide for humans and AI coding agents working in this repository.
 
-> **Repository phase: implementation started (owner-approved).** The owner has explicitly requested the MVP foundation implementation; application code now lives under `src/` (see [README.md](README.md)). Further implementation work remains allowed **only** within owner-approved implementation prompts and the MVP scope in [docs/mvp-scope.md](docs/mvp-scope.md). See [§13 Rules for future coding agents](#13-rules-for-future-coding-agents).
+> **Repository phase: full-scope implementation (owner-approved 2026-08-03).**
+> [docs/project-specs.md](docs/project-specs.md) is the acceptance target for Epics A–F plus the
+> post-pilot stories `P1` (legacy import) and `P2` (reactions and moderated comments). Application
+> code lives under `src/` (see [README.md](README.md)). Where an older document conflicted with
+> `project-specs.md`, `project-specs.md` wins and the owning document has been corrected — see the
+> scope-expansion table in [docs/mvp-scope.md](docs/mvp-scope.md) and the resolved-decision table in
+> [docs/open-decisions.md](docs/open-decisions.md). See [§13 Rules for future coding agents](#13-rules-for-future-coding-agents).
 >
 > **Label discipline:** across all docs, statements are tagged **[Confirmed]** (owner-stated), **[Recommended]** (proposed, not approved), **[Assumption]** (inferred), or **[Open]** (unresolved — see [docs/open-decisions.md](docs/open-decisions.md)). Recommendations are **never** treated as approved requirements.
 
@@ -39,14 +45,14 @@ Full goals and background: [docs/product-requirements.md](docs/product-requireme
 
 ## 2. Non-goals for the current phase
 
-The current phase is **planning/documentation only**. In this phase:
+The repository is **past** the documentation-only phase: the application is implemented under
+`src/`, and on 2026-08-03 the owner approved [docs/project-specs.md](docs/project-specs.md) as the
+acceptance target for the full Epic A–F scope plus post-pilot stories `P1` and `P2`.
 
-- **No** application code, framework scaffolding, or UI.
-- **No** dependencies, package manifests, migrations, or database setup.
-- **No** authentication, AI, or test code.
-- **No** promotion of a recommendation into a confirmed requirement.
-
-Product-level non-goals (MVP scope) are authoritative in [docs/mvp-scope.md](docs/mvp-scope.md). Notably out of MVP: student file attachments, editing submitted forms, comments/threads/voting, native mobile apps, PDF/Word exports, public access for unenrolled users, microservices, dedicated AI infrastructure. **Course-material management** and **unpublishing** are **not** MVP. **All AI is post-MVP.**
+Product-level scope is authoritative in [docs/mvp-scope.md](docs/mvp-scope.md), which now records
+that expansion. Still out of scope: student file attachments, question voting, public student
+identities, native mobile apps, Word exports, public access for unenrolled users, microservices,
+course-material management, and dedicated AI infrastructure. **All AI (`P3`) remains parked.**
 
 ---
 
@@ -83,11 +89,11 @@ Full role definitions, the TA permission catalog, and the permission→action ma
 
 - **Three academic levels:** Course → Class Section → Weekly Cycle. Templates, backlog, lessons/topics, and (future) course materials live at the **course** level; students, staff, schedules, cycles, responses, participation, and the public archive live at the **section** level.
 - **Schedule-driven cycles.** A per-section recurring schedule (frequency, open day/time, deadline, start, end/occurrences, template) generates cycles that **auto-open** on time. Generation and open/close are **idempotent** with a **reconciliation poller** backstop.
-- **One submission per student per section per cycle**, enforced by a uniqueness constraint. No edits after submit; no late submission.
+- **One submission per student per section per cycle**, enforced by a uniqueness constraint. A student may save a draft and **edit that same response until the deadline**; at the deadline the latest submitted version locks. No late submission, no late edit. An edit never mints a second participation credit.
 - **Templates snapshot on apply.** Applying a template copies its questions into the cycle; later template edits create new versions and never mutate already-generated cycles.
 - **Original student wording is immutable.** Teachers may reword the *public* version; the original is never overwritten.
 - **Public answers are anonymous** to other students but stay **internally source-linked** to the original submission(s), including when multiple submissions are **merged** into one answer.
-- **Participation is derived**, not a mutable counter: a student participated in a cycle iff a `Valid` submission exists for that `(cycle, student)`.
+- **Participation is derived**, not a mutable counter: a student participated in a cycle iff a submitted (non-draft) response exists for that `(cycle, student)` whose validity is not `Invalid`. Credit rolls up into **course-scoped bonus periods**, one credit per cycle at most.
 - **Anonymous-by-default legacy import.** Imported historical questions are anonymous unless a teacher explicitly preserves source identity; legacy items never count toward participation.
 
 ---
@@ -248,11 +254,14 @@ Details: [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md), [docs/pub
 | Dimension | States |
 |---|---|
 | **Weekly cycle** | Draft · Scheduled · Open · Closed · Archived · Skipped |
-| **Form response** | Submitted · Under review · Reviewed · Archived |
-| **Participation validity** | Valid · Invalid |
+| **Response lifecycle** | Draft · Submitted · Locked |
+| **Form response review** | Submitted · Under review · Reviewed · Archived |
+| **Participation validity** | Valid · Flagged · Invalid |
 | **Student-question review** | New · Under review · Resolved · Archived · Moved to backlog |
 | **Response disposition** | Undecided · Private · Public · Private+Public · No response · Merged |
-| **Public-answer** | No draft · Draft · Scheduled · Published · *(Unpublished — future only, [Open D6](docs/open-decisions.md))* |
+| **Public-answer** | No draft · Draft · Awaiting approval · Scheduled · Published · Unpublished |
+| **Backlog confirmation** | Recommended · Confirmed · Rejected · Removal recommended · Removed |
+| **Comment moderation** | Pending · Approved · Rejected · Removed |
 | **Backlog question** | Imported · Needs review · Answerable · Drafting · Scheduled · Published · Archived · Not suitable |
 | **Account match** | Unmatched · Candidate · Ambiguous · Confirmed · Rejected · Correction-pending |
 
@@ -310,9 +319,11 @@ These are invariants. Treat them as hard constraints when implementation eventua
 - **Public reworded questions stay internally source-linked** to their originating submission(s) so the asker sees "Answered" without exposing identity to others.
 - **Name-based account matching is risky and must not silently verify uncertain matches** — matching yields candidates only; teacher confirmation is required for ambiguity (teacher-confirm-all recommended for MVP).
 - **Small-class anonymity failure is a real risk** — a single asker or a highly specific/personal question can remain identifiable; rewording must strip identifying context and the publish UI warns before publishing such questions.
-- **Identity-bearing exports are staff-only** and access is audited.
-- **Authorization is deny-by-default and resource-scoped** — teachers get no access to unrelated courses/sections/students.
-- **Students never see** validity/invalidation, no-response decisions, drafts, internal notes, audit records, or (MVP) participation totals.
+- **Identity-bearing exports are staff-only** and access is audited. Exports added after 2026-08-03 are Instructor-only (see [docs/roles-and-permissions.md](docs/roles-and-permissions.md) and decision D17).
+- **Authorization is deny-by-default and resource-scoped** — teachers get no access to unrelated courses/sections/students. An **archived** course is read-only, enforced inside the authorization helpers rather than by hiding controls.
+- **Students see their own** submission validity, student-visible invalidity reason, and bonus progress. Students **never see** anyone else's validity, that a submission was *flagged*, internal invalidation reasons or staff notes, no-response/`Will Not Answer` decisions, drafts, drafts awaiting approval, rejected drafts, scheduled or unpublished answers, source links, staff-only revision metadata, another commenter's identity, or audit records.
+- **Student numbers are protected at rest** — AES-256-GCM ciphertext plus a keyed HMAC lookup hash for uniqueness and lookups; full plaintext only behind `view_student_identities`.
+- **All rich content is sanitized by one shared server-side renderer.** No arbitrary HTML, no script execution, `https`-only images, no `data:` URLs. Student-authored text is never rendered as markup.
 - **Audit logs are required** for important actions (actor, action, timestamp, affected entity, before/after values).
 - **AI is post-MVP** and must **never** receive student PII or automatically send/publish anything; a human approves all AI output. See [docs/ai-future-plan.md](docs/ai-future-plan.md).
 
@@ -363,14 +374,20 @@ Deferred features (post-MVP): notifications, all AI features, course-material ma
 
 ## 13. Rules for future coding agents
 
-- **This repo is currently documentation-only.**
-- **Do not implement code** unless explicitly requested.
-- **Do not initialize frameworks** unless explicitly requested.
-- **Do not add dependencies** unless explicitly requested.
-- **Do not create migrations or database setup** unless explicitly requested.
+- **This repo contains a working application.** [docs/project-specs.md](docs/project-specs.md) is the
+  acceptance target; [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the factual snapshot.
+- **Preserve the architecture:** Next.js App Router + Drizzle/PostgreSQL + Auth.js modular monolith.
+  Do not introduce a second application, a different framework, or microservices.
+- **Do not add dependencies, migrations, or new top-level surface area** unless explicitly requested.
+- **Never widen a permission by adding a boolean flag** where the specification says a capability is
+  non-delegable — see the non-delegable table in [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
+- **Never render student-authored text as markup**, and never add a second
+  `dangerouslySetInnerHTML`: the only sanctioned one lives in `src/components/rich-text.tsx`.
+- **Every new list is paginated, every new mutation is audited in the same transaction, and every
+  new read and write is authorized** by a resource-scoped `require*` helper.
 - **Do not silently promote recommendations into confirmed requirements** — keep the [Confirmed]/[Recommended]/[Assumption]/[Open] labels intact.
 - **Always check [docs/open-decisions.md](docs/open-decisions.md) before implementation work.** If a relevant decision is marked "wait for owner approval," stop and surface it rather than guessing.
-- **Preserve MVP / post-MVP / out-of-scope boundaries** ([docs/mvp-scope.md](docs/mvp-scope.md)); do not pull deferred items into MVP on your own.
+- **Preserve the scope boundary** in [docs/mvp-scope.md](docs/mvp-scope.md); do not pull a deferred item in on your own. `P3` (AI) stays parked.
 - **Prefer small, reviewable changes.**
 - **Keep docs cross-linked** — one owning doc per concept; link instead of duplicating.
 - **When unsure, document the uncertainty** as an open decision instead of inventing a business rule.

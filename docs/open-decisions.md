@@ -5,6 +5,32 @@
 > Every unresolved product/technical decision. **Agents must read this before any implementation work** ([AGENTS.md](../AGENTS.md)) and must not resolve a "wait for owner" item on their own.
 > Each entry: **Question · Options · Trade-offs · Recommended choice · Wait for owner approval?**
 
+> ## Resolved 2026-08-03 by the approval of [project-specs.md](project-specs.md)
+>
+> `project-specs.md` is now the acceptance target. The following entries are **closed**;
+> their resolutions are recorded inline below and in the owning documents.
+>
+> | # | Resolution |
+> |---|---|
+> | D1 | **Closed — TypeScript baseline.** "Fable" referred to Claude tooling. The Next.js + Drizzle + Auth.js stack is the approved implementation. |
+> | D2 | **Closed — teacher-confirm-all is the default,** with auto-confirm implemented behind the `ROSTER_CLAIM_AUTO_CONFIRM` configuration flag (default **off**) so the policy can be switched later without a code change. |
+> | D4 | **Closed — (a).** Structural edits lock once a cycle has a non-draft response; per-occurrence open/deadline overrides are allowed and audited. |
+> | D5 | **Closed — (a) hard deadline, no grace.** `reopenCycle` remains the audited teacher escape hatch and now also unlocks locked responses (`manage_weekly_cycles`). |
+> | D6 | **Closed — unpublish is APPROVED and implemented.** Unpublishing is audited and reversible via restore. An unpublished entry leaves the class archive *and* the linked asker's history. |
+> | D7 | **Closed — single institution timezone,** repository default `Asia/Manila`, stored per section and used consistently. |
+> | D8 | **Closed — (a).** Merge is within a section and may span cycles; cross-section reuse goes through the course backlog. Merging never alters per-cycle participation. |
+> | D10 | **Closed — (a).** A dropped student's enrollment is deactivated and their own history stays readable; no data is deleted. |
+> | D11 | **Closed — Drizzle.** |
+>
+> ### New decisions recorded 2026-08-03
+>
+> | # | Question | Decision |
+> |---|---|---|
+> | D14 | Are bonus periods course- or section-scoped? | **Course-scoped** (`bonus_periods.course_id`). Section-scoped cycles carry a nullable `bonus_period_id` plus an assignment source so a staff override is never overwritten by a later automatic pass. |
+> | D15 | Does a `Flagged` submission keep bonus credit while an Instructor decides? | **Yes, and the flag is invisible to the student.** Only Instructor-confirmed `Invalid` removes credit, so credit changes exactly once and internal staff process never leaks. |
+> | D16 | What does a linked asker see after an entry is unpublished? | **Nothing** — it leaves their history too. The private thread and their immutable original question survive. |
+> | D17 | Are all exports Instructor-only, per `project-specs.md` §11? | **Partially — a knowing deviation.** The three pre-existing participation CSVs keep honouring the `export_participation` TA flag (removing a shipped capability was judged worse than the deviation). Every **new** export — bonus records, XLSX, PDF summaries, backlog status — is Instructor-only. Recorded in [roles-and-permissions.md](roles-and-permissions.md). |
+
 ---
 
 ## D1. What does "Fable" mean? (gates the stack)
@@ -25,7 +51,10 @@
 - **Options:** (a) teacher-confirm-all; (b) exact-unique auto-confirm + teacher-confirm for ambiguous/none, with audit + teacher notification.
 - **Trade-offs:** (a) safest against impersonation (Risk R1), more teacher effort; (b) less effort, small residual impersonation risk from editable display names.
 - **Recommended choice:** (a) **teacher-confirm-all** for MVP. See [account-matching.md](account-matching.md#4-recommended-mvp-matching-policy).
-- **Wait for owner approval?** **Yes** — do not implement auto-confirm without approval.
+- **Status: CLOSED 2026-08-03.** (a) is the shipped default. (b) exists in the service behind
+  `ROSTER_CLAIM_AUTO_CONFIRM` (default `false`) with a configurable minimum name score, so
+  enabling it later is a configuration change, not a rewrite. Every claim decision is audited
+  either way.
 
 ## D3. Who grants the Teacher role?
 
@@ -56,8 +85,11 @@
 - **Question:** Should published public answers be unpublishable, and if so when?
 - **Options:** (a) not in MVP; reserve `Unpublished` state only; (b) support in MVP.
 - **Trade-offs:** (a) matches "if later supported"; (b) scope creep beyond stated MVP.
-- **Recommended choice:** (a) **not an MVP feature**; state reserved for the future. See [domain-model.md](domain-model.md#36-public-answer-state).
-- **Wait for owner approval?** **Yes** to ever build it.
+- **Status: CLOSED 2026-08-03 — (b) support it.** `project-specs.md` §10 defines
+  `Published → Updated/Unpublished`, so unpublish is a required state transition. It is
+  Instructor-only, requires a reason, is audited, and is reversible via restore. An unpublished
+  entry leaves both the class archive and the linked asker's history (D16). See
+  [public-qa-and-source-linking.md](public-qa-and-source-linking.md).
 
 ## D7. Timezone: institution-wide vs per-section
 
