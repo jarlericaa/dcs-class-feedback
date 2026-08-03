@@ -68,7 +68,11 @@ async function makeSectionWithSubmission() {
   const { user, record } = await makeEnrolledStudent(section.id, teacher.id);
   const [response] = await db
     .insert(formResponses)
-    .values({ cycleId: cycle!.id, studentRecordId: record.id })
+    .values({
+        cycleId: cycle!.id,
+        studentRecordId: record.id,
+        submittedAt: new Date(),
+      })
     .returning();
   const [item] = await db
     .insert(studentSubmissionItems)
@@ -415,7 +419,11 @@ describe("CSV export neutralizes spreadsheet formulas", () => {
     const { record } = await makeEnrolledStudent(section.id, teacher.id);
     const [response] = await db
       .insert(formResponses)
-      .values({ cycleId: cycle!.id, studentRecordId: record.id })
+      .values({
+        cycleId: cycle!.id,
+        studentRecordId: record.id,
+        submittedAt: new Date(),
+      })
       .returning();
     await db.insert(studentSubmissionItems).values({
       responseId: response!.id,
