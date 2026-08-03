@@ -20,6 +20,7 @@ import {
   shortAgo,
 } from "@/lib/threads";
 import { AccessDenied, Alert, Badge } from "@/components/ui";
+import { PublicAnswerComposer } from "@/components/staff/public-answer-composer";
 import {
   createPrivateResponse,
   getReviewQueue,
@@ -750,72 +751,13 @@ export default async function ReviewPage({
                         The original wording above stays private. Write a
                         version that cannot identify the asker.
                       </p>
-                      <form action={draftOrPublish}>
-                        <input type="hidden" name="itemId" value={item.id} />
-                        <input
-                          type="hidden"
-                          name="selected"
-                          value={selectedRow.response.id}
-                        />
-                        <div className="field-row">
-                          <label htmlFor={`pubq-${item.id}`}>
-                            Public question
-                          </label>
-                          <textarea
-                            id={`pubq-${item.id}`}
-                            className="textarea-field"
-                            name="publicQuestion"
-                            rows={2}
-                            defaultValue={item.originalText}
-                            required
-                          />
-                        </div>
-                        <div className="field-row">
-                          <label htmlFor={`puba-${item.id}`}>
-                            Public answer
-                          </label>
-                          <textarea
-                            id={`puba-${item.id}`}
-                            className="textarea-field"
-                            name="answerBody"
-                            rows={4}
-                          />
-                        </div>
-                        <Alert variant="warning" title="Before you publish">
-                          This answer will be visible to students in this
-                          section. The original wording stays private, but
-                          specific details can still identify the asker. Review
-                          the public wording before publishing.
-                        </Alert>
-                        <label className="choice">
-                          <input
-                            type="checkbox"
-                            name="acknowledged"
-                            value="yes"
-                          />
-                          <span>I have checked the public wording</span>
-                        </label>
-                        <div className="row-gap">
-                          <button
-                            className="button button--secondary"
-                            type="submit"
-                            name="intent"
-                            value="draft"
-                          >
-                            Save as draft
-                          </button>
-                          {can("publishPublicAnswers") && (
-                            <button
-                              className="button button--primary"
-                              type="submit"
-                              name="intent"
-                              value="publish"
-                            >
-                              Publish to this section
-                            </button>
-                          )}
-                        </div>
-                      </form>
+                      <PublicAnswerComposer
+                        action={draftOrPublish}
+                        itemId={item.id}
+                        selectedResponseId={selectedRow.response.id}
+                        originalQuestion={item.originalText}
+                        canPublish={can("publishPublicAnswers")}
+                      />
                     </div>
                   )}
                 </div>

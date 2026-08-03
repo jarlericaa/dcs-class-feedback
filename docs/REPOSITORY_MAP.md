@@ -37,10 +37,11 @@ second architecture document; durable runtime decisions belong in
 | src/app/teach/sections/[id]/ | Staff review, setup, matches, import, participation, publications, backlog, audit |
 | src/app/api/auth/ | Auth.js callback route |
 | src/app/api/internal/scheduler/ | Secret-protected scheduler tick endpoint |
+| src/app/favicon.ico/ | Cacheable repository-native application icon route |
 | src/components/layout/ | AppShell and permission-derived navigation |
 | src/components/ui/ | Shared presentational vocabulary (badge, alert, empty state) |
 | src/components/student/ | Weekly form client component (preserves input on error) |
-| src/components/staff/ | Template editor and roster-import client components |
+| src/components/staff/ | Template editor, roster import, and field-preserving public-answer composer client components |
 | src/lib/ | Session helpers, staff-section loader, timezone-aware formatting |
 | src/auth.ts | Auth.js providers, session callbacks, and identity loading |
 | src/env.ts | Environment parsing and validation |

@@ -40,6 +40,16 @@ export interface SubmitState {
 
 type AnswerValue = string | string[];
 
+export function questionErrorAttributes(
+  error: string | undefined,
+  describedBy: string | undefined,
+) {
+  return {
+    "aria-invalid": error ? ("true" as const) : undefined,
+    "aria-describedby": describedBy,
+  };
+}
+
 export function WeeklyForm({
   questions,
   action,
@@ -124,8 +134,7 @@ export function WeeklyForm({
                 rows={question.type === "paragraph" ? 4 : 2}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
-                aria-invalid={error ? "true" : undefined}
-                aria-describedby={describedBy}
+                {...questionErrorAttributes(error, describedBy)}
               />
             )}
 
@@ -133,7 +142,7 @@ export function WeeklyForm({
               <div
                 className="choice-list"
                 role="group"
-                aria-describedby={describedBy}
+                {...questionErrorAttributes(error, describedBy)}
               >
                 {question.options.map((option) => {
                   const checked =
@@ -166,8 +175,7 @@ export function WeeklyForm({
                 name={`q_${question.id}`}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
-                aria-invalid={error ? "true" : undefined}
-                aria-describedby={describedBy}
+                {...questionErrorAttributes(error, describedBy)}
               >
                 <option value="">Select an option…</option>
                 {question.options.map((option) => (
@@ -179,7 +187,11 @@ export function WeeklyForm({
             )}
 
             {question.type === "linear_scale" && question.scale && (
-              <div className="scale-list" role="group" aria-describedby={describedBy}>
+              <div
+                className="scale-list"
+                role="group"
+                {...questionErrorAttributes(error, describedBy)}
+              >
                 {scaleValues(question.scale).map((v) => (
                   <label className="choice" key={v}>
                     <input
@@ -196,7 +208,11 @@ export function WeeklyForm({
             )}
 
             {question.type === "yes_no" && (
-              <div className="scale-list" role="group" aria-describedby={describedBy}>
+              <div
+                className="scale-list"
+                role="group"
+                {...questionErrorAttributes(error, describedBy)}
+              >
                 {[
                   { key: "yes", label: "Yes" },
                   { key: "no", label: "No" },
@@ -222,8 +238,7 @@ export function WeeklyForm({
                 name={`q_${question.id}`}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
-                aria-invalid={error ? "true" : undefined}
-                aria-describedby={describedBy}
+                {...questionErrorAttributes(error, describedBy)}
                 style={{ maxWidth: 220 }}
               />
             )}

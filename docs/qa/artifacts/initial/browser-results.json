@@ -1,0 +1,157 @@
+{
+  "environment": {
+    "browser": "Chrome/150.0.7871.187",
+    "desktop": "1440x1000",
+    "mobile": "390x844 @3x touch"
+  },
+  "marker": "QA-BROWSER-1785742570416",
+  "results": [
+    {
+      "id": "teacher-login",
+      "status": "PASS",
+      "detail": "role reached its dashboard through the rendered dev-login form"
+    },
+    {
+      "id": "teacher-resource-fixture",
+      "status": "PASS",
+      "detail": "teacher dashboard exposes two synthetic section workspaces"
+    },
+    {
+      "id": "desktop-semantics",
+      "status": "PASS",
+      "detail": "dashboard includes main and navigation landmarks"
+    },
+    {
+      "id": "teacher-desktop-overflow",
+      "status": "PASS",
+      "detail": "1440px content within 1440px viewport"
+    },
+    {
+      "id": "student-login",
+      "status": "PASS",
+      "detail": "role reached its dashboard through the rendered dev-login form"
+    },
+    {
+      "id": "preconfirmation-repeat",
+      "status": "BLOCKED",
+      "detail": "synthetic account was already confirmed by the earlier completed browser phase"
+    },
+    {
+      "id": "confirmed-student-dashboard",
+      "status": "PASS",
+      "detail": "confirmed student can now enter only their enrolled section"
+    },
+    {
+      "id": "student-dashboard-isolation",
+      "status": "PASS",
+      "detail": "unrelated section is absent from student navigation"
+    },
+    {
+      "id": "confirmed-cross-section-denied",
+      "status": "PASS",
+      "detail": "confirmed student remains denied from another section archive"
+    },
+    {
+      "id": "weekly-form-repeat",
+      "status": "BLOCKED",
+      "detail": "synthetic student already submitted during the earlier completed browser phase"
+    },
+    {
+      "id": "duplicate-ui-prevention",
+      "status": "PASS",
+      "detail": "returning to the cycle keeps the immutable submitted state"
+    },
+    {
+      "id": "teacher-review-count",
+      "status": "PASS",
+      "detail": "new submission appears in the teacher queue with its detail pane selected"
+    },
+    {
+      "id": "teacher-original-context",
+      "status": "PASS",
+      "detail": "teacher detail shows the immutable original student wording"
+    },
+    {
+      "id": "teacher-private-response",
+      "status": "PASS",
+      "detail": "teacher detail confirms the private reply was saved"
+    },
+    {
+      "id": "student-private-response-visible",
+      "status": "PASS",
+      "detail": "asker sees their private teacher reply in history"
+    },
+    {
+      "id": "student-internal-state-hidden",
+      "status": "PASS",
+      "detail": "history omits validity and internal disposition data"
+    },
+    {
+      "id": "anonymity-ack-required",
+      "status": "PASS",
+      "detail": "publishing without the explicit anonymity acknowledgment is blocked with guidance"
+    },
+    {
+      "id": "anonymity-warning-preserves-draft",
+      "status": "FAIL",
+      "detail": "the warning redirect resets the public question to original wording and clears the drafted answer"
+    },
+    {
+      "id": "anonymous-publication-success",
+      "status": "PASS",
+      "detail": "acknowledged reworded answer publishes to the section"
+    },
+    {
+      "id": "public-reworded-question-visible",
+      "status": "PASS",
+      "detail": "archive shows teacher-reworded public text"
+    },
+    {
+      "id": "public-answer-visible",
+      "status": "PASS",
+      "detail": "archive shows the published answer"
+    },
+    {
+      "id": "public-original-wording-hidden",
+      "status": "PASS",
+      "detail": "archive does not expose the source student's original wording"
+    },
+    {
+      "id": "public-identity-hidden",
+      "status": "PASS",
+      "detail": "archive contains no source name or student number"
+    },
+    {
+      "id": "source-linked-history",
+      "status": "PASS",
+      "detail": "asker's history is internally linked to the published answer"
+    },
+    {
+      "id": "browser-run",
+      "status": "FAIL",
+      "detail": "Error: participation-valid-derived: valid submission contributes one participation credit\n    at assert (file://wsl.localhost/Ubuntu/tmp/dcs-browser-qa.mjs:18:25)\n    at file://wsl.localhost/Ubuntu/tmp/dcs-browser-qa.mjs:287:3"
+    }
+  ],
+  "meaningfulBrowserErrors": [
+    {
+      "method": "Network.loadingFailed",
+      "params": {
+        "requestId": "3352.18",
+        "timestamp": 7491.332151,
+        "type": "Fetch",
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "method": "Network.loadingFailed",
+      "params": {
+        "requestId": "3352.63",
+        "timestamp": 7507.031465,
+        "type": "Fetch",
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    }
+  ]
+}

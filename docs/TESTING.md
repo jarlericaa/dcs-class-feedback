@@ -15,11 +15,15 @@
 - `tests/unit/cycle-windows.test.ts`
 - `tests/unit/env.test.ts`
 - `tests/unit/normalize.test.ts`
+- `tests/unit/qa-remediation.test.ts`
 - `tests/unit/roster-csv.test.ts`
 - `tests/integration/authz.test.ts`
+- `tests/integration/catalog.test.ts`
 - `tests/integration/forms.test.ts`
 - `tests/integration/matching.test.ts`
+- `tests/integration/operations.test.ts`
 - `tests/integration/participation.test.ts`
+- `tests/integration/review-findings.test.ts`
 - `tests/integration/review-publishing.test.ts`
 - `tests/integration/roster-import.test.ts`
 
@@ -66,7 +70,7 @@ npm run build
 Integration tests require the test PostgreSQL database described in
 [DEVELOPMENT.md](DEVELOPMENT.md).
 
-The last repository verification pass reported all unit tests, lint, typecheck,
-and production-build checks passing. Integration tests were not executable in
-the current environment because Docker was unavailable and port `5433` had no
-PostgreSQL listener.
+The 2026-08-03 verification pass reported lint, typecheck, production build,
+44 unit tests, and 114 PostgreSQL integration tests passing. Desktop/mobile
+Chromium QA and remediation results are in
+[qa/final-remediation-report.md](qa/final-remediation-report.md).

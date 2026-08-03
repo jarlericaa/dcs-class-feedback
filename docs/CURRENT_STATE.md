@@ -1,6 +1,6 @@
 # Current State
 
-**Snapshot date:** 2026-08-02  
+**Snapshot date:** 2026-08-03
 **Repository phase:** pilot-usable application; setup, the student loop, the
 staff loop, and operations surfaces are implemented end to end.
 
@@ -30,6 +30,7 @@ separate from the full product scope in [mvp-scope.md](mvp-scope.md).
 | `/teach/sections/[id]/audit` | **[Implemented]** | Section-scoped append-only audit history |
 | `/api/auth/[...nextauth]` | **[Implemented]** | Auth.js callback route |
 | `/api/internal/scheduler/tick` | **[Implemented]** | Secret-protected scheduler tick |
+| `/favicon.ico` | **[Implemented]** | Cacheable repository-native SVG application icon |
 
 ## Implemented domain foundations
 
@@ -95,7 +96,11 @@ Present:
 - design tokens, buttons, cards, badges, alerts, tables, and form controls;
 - empty, error, success, unauthorized, closed-cycle, and no-results states;
 - a visible global focus ring, `aria-invalid` + `aria-describedby` on failing
-  fields, status conveyed by text and shape rather than colour alone;
+  fields and grouped choices, status conveyed by text and shape rather than
+  colour alone;
+- an accessible publication acknowledgment guard that preserves the teacher's
+  public-question and answer fields while the service remains the security
+  backstop;
 - review filters and week scoping.
 
 Not present:
@@ -131,12 +136,10 @@ Acceptance criteria and build order: [WEB-APP-BUILD-PLAN.md](WEB-APP-BUILD-PLAN.
 |---|---|
 | `npm run lint` | **Pass** |
 | `npm run typecheck` | **Pass** |
-| `npm test` | **Pass** — 5 files, 41 unit tests |
-| `npm run test:integration` | **Pass** — 8 files, 90 integration tests |
+| `npm test` | **Pass** — 6 files, 44 unit tests |
+| `npm run test:integration` | **Pass** — 9 files, 114 integration tests |
 | `npm run build` | **Pass** — 20 routes |
-| Manual verification matrix | **Pass** — 32 HTTP assertions plus a scripted student→teacher→student loop; see [CLAUDE_IMPLEMENTATION_REPORT.md](CLAUDE_IMPLEMENTATION_REPORT.md) |
+| Chromium QA | **Pass after remediation** — desktop/mobile teacher→student journey plus 14 targeted fix assertions; see [qa/final-remediation-report.md](qa/final-remediation-report.md) |
 
-Integration tests need PostgreSQL. Docker was unavailable in the session that
-produced this snapshot, so a user-owned PostgreSQL 18 cluster served the
-`feedback_test` database and `TEST_DATABASE_URL` pointed at it. The documented
-`docker compose up -d` path is unchanged for normal use.
+Integration tests need PostgreSQL. This snapshot used the documented Docker
+Compose development and isolated test databases.

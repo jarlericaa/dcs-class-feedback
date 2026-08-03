@@ -1,0 +1,80 @@
+{
+  "environment": {
+    "browser": "Chrome/150.0.7871.187",
+    "desktop": "1440x1000",
+    "mobile": "390x844 @3x touch"
+  },
+  "results": [
+    {
+      "id": "fresh-cycle",
+      "status": "PASS",
+      "detail": "unused synthetic Week 4 form is open for remediation verification"
+    },
+    {
+      "id": "control-found",
+      "status": "PASS",
+      "detail": "found textarea"
+    },
+    {
+      "id": "submit-found",
+      "status": "PASS",
+      "detail": "found Submit this week's form submit control"
+    },
+    {
+      "id": "qa-001-desktop",
+      "status": "PASS",
+      "detail": "required choice and scale groups expose aria-invalid and retain error associations at 1440px"
+    },
+    {
+      "id": "qa-001-value-preserved",
+      "status": "PASS",
+      "detail": "optional student text remains after grouped validation failure"
+    },
+    {
+      "id": "qa-001-mobile",
+      "status": "PASS",
+      "detail": "remediated validation state has no horizontal overflow at 390px"
+    },
+    {
+      "id": "control-found",
+      "status": "PASS",
+      "detail": "found textarea[name=publicQuestion]"
+    },
+    {
+      "id": "control-found",
+      "status": "PASS",
+      "detail": "found textarea[name=answerBody]"
+    },
+    {
+      "id": "submit-found",
+      "status": "PASS",
+      "detail": "found Publish to this section submit control"
+    },
+    {
+      "id": "qa-002-no-redirect",
+      "status": "PASS",
+      "detail": "unacknowledged publish stays on the composer page"
+    },
+    {
+      "id": "qa-002-preserves-fields",
+      "status": "PASS",
+      "detail": "reworded public question and answer remain unchanged"
+    },
+    {
+      "id": "qa-002-accessible-warning",
+      "status": "PASS",
+      "detail": "acknowledgment receives focus, invalid state, description, and a role-alert message"
+    },
+    {
+      "id": "qa-002-mobile",
+      "status": "PASS",
+      "detail": "preserved composer warning has no horizontal overflow at 390px"
+    },
+    {
+      "id": "qa-003-favicon",
+      "status": "PASS",
+      "detail": "favicon returns HTTP 200 with SVG content"
+    }
+  ],
+  "browserErrors": []
+}
