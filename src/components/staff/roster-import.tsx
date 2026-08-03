@@ -108,9 +108,6 @@ export function RosterImport({
           </span>
         </div>
         <div className="form-actions">
-          <p className="muted small" style={{ margin: 0 }}>
-            Previewing changes nothing.
-          </p>
           <button
             className="button button--secondary"
             type="submit"
@@ -128,7 +125,6 @@ export function RosterImport({
           <div className="card__header">
             <div>
               <h2>Preview</h2>
-              <p>Nothing has been applied yet. Check the plan, then confirm.</p>
             </div>
           </div>
 
@@ -210,9 +206,6 @@ export function RosterImport({
                   name="source"
                   placeholder="Registrar class list, 2 August"
                 />
-                <span className="helper-text">
-                  Recorded on the import so the change can be traced later.
-                </span>
               </div>
               <div>
                 <button

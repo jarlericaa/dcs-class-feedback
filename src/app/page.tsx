@@ -6,7 +6,7 @@ import { accountMatches } from "@/db/schema";
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { Alert, Badge, EmptyState, Stat } from "@/components/ui";
+import { Badge, EmptyState, Stat } from "@/components/ui";
 import { listSectionsForUser } from "@/modules/catalog";
 import { generateMatchCandidates } from "@/modules/identity/matching";
 import { getOpenCycleForStudent } from "@/modules/forms/submission";
@@ -106,7 +106,7 @@ export default async function HomePage() {
       description={
         actionable > 0
           ? `You have ${actionable} weekly form${actionable === 1 ? "" : "s"} open right now.`
-          : "Your class spaces and what needs your attention."
+          : undefined
       }
     >
       <div className="dashboard-grid">
@@ -116,7 +116,6 @@ export default async function HomePage() {
               <div className="card__header">
                 <div>
                   <h2 id="your-classes">Your classes</h2>
-                  <p>Weekly feedback for the sections you are enrolled in.</p>
                 </div>
               </div>
               <div className="card__body card-stack">
@@ -169,7 +168,6 @@ export default async function HomePage() {
               <div className="card__header">
                 <div>
                   <h2 id="teaching-spaces">Teaching spaces</h2>
-                  <p>Sections where you are on the teaching team.</p>
                 </div>
               </div>
               <div className="card__body card-stack">
@@ -223,25 +221,11 @@ export default async function HomePage() {
                     ? "We could not match you to a class list"
                     : "No sections yet"
               }
-            >
-              {matchStatus === "pending"
-                ? "A teacher needs to confirm that this account belongs to you before your class spaces appear. Nothing is confirmed automatically."
-                : matchStatus === "unmatched"
-                  ? "Your name did not match anyone on the imported class lists. Ask your teacher to check the roster and confirm your account manually."
-                  : "Once you are enrolled in a section, or added to a teaching team, it will appear here."}
-            </EmptyState>
+            />
           )}
         </div>
 
         <aside className="dashboard-stack">
-          {matchStatus === "pending" && studentCards.length === 0 && (
-            <Alert variant="info" title="Pending identity confirmation">
-              Your teacher confirms every account against the class list by
-              hand. This is deliberate: it stops someone else being matched to
-              your name.
-            </Alert>
-          )}
-
           {studentCards.length > 0 && (
             <section className="card card--padded">
               <p className="section-kicker">Your week</p>
@@ -255,9 +239,6 @@ export default async function HomePage() {
           {user.isTeacher && (
             <section className="card card--padded">
               <p className="section-kicker">Teaching</p>
-              <p className="muted" style={{ margin: "10px 0 14px" }}>
-                Create a course, add sections, and set the weekly schedule.
-              </p>
               <Link className="button button--secondary" href="/teach/courses">
                 Manage courses
               </Link>
@@ -267,10 +248,6 @@ export default async function HomePage() {
           {user.isPlatformAdmin && (
             <section className="card card--padded">
               <p className="section-kicker">Platform</p>
-              <p className="muted" style={{ margin: "10px 0 14px" }}>
-                Grant the teacher role and troubleshoot accounts. This gives no
-                access to any course content.
-              </p>
               <Link className="button button--secondary" href="/admin">
                 Platform administration
               </Link>

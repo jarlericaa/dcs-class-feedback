@@ -4,7 +4,6 @@ import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
-  Alert,
   Badge,
   Breadcrumbs,
   EmptyState,
@@ -67,18 +66,10 @@ export default async function AuditPage({
       }
       eyebrow="Staff only"
       title="Audit history"
-      description="Every important change to this section, with who did it and what changed. Records are never edited or deleted."
     >
       <div className="stack-gap">
-        <Alert variant="info" title="Scope">
-          This shows changes to this section only — its cycles, responses,
-          answers, staff, schedule, roster imports and account matches.
-        </Alert>
-
         {events.length === 0 ? (
-          <EmptyState title="No audit records yet">
-            Activity appears here as soon as something changes in this section.
-          </EmptyState>
+          <EmptyState title="No audit records yet" />
         ) : (
           <>
             <form className="filter-bar" method="get">
@@ -145,9 +136,6 @@ export default async function AuditPage({
                 ))}
               </ul>
             </section>
-            <p className="muted small">
-              Showing the {events.length} most recent records.
-            </p>
           </>
         )}
       </div>

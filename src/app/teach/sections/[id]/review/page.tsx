@@ -314,12 +314,6 @@ export default async function ReviewPage({
           }),
         ),
       ]}
-      railFooter={
-        <span>
-          Staff only. Identities, validity decisions and drafts are never shown
-          to students.
-        </span>
-      }
       selection={{
         active: !!sp.selected,
         backHref: queryFor({ selected: undefined }),
@@ -351,7 +345,7 @@ export default async function ReviewPage({
           {visibleRows.length === 0 ? (
             <p style={{ padding: "22px 16px", color: "#6b7280" }}>
               {counts.total === 0
-                ? "No submissions yet. They appear here as students submit the weekly form."
+                ? "No submissions yet"
                 : "Nothing matches this filter."}
             </p>
           ) : (
@@ -464,11 +458,6 @@ export default async function ReviewPage({
               {counts.total === 0
                 ? "No submissions yet"
                 : "Select a submission"}
-            </p>
-            <p style={{ fontSize: 14 }}>
-              {counts.total === 0
-                ? "When students submit this section's weekly form, their responses appear here."
-                : "Choose a submission from the list to review it."}
             </p>
           </div>
         </div>
@@ -674,7 +663,6 @@ export default async function ReviewPage({
                 <div className="review-item-original">
                   <p className="review-item-original__label">
                     Original message
-                    <span>Private to this student and authorized staff</span>
                   </p>
                   <p className="review-item-original__body">
                     {item.originalText}
@@ -783,7 +771,6 @@ export default async function ReviewPage({
                     {can("sendPrivateResponses") && (
                     <div className="composer-card">
                       <h3>Reply privately</h3>
-                      <p>Visible to this student and authorized staff only.</p>
                       <form action={sendPrivate}>
                         <input type="hidden" name="itemId" value={item.id} />
                         <input
@@ -818,10 +805,6 @@ export default async function ReviewPage({
                     {can("draftPublicAnswers") && (
                     <div className="composer-card">
                       <h3>Answer the whole class</h3>
-                      <p>
-                        The original wording above stays private. Write a
-                        version that cannot identify the asker.
-                      </p>
                       <PublicAnswerComposer
                         action={draftOrPublish}
                         itemId={item.id}

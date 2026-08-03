@@ -150,7 +150,6 @@ export default async function MatchesPage({
       }
       eyebrow="Staff only"
       title="Account matches"
-      description="Confirm that each signed-in account belongs to the student on your class list."
     >
       <div className="stack-gap">
         {ok && <Alert variant="success">{ok}</Alert>}

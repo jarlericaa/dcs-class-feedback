@@ -131,23 +131,18 @@ export default async function TemplatesPage({
       }
       eyebrow="Staff only"
       title="Form templates"
-      description="Templates are snapshotted into each weekly cycle. Editing creates a new version and never changes a week that already collected answers."
     >
       <div className="stack-gap">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
         {templates.length === 0 ? (
-          <EmptyState title="No templates yet">
-            Create the weekly form your sections will use. You can change it
-            later; each change becomes a new version.
-          </EmptyState>
+          <EmptyState title="No templates yet" />
         ) : (
           <section className="card">
             <div className="card__header">
               <div>
                 <h2>Templates in this course</h2>
-                <p>Any section of this course can use them for its schedule.</p>
               </div>
             </div>
             <ul className="data-list">
@@ -186,8 +181,7 @@ export default async function TemplatesPage({
               Edit “{editing.template.title}”
             </h2>
             <p className="muted small" style={{ margin: "0 0 6px" }}>
-              Saving creates version{" "}
-              {(editing.versions[0]?.versionNumber ?? 0) + 1}.
+              Version {(editing.versions[0]?.versionNumber ?? 0) + 1}
             </p>
             <form action={addVersion}>
               <input
@@ -198,7 +192,6 @@ export default async function TemplatesPage({
               <TemplateEditor
                 showTitleFields={false}
                 submitLabel="Save as a new version"
-                note="Cycles that have already been generated keep the questions they were created with. Only future cycles use this version."
                 initialQuestions={editing.questions.map((q) => ({
                   key: q.id,
                   prompt: q.prompt,
@@ -219,10 +212,6 @@ export default async function TemplatesPage({
         {!editing && (
           <section className="card card--padded">
             <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>New template</h2>
-            <p className="muted small" style={{ margin: "0 0 16px" }}>
-              Students always get an optional free-text question/feedback box in
-              addition to what you add here.
-            </p>
             <form action={addTemplate}>
               <TemplateEditor
                 initialQuestions={[]}

@@ -119,7 +119,6 @@ export default async function ImportPage({
       }
       eyebrow="Staff only"
       title="Import the class list"
-      description="Paste the registrar's CSV, check the plan, then confirm. Nothing changes until you confirm."
     >
       <div className="stack-gap">
         <Alert variant="info" title="How matching works">

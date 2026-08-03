@@ -73,13 +73,8 @@ export default async function SectionFormPage({
         {...shell}
         eyebrow={`${course.code} · ${section.term}`}
         title={section.title}
-        description="There is no feedback form open for this class right now."
       >
-        <EmptyState title="No form is open at the moment">
-          Your teacher opens a new weekly form on a schedule. When one opens it
-          will appear here, and you can always read past answers in the class
-          Q&amp;A archive.
-        </EmptyState>
+        <EmptyState title="No form is open at the moment" />
         <div
           className="row-gap"
           style={{ marginTop: 16, justifyContent: "center" }}
@@ -109,7 +104,6 @@ export default async function SectionFormPage({
         {...shell}
         eyebrow={`${course.code} · Week ${cycle.cycleIndex}`}
         title="You have completed this week's form"
-        description="Thanks — that is everything we need from you this week."
       >
         <div className="stack-gap">
           {submitted === "1" && (
@@ -249,7 +243,6 @@ export default async function SectionFormPage({
       {...shell}
       eyebrow={`${course.code} · ${section.term}`}
       title={`Week ${cycle.cycleIndex} feedback`}
-      description="Answer your teacher's questions, and add anything of your own. It takes a couple of minutes."
       actions={
         <Badge tone="amber">Open · {timeRemaining(cycle.deadlineAt)}</Badge>
       }
@@ -258,16 +251,13 @@ export default async function SectionFormPage({
         <div className="form-card__top">
           <h2>{section.title}</h2>
           <p>
-            Closes {formatDeadline(cycle.deadlineAt, section.timezone)}. Your
-            teacher sees your name with your answers. Anything published to the
-            class is anonymous and reworded first.
+            Closes {formatDeadline(cycle.deadlineAt, section.timezone)}.
           </p>
         </div>
         <div className="form-body">
           <WeeklyForm
             questions={questionViews}
             action={submit}
-            deadlineLabel={formatDeadline(cycle.deadlineAt, section.timezone)}
           />
         </div>
       </section>

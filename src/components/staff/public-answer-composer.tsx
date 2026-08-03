@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Alert } from "@/components/ui";
 
 export function publishNeedsAcknowledgement(
   intent: string | null,
@@ -67,11 +66,6 @@ export function PublicAnswerComposer({
           rows={4}
         />
       </div>
-      <Alert variant="warning" title="Before you publish">
-        This answer will be visible to students in this section. The original
-        wording stays private, but specific details can still identify the
-        asker. Review the public wording before publishing.
-      </Alert>
       <label className="choice">
         <input
           ref={acknowledgmentRef}
@@ -86,8 +80,7 @@ export function PublicAnswerComposer({
       </label>
       {acknowledgmentError && (
         <p className="field-error" id={errorId} role="alert">
-          Check the public wording and acknowledge the anonymity warning before
-          publishing. Your question and answer have been kept.
+          Check the public wording before publishing.
         </p>
       )}
       <div className="row-gap" style={{ marginTop: 12 }}>

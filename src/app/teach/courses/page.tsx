@@ -38,14 +38,8 @@ export default async function CoursesPage({
           isPlatformAdmin: user.isPlatformAdmin,
         })}
         title="My courses"
-      >
-        <AccessDenied what="course management" />
-        <p
-          className="muted small"
-          style={{ marginTop: 12, textAlign: "center" }}
         >
-          A platform administrator grants the teacher role.
-        </p>
+        <AccessDenied what="course management" />
       </AppShell>
     );
   }
@@ -97,17 +91,13 @@ export default async function CoursesPage({
       })}
       eyebrow="Teaching"
       title="My courses"
-      description="Courses own templates and the question backlog. Sections own students, schedules, cycles and the class Q&A archive."
     >
       <div className="stack-gap">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
         {courses.length === 0 ? (
-          <EmptyState title="You do not have any courses yet">
-            Create your first course below, then add the class sections you
-            teach this term.
-          </EmptyState>
+          <EmptyState title="You do not have any courses yet" />
         ) : (
           courses.map(({ course, isOwner, sections }) => (
             <section className="card" key={course.id}>
@@ -202,10 +192,6 @@ export default async function CoursesPage({
 
         <section className="card card--padded">
           <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>Create a course</h2>
-          <p className="muted small" style={{ margin: "0 0 14px" }}>
-            You become the course owner, which is the only role that can assign
-            teaching staff and set their permissions.
-          </p>
           <form action={addCourse} className="form-grid">
             <div className="field-row">
               <label htmlFor="course-code">Course code</label>

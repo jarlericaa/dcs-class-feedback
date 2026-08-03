@@ -59,11 +59,6 @@ export function EntryScreen({ error }: { error?: string }) {
             </div>
           </div>
 
-          <ul className="entry__points">
-            <li>Your classmates never see who asked.</li>
-            <li>Answers stay inside your class section.</li>
-            <li>Never visible on the public internet.</li>
-          </ul>
         </section>
 
         <section className="entry__main">
@@ -112,11 +107,6 @@ export function EntryScreen({ error }: { error?: string }) {
               </Alert>
             )}
           </div>
-
-          <p className="entry__meta">
-            Students are matched to the class list by their teacher before they
-            can see anything, so a new account may be pending for a short while.
-          </p>
 
           {env.devAuthEnabled && (
             <div className="entry__dev">

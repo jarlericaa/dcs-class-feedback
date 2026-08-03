@@ -230,11 +230,6 @@ export default async function QaArchivePage({
                 ? "Nothing matches your search"
                 : "No published answers yet"}
             </p>
-            <p style={{ fontSize: 14 }}>
-              {isFiltered
-                ? "Clear the filters to see everything published to this class."
-                : "When your teaching team publishes an answer, it appears here."}
-            </p>
           </div>
         </div>
       ) : (
@@ -252,12 +247,8 @@ export default async function QaArchivePage({
                 Anonymous
               </p>
               <p className="ws-post__when" style={{ margin: 0 }}>
-                Asked by a student in{" "}
-                <strong>{categoryLabelFor(active.category)}</strong> · published{" "}
+                Published{" "}
                 {formatDateTime(active.publishedAt, section.timezone)}
-              </p>
-              <p className="ws-post__body">
-                Their identity and original wording are never shown.
               </p>
             </div>
           </div>
@@ -308,11 +299,5 @@ export default async function QaArchivePage({
         </>
       )}
     </WorkspaceShell>
-  );
-}
-
-function categoryLabelFor(value: string | null): string {
-  return (
-    QUESTION_CATEGORIES.find((c) => c.slug === value)?.label ?? "this class"
   );
 }

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
@@ -189,7 +188,6 @@ export default async function BacklogPage({
       }
       eyebrow="Staff only"
       title={`${course.code} question backlog`}
-      description="Questions worth answering later, plus anything imported from previous semesters. Nothing reaches a class until you publish it there."
     >
       <div className="stack-gap">
         {sp.ok && <Alert variant="success">{sp.ok}</Alert>}
@@ -230,10 +228,7 @@ export default async function BacklogPage({
         </form>
 
         {backlog.questions.length === 0 ? (
-          <EmptyState title="Nothing in the backlog">
-            Move a student question here from the review inbox, or import
-            questions from a previous semester below.
-          </EmptyState>
+          <EmptyState title="Nothing in the backlog" />
         ) : (
           <section className="card">
             <ul className="data-list">
@@ -341,11 +336,6 @@ export default async function BacklogPage({
           <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>
             Import questions from a previous semester
           </h2>
-          <p className="muted small" style={{ margin: "0 0 14px" }}>
-            One question per line. Everything imported this way is anonymous: no
-            student identity is attached, and imported questions never count
-            towards anyone&apos;s participation.
-          </p>
           <form action={importLegacy} className="stack-gap">
             <div className="field-row">
               <label htmlFor="entries">Questions</label>
@@ -377,13 +367,6 @@ export default async function BacklogPage({
           </form>
         </section>
 
-        <p className="muted small">
-          Ready drafts appear in the{" "}
-          <Link href={`/teach/sections/${sectionId}/publications`}>
-            publication queue
-          </Link>
-          .
-        </p>
       </div>
     </AppShell>
   );

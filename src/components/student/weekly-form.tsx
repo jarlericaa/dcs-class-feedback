@@ -53,11 +53,9 @@ export function questionErrorAttributes(
 export function WeeklyForm({
   questions,
   action,
-  deadlineLabel,
 }: {
   questions: FormQuestionView[];
   action: (state: SubmitState, formData: FormData) => Promise<SubmitState>;
-  deadlineLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     status: "idle",
@@ -252,11 +250,6 @@ export function WeeklyForm({
 
       <fieldset className="student-item">
         <legend>Your own question or feedback (optional)</legend>
-        <p>
-          Staff can reply to you privately, or reword your question and publish
-          the answer to this class section. Your classmates never see your name
-          or your original wording.
-        </p>
         <div className="form-grid" style={{ marginBottom: 12 }}>
           <div className="field-row">
             <label htmlFor="item_type">What is this?</label>
@@ -308,10 +301,6 @@ export function WeeklyForm({
       </fieldset>
 
       <div className="form-actions">
-        <p className="muted small" style={{ margin: 0 }}>
-          Closes {deadlineLabel}. You can submit once, and submissions cannot be
-          edited afterwards.
-        </p>
         <button className="button button--primary" type="submit" disabled={pending}>
           {pending ? "Submitting…" : "Submit this week's form"}
         </button>

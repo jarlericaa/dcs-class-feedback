@@ -171,7 +171,6 @@ export default async function PublicationsPage({
       }
       eyebrow="Staff only"
       title="Publication queue"
-      description="Drafts, scheduled answers, and anything whose publication failed."
     >
       <div className="stack-gap">
         {ok && <Alert variant="success">{ok}</Alert>}
@@ -195,10 +194,7 @@ export default async function PublicationsPage({
         )}
 
         {editable.length === 0 ? (
-          <EmptyState title="Nothing waiting to publish">
-            Drafts you create from the review inbox appear here, together with
-            anything scheduled for later.
-          </EmptyState>
+          <EmptyState title="Nothing waiting to publish" />
         ) : (
           editable.map(({ answer, sourceCount }) => (
             <section className="card card--padded" key={answer.id}>
@@ -251,10 +247,6 @@ export default async function PublicationsPage({
                     rows={2}
                     defaultValue={answer.publicQuestionText}
                   />
-                  <span className="helper-text">
-                    The student&apos;s original wording is preserved separately
-                    and never changes.
-                  </span>
                 </div>
                 <div className="field-row">
                   <label htmlFor={`a-${answer.id}`}>Answer</label>
@@ -277,11 +269,6 @@ export default async function PublicationsPage({
                 {can("publishPublicAnswers") && (
                   <div className="composer-card">
                     <h3>Publish now</h3>
-                    <p>
-                      Visible to everyone enrolled in this section. The asker
-                      stays anonymous, but specific details can still identify
-                      them.
-                    </p>
                     <form action={publish}>
                       <input type="hidden" name="answerId" value={answer.id} />
                       <label className="choice">
@@ -304,10 +291,6 @@ export default async function PublicationsPage({
                     <h3>
                       {answer.state === "scheduled" ? "Reschedule" : "Schedule"}
                     </h3>
-                    <p>
-                      Times are {section.timezone}. Publication is retried by
-                      the reconciliation poller if the app was down.
-                    </p>
                     <form action={schedule}>
                       <input type="hidden" name="answerId" value={answer.id} />
                       <label
@@ -367,7 +350,6 @@ export default async function PublicationsPage({
             <div className="card__header">
               <div>
                 <h2>Recently published</h2>
-                <p>Published answers cannot be withdrawn in this release.</p>
               </div>
             </div>
             <ul className="data-list">

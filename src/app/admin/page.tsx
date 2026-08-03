@@ -92,17 +92,10 @@ export default async function AdminPage({
       }
       eyebrow="Platform administration"
       title="Accounts and roles"
-      description="Grant the teacher role so someone can create their own courses and sections."
     >
       <div className="stack-gap">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
-
-        <Alert variant="info" title="Administration is separate from teaching">
-          Being a platform administrator gives you no access to any course,
-          section, student, or submission. To see class content you must be
-          added to that section&apos;s teaching team.
-        </Alert>
 
         <form className="filter-bar" method="get" role="search">
           <label className="visually-hidden" htmlFor="admin-q">
@@ -126,8 +119,7 @@ export default async function AdminPage({
             <div>
               <h2>Accounts</h2>
               <p>
-                {accounts.length} account{accounts.length === 1 ? "" : "s"}. An
-                account only exists after its owner has signed in once.
+                {accounts.length} account{accounts.length === 1 ? "" : "s"}
               </p>
             </div>
           </div>

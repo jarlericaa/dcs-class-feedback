@@ -57,7 +57,6 @@ export default async function HistoryPage({
       contextLabel={section.title}
       eyebrow={`${course.code} · ${section.term}`}
       title="My submissions"
-      description="Only you and the teaching team can see this page."
     >
       {history.length === 0 ? (
         <EmptyState
@@ -66,10 +65,7 @@ export default async function HistoryPage({
             href: `/sections/${sectionId}`,
             label: "Go to this week's form",
           }}
-        >
-          Once you complete a weekly form it appears here, together with any
-          reply from your teacher.
-        </EmptyState>
+        />
       ) : (
         <div className="stack-gap">
           <p className="muted small" style={{ margin: 0 }}>
@@ -129,8 +125,7 @@ export default async function HistoryPage({
                         <strong>Private reply from your teaching team</strong>
                         <p>{reply.body}</p>
                         <p className="muted small" style={{ marginTop: 6 }}>
-                          {formatDateTime(reply.createdAt, section.timezone)} ·
-                          only you and authorized staff can see this
+                          {formatDateTime(reply.createdAt, section.timezone)}
                         </p>
                       </div>
                     ))}
@@ -151,8 +146,7 @@ export default async function HistoryPage({
                           {formatDateTime(
                             item.publicAnswer.publishedAt,
                             section.timezone,
-                          )}{" "}
-                          · your classmates cannot see that you asked it
+                          )}
                         </p>
                       </div>
                     )}

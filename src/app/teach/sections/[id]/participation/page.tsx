@@ -69,7 +69,6 @@ export default async function ParticipationPage({
       }
       eyebrow="Staff only"
       title="Participation"
-      description="A student participated in a week if they have one valid submission for it. Nothing here is visible to students."
     >
       <div className="stack-gap">
         <Alert
@@ -93,7 +92,6 @@ export default async function ParticipationPage({
           <div className="card__header">
             <div>
               <h2>Export</h2>
-              <p>The three reports defined in the participation rules.</p>
             </div>
           </div>
           <div className="card__body row-gap">
@@ -119,10 +117,7 @@ export default async function ParticipationPage({
         </section>
 
         {summary.cycleCount === 0 || students.length === 0 ? (
-          <EmptyState title="Nothing to report yet">
-            Once this section has run a week and students have submitted, the
-            matrix appears here.
-          </EmptyState>
+          <EmptyState title="Nothing to report yet" />
         ) : (
           <section className="card">
             <div className="card__header">

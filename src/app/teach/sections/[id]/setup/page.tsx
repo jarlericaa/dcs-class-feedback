@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -218,7 +217,6 @@ export default async function SetupPage({
       }
       eyebrow="Staff only"
       title="Section setup"
-      description="Section details, the teaching team, and the weekly schedule that generates cycles."
     >
       <div className="stack-gap">
         {ok && <Alert variant="success">{ok}</Alert>}
@@ -226,9 +224,6 @@ export default async function SetupPage({
 
         <section className="card card--padded">
           <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>Section details</h2>
-          <p className="muted small" style={{ margin: "0 0 14px" }}>
-            Timezone is {section.timezone}, set institution-wide for the pilot.
-          </p>
           <form action={saveDetails} className="form-grid">
             <div className="field-row">
               <label htmlFor="section-title">Section name</label>
@@ -262,10 +257,6 @@ export default async function SetupPage({
           <div className="card__header">
             <div>
               <h2>Teaching team</h2>
-              <p>
-                Teachers and co-teachers hold every capability on this section.
-                Assistants hold only what you tick.
-              </p>
             </div>
             {isOwner ? (
               <Badge tone="green">You own this course</Badge>
@@ -365,10 +356,6 @@ export default async function SetupPage({
               <div className="card__header">
                 <div>
                   <h2>Weekly schedule</h2>
-                  <p>
-                    Cycles are generated from this schedule and open
-                    automatically. Times are in {section.timezone}.
-                  </p>
                 </div>
                 {active ? (
                   <Badge tone="green">Active</Badge>
@@ -578,9 +565,7 @@ export default async function SetupPage({
               </div>
               {cycles.length === 0 ? (
                 <div className="card__body">
-                  <EmptyState title="No cycles generated yet">
-                    Save a schedule above and the first weeks appear here.
-                  </EmptyState>
+                  <EmptyState title="No cycles generated yet" />
                 </div>
               ) : (
                 <div className="table-scroll">
@@ -684,13 +669,6 @@ export default async function SetupPage({
               )}
             </section>
 
-            <p className="muted small">
-              Templates live at the course level.{" "}
-              <Link href={`/teach/courses/${course.id}/templates`}>
-                Manage {course.code} templates
-              </Link>
-              .
-            </p>
           </>
         ) : (
           <Alert
