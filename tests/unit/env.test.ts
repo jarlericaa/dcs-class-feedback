@@ -28,10 +28,51 @@ describe("env dev-auth gating", () => {
     expect((await loadEnv()).devAuthEnabled).toBe(true);
   });
 
+  /** A production env must satisfy the other production-only requirements first. */
+  function stubProductionRequirements() {
+    vi.stubEnv("STUDENT_NUMBER_ENC_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    vi.stubEnv("STUDENT_NUMBER_HASH_KEY", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=");
+    vi.stubEnv("EMAIL_TRANSPORT", "smtp");
+    vi.stubEnv("SMTP_HOST", "smtp.example.edu");
+    vi.stubEnv("APP_BASE_URL", "https://feedback.example.edu");
+  }
+
   it("NEVER enables in production, even with DEV_AUTH_ENABLED=true", async () => {
+    stubProductionRequirements();
     vi.stubEnv("DEV_AUTH_ENABLED", "true");
     vi.stubEnv("NODE_ENV", "production");
     expect((await loadEnv()).devAuthEnabled).toBe(false);
+  });
+
+  it("refuses to start in production without a student-number encryption key", async () => {
+    stubProductionRequirements();
+    vi.stubEnv("STUDENT_NUMBER_ENC_KEY", "");
+    vi.stubEnv("NODE_ENV", "production");
+    await expect(loadEnv()).rejects.toThrow(/STUDENT_NUMBER_ENC_KEY/);
+  });
+
+  it("refuses to start in production unless email really sends", async () => {
+    stubProductionRequirements();
+    vi.stubEnv("EMAIL_TRANSPORT", "log");
+    vi.stubEnv("NODE_ENV", "production");
+    await expect(loadEnv()).rejects.toThrow(/EMAIL_TRANSPORT/);
+  });
+
+  it("flags the non-secret development crypto keys as such", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("STUDENT_NUMBER_ENC_KEY", "");
+    vi.stubEnv("STUDENT_NUMBER_HASH_KEY", "");
+    expect((await loadEnv()).usingDevCryptoKeys).toBe(true);
+  });
+
+  it("parses deadline reminder offsets, descending and deduplicated", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("EMAIL_REMINDER_OFFSETS", "2h,24h,2h,30m,nonsense");
+    expect((await loadEnv()).emailReminderOffsets).toEqual([
+      { label: "T-24h", minutes: 1440 },
+      { label: "T-2h", minutes: 120 },
+      { label: "T-30m", minutes: 30 },
+    ]);
   });
 
   it("parses allowed email domains case-insensitively", async () => {
