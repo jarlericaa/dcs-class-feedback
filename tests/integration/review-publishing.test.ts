@@ -165,6 +165,61 @@ describe("review + publishing + source links", () => {
     expect("createdByUserId" in entry).toBe(false);
   });
 
+  it("groups separately published answers with the same public question", async () => {
+    const { teacher, section, cycle, question } = await fullSetup();
+    const a = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "What is the integral of x^3?",
+    );
+    const b = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "Please explain the integral of x^3",
+    );
+
+    const first = await draftPublicAnswer(teacher.id, {
+      sectionId: section.id,
+      itemIds: [a.studentItemId!],
+      publicQuestionText: "What is the integral of x^3?",
+      answerBody: "Use the power rule.",
+    });
+    await publishNow(teacher.id, first.id, { anonymityAcknowledged: true });
+
+    const second = await draftPublicAnswer(teacher.id, {
+      sectionId: section.id,
+      itemIds: [b.studentItemId!],
+      publicQuestionText: "  what is the integral of x^3?  ",
+      answerBody: "Integrate term by term.",
+    });
+    await publishNow(teacher.id, second.id, {
+      anonymityAcknowledged: true,
+    });
+
+    expect(
+      await db.query.publicAnswers.findMany({
+        where: eq(publicAnswers.sectionId, section.id),
+      }),
+    ).toHaveLength(2);
+    expect(await db.query.sourceLinks.findMany()).toHaveLength(2);
+    const archive = await listSectionQa(a.student.user.id, section.id);
+    expect(archive).toHaveLength(1);
+    expect(archive[0]!.answers).toHaveLength(2);
+    expect(archive[0]!.answers.map((answer) => answer.answer)).toEqual([
+      "Integrate term by term.",
+      "Use the power rule.",
+    ]);
+
+    for (const student of [a, b]) {
+      const history = await getStudentHistory(student.student.user.id, section.id);
+      expect(history[0]!.items[0]!.status).toBe("answered");
+    }
+  });
+
   it("rewording updates the public text only; the original student wording is immutable", async () => {
     const { teacher, section, cycle, question } = await fullSetup();
     const a = await submitWithItem(
@@ -224,7 +279,9 @@ describe("review + publishing + source links", () => {
     // Due publication publishes exactly once (idempotent re-run).
     expect(await publishDueAnswers(new Date("2026-01-07T01:00:00Z"))).toBe(1);
     expect(await publishDueAnswers(new Date("2026-01-07T02:00:00Z"))).toBe(0);
-    expect(await listSectionQa(a.student.user.id, section.id)).toHaveLength(1);
+    const archive = await listSectionQa(a.student.user.id, section.id);
+    expect(archive).toHaveLength(1);
+    expect(archive[0]!.category).toBe("misc");
     history = await getStudentHistory(a.student.user.id, section.id);
     expect(history[0]!.items[0]!.status).toBe("answered");
   });

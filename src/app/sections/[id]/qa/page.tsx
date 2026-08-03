@@ -253,49 +253,48 @@ export default async function QaArchivePage({
             </div>
           </div>
 
-          <h2 className="ws-answers-heading">1 Answer</h2>
+          <h2 className="ws-answers-heading">
+            {active.answers.length} {active.answers.length === 1 ? "Answer" : "Answers"}
+          </h2>
 
-          <div className="ws-answer">
-            <div className="ws-post">
-              <span
-                className="ws-avatar"
-                style={{ background: avatarColour(course.code) }}
-                aria-hidden="true"
-              >
-                {course.code.slice(0, 1).toUpperCase()}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 16,
-                  }}
+          {active.answers.map((answer) => (
+            <div className="ws-answer" key={answer.id}>
+              <div className="ws-post">
+                <span
+                  className="ws-avatar"
+                  style={{ background: avatarColour(course.code) }}
+                  aria-hidden="true"
                 >
-                  <div>
-                    <p className="ws-post__who" style={{ margin: 0 }}>
-                      Teaching team
-                    </p>
-                    <p className="ws-post__when" style={{ margin: 0 }}>
-                      {formatDateTime(active.publishedAt, section.timezone)}
-                    </p>
+                  {course.code.slice(0, 1).toUpperCase()}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 16,
+                    }}
+                  >
+                    <div>
+                      <p className="ws-post__who" style={{ margin: 0 }}>
+                        Teaching team
+                      </p>
+                      <p className="ws-post__when" style={{ margin: 0 }}>
+                        {formatDateTime(answer.publishedAt, section.timezone)}
+                      </p>
+                    </div>
+                    <span className="ws-endorsed">
+                      <span aria-hidden="true">✔</span> STAFF ANSWER
+                    </span>
                   </div>
-                  <span className="ws-endorsed">
-                    <span aria-hidden="true">✔</span> STAFF ANSWER
-                  </span>
-                </div>
-                <div className="ws-post__body">
-                  {active.answer ?? "No answer text was recorded."}
+                  <div className="ws-post__body">
+                    {answer.answer ?? "No answer text was recorded."}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-
-          <p style={{ marginTop: 28, color: "#6b7280", fontSize: 13.5 }}>
-            Answers are published to this class section only, never to the
-            public internet.
-          </p>
+          ))}
         </>
       )}
     </WorkspaceShell>

@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   formQuestions,
@@ -19,6 +19,7 @@ import {
   requireSectionStaff,
 } from "@/modules/authz";
 import { getItemWithSection } from "@/modules/review";
+import { normalizePublicQuestionText } from "./dedupe";
 
 export { publishDueAnswers } from "./publish";
 
@@ -505,7 +506,13 @@ export async function listSectionQa(
     eq(publicAnswers.sectionId, sectionId),
     eq(publicAnswers.state, "published"),
   ];
-  if (opts.category) conditions.push(eq(publicAnswers.category, opts.category));
+  if (opts.category) {
+    conditions.push(
+      opts.category === "misc"
+        ? or(eq(publicAnswers.category, "misc"), isNull(publicAnswers.category))!
+        : eq(publicAnswers.category, opts.category),
+    );
+  }
   if (opts.search?.trim()) {
     const term = `%${opts.search.trim()}%`;
     conditions.push(
@@ -519,16 +526,35 @@ export async function listSectionQa(
     where: and(...conditions),
     orderBy: desc(publicAnswers.publishedAt),
   });
-  // Anonymous projection — never include createdBy/source information.
-  return rows.map((r) => ({
-    id: r.id,
-    question: r.publicQuestionText,
-    answer: r.answerBody,
-    category: r.category,
-    topicId: r.topicId,
-    publishedAt: r.publishedAt,
-    sourceOrigin: r.sourceOrigin,
-  }));
+  // Anonymous projection — never include createdBy/source information. Group
+  // matching titles into one question thread while retaining every published
+  // answer under it.
+  const grouped = new Map<
+    string,
+    (typeof rows)[number][]
+  >();
+  for (const row of rows) {
+    const key = normalizePublicQuestionText(row.publicQuestionText);
+    const group = grouped.get(key) ?? [];
+    group.push(row);
+    grouped.set(key, group);
+  }
+  return [...grouped.values()].map((group) => {
+    const first = group[0]!;
+    return {
+      id: first.id,
+      question: first.publicQuestionText,
+      answers: group.map((row) => ({
+        id: row.id,
+        answer: row.answerBody,
+        publishedAt: row.publishedAt,
+      })),
+      category: first.category ?? "misc",
+      topicId: first.topicId,
+      publishedAt: first.publishedAt,
+      sourceOrigin: first.sourceOrigin,
+    };
+  });
 }
 
 /**
