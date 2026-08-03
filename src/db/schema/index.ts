@@ -5,4 +5,8 @@ export * from "./forms";
 export * from "./responses";
 export * from "./publishing";
 export * from "./backlog";
+export * from "./merge";
+export * from "./analysis";
+export * from "./email";
+export * from "./discussion";
 export * from "./audit";
