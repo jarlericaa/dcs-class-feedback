@@ -267,7 +267,11 @@ async function makeSubmittedItem() {
   const { user, record } = await makeEnrolledStudent(section.id, teacher.id);
   const [response] = await db
     .insert(formResponses)
-    .values({ cycleId: cycle!.id, studentRecordId: record.id })
+    .values({
+        cycleId: cycle!.id,
+        studentRecordId: record.id,
+        submittedAt: new Date(),
+      })
     .returning();
   const [item] = await db
     .insert(studentSubmissionItems)
@@ -396,11 +400,11 @@ describe("section audit browsing", () => {
     await createPrivateResponse(b.teacher.id, b.item.id, "Reply in section B");
 
     const eventsA = await listSectionAuditEvents(a.teacher.id, a.section.id);
-    const idsA = new Set(eventsA.map((e) => e.event.entityId));
+    const idsA = new Set(eventsA.rows.map((e) => e.event.entityId));
     const privatesB = await db.query.privateResponses.findMany();
     const bPrivate = privatesB.find((p) => p.itemId === b.item.id)!;
 
-    expect(eventsA.length).toBeGreaterThan(0);
+    expect(eventsA.rows.length).toBeGreaterThan(0);
     expect(idsA.has(bPrivate.id)).toBe(false);
   });
 
@@ -428,7 +432,7 @@ describe("section audit browsing", () => {
     const { teacher, section } = await makeSubmittedItem();
     const events = await listSectionAuditEvents(teacher.id, section.id);
     // No system events exist for a hand-built fixture; the shape still holds.
-    expect(events.every((e) => e.actor !== undefined)).toBe(true);
+    expect(events.rows.every((e) => e.actor !== undefined)).toBe(true);
   });
 });
 
@@ -448,7 +452,10 @@ describe("review read models mask identity in the data", () => {
     expect(rows[0]!.student).toBeNull();
     // the identity is absent from the payload, not merely unrendered
     expect(JSON.stringify(rows)).not.toContain(record.fullName);
-    expect(JSON.stringify(rows)).not.toContain(record.studentNumber);
+    // The plaintext number no longer lives on the row at all; assert the sealed
+    // material and the visible tail are both absent too.
+    expect(JSON.stringify(rows)).not.toContain(record.studentNumberCiphertext);
+    expect(JSON.stringify(rows)).not.toContain(record.studentNumberLast4);
 
     const detail = await getSubmissionDetail(ta.id, rows[0]!.response.id);
     expect(detail.student).toBeNull();
@@ -524,7 +531,13 @@ describe("participation overview", () => {
     const { formResponses } = await import("@/db/schema");
     await db
       .update(formResponses)
-      .set({ validity: "invalid", invalidationReason: "spam" })
+      // A student-visible reason is now required alongside the internal one, so a
+      // student can always be told why a submission did not count.
+      .set({
+        validity: "invalid",
+        invalidationReason: "spam",
+        studentVisibleReason: "This did not answer the form.",
+      })
       .where(eq(formResponses.cycleId, cycle.id));
 
     const after = await getParticipationOverview(teacher.id, section.id);
