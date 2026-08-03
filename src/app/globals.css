@@ -1877,10 +1877,54 @@ button.button {
   .ws-rail { flex-basis: 190px; width: 190px; }
   .ws-list { flex-basis: 300px; width: 300px; }
 }
+/* The drawer that replaces the rail on small screens. A <details>
+   disclosure, so it opens by keyboard and needs no client JavaScript.
+   Hidden on desktop, where the persistent rail is already visible. */
+.ws-drawer { display: none; }
+.ws-drawer > summary {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 16px;
+  list-style: none;
+}
+.ws-drawer > summary::-webkit-details-marker { display: none; }
+.ws-drawer[open] > summary { background: rgba(255, 255, 255, 0.18); }
+.ws-drawer__panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 48px;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px;
+  overflow-y: auto;
+  background: #fff;
+  box-shadow: 0 10px 34px rgba(16, 20, 24, 0.24);
+}
+
+/* "Back to list" above the detail pane, only useful once the panes stack. */
+.ws-backlink { display: none; }
+
 @media (max-width: 820px) {
-  /* Stack: the rail becomes a drawer, list and detail become separate views. */
+  /* Stack: the rail becomes a drawer, list and detail become separate views
+     driven by whether a row is selected in the URL. */
   .ws-rail { display: none; }
-  .ws-rail--open { display: flex; position: absolute; z-index: 25; top: 48px; bottom: 0; box-shadow: 0 8px 30px rgba(16,20,24,.2); }
+  .ws-drawer { display: block; }
+  .ws-backlink {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    color: var(--link);
+    font-size: 14px;
+    font-weight: 700;
+  }
   .ws-body { position: relative; }
   .ws-list { flex: 1; width: auto; border-right: 0; }
   .ws-list--hidden { display: none; }

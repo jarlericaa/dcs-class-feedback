@@ -315,12 +315,17 @@ export default async function ReviewPage({
       ]}
       railFooter={
         <span>
-          Staff only. Identities, validity decisions and drafts are never
-          shown to students.
+          Staff only. Identities, validity decisions and drafts are never shown
+          to students.
         </span>
       }
+      selection={{
+        active: !!sp.selected,
+        backHref: queryFor({ selected: undefined }),
+      }}
       listPane={
         <ListPane
+          hiddenOnMobile={!!sp.selected}
           searchAction={`/teach/sections/${sectionId}/review`}
           searchName="q"
           searchValue={sp.q}

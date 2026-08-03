@@ -85,7 +85,8 @@ export default async function QaArchivePage({
       selected: sp.selected,
       ...patch,
     };
-    for (const [key, value] of Object.entries(merged)) if (value) next.set(key, value);
+    for (const [key, value] of Object.entries(merged))
+      if (value) next.set(key, value);
     const qs = next.toString();
     return qs ? `${base}?${qs}` : base;
   };
@@ -147,8 +148,13 @@ export default async function QaArchivePage({
       railFooter={
         <span>Visible to this section only. Askers are always anonymous.</span>
       }
+      selection={{
+        active: !!sp.selected,
+        backHref: link({ selected: undefined }),
+      }}
       listPane={
         <ListPane
+          hiddenOnMobile={!!sp.selected}
           searchAction={base}
           searchValue={sp.q}
           searchPlaceholder="Search questions and answers"
@@ -298,5 +304,7 @@ export default async function QaArchivePage({
 }
 
 function categoryLabelFor(value: string | null): string {
-  return QUESTION_CATEGORIES.find((c) => c.slug === value)?.label ?? "this class";
+  return (
+    QUESTION_CATEGORIES.find((c) => c.slug === value)?.label ?? "this class"
+  );
 }

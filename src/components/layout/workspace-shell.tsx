@@ -91,10 +91,17 @@ function Rail({
             <Link
               key={category.slug}
               className={`ws-rail__item ${category.active ? "ws-rail__item--active" : ""}`}
-              href={category.active ? (category.clearHref ?? category.href) : category.href}
+              href={
+                category.active
+                  ? (category.clearHref ?? category.href)
+                  : category.href
+              }
               aria-current={category.active ? "true" : undefined}
             >
-              <span className={`cat-dot cat--${category.slug}`} aria-hidden="true" />
+              <span
+                className={`cat-dot cat--${category.slug}`}
+                aria-hidden="true"
+              />
               <span>{category.label}</span>
               {category.active && (
                 <span className="ws-rail__clear" aria-hidden="true">
@@ -116,7 +123,10 @@ function Rail({
               href={item.href}
               aria-current={item.active ? "page" : undefined}
             >
-              <span aria-hidden="true" style={{ width: 10, textAlign: "center" }}>
+              <span
+                aria-hidden="true"
+                style={{ width: 10, textAlign: "center" }}
+              >
                 {item.icon}
               </span>
               <span>{item.label}</span>
@@ -159,6 +169,7 @@ export function WorkspaceShell({
   railFooter,
   notificationCount,
   listPane,
+  selection,
   children,
 }: {
   user: ShellUser;
@@ -172,6 +183,13 @@ export function WorkspaceShell({
   notificationCount?: number;
   /** when present the body is a two-pane list/detail view */
   listPane?: ReactNode;
+  /**
+   * Which of the two panes is the current view once they stack on a phone.
+   * `active` means a row was explicitly chosen, so the detail replaces the
+   * list and `backHref` returns to it. Ignored above 820px, where both panes
+   * are visible together.
+   */
+  selection?: { active: boolean; backHref: string };
   children: ReactNode;
 }) {
   return (
@@ -189,6 +207,21 @@ export function WorkspaceShell({
         </Link>
         <span className="ws-topbar__spacer" />
         <div className="ws-topbar__actions">
+          <details className="ws-drawer">
+            <summary aria-label="Open navigation menu">
+              <span aria-hidden="true">☰</span>
+            </summary>
+            <div className="ws-drawer__panel">
+              <Rail
+                user={user}
+                primaryAction={primaryAction}
+                courses={courses}
+                categories={categories}
+                navGroups={navGroups}
+                footer={railFooter}
+              />
+            </div>
+          </details>
           <Link className="ws-iconbtn" href="/" aria-label="Overview">
             <span aria-hidden="true">⌂</span>
           </Link>
@@ -233,8 +266,20 @@ export function WorkspaceShell({
         {listPane}
 
         {listPane ? (
-          <main className="ws-detail" id="main-content">
-            <div className="ws-detail__inner">{children}</div>
+          <main
+            className={`ws-detail ${
+              selection && !selection.active ? "ws-detail--hidden" : ""
+            }`}
+            id="main-content"
+          >
+            <div className="ws-detail__inner">
+              {selection?.active && (
+                <Link className="ws-backlink" href={selection.backHref}>
+                  <span aria-hidden="true">←</span> Back to list
+                </Link>
+              )}
+              {children}
+            </div>
           </main>
         ) : (
           <main className="ws-page" id="main-content">
@@ -254,6 +299,8 @@ export function ListPane({
   searchPlaceholder = "Search",
   hiddenFields,
   filter,
+  /** true once a row is selected: the detail takes over on a stacked layout */
+  hiddenOnMobile,
   children,
 }: {
   searchAction?: string;
@@ -261,14 +308,28 @@ export function ListPane({
   searchValue?: string;
   searchPlaceholder?: string;
   hiddenFields?: Record<string, string | undefined>;
-  filter?: { current: string; options: { key: string; label: string; href: string }[] };
+  filter?: {
+    current: string;
+    options: { key: string; label: string; href: string }[];
+  };
+  hiddenOnMobile?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="ws-list" aria-label="Threads">
-      <form className="ws-search" method="get" action={searchAction} role="search">
+    <section
+      className={`ws-list ${hiddenOnMobile ? "ws-list--hidden" : ""}`}
+      aria-label="Threads"
+    >
+      <form
+        className="ws-search"
+        method="get"
+        action={searchAction}
+        role="search"
+      >
         {Object.entries(hiddenFields ?? {}).map(([key, value]) =>
-          value ? <input key={key} type="hidden" name={key} value={value} /> : null,
+          value ? (
+            <input key={key} type="hidden" name={key} value={value} />
+          ) : null,
         )}
         <span className="ws-search__icon" aria-hidden="true">
           ⌕
