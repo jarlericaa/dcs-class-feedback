@@ -113,7 +113,7 @@ export async function listPendingMatchesForSection(
   actorUserId: string,
   sectionId: string,
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities");
+  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", { allowArchived: true });
   const sectionRecords = await db
     .select({ id: enrollments.studentRecordId })
     .from(enrollments)
@@ -308,6 +308,74 @@ export async function correctMatch(
         userId: oldMatch.userId,
         studentRecordId: correctStudentRecordId,
       },
+    });
+  });
+}
+
+/**
+ * Unlink a confirmed identity (project-specs.md §6.1 step 7).
+ *
+ * Setting `state = 'rejected'` releases both partial unique indexes
+ * (`one_confirmed_match_per_user`, `one_confirmed_match_per_student_record`), so
+ * the account and the roster record can each be linked again.
+ *
+ * Nothing is deleted. Responses are attached to the STUDENT RECORD, not to the
+ * user, so unlinking revokes the student's access immediately while leaving their
+ * submissions and history intact — and a later re-link restores their view of
+ * them. A reason is required because this is a destructive-looking action that
+ * someone will have to explain later.
+ */
+export async function unlinkMatch(
+  actorUserId: string,
+  confirmedMatchId: string,
+  reason: string,
+) {
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) {
+    throw new Error("A reason is required to unlink a confirmed identity.");
+  }
+  const match = await db.query.accountMatches.findFirst({
+    where: eq(accountMatches.id, confirmedMatchId),
+  });
+  if (!match || !match.studentRecordId) throw new AuthzError("Match not found");
+  if (match.state !== "confirmed") {
+    throw new Error("Only a confirmed identity can be unlinked.");
+  }
+  await requireStaffForMatchRecord(actorUserId, match.studentRecordId);
+
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(accountMatches)
+      .set({
+        state: "rejected",
+        unlinkedAt: now,
+        unlinkedByUserId: actorUserId,
+        unlinkReason: trimmedReason,
+        updatedAt: now,
+      })
+      // State-guarded: two staff members unlinking at once cannot both record it.
+      .where(
+        and(
+          eq(accountMatches.id, confirmedMatchId),
+          eq(accountMatches.state, "confirmed"),
+        ),
+      )
+      .returning({ id: accountMatches.id });
+    if (updated.length === 0) {
+      throw new Error("This identity was already changed. Reload and try again.");
+    }
+    await writeAudit(tx, {
+      actorUserId,
+      action: "match.unlinked",
+      entityType: "account_match",
+      entityId: confirmedMatchId,
+      before: {
+        state: "confirmed",
+        userId: match.userId,
+        studentRecordId: match.studentRecordId,
+      },
+      after: { state: "rejected", reason: trimmedReason },
     });
   });
 }

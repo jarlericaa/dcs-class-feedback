@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
+import { studentNumberHash } from "@/modules/crypto/student-number";
 import { db, truncateAll } from "./helpers";
 import { makeCourse, makeSection, makeUser } from "./fixtures";
 import { accountMatches, enrollments, studentRecords } from "@/db/schema";
@@ -104,7 +105,7 @@ describe("roster CSV import", () => {
     const s2 = await commitRosterImport(teacher.id, section.id, fix, "v2");
     expect(s2.namesUpdated).toBe(1);
     const rec = (await db.query.studentRecords.findFirst({
-      where: eq(studentRecords.studentNumber, "2026-001"),
+      where: eq(studentRecords.studentNumberHash, studentNumberHash("2026-001")),
     }))!;
     expect(rec.fullName).toBe("Juan De La Cruz");
 
@@ -131,7 +132,7 @@ describe("roster CSV import", () => {
     expect(s3.nameDiffsLocked).toBe(1);
     expect(s3.namesUpdated).toBe(0);
     const recAfter = (await db.query.studentRecords.findFirst({
-      where: eq(studentRecords.studentNumber, "2026-001"),
+      where: eq(studentRecords.studentNumberHash, studentNumberHash("2026-001")),
     }))!;
     expect(recAfter.fullName).toBe("Juan De La Cruz"); // unchanged
     // rosterName snapshot still records what the file said

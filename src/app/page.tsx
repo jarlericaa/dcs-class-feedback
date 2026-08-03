@@ -227,13 +227,30 @@ export default async function HomePage() {
               {matchStatus === "pending"
                 ? "A teacher needs to confirm that this account belongs to you before your class spaces appear. Nothing is confirmed automatically."
                 : matchStatus === "unmatched"
-                  ? "Your name did not match anyone on the imported class lists. Ask your teacher to check the roster and confirm your account manually."
+                  ? "Your name did not match anyone on the imported class lists. Tell us your student number and your teacher will confirm it."
                   : "Once you are enrolled in a section, or added to a teaching team, it will appear here."}
             </EmptyState>
           )}
         </div>
 
         <aside className="dashboard-stack">
+          {matchStatus !== "confirmed" &&
+            studentCards.length === 0 &&
+            staffCards.length === 0 && (
+              <section className="card card--padded">
+                <p className="section-kicker">Get access</p>
+                <h2 style={{ margin: "6px 0" }}>Claim your place</h2>
+                <p className="muted small">
+                  Class lists carry no email address, so tell us your student
+                  number. Your teacher confirms every link by hand — that is
+                  deliberate: it stops someone else being matched to your name.
+                </p>
+                <Link className="button button--primary" href="/claim">
+                  Enter my student number
+                </Link>
+              </section>
+            )}
+
           {matchStatus === "pending" && studentCards.length === 0 && (
             <Alert variant="info" title="Pending identity confirmation">
               Your teacher confirms every account against the class list by
