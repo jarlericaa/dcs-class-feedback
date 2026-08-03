@@ -14,6 +14,10 @@ import {
   ListPane,
   WorkspaceShell,
 } from "@/components/layout/workspace-shell";
+import {
+  staffSectionNav,
+  studentSectionNav,
+} from "@/components/layout/nav";
 import { AccessDenied } from "@/components/ui";
 import { listSectionQa } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
@@ -76,6 +80,9 @@ export default async function QaArchivePage({
     await listSectionsForUser(user.id);
 
   const base = `/sections/${sectionId}/qa`;
+  const navGroups = access?.staff
+    ? staffSectionNav(access, base)
+    : studentSectionNav(sectionId, base);
   const link = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
     const merged = {
@@ -138,6 +145,7 @@ export default async function QaArchivePage({
         label: `${courseById.get(s.courseId)?.code ?? ""} ${s.title}`.trim(),
         active: s.id === sectionId,
       }))}
+      navGroups={navGroups}
       categories={QUESTION_CATEGORIES.map((c) => ({
         slug: c.slug,
         label: c.label,
