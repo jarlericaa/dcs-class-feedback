@@ -1780,6 +1780,140 @@ button.button {
 }
 .ws-answer { padding-bottom: 8px; }
 .ws-answer + .ws-answer { margin-top: 26px; border-top: 1px solid #edeff2; padding-top: 22px; }
+
+/* Compact review history: one student item is the primary object, while
+   staff responses read as activity beneath it instead of competing cards. */
+.review-item-thread {
+  padding: 18px;
+  border: 1px solid #e0e4e8;
+  border-radius: 12px;
+  background: #fff;
+}
+.review-item-thread + .review-item-thread {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #e0e4e8;
+}
+.review-item-thread__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.review-item-original {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 3px solid #cbd3dc;
+  border-radius: 6px;
+  background: #f7f9fa;
+}
+.review-item-original p { margin: 0; white-space: pre-wrap; }
+.review-item-original__label {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  color: #59616a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.review-item-original__label span {
+  color: #7b838c;
+  font-weight: 400;
+}
+.review-item-original__body {
+  margin-top: 5px !important;
+  font-size: 15.5px;
+  line-height: 1.55;
+}
+.review-response-history {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #e8ebee;
+}
+.review-response-history > h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 2px;
+  color: #3f464d;
+  font-size: 13px;
+  font-weight: 700;
+}
+.review-response-history > h3 span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #66707a;
+  background: #eef1f3;
+  font-size: 11px;
+}
+.review-response-list { margin-left: 9px; }
+.review-response {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px 0;
+}
+.review-response + .review-response { border-top: 1px solid #eef0f2; }
+.review-response__marker {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: -2px;
+  border-radius: 50%;
+  color: #5c6670;
+  background: #eef1f3;
+  font-size: 12px;
+  font-weight: 800;
+}
+.review-response--private .review-response__marker {
+  color: #8a6116;
+  background: #fff1d5;
+}
+.review-response--public .review-response__marker {
+  color: #215da8;
+  background: #e7f0fd;
+}
+.review-response__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: #7b838c;
+  font-size: 12px;
+}
+.review-response__meta strong { color: #4c555e; font-size: 12.5px; }
+.review-response__question {
+  margin: 5px 0 0;
+  font-size: 14.5px;
+  font-weight: 650;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.review-response__body {
+  margin: 4px 0 0;
+  color: #353b41;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.review-response__error {
+  margin: 5px 0 0;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 700;
+}
+.review-response__actions { margin-top: 6px; font-size: 12.5px; }
+.review-item-thread__composer {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e8ebee;
+}
 .ws-endorsed {
   display: inline-flex;
   align-items: center;
@@ -1916,6 +2050,9 @@ button.button {
      driven by whether a row is selected in the URL. */
   .ws-rail { display: none; }
   .ws-drawer { display: block; }
+  .review-item-thread { padding: 14px; }
+  .review-item-thread__header { align-items: flex-start; }
+  .review-response-list { margin-left: 0; }
   .ws-backlink {
     display: inline-flex;
     align-items: center;

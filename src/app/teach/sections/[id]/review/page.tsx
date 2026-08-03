@@ -637,22 +637,30 @@ export default async function ReviewPage({
 
           {selectedRow.items.length > 0 && (
             <h2 className="ws-answers-heading">
-              {selectedRow.items.length} student{" "}
-              {selectedRow.items.length === 1 ? "item" : "items"}
+              {selectedRow.items.length === 1
+                ? `Student ${selectedRow.items[0]?.item.submissionType ?? "item"}`
+                : `${selectedRow.items.length} student items`}
             </h2>
           )}
 
           {selectedRow.items.map(
-            ({ item, privateResponses, publicAnswers }) => (
-              <article className="ws-answer" key={item.id}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 16,
-                  }}
-                >
+            ({ item, privateResponses, publicAnswers }) => {
+              const responseEvents = [
+                ...privateResponses.map((response) => ({
+                  kind: "private" as const,
+                  at: response.createdAt,
+                  response,
+                })),
+                ...publicAnswers.map((answer) => ({
+                  kind: "public" as const,
+                  at: answer.publishedAt ?? answer.createdAt,
+                  answer,
+                })),
+              ].sort((a, b) => a.at.getTime() - b.at.getTime());
+
+              return (
+              <article className="ws-answer review-item-thread" key={item.id}>
+                <header className="review-item-thread__header">
                   <span className={categoryClass(item.category, "label")}>
                     {item.submissionType} · {categoryShortLabel(item.category)}
                   </span>
@@ -661,55 +669,118 @@ export default async function ReviewPage({
                   >
                     {item.reviewState.replace(/_/g, " ")}
                   </Badge>
-                </div>
+                </header>
 
-                <div className="source-box source-box--original">
-                  <p className="source-box__label">
-                    Original wording · never shown to other students
+                <div className="review-item-original">
+                  <p className="review-item-original__label">
+                    Original message
+                    <span>Private to this student and authorized staff</span>
                   </p>
-                  <p>{item.originalText}</p>
+                  <p className="review-item-original__body">
+                    {item.originalText}
+                  </p>
                 </div>
 
-                {privateResponses.map((reply) => (
-                  <div
-                    className="source-box source-box--private"
-                    key={reply.id}
+                {responseEvents.length > 0 && (
+                  <section
+                    className="review-response-history"
+                    aria-labelledby={`responses-${item.id}`}
                   >
-                    <p className="source-box__label">
-                      Private reply sent{" "}
-                      {formatDateTime(reply.createdAt, section.timezone)}
-                    </p>
-                    <p>{reply.body}</p>
-                  </div>
-                ))}
+                    <h3 id={`responses-${item.id}`}>
+                      Responses <span>{responseEvents.length}</span>
+                    </h3>
+                    <div className="review-response-list">
+                      {responseEvents.map((event) => {
+                        if (event.kind === "private") {
+                          return (
+                            <article
+                              className="review-response review-response--private"
+                              key={`private-${event.response.id}`}
+                            >
+                              <div className="review-response__marker" aria-hidden="true">
+                                ↙
+                              </div>
+                              <div>
+                                <div className="review-response__meta">
+                                  <strong>Private reply</strong>
+                                  <span>
+                                    {formatDateTime(
+                                      event.response.createdAt,
+                                      section.timezone,
+                                    )}
+                                  </span>
+                                </div>
+                                <p className="review-response__body">
+                                  {event.response.body}
+                                </p>
+                              </div>
+                            </article>
+                          );
+                        }
 
-                {publicAnswers.map((answer) => (
-                  <div className="source-box" key={answer.id}>
-                    <p className="source-box__label">
-                      Public answer · {answer.state}
-                      {answer.publishFailed ? " · publication failed" : ""}
-                    </p>
-                    <p style={{ fontWeight: 650 }}>
-                      {answer.publicQuestionText}
-                    </p>
-                    {answer.answerBody && (
-                      <p style={{ marginTop: 6 }}>{answer.answerBody}</p>
-                    )}
-                    {answer.state !== "published" &&
-                      can("draftPublicAnswers") && (
-                        <Link
-                          className="button button--secondary button--small"
-                          href={`/teach/sections/${sectionId}/publications`}
-                          style={{ marginTop: 10 }}
-                        >
-                          Open in publication queue
-                        </Link>
-                      )}
-                  </div>
-                ))}
+                        const { answer } = event;
+                        const publicLabel =
+                          answer.state === "published"
+                            ? "Published to Class Q&A"
+                            : answer.state === "scheduled"
+                              ? "Scheduled public answer"
+                              : "Public answer draft";
 
-                <div className="composer-grid" style={{ marginTop: 18 }}>
-                  {can("sendPrivateResponses") && (
+                        return (
+                          <article
+                            className="review-response review-response--public"
+                            key={`public-${answer.id}`}
+                          >
+                            <div className="review-response__marker" aria-hidden="true">
+                              ↗
+                            </div>
+                            <div>
+                              <div className="review-response__meta">
+                                <strong>{publicLabel}</strong>
+                                <span>
+                                  {formatDateTime(event.at, section.timezone)}
+                                </span>
+                              </div>
+                              {answer.publishFailed && (
+                                <p className="review-response__error">
+                                  Publication failed
+                                </p>
+                              )}
+                              <p className="review-response__question">
+                                {answer.publicQuestionText}
+                              </p>
+                              {answer.answerBody && (
+                                <p className="review-response__body">
+                                  {answer.answerBody}
+                                </p>
+                              )}
+                              <div className="review-response__actions">
+                                {answer.state === "published" ? (
+                                  <Link
+                                    href={`/sections/${sectionId}/qa?selected=${answer.id}`}
+                                  >
+                                    View in Class Q&amp;A
+                                  </Link>
+                                ) : can("draftPublicAnswers") ? (
+                                  <Link
+                                    href={`/teach/sections/${sectionId}/publications`}
+                                  >
+                                    Open in publication queue
+                                  </Link>
+                                ) : null}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
+                {(can("sendPrivateResponses") ||
+                  can("draftPublicAnswers")) && (
+                  <div className="composer-grid review-item-thread__composer">
+                    {can("sendPrivateResponses") && (
                     <div className="composer-card">
                       <h3>Reply privately</h3>
                       <p>Visible to this student and authorized staff only.</p>
@@ -742,9 +813,9 @@ export default async function ReviewPage({
                         </button>
                       </form>
                     </div>
-                  )}
+                    )}
 
-                  {can("draftPublicAnswers") && (
+                    {can("draftPublicAnswers") && (
                     <div className="composer-card">
                       <h3>Answer the whole class</h3>
                       <p>
@@ -759,10 +830,12 @@ export default async function ReviewPage({
                         canPublish={can("publishPublicAnswers")}
                       />
                     </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </article>
-            ),
+              );
+            },
           )}
         </>
       )}
