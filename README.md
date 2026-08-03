@@ -71,6 +71,7 @@ Juan Dela Cruz — confirm on the teacher's Matches page).
 | `npm run dev` / `build` / `start` | Next.js |
 | `npm run lint` / `typecheck` | ESLint / `tsc --noEmit` |
 | `npm run db:generate` | Generate SQL migration from Drizzle schema |
+| `npm run db:reset -- --yes` | **Destructively** reset the local dev DB, migrate, and reseed |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:seed` | Idempotent demo seed |
 | `npm run scheduler:dev` | Reconciliation poller loop (60 s) |

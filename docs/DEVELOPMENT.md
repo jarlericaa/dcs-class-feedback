@@ -83,6 +83,7 @@ the seed script/README rather than copying credentials into documentation.
 | `npm run lint` | Run ESLint |
 | `npm run typecheck` | Run TypeScript checks |
 | `npm run db:generate` | Generate a Drizzle migration |
+| `npm run db:reset -- --yes` | **Destructively** reset the local dev DB, migrate, and reseed |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:seed` | Insert idempotent demo data |
 | `npm run scheduler:dev` | Run the reconciliation poller |
