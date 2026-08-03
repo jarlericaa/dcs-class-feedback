@@ -2135,3 +2135,166 @@ button.button {
   .entry__preview, .entry__points { display: none; }
   .entry__main { padding: 30px 24px 44px; }
 }
+
+/* ---------------------------------------------------------------------------
+   Rich text (src/components/rich-text.tsx)
+
+   Styles the sanitized output of the one safe renderer. Scoped under
+   `.rich-text` so a teacher's prompt can never restyle the surrounding page —
+   the sanitizer already strips `style` and `class`, and this keeps the blast
+   radius of any future allowlist change inside the block.
+   --------------------------------------------------------------------------- */
+.rich-text > :first-child {
+  margin-top: 0;
+}
+.rich-text > :last-child {
+  margin-bottom: 0;
+}
+.rich-text p,
+.rich-text ul,
+.rich-text ol,
+.rich-text blockquote,
+.rich-text pre,
+.rich-text table {
+  margin: 0 0 10px;
+}
+.rich-text h3,
+.rich-text h4,
+.rich-text h5,
+.rich-text h6 {
+  margin: 14px 0 6px;
+  line-height: 1.3;
+}
+.rich-text ul,
+.rich-text ol {
+  padding-left: 22px;
+}
+.rich-text li + li {
+  margin-top: 4px;
+}
+.rich-text a {
+  color: var(--accent-strong, #1d4ed8);
+  text-decoration: underline;
+}
+.rich-text code {
+  background: var(--surface-muted, #f1f3f5);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 0.92em;
+}
+.rich-text pre {
+  background: var(--surface-muted, #f1f3f5);
+  border-radius: 8px;
+  padding: 12px 14px;
+  /* Long code must scroll inside its own box, never widen the page. */
+  overflow-x: auto;
+}
+.rich-text pre code {
+  background: none;
+  padding: 0;
+}
+.rich-text blockquote {
+  border-left: 3px solid var(--border, #d5d9df);
+  padding-left: 12px;
+  color: var(--text-muted, #55606d);
+}
+.rich-text img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.rich-text table {
+  border-collapse: collapse;
+  width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+.rich-text th,
+.rich-text td {
+  border: 1px solid var(--border, #d5d9df);
+  padding: 6px 8px;
+  text-align: left;
+}
+.rich-text hr {
+  border: 0;
+  border-top: 1px solid var(--border, #d5d9df);
+  margin: 14px 0;
+}
+/* Display maths can be wider than the column; scroll it rather than the page. */
+.rich-text .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+/* Wide tables (roster preview, participation matrix, analysis) scroll in place. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Pagination + filter bar (src/components/ui) */
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+.pagination__summary {
+  margin: 0;
+  color: var(--text-muted, #55606d);
+  font-size: 0.9rem;
+}
+.pagination__controls {
+  display: flex;
+  gap: 8px;
+}
+.pagination__controls [aria-disabled="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.filter-bar fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Accessible chart: the SVG is decorative, the table carries the numbers. */
+.chart {
+  margin: 0;
+}
+.chart__svg {
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+}
+.chart__bar {
+  fill: var(--accent, #2f6fed);
+}
+.chart__table {
+  margin-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pagination__controls .button {
+    flex: 1;
+  }
+}

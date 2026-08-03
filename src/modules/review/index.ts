@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   formQuestions,
@@ -47,10 +47,10 @@ export async function listSubmissionsForSection(
   sectionId: string,
   opts: { cycleId?: string } = {},
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses");
+  await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses", { allowArchived: true });
   let canSeeIdentities = true;
   try {
-    await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities");
+    await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", { allowArchived: true });
   } catch {
     canSeeIdentities = false;
   }
@@ -63,17 +63,25 @@ export async function listSubmissionsForSection(
   });
   if (cycles.length === 0) return [];
   const responses = await db.query.formResponses.findMany({
-    where: inArray(
-      formResponses.cycleId,
-      cycles.map((c) => c.id),
+    // A draft is not a submission: it must not appear in any staff read model.
+    where: and(
+      inArray(
+        formResponses.cycleId,
+        cycles.map((c) => c.id),
+      ),
+      inArray(formResponses.lifecycle, ["submitted", "locked"]),
     ),
-    with: { },
   });
   const items = responses.length
     ? await db.query.studentSubmissionItems.findMany({
-        where: inArray(
-          studentSubmissionItems.responseId,
-          responses.map((r) => r.id),
+        // A withdrawn item was replaced by a pre-deadline edit; the live row is
+        // the one staff should be triaging.
+        where: and(
+          isNull(studentSubmissionItems.withdrawnAt),
+          inArray(
+            studentSubmissionItems.responseId,
+            responses.map((r) => r.id),
+          ),
         ),
       })
     : [];
@@ -114,10 +122,10 @@ export async function getReviewQueue(
   sectionId: string,
   opts: { cycleId?: string; filter?: ReviewFilter } = {},
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses");
+  await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses", { allowArchived: true });
   let canSeeIdentities = true;
   try {
-    await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities");
+    await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", { allowArchived: true });
   } catch {
     canSeeIdentities = false;
   }
@@ -133,16 +141,26 @@ export async function getReviewQueue(
 
   const responses = scopedCycleIds.length
     ? await db.query.formResponses.findMany({
-        where: inArray(formResponses.cycleId, scopedCycleIds),
-        orderBy: desc(formResponses.submittedAt),
+        where: and(
+          inArray(formResponses.cycleId, scopedCycleIds),
+          inArray(formResponses.lifecycle, ["submitted", "locked"]),
+        ),
+        // submittedAt is nullable now (a draft has none), and drafts are excluded
+        // above, but coalesce keeps the ordering total either way.
+        orderBy: desc(sql`coalesce(${formResponses.submittedAt}, ${formResponses.createdAt})`),
       })
     : [];
 
   const items = responses.length
     ? await db.query.studentSubmissionItems.findMany({
-        where: inArray(
-          studentSubmissionItems.responseId,
-          responses.map((r) => r.id),
+        // A withdrawn item was replaced by a pre-deadline edit; the live row is
+        // the one staff should be triaging.
+        where: and(
+          isNull(studentSubmissionItems.withdrawnAt),
+          inArray(
+            studentSubmissionItems.responseId,
+            responses.map((r) => r.id),
+          ),
         ),
       })
     : [];
@@ -264,7 +282,7 @@ export async function getSubmissionDetail(
   const cycle = (await db.query.weeklyCycles.findFirst({
     where: eq(weeklyCycles.id, response.cycleId),
   }))!;
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "reviewResponses");
+  await requireSectionStaff(db, actorUserId, cycle.sectionId, "reviewResponses", { allowArchived: true });
   let canSeeIdentities = true;
   try {
     await requireSectionStaff(
@@ -272,6 +290,7 @@ export async function getSubmissionDetail(
       actorUserId,
       cycle.sectionId,
       "viewStudentIdentities",
+      { allowArchived: true },
     );
   } catch {
     canSeeIdentities = false;
@@ -360,56 +379,35 @@ export async function setResponseReviewState(
 }
 
 /**
- * Participation validity (participation-rules.md §2). Invalidating REQUIRES a
- * reason (staff-only; never shown to students). Always audited before/after.
+ * Validity now lives in ./validity.ts as a three-state workflow with a
+ * flag-versus-finalize split.
+ *
+ * The old single `setValidity(valid|invalid)` was deleted rather than kept as a
+ * wrapper: it gated on the `markValidity` flag alone, so any caller that reached
+ * for it would have handed a Student Assistant the power to finalize an
+ * invalidation — exactly what project-specs.md §4.2 forbids. Leaving a bypass in
+ * place "for convenience" is how that rule gets quietly broken later.
  */
-export async function setValidity(
-  actorUserId: string,
-  responseId: string,
-  validity: "valid" | "invalid",
-  reason?:
-    | "spam"
-    | "abusive_content"
-    | "empty_or_meaningless"
-    | "irrelevant"
-    | "bad_faith_credit_attempt",
-  note?: string,
-) {
-  const response = await db.query.formResponses.findFirst({
-    where: eq(formResponses.id, responseId),
-  });
-  if (!response) throw new Error("Response not found");
-  const cycle = (await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, response.cycleId),
-  }))!;
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "markValidity");
-  if (validity === "invalid" && !reason) {
-    throw new Error("An invalidation reason is required");
-  }
-
-  await db.transaction(async (tx) => {
-    await tx
-      .update(formResponses)
-      .set({
-        validity,
-        invalidationReason: validity === "invalid" ? reason : null,
-        invalidationNote: validity === "invalid" ? (note ?? null) : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(formResponses.id, responseId));
-    await writeAudit(tx, {
-      actorUserId,
-      action: "response.validity_changed",
-      entityType: "form_response",
-      entityId: responseId,
-      before: {
-        validity: response.validity,
-        invalidationReason: response.invalidationReason,
-      },
-      after: { validity, invalidationReason: reason ?? null },
-    });
-  });
-}
+export {
+  VALIDITY_TRANSITIONS,
+  ValidityConflictError,
+  ValidityError,
+  confirmFlag,
+  flagSubmission,
+  getOwnValidity,
+  getValidityHistory,
+  invalidateSubmission,
+  nextValidity,
+  rejectFlag,
+  restoreSubmission,
+} from "./validity";
+export type {
+  InvalidationReason,
+  OwnValidityView,
+  ValidityAction,
+  ValidityEventView,
+  ValidityState,
+} from "./validity";
 
 /** Staff corrects the student-chosen type/category/topic. Audited. */
 export async function correctItemTypeCategory(

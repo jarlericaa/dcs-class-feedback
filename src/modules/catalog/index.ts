@@ -175,7 +175,9 @@ export async function getSectionWithCourse(sectionId: string) {
 
 /** Teaching staff on a section with their permission flags. Staff-only. */
 export async function listSectionStaff(actorUserId: string, sectionId: string) {
-  await requireSectionStaff(db, actorUserId, sectionId);
+  await requireSectionStaff(db, actorUserId, sectionId, undefined, {
+    allowArchived: true,
+  });
   const rows = await db.query.sectionStaff.findMany({
     where: eq(sectionStaff.sectionId, sectionId),
   });
@@ -192,7 +194,7 @@ export async function listSectionStaff(actorUserId: string, sectionId: string) {
 
 /** Enrolled roster of a section. Identity-bearing → staff-only. */
 export async function listSectionRoster(actorUserId: string, sectionId: string) {
-  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities");
+  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", { allowArchived: true });
   const rows = await db.query.enrollments.findMany({
     where: eq(enrollments.sectionId, sectionId),
   });

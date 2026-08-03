@@ -8,12 +8,15 @@ import { AccessDenied, Alert, Breadcrumbs } from "@/components/ui";
 import {
   RosterImport,
   type ImportState,
-  type PreviewAction,
+  type PreviewRow,
 } from "@/components/staff/roster-import";
 import {
+  applyPreviewEdits,
   commitRosterImport,
   parseRosterCsv,
+  parseRosterXlsx,
   previewRosterImport,
+  type ParsedRoster,
 } from "@/modules/roster-import";
 import { AuthzError } from "@/modules/authz";
 import { toShellUser } from "@/lib/session";
@@ -51,17 +54,30 @@ export default async function ImportPage({
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    const csv = String(formData.get("csv") ?? "");
     const intent = String(formData.get("intent") ?? "preview");
-    const parsed = parseRosterCsv(csv);
+    const csv = String(formData.get("csv") ?? "");
 
     try {
+      // On confirm, the roster is the one the preview produced, plus whatever the
+      // staff member corrected. Both are re-validated: applyPreviewEdits accepts
+      // only rowKeys that were actually parsed, and commitRosterImport re-derives
+      // every action from live data inside its transaction.
+      let parsed: ParsedRoster;
+      let fileName: string | undefined;
       if (intent === "commit") {
+        const raw = String(formData.get("parsed") ?? "");
+        if (!raw) {
+          return { status: "error", csv, message: "The preview expired. Preview the list again." };
+        }
+        parsed = applyPreviewEdits(
+          JSON.parse(raw) as ParsedRoster,
+          JSON.parse(String(formData.get("edits") ?? "[]")),
+        );
         const summary = await commitRosterImport(
           uid,
           sectionId,
           parsed,
-          String(formData.get("source") || "pasted CSV"),
+          String(formData.get("source") || "class list"),
         );
         revalidatePath(`/teach/sections/${sectionId}/import`);
         return {
@@ -71,23 +87,82 @@ export default async function ImportPage({
         };
       }
 
+      const upload = formData.get("file");
+      if (upload instanceof File && upload.size > 0) {
+        fileName = upload.name;
+        parsed = await parseRosterXlsx(
+          Buffer.from(await upload.arrayBuffer()),
+        );
+      } else if (csv.trim()) {
+        parsed = parseRosterCsv(csv);
+      } else {
+        return {
+          status: "error",
+          csv,
+          message: "Choose an .xlsx class list, or paste the list as CSV.",
+        };
+      }
+
       const preview = await previewRosterImport(uid, sectionId, parsed);
+      if (preview.fileError) {
+        return { status: "preview", csv, fileError: preview.fileError };
+      }
+
+      // One preview row per parsed row, carrying the planned action.
+      const planByKey = new Map(
+        preview.actions
+          .filter((a) => a.kind !== "unchanged")
+          .map((a) => [a.row.rowKey, a]),
+      );
+      const rows: PreviewRow[] = parsed.rows.map((row) => {
+        const action = planByKey.get(row.rowKey);
+        return {
+          rowKey: row.rowKey,
+          line: row.line,
+          studentNumber: row.studentNumber,
+          fullName: row.fullName,
+          familyName: row.familyName,
+          firstName: row.firstName,
+          middleName: row.middleName,
+          livedName: row.livedName,
+          preferredPronoun: row.preferredPronoun,
+          program: row.program,
+          crsStatusRaw: row.crsStatusRaw,
+          crsStatus: row.crsStatus,
+          enlistmentDate: row.enlistmentDate,
+          warnings: row.warnings.map((warning) => ({
+            code: warning.code,
+            detail:
+              warning.code === "duplicate_student_number"
+                ? `first seen on line ${warning.firstSeenLine}`
+                : warning.code === "unknown_status" ||
+                    warning.code === "not_enrolled_status"
+                  ? warning.raw
+                  : warning.code === "conflicting_existing_record"
+                    ? `${warning.field}: stored “${warning.existing}”`
+                    : undefined,
+          })),
+          plan: action?.kind ?? "unchanged",
+          currentName:
+            action?.kind === "update_name" || action?.kind === "name_diff_locked"
+              ? action.currentName
+              : undefined,
+        };
+      });
+
       return {
         status: "preview",
         csv,
-        fileError: preview.fileError,
+        parsed: JSON.stringify(parsed),
+        source: parsed.source,
+        fileName,
+        rows,
         rowErrors: preview.errors,
-        actions: preview.actions.map((action): PreviewAction => ({
-          kind: action.kind,
-          studentNumber: action.row.studentNumber,
-          fullName: action.row.fullName,
-          currentName:
-            action.kind === "update_name" || action.kind === "name_diff_locked"
-              ? action.currentName
-              : undefined,
-        })),
+        ignoredColumns: preview.ignoredColumns,
+        deniedColumns: preview.deniedColumns,
+        courseMeta: preview.courseMeta as unknown as Record<string, string | null>,
         deactivations: preview.toDeactivate.map((d) => ({
-          studentNumber: d.studentNumber,
+          studentNumberLast4: d.studentNumberLast4,
           name: d.name,
         })),
       };

@@ -53,13 +53,38 @@ Each weekly form has two parts:
 1. **Teacher-created questions** (see §5).
 2. **A student-created feedback/question section** — always included.
 
-A submitted `FormResponse` contains: student identity, weekly cycle, answers to teacher-created questions, the student-originated item(s), submission timestamp, participation validity, linked private responses, and linked public answers when applicable ([domain-model.md](domain-model.md)).
+A `FormResponse` contains: student identity, weekly cycle, answers to teacher-created questions, the student-originated item(s), lifecycle state, first-submission timestamp, last-edited timestamp, revision number, participation validity, linked private responses, and linked public answers when applicable ([domain-model.md](domain-model.md)).
 
 **[Confirmed]** Rules:
-- One completed form per student per section per cycle — enforced by a **unique constraint** on `(WeeklyCycle, StudentRecord)`.
-- Students cannot edit a submitted form.
-- No submission after the deadline (cycle not `Open`).
+- One response per student per section per cycle — enforced by a **unique constraint** on
+  `(WeeklyCycle, StudentRecord)`. That single row is the draft, the submission, and the locked
+  version in turn; there is never a second row.
+- **A student may save a draft, submit, and then edit that same response until the deadline**
+  (`project-specs.md` §4.3, §6.3, §7 B3). At the deadline the latest submitted version locks.
+- No submission or edit after the deadline (cycle not `Open`). Reopening a closed cycle is the only
+  override; it requires `manage_weekly_cycles` and is audited.
+- A draft is not a submission: it earns no participation credit and appears in no staff queue,
+  export, or history.
+- The first-submission timestamp is written once, so editing can never mint a second credit.
+- Every draft save / submit / edit / lock / unlock writes a revision record with before/after data
+  plus an audit event, in the same transaction.
+- Original student wording is immutable. An edit may replace an **untouched** submission item by
+  withdrawing and superseding it; an item that already has a private reply, a source link, or a
+  non-`New` review state is refused, and the student is told which one.
+- Concurrent saves are race-safe: the cycle row is share-locked (interlocking with the close
+  transaction), the response row is exclusively locked, and a stale revision number is rejected.
 - Submitting a complete form counts as participation unless later marked invalid — see [participation-rules.md](participation-rules.md).
+
+### 4.1 Student-originated items **[Confirmed — project-specs.md §5.2, §5.5, §7 D1]**
+
+- A template configures how many repeatable **Ask a Question** entries a form offers (0–10) and
+  whether a distinct **general comment** field is shown and required.
+- Every non-empty question entry becomes its **own** immutable `StudentSubmissionItem`, so each can
+  be triaged, answered, merged, or published independently.
+- The general comment is a **separately identifiable** item kind — at most one per response. It is
+  excluded from the Question Inbox and can never be published as a Q&A entry.
+- Submitting more question entries than the template allows, or omitting a required general
+  comment, is refused server-side regardless of what the client posts.
 
 ## 5. Teacher-created questions & dynamic form schema **[Confirmed]**
 

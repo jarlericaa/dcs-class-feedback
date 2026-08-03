@@ -6,9 +6,12 @@ import {
   courses,
   courseStaff,
   enrollments,
+  formResponses,
   sectionStaff,
   studentRecords,
+  studentSubmissionItems,
   users,
+  weeklyCycles,
 } from "@/db/schema";
 
 /**
@@ -32,6 +35,54 @@ export class AuthzError extends Error {
 }
 
 /**
+ * An archived course is read-only (project-specs.md §11).
+ *
+ * 409 rather than 403: the actor DOES hold the capability, the resource is
+ * simply frozen. Callers can therefore tell "you may not" apart from "not while
+ * this course is archived" and say so.
+ */
+export class CourseArchivedError extends Error {
+  readonly status = 409;
+  constructor(
+    message = "This course is archived and is read-only. Restore it to make changes.",
+  ) {
+    super(message);
+    this.name = "CourseArchivedError";
+  }
+}
+
+/**
+ * Options accepted by every require* helper.
+ *
+ * `allowArchived` INVERTS the usual default: writes are refused on an archived
+ * course unless the caller opts in. That inversion is the whole point — a future
+ * mutation that forgets about archiving is refused rather than silently allowed,
+ * so the read-only guarantee does not depend on anyone remembering it. Only
+ * reads, exports, and the archive lifecycle operations opt in.
+ */
+export interface AuthzOptions {
+  allowArchived?: boolean;
+}
+
+/** Throws when the course is archived. Used by every helper by default. */
+export async function requireWritableCourse(dbx: DbOrTx, courseId: string) {
+  const course = await dbx.query.courses.findFirst({
+    where: eq(courses.id, courseId),
+  });
+  if (course?.archivedAt) throw new CourseArchivedError();
+  return course ?? null;
+}
+
+async function enforceArchiveRule(
+  dbx: DbOrTx,
+  courseId: string,
+  opts: AuthzOptions | undefined,
+) {
+  if (opts?.allowArchived) return;
+  await requireWritableCourse(dbx, courseId);
+}
+
+/**
  * TA permission catalog (roles-and-permissions.md §2.3) = boolean columns on
  * section_staff. `manage_course_materials` is deliberately absent: course
  * material management is post-MVP.
@@ -44,11 +95,13 @@ export const SECTION_PERMISSIONS = [
   "rewordPublicQuestions",
   "publishPublicAnswers",
   "schedulePublication",
+  "flagValidity",
   "markValidity",
   "exportParticipation",
   "manageWeeklyCycles",
   "manageTemplates",
   "manageBacklogImports",
+  "moderateDiscussion",
 ] as const;
 
 export type SectionPermission = (typeof SECTION_PERMISSIONS)[number];
@@ -62,11 +115,14 @@ export const SECTION_PERMISSION_LABELS: Record<SectionPermission, string> = {
   rewordPublicQuestions: "Edit public question wording",
   publishPublicAnswers: "Publish immediately",
   schedulePublication: "Schedule publication",
-  markValidity: "Mark responses valid/invalid",
+  flagValidity: "Flag a submission as potentially invalid (reason required)",
+  markValidity:
+    "Take part in validity decisions (finalizing still requires a teacher or co-teacher)",
   exportParticipation: "Export participation CSVs (identity-bearing)",
   manageWeeklyCycles: "Manage cycles and recurrence",
   manageTemplates: "Manage templates",
-  manageBacklogImports: "Manage the backlog and imports",
+  manageBacklogImports: "Manage the backlog and imports, and recommend changes",
+  moderateDiscussion: "Moderate comments and lock discussions",
 };
 
 export async function requireActiveUser(dbx: DbOrTx, userId: string) {
@@ -85,20 +141,30 @@ export async function requirePlatformAdmin(dbx: DbOrTx, userId: string) {
  * Course-level staff membership (course owner or courseStaff row).
  * Platform admins do NOT pass — no automatic content access.
  */
-export async function requireCourseStaff(dbx: DbOrTx, userId: string, courseId: string) {
+export async function requireCourseStaff(
+  dbx: DbOrTx,
+  userId: string,
+  courseId: string,
+  opts?: AuthzOptions,
+) {
   await requireActiveUser(dbx, userId);
   const course = await dbx.query.courses.findFirst({
     where: eq(courses.id, courseId),
   });
   if (!course) throw new AuthzError("No access to this course");
-  if (course.ownerUserId === userId) return course;
-  const membership = await dbx.query.courseStaff.findFirst({
-    where: and(
-      eq(courseStaff.courseId, courseId),
-      eq(courseStaff.userId, userId),
-    ),
-  });
+  const membership =
+    course.ownerUserId === userId
+      ? true
+      : !!(await dbx.query.courseStaff.findFirst({
+          where: and(
+            eq(courseStaff.courseId, courseId),
+            eq(courseStaff.userId, userId),
+          ),
+        }));
   if (!membership) throw new AuthzError("No access to this course");
+  // Archive check comes AFTER standing: a stranger must not learn that a course
+  // exists but is archived.
+  await enforceArchiveRule(dbx, courseId, opts);
   return course;
 }
 
@@ -111,6 +177,7 @@ export async function requireCourseOwner(
   dbx: DbOrTx,
   userId: string,
   courseId: string,
+  opts?: AuthzOptions,
 ) {
   await requireActiveUser(dbx, userId);
   const course = await dbx.query.courses.findFirst({
@@ -119,6 +186,7 @@ export async function requireCourseOwner(
   if (!course || course.ownerUserId !== userId) {
     throw new AuthzError("Only the course owner can do this");
   }
+  await enforceArchiveRule(dbx, courseId, opts);
   return course;
 }
 
@@ -148,6 +216,7 @@ export async function requireSectionStaff(
   userId: string,
   sectionId: string,
   permission?: SectionPermission,
+  opts?: AuthzOptions,
 ) {
   await requireActiveUser(dbx, userId);
   const section = await dbx.query.classSections.findFirst({
@@ -165,24 +234,34 @@ export async function requireSectionStaff(
   // Course staff (incl. the owner) administer the course's sections. Checked
   // BEFORE the TA branch: a course owner who also holds a `ta` row on their
   // own section must not be locked out of it by their own narrower row.
+  // `allowArchived` is forced here so a stranger cannot distinguish "no access"
+  // from "archived"; the archive rule is applied once, at the end.
   let isCourseStaff = false;
   try {
-    await requireCourseStaff(dbx, userId, section.courseId);
+    await requireCourseStaff(dbx, userId, section.courseId, {
+      allowArchived: true,
+    });
     isCourseStaff = true;
   } catch {
     isCourseStaff = false;
   }
-  if (isCourseStaff) return section;
+  if (isCourseStaff) {
+    await enforceArchiveRule(dbx, section.courseId, opts);
+    return section;
+  }
 
   if (membership) {
     if (membership.role === "teacher" || membership.role === "co_teacher") {
+      await enforceArchiveRule(dbx, section.courseId, opts);
       return section;
     }
     // TA: `membership` alone proves standing on the section. A named
     // permission must have been granted; asking for none means "any staff
     // member of this section", which a TA satisfies.
-    if (!permission) return section;
-    if (membership[permission]) return section;
+    if (!permission || membership[permission]) {
+      await enforceArchiveRule(dbx, section.courseId, opts);
+      return section;
+    }
     throw new AuthzError(`Missing section permission: ${permission}`);
   }
 
@@ -199,8 +278,15 @@ export async function requireNonTaSectionStaff(
   dbx: DbOrTx,
   userId: string,
   sectionId: string,
+  opts?: AuthzOptions,
 ) {
-  const section = await requireSectionStaff(dbx, userId, sectionId);
+  const section = await requireSectionStaff(
+    dbx,
+    userId,
+    sectionId,
+    undefined,
+    opts,
+  );
   const membership = await dbx.query.sectionStaff.findFirst({
     where: and(
       eq(sectionStaff.sectionId, sectionId),
@@ -210,7 +296,9 @@ export async function requireNonTaSectionStaff(
   if (membership?.role === "ta") {
     // A course-staff TA is still course staff; only a section-scoped TA is out.
     try {
-      await requireCourseStaff(dbx, userId, section.courseId);
+      await requireCourseStaff(dbx, userId, section.courseId, {
+        allowArchived: true,
+      });
     } catch {
       throw new AuthzError(
         "This action is limited to teachers and co-teachers",
@@ -218,6 +306,79 @@ export async function requireNonTaSectionStaff(
     }
   }
   return section;
+}
+
+/**
+ * "Instructor" on a section, in the sense project-specs.md §4.1 uses the word:
+ * a teacher, a co-teacher, or course staff. Every instructor is equal; there is
+ * no separate tier.
+ *
+ * This is the gate for the capabilities the specification declares
+ * non-delegable — finalizing invalidity, approving a TA's public draft,
+ * unpublishing, confirming backlog membership, bonus periods, identity-bearing
+ * new exports, archive/clone. A Student Assistant is refused here even holding
+ * every permission flag.
+ */
+export const requireInstructor = requireNonTaSectionStaff;
+
+/**
+ * Instructor gate that ALSO requires a named permission.
+ *
+ * Both conditions matter: the permission says "this person works on validity",
+ * the role says "this person may finalize it". A TA granted `markValidity`
+ * therefore still cannot confirm an invalidation — which is exactly the
+ * flag-versus-finalize split in project-specs.md §4.2.
+ */
+export async function requireInstructorSectionCapability(
+  dbx: DbOrTx,
+  userId: string,
+  sectionId: string,
+  permission: SectionPermission,
+  opts?: AuthzOptions,
+) {
+  await requireSectionStaff(dbx, userId, sectionId, permission, opts);
+  return requireNonTaSectionStaff(dbx, userId, sectionId, opts);
+}
+
+/**
+ * Course-level Instructor: course staff, or a teacher/co-teacher on any section
+ * of the course. Used for course-scoped non-delegable actions (bonus periods,
+ * backlog confirmation, archive/clone).
+ */
+export async function requireCourseInstructor(
+  dbx: DbOrTx,
+  userId: string,
+  courseId: string,
+  opts?: AuthzOptions,
+) {
+  try {
+    return await requireCourseStaff(dbx, userId, courseId, opts);
+  } catch (err) {
+    // An archived course must report itself as archived, not as inaccessible.
+    if (err instanceof CourseArchivedError) throw err;
+  }
+  await requireActiveUser(dbx, userId);
+  const sections = await dbx.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+  });
+  for (const section of sections) {
+    const membership = await dbx.query.sectionStaff.findFirst({
+      where: and(
+        eq(sectionStaff.sectionId, section.id),
+        eq(sectionStaff.userId, userId),
+      ),
+    });
+    if (
+      membership &&
+      (membership.role === "teacher" || membership.role === "co_teacher")
+    ) {
+      await enforceArchiveRule(dbx, courseId, opts);
+      return (await dbx.query.courses.findFirst({
+        where: eq(courses.id, courseId),
+      }))!;
+    }
+  }
+  throw new AuthzError("This action is limited to instructors on this course");
 }
 
 /**
@@ -229,6 +390,7 @@ export async function requireEnrolledStudent(
   dbx: DbOrTx,
   userId: string,
   sectionId: string,
+  opts?: AuthzOptions,
 ) {
   await requireActiveUser(dbx, userId);
   const record = await getConfirmedStudentRecord(dbx, userId);
@@ -241,7 +403,50 @@ export async function requireEnrolledStudent(
     ),
   });
   if (!enrollment) throw new AuthzError("Not enrolled in this section");
+  const section = await dbx.query.classSections.findFirst({
+    where: eq(classSections.id, sectionId),
+  });
+  if (section) await enforceArchiveRule(dbx, section.courseId, opts);
   return record;
+}
+
+/**
+ * The student who wrote a submission item — the only student who may read its
+ * private thread or add a follow-up to it (project-specs.md §6.7).
+ *
+ * Resolved through the confirmed AccountMatch, so unlinking an account
+ * immediately revokes thread access without touching any data.
+ */
+export async function requireItemAsker(
+  dbx: DbOrTx,
+  userId: string,
+  itemId: string,
+) {
+  const record = await getConfirmedStudentRecord(dbx, userId);
+  if (!record) throw new AuthzError("No verified student identity");
+  const rows = await dbx
+    .select({
+      itemId: studentSubmissionItems.id,
+      studentRecordId: formResponses.studentRecordId,
+      cycleId: formResponses.cycleId,
+    })
+    .from(studentSubmissionItems)
+    .innerJoin(
+      formResponses,
+      eq(formResponses.id, studentSubmissionItems.responseId),
+    )
+    .where(eq(studentSubmissionItems.id, itemId))
+    .limit(1);
+  const row = rows[0];
+  // A wrong owner and a missing item report identically: a student must not be
+  // able to probe for the existence of another student's question.
+  if (!row || row.studentRecordId !== record.id) {
+    throw new AuthzError("No access to this question");
+  }
+  const cycle = await dbx.query.weeklyCycles.findFirst({
+    where: eq(weeklyCycles.id, row.cycleId),
+  });
+  return { studentRecordId: record.id, sectionId: cycle!.sectionId };
 }
 
 /** The StudentRecord bound to this user via a confirmed match, or null. */
@@ -268,14 +473,16 @@ export async function requireSectionQaAccess(
   dbx: DbOrTx,
   userId: string,
   sectionId: string,
+  opts?: AuthzOptions,
 ): Promise<{ role: "staff" | "student" }> {
   try {
-    await requireSectionStaff(dbx, userId, sectionId);
+    await requireSectionStaff(dbx, userId, sectionId, undefined, opts);
     return { role: "staff" };
-  } catch {
+  } catch (err) {
+    if (err instanceof CourseArchivedError) throw err;
     // fall through to student check
   }
-  await requireEnrolledStudent(dbx, userId, sectionId);
+  await requireEnrolledStudent(dbx, userId, sectionId, opts);
   return { role: "student" };
 }
 
@@ -293,10 +500,12 @@ export async function requireCourseStaffOrSectionGrant(
   userId: string,
   courseId: string,
   permission: SectionPermission,
+  opts?: AuthzOptions,
 ) {
   try {
-    return await requireCourseStaff(dbx, userId, courseId);
-  } catch {
+    return await requireCourseStaff(dbx, userId, courseId, opts);
+  } catch (err) {
+    if (err instanceof CourseArchivedError) throw err;
     // fall through to the per-section grant
   }
   await requireActiveUser(dbx, userId);
@@ -316,6 +525,7 @@ export async function requireCourseStaffOrSectionGrant(
       membership.role === "co_teacher" ||
       membership[permission]
     ) {
+      await enforceArchiveRule(dbx, courseId, opts);
       return (
         (await dbx.query.courses.findFirst({ where: eq(courses.id, courseId) }))!
       );
@@ -342,12 +552,20 @@ export async function requireAnySectionPermission(
   userId: string,
   sectionId: string,
   permissions: readonly SectionPermission[],
+  opts?: AuthzOptions,
 ) {
   let lastError: unknown;
   for (const permission of permissions) {
     try {
-      return await requireSectionStaff(dbx, userId, sectionId, permission);
+      return await requireSectionStaff(
+        dbx,
+        userId,
+        sectionId,
+        permission,
+        opts,
+      );
     } catch (err) {
+      if (err instanceof CourseArchivedError) throw err;
       lastError = err;
     }
   }
@@ -370,10 +588,17 @@ export interface SectionAccess {
   staff: {
     role: "teacher" | "ta" | "co_teacher" | "course_staff";
     isCourseOwner: boolean;
+    /** true for a teacher/co-teacher/course-staff member — the "Instructor" tier */
+    isInstructor: boolean;
     permissions: EffectivePermissions;
   } | null;
   /** the confirmed student record with an active enrolment here, if any */
   studentRecordId: string | null;
+  /**
+   * PRESENTATION ONLY — lets the UI grey out controls on an archived course.
+   * Never the enforcement point: the services refuse the write regardless.
+   */
+  archived: boolean;
 }
 
 /**
@@ -420,6 +645,7 @@ export async function getSectionAccess(
     staff = {
       role: membership.role,
       isCourseOwner: isOwner,
+      isInstructor: true,
       permissions: allPermissions(true),
     };
   } else if (membership) {
@@ -431,12 +657,14 @@ export async function getSectionAccess(
     staff = {
       role: courseMembership ? "course_staff" : "ta",
       isCourseOwner: isOwner,
+      isInstructor: courseMembership,
       permissions: granted,
     };
   } else if (courseMembership) {
     staff = {
       role: "course_staff",
       isCourseOwner: isOwner,
+      isInstructor: true,
       permissions: allPermissions(true),
     };
   }
@@ -455,7 +683,7 @@ export async function getSectionAccess(
   }
 
   if (!staff && !studentRecordId) return null;
-  return { section, staff, studentRecordId };
+  return { section, staff, studentRecordId, archived: !!course?.archivedAt };
 }
 
 /** Convenience wrappers bound to the app db. */
@@ -473,11 +701,29 @@ export const authz = {
     userId: string,
     sectionId: string,
     permission?: SectionPermission,
-  ) => requireSectionStaff(db, userId, sectionId, permission),
-  requireEnrolledStudent: (userId: string, sectionId: string) =>
-    requireEnrolledStudent(db, userId, sectionId),
-  requireSectionQaAccess: (userId: string, sectionId: string) =>
-    requireSectionQaAccess(db, userId, sectionId),
+    opts?: AuthzOptions,
+  ) => requireSectionStaff(db, userId, sectionId, permission, opts),
+  requireInstructor: (userId: string, sectionId: string, opts?: AuthzOptions) =>
+    requireInstructor(db, userId, sectionId, opts),
+  requireCourseInstructor: (
+    userId: string,
+    courseId: string,
+    opts?: AuthzOptions,
+  ) => requireCourseInstructor(db, userId, courseId, opts),
+  requireEnrolledStudent: (
+    userId: string,
+    sectionId: string,
+    opts?: AuthzOptions,
+  ) => requireEnrolledStudent(db, userId, sectionId, opts),
+  requireItemAsker: (userId: string, itemId: string) =>
+    requireItemAsker(db, userId, itemId),
+  requireSectionQaAccess: (
+    userId: string,
+    sectionId: string,
+    opts?: AuthzOptions,
+  ) => requireSectionQaAccess(db, userId, sectionId, opts),
+  requireWritableCourse: (courseId: string) =>
+    requireWritableCourse(db, courseId),
   getConfirmedStudentRecord: (userId: string) =>
     getConfirmedStudentRecord(db, userId),
 };

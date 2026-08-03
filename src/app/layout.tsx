@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+// KaTeX ships its own stylesheet; without it every formula renders as a pile of
+// unpositioned spans. Loaded here, once, rather than per page.
+import "katex/dist/katex.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {

@@ -19,12 +19,17 @@ import {
   QUESTION_CATEGORIES,
   shortAgo,
 } from "@/lib/threads";
-import { AccessDenied, Alert, Badge } from "@/components/ui";
+import { AccessDenied, Alert, Badge, ValidityBadge } from "@/components/ui";
 import {
+  confirmFlag,
   createPrivateResponse,
+  flagSubmission,
   getReviewQueue,
   getSubmissionDetail,
-  setValidity,
+  getValidityHistory,
+  invalidateSubmission,
+  rejectFlag,
+  restoreSubmission,
   type ReviewFilter,
 } from "@/modules/review";
 import {
@@ -49,6 +54,15 @@ const FILTERS: { key: ReviewFilter; label: string }[] = [
   { key: "answered", label: "Answered" },
   { key: "invalid", label: "Invalid" },
 ];
+
+/** Internal validity reasons; never shown to students. */
+const REASON_OPTIONS = [
+  { value: "spam", label: "Spam" },
+  { value: "abusive_content", label: "Abusive content" },
+  { value: "empty_or_meaningless", label: "Empty or meaningless" },
+  { value: "irrelevant", label: "Completely irrelevant" },
+  { value: "bad_faith_credit_attempt", label: "Bad-faith credit attempt" },
+] as const;
 
 export default async function ReviewPage({
   params,
@@ -112,7 +126,7 @@ export default async function ReviewPage({
   });
   const groups = groupByDay(
     visibleRows,
-    (row) => row.response.submittedAt,
+    (row) => row.response.submittedAt ?? new Date(),
     new Date(),
     section.timezone,
   );
@@ -122,6 +136,14 @@ export default async function ReviewPage({
   const detail = selectedRow
     ? await getSubmissionDetail(user.id, selectedRow.response.id)
     : null;
+  const validityHistory = selectedRow
+    ? await getValidityHistory(user.id, selectedRow.response.id)
+    : [];
+  /**
+   * Only instructors may finalize validity. The service layer enforces this
+   * again; this value controls which controls are rendered for the actor.
+   */
+  const isInstructor = access.staff?.isInstructor ?? false;
 
   const queryFor = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
@@ -141,17 +163,53 @@ export default async function ReviewPage({
 
   // --- server actions ------------------------------------------------------
 
+  /**
+   * Student Assistants can flag a response; instructors alone can finalize or
+   * reverse a validity decision. The service layer is the authorization
+   * backstop for every transition.
+   */
+  async function flag(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    await flagSubmission(uid, String(formData.get("responseId")), {
+      reason: String(formData.get("reason")) as "spam",
+      note: String(formData.get("note") ?? "") || undefined,
+    });
+    revalidatePath(`/teach/sections/${sectionId}/review`);
+  }
+
+  async function confirmFlagged(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    await confirmFlag(uid, String(formData.get("responseId")), {
+      reason: String(formData.get("reason")) as "spam",
+      studentVisibleReason: String(formData.get("studentVisibleReason") ?? ""),
+      note: String(formData.get("note") ?? "") || undefined,
+    });
+    revalidatePath(`/teach/sections/${sectionId}/review`);
+  }
+
+  async function dismissFlag(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    await rejectFlag(uid, String(formData.get("responseId")), {
+      note: String(formData.get("note") ?? "") || undefined,
+    });
+    revalidatePath(`/teach/sections/${sectionId}/review`);
+  }
+
   async function invalidate(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    await setValidity(
-      uid,
-      String(formData.get("responseId")),
-      "invalid",
-      String(formData.get("reason")) as "spam",
-      String(formData.get("note") ?? "") || undefined,
-    );
+    await invalidateSubmission(uid, String(formData.get("responseId")), {
+      reason: String(formData.get("reason")) as "spam",
+      studentVisibleReason: String(formData.get("studentVisibleReason") ?? ""),
+      note: String(formData.get("note") ?? "") || undefined,
+    });
     revalidatePath(`/teach/sections/${sectionId}/review`);
   }
 
@@ -159,7 +217,7 @@ export default async function ReviewPage({
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    await setValidity(uid, String(formData.get("responseId")), "valid");
+    await restoreSubmission(uid, String(formData.get("responseId")));
     revalidatePath(`/teach/sections/${sectionId}/review`);
   }
 
@@ -534,72 +592,207 @@ export default async function ReviewPage({
                 · week {selectedRow.cycleIndex}
               </p>
 
-              {can("markValidity") && (
-                <div style={{ marginTop: 12 }}>
-                  {selectedRow.response.validity === "valid" ? (
-                    <form action={invalidate} className="inline-form">
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <label
-                        className="visually-hidden"
-                        htmlFor="invalid-reason"
-                      >
-                        Reason for marking invalid
-                      </label>
-                      <select
-                        id="invalid-reason"
-                        className="select-field"
-                        name="reason"
-                        defaultValue="empty_or_meaningless"
-                        style={{ maxWidth: 240 }}
-                      >
-                        <option value="spam">Spam</option>
-                        <option value="abusive_content">Abusive content</option>
-                        <option value="empty_or_meaningless">
-                          Empty or meaningless
-                        </option>
-                        <option value="irrelevant">
-                          Completely irrelevant
-                        </option>
-                        <option value="bad_faith_credit_attempt">
-                          Bad-faith credit attempt
-                        </option>
-                      </select>
-                      <button
-                        className="button button--danger button--small"
-                        type="submit"
-                      >
-                        Mark invalid
-                      </button>
-                      <span className="muted small">
-                        Removes participation credit. Never shown to the
-                        student.
-                      </span>
-                    </form>
-                  ) : (
-                    <form action={restoreValid} className="inline-form">
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <button
-                        className="button button--secondary button--small"
-                        type="submit"
-                      >
-                        Restore participation credit
-                      </button>
-                      <span className="muted small">
-                        Marked invalid:{" "}
-                        {selectedRow.response.invalidationReason}
-                      </span>
-                    </form>
+              {can("markValidity") || can("flagValidity") ? (
+                <div style={{ marginTop: 12 }} className="stack-gap">
+                  <ValidityBadge
+                    validity={selectedRow.response.validity as "valid" | "flagged" | "invalid"}
+                  />
+
+                  {selectedRow.response.validity === "valid" &&
+                    can("flagValidity") &&
+                    !isInstructor && (
+                      <form action={flag} className="inline-form">
+                        <input
+                          type="hidden"
+                          name="responseId"
+                          value={selectedRow.response.id}
+                        />
+                        <label className="visually-hidden" htmlFor="flag-reason">
+                          Reason for flagging
+                        </label>
+                        <select
+                          id="flag-reason"
+                          className="select-field"
+                          name="reason"
+                          defaultValue="empty_or_meaningless"
+                          style={{ maxWidth: 260 }}
+                        >
+                          {REASON_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          className="field"
+                          name="note"
+                          placeholder="Note for the instructor (optional)"
+                          style={{ maxWidth: 280 }}
+                        />
+                        <button className="button button--secondary" type="submit">
+                          Flag for the instructor
+                        </button>
+                        <span className="muted small">
+                          Keeps this week&apos;s credit for now. The student is
+                          never told a flag exists.
+                        </span>
+                      </form>
+                    )}
+
+                  {isInstructor &&
+                    can("markValidity") &&
+                    selectedRow.response.validity === "flagged" && (
+                      <>
+                        {validityHistory.length > 0 && (
+                          <Alert variant="warning" title="Flagged by a Student Assistant">
+                            {(() => {
+                              const flagEvent = [...validityHistory]
+                                .reverse()
+                                .find((event) => event.action === "flag");
+                              return flagEvent
+                                ? flagEvent.actorName +
+                                    ": " +
+                                    (flagEvent.reason ?? "no reason") +
+                                    (flagEvent.staffNote
+                                      ? " — " + flagEvent.staffNote
+                                      : "")
+                                : "See the history below.";
+                            })()}
+                          </Alert>
+                        )}
+                        <form action={confirmFlagged} className="inline-form">
+                          <input
+                            type="hidden"
+                            name="responseId"
+                            value={selectedRow.response.id}
+                          />
+                          <label className="visually-hidden" htmlFor="confirm-reason">
+                            Internal reason for confirming the flag
+                          </label>
+                          <select
+                            id="confirm-reason"
+                            className="select-field"
+                            name="reason"
+                            defaultValue="empty_or_meaningless"
+                            style={{ maxWidth: 240 }}
+                          >
+                            {REASON_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <label className="visually-hidden" htmlFor="confirm-student-reason">
+                            Reason the student will see
+                          </label>
+                          <input
+                            id="confirm-student-reason"
+                            className="field"
+                            name="studentVisibleReason"
+                            required
+                            placeholder="Reason the student will see"
+                            style={{ maxWidth: 320 }}
+                          />
+                          <button className="button button--danger" type="submit">
+                            Confirm — mark invalid
+                          </button>
+                        </form>
+                        <form action={dismissFlag} className="inline-form">
+                          <input
+                            type="hidden"
+                            name="responseId"
+                            value={selectedRow.response.id}
+                          />
+                          <button className="button button--secondary" type="submit">
+                            Dismiss the flag — keep the credit
+                          </button>
+                        </form>
+                      </>
+                    )}
+
+                  {isInstructor &&
+                    can("markValidity") &&
+                    selectedRow.response.validity === "valid" && (
+                      <form action={invalidate} className="inline-form">
+                        <input
+                          type="hidden"
+                          name="responseId"
+                          value={selectedRow.response.id}
+                        />
+                        <label className="visually-hidden" htmlFor="invalid-reason">
+                          Reason for marking invalid
+                        </label>
+                        <select
+                          id="invalid-reason"
+                          className="select-field"
+                          name="reason"
+                          defaultValue="empty_or_meaningless"
+                          style={{ maxWidth: 240 }}
+                        >
+                          {REASON_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          className="field"
+                          name="studentVisibleReason"
+                          required
+                          placeholder="Reason the student will see"
+                          style={{ maxWidth: 280 }}
+                        />
+                        <button className="button button--danger" type="submit">
+                          Mark invalid
+                        </button>
+                        <span className="muted small">
+                          Removes this week&apos;s credit. The student sees the
+                          reason you type, never the internal note.
+                        </span>
+                      </form>
+                    )}
+
+                  {isInstructor &&
+                    can("markValidity") &&
+                    selectedRow.response.validity === "invalid" && (
+                      <form action={restoreValid} className="inline-form">
+                        <input
+                          type="hidden"
+                          name="responseId"
+                          value={selectedRow.response.id}
+                        />
+                        <button className="button button--secondary" type="submit">
+                          Restore participation credit
+                        </button>
+                      </form>
+                    )}
+
+                  {validityHistory.length > 0 && (
+                    <details>
+                      <summary className="muted small">
+                        Validity history ({validityHistory.length})
+                      </summary>
+                      <ul className="data-list" style={{ marginTop: 8 }}>
+                        {validityHistory.map((event) => (
+                          <li key={event.id}>
+                            <span className="data-list__main">
+                              <strong>
+                                {event.priorValidity} → {event.newValidity}
+                              </strong>
+                              <small>
+                                {event.actorName} ({event.actorRole}) ·{" "}
+                                {formatDateTime(event.createdAt, section.timezone)}
+                                {event.reason ? " · " + event.reason : ""}
+                                {event.staffNote ? " · " + event.staffNote : ""}
+                              </small>
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   )}
                 </div>
-              )}
+              ) : null}
 
               {detail.answers.length > 0 && (
                 <div className="source-box" style={{ marginTop: 16 }}>

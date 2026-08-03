@@ -15,13 +15,14 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import {
+  bonusAssignmentSource,
   questionCategory,
   questionType,
   recurrenceFrequency,
   templateVisibility,
   weeklyCycleState,
 } from "./enums";
-import { classSections, courses, lessonsTopics } from "./catalog";
+import { bonusPeriods, classSections, courses, lessonsTopics } from "./catalog";
 import { users } from "./identity";
 
 export const formTemplates = pgTable(
@@ -58,6 +59,24 @@ export const templateVersions = pgTable(
       .notNull()
       .references(() => formTemplates.id),
     versionNumber: integer("version_number").notNull(),
+    /** Snapshots of the template's own text at this version. Rich source: rendered by the safe renderer. */
+    title: text("title"),
+    description: text("description"),
+    /**
+     * How many repeatable "Ask a Question" entries the form offers
+     * (project-specs.md §5.2). 0 disables the block entirely. Each non-empty
+     * entry becomes its own immutable StudentSubmissionItem.
+     */
+    maxStudentQuestions: integer("max_student_questions").notNull().default(1),
+    studentQuestionPrompt: text("student_question_prompt"),
+    /** The distinct general-comment field, tracked separately from questions. */
+    generalCommentEnabled: boolean("general_comment_enabled")
+      .notNull()
+      .default(true),
+    generalCommentPrompt: text("general_comment_prompt"),
+    generalCommentRequired: boolean("general_comment_required")
+      .notNull()
+      .default(false),
     createdByUserId: uuid("created_by_user_id")
       .notNull()
       .references(() => users.id),
@@ -67,6 +86,10 @@ export const templateVersions = pgTable(
   },
   (t) => [
     uniqueIndex("template_version_unique").on(t.templateId, t.versionNumber),
+    check(
+      "max_student_questions_range",
+      sql`${t.maxStudentQuestions} BETWEEN 0 AND 10`,
+    ),
   ],
 );
 
@@ -125,6 +148,22 @@ export const weeklyCycles = pgTable(
       () => templateVersions.id,
     ),
     state: weeklyCycleState("state").notNull().default("scheduled"),
+    /**
+     * Course-scoped bonus period this cycle's credit rolls up into (D14).
+     * A nullable FK is enough: one period per cycle, so "at most one credit per
+     * cycle per period" needs no counter and no join table.
+     */
+    bonusPeriodId: uuid("bonus_period_id").references(() => bonusPeriods.id),
+    bonusAssignmentSource: bonusAssignmentSource("bonus_assignment_source")
+      .notNull()
+      .default("auto"),
+    /** Per-occurrence window override (project-specs.md §6.2 step 4). */
+    windowOverriddenByUserId: uuid("window_overridden_by_user_id").references(
+      () => users.id,
+    ),
+    windowOverriddenAt: timestamp("window_overridden_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -137,9 +176,18 @@ export const weeklyCycles = pgTable(
     uniqueIndex("weekly_cycle_schedule_index_unique")
       .on(t.scheduleId, t.cycleIndex)
       .where(sql`${t.scheduleId} IS NOT NULL`),
+    /**
+     * Closes the last duplicate-week hole. The generator's overlap guard is a
+     * read-then-insert at READ COMMITTED, and the (scheduleId, cycleIndex) index
+     * cannot see a cycle belonging to a DIFFERENT schedule — so an in-flight
+     * reconcile that read the old schedule just before a replacement committed
+     * could insert the same week twice. The database now refuses it.
+     */
+    uniqueIndex("weekly_cycle_section_open_unique").on(t.sectionId, t.openAt),
     check("cycle_window_valid", sql`${t.openAt} < ${t.deadlineAt}`),
     index("weekly_cycles_section_idx").on(t.sectionId),
     index("weekly_cycles_state_idx").on(t.state),
+    index("weekly_cycles_period_idx").on(t.bonusPeriodId),
   ],
 );
 

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."public_answer_state" ADD VALUE 'awaiting_approval' BEFORE 'scheduled';

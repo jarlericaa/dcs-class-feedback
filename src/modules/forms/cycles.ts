@@ -1,4 +1,4 @@
-import { and, asc, eq, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import {
   formQuestions,
@@ -7,6 +7,11 @@ import {
   weeklyCycles,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import {
+  lockResponsesForCycle,
+  unlockResponsesForCycle,
+} from "./response-lock";
+import { enqueueCycleOpened } from "@/modules/email/outbox";
 import { requireSectionStaff } from "@/modules/authz";
 import { getLatestTemplateVersion } from "./templates";
 import {
@@ -226,7 +231,12 @@ export async function openDueCycles(now: Date): Promise<number> {
         entityType: "weekly_cycle",
         entityId: cycle.id,
         metadata: late ? { late: true } : undefined,
+        sectionId: cycle.sectionId,
       });
+      // Queued in the SAME transaction as the state change: a rolled-back open
+      // can never leave mail queued, and a committed one always queues it. The
+      // unique idempotency key makes a re-run a no-op.
+      await enqueueCycleOpened(tx, cycle.id, now);
       opened += 1;
     });
   }
@@ -241,6 +251,16 @@ export async function closeDueCycles(now: Date): Promise<number> {
   let closed = 0;
   for (const cycle of due) {
     await db.transaction(async (tx) => {
+      // Exclusive row lock first: a concurrent submit takes FOR SHARE on this
+      // same row, so a submission either commits before the close or observes
+      // the closed state. Without this there is a window in which a response is
+      // accepted into a cycle that is being closed.
+      await tx
+        .select({ id: weeklyCycles.id })
+        .from(weeklyCycles)
+        .where(eq(weeklyCycles.id, cycle.id))
+        .for("update")
+        .limit(1);
       const result = await tx
         .update(weeklyCycles)
         .set({ state: "closed", updatedAt: new Date() })
@@ -255,7 +275,11 @@ export async function closeDueCycles(now: Date): Promise<number> {
         entityType: "weekly_cycle",
         entityId: cycle.id,
         metadata: late ? { late: true } : undefined,
+        sectionId: cycle.sectionId,
       });
+      // "At the deadline the latest submitted version becomes locked" — done in
+      // the same transaction, so the two facts can never disagree.
+      await lockResponsesForCycle(tx, cycle.id, now, cycle.sectionId);
       closed += 1;
     });
   }
@@ -284,7 +308,18 @@ export async function reopenCycle(actorUserId: string, cycleId: string) {
       entityId: cycleId,
       before: { state: "closed" },
       after: { state: "open" },
+      sectionId: cycle.sectionId,
     });
+    // Reopening is the ONLY route to a post-deadline edit (open-decisions.md D5).
+    // Unlocking here is what makes the reopen meaningful, and each unlock is
+    // recorded per response.
+    await unlockResponsesForCycle(
+      tx,
+      cycleId,
+      actorUserId,
+      new Date(),
+      cycle.sectionId,
+    );
   });
 }
 
@@ -315,15 +350,79 @@ export async function skipCycle(actorUserId: string, cycleId: string) {
 }
 
 /**
- * Edit-lock check (D4 provisional): structural cycle edits are locked once
- * one submission exists. Exposed for the (future) cycle-edit UI/service.
+ * Override one occurrence's open/deadline window (project-specs.md §6.2 step 4:
+ * "Staff can pause, skip, or override a scheduled release").
+ *
+ * Refused once the occurrence has a real submission: moving the window under a
+ * student who already answered would change the rules after the fact. Skipping
+ * or reopening remain the tools for that case.
+ */
+export async function overrideCycleWindow(
+  actorUserId: string,
+  cycleId: string,
+  input: { openAt: Date; deadlineAt: Date },
+) {
+  const cycle = await db.query.weeklyCycles.findFirst({
+    where: eq(weeklyCycles.id, cycleId),
+  });
+  if (!cycle) throw new Error("Cycle not found");
+  await requireSectionStaff(db, actorUserId, cycle.sectionId, "manageWeeklyCycles");
+  if (input.openAt.getTime() >= input.deadlineAt.getTime()) {
+    throw new Error("The deadline must be after the open time.");
+  }
+  if (await cycleHasSubmissions(db, cycleId)) {
+    throw new Error(
+      "This week already has a submission, so its window is locked. Skip or reopen it instead.",
+    );
+  }
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(weeklyCycles)
+      .set({
+        openAt: input.openAt,
+        deadlineAt: input.deadlineAt,
+        windowOverriddenByUserId: actorUserId,
+        windowOverriddenAt: now,
+        updatedAt: now,
+      })
+      .where(eq(weeklyCycles.id, cycleId))
+      .returning();
+    await writeAudit(tx, {
+      actorUserId,
+      action: "cycle.window_overridden",
+      entityType: "weekly_cycle",
+      entityId: cycleId,
+      before: {
+        openAt: cycle.openAt.toISOString(),
+        deadlineAt: cycle.deadlineAt.toISOString(),
+      },
+      after: {
+        openAt: input.openAt.toISOString(),
+        deadlineAt: input.deadlineAt.toISOString(),
+      },
+      sectionId: cycle.sectionId,
+    });
+    return updated!;
+  });
+}
+
+/**
+ * Edit-lock check (D4): structural cycle edits are locked once one real
+ * submission exists.
+ *
+ * A DRAFT does not lock anything — it is not a submission, and a single student
+ * opening the form would otherwise freeze the week for staff.
  */
 export async function cycleHasSubmissions(
   dbx: DbOrTx,
   cycleId: string,
 ): Promise<boolean> {
   const one = await dbx.query.formResponses.findFirst({
-    where: eq(formResponses.cycleId, cycleId),
+    where: and(
+      eq(formResponses.cycleId, cycleId),
+      inArray(formResponses.lifecycle, ["submitted", "locked"]),
+    ),
   });
   return !!one;
 }
