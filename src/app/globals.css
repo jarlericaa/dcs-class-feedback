@@ -71,10 +71,11 @@
   --s7: 48px;
   --s8: 64px;
 
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    sans-serif;
-  --serif: var(--font-document), Charter, "Bitstream Charter",
-    "Iowan Old Style", Georgia, serif;
+  --sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif:
+    var(--font-document), Charter, "Bitstream Charter", "Iowan Old Style",
+    Georgia, serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -981,8 +982,46 @@ kbd {
 
 .table-scroll {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--rule);
   background: var(--paper);
+}
+
+/* A raw before/after payload in the audit log. Data, so monospace is earned. */
+.code-block {
+  margin: 6px 0 0;
+  padding: var(--s3);
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  background: var(--paper-quiet);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Paginated lists: links, so a page is shareable and works without JS. */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+.pagination__summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.pagination__controls [aria-disabled="true"] {
+  color: var(--ink-faint);
+  border-color: var(--rule);
+  background: var(--paper-quiet);
+  cursor: not-allowed;
 }
 .data-table {
   width: 100%;
@@ -1679,8 +1718,43 @@ kbd {
   color: var(--ink-muted);
   font-size: 13px;
 }
+.question__desc {
+  margin: 0 0 var(--s3);
+  max-width: 68ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
 .question__error {
   margin-top: var(--s2);
+}
+
+/* A repeated block inside the student's own section: divided by a hairline,
+   never a nested card (DESIGN.md §11.1). */
+.own-item__block {
+  padding-top: var(--s4);
+  margin-top: var(--s4);
+  border-top: 1px solid var(--green-edge);
+}
+.own-item__block:first-of-type {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+.own-item__block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+}
+.own-item__block-head .label {
+  color: var(--ink-soft);
+}
+.own-item__block .alert {
+  margin-bottom: var(--s3);
+}
+.own-item__add {
+  margin-top: var(--s4);
 }
 
 /* The student's own item: their part of the sheet, visibly theirs. */
@@ -1877,6 +1951,22 @@ kbd {
 }
 .event__body--lead {
   font-weight: 700;
+}
+
+.validity {
+  display: grid;
+  gap: var(--s3);
+}
+.validity__history summary {
+  cursor: pointer;
+}
+.validity__history .data-list {
+  margin-top: var(--s2);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.validity__history .data-list > li {
+  padding: var(--s2) var(--s3);
 }
 
 .composers {
@@ -2098,5 +2188,175 @@ kbd {
   }
   body {
     background: #fff;
+  }
+}
+
+/* ==========================================================================
+   Rich text — the sanitized output of the one safe renderer
+   ==========================================================================
+   Scoped under `.rich-text` so a teacher's prompt can never restyle the page
+   around it: the sanitizer already strips `style` and `class`, and this keeps
+   the blast radius of any future allowlist change inside the block.
+
+   Authored by a person, so it sits in the document register, on this system's
+   own tokens and radii. */
+
+.rich-text {
+  font-family: var(--serif);
+  overflow-wrap: anywhere;
+}
+.rich-text > :first-child {
+  margin-top: 0;
+}
+.rich-text > :last-child {
+  margin-bottom: 0;
+}
+.rich-text p,
+.rich-text ul,
+.rich-text ol,
+.rich-text blockquote,
+.rich-text pre,
+.rich-text table {
+  margin: 0 0 var(--s3);
+}
+.rich-text h3,
+.rich-text h4,
+.rich-text h5,
+.rich-text h6 {
+  margin: var(--s4) 0 var(--s2);
+  font-size: 16px;
+  line-height: 1.3;
+}
+.rich-text ul,
+.rich-text ol {
+  padding-left: 22px;
+}
+.rich-text li + li {
+  margin-top: var(--s1);
+}
+.rich-text a {
+  color: var(--green-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rich-text code {
+  padding: 1px 4px;
+  border-radius: var(--r-control);
+  background: var(--paper-quiet);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+.rich-text pre {
+  padding: var(--s3);
+  border: 1px solid var(--rule);
+  background: var(--paper-quiet);
+  /* Long code scrolls inside its own box; it never widens the page. */
+  overflow-x: auto;
+}
+.rich-text pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+/* A quotation inside authored text: a 1px rule and an indent, per DESIGN.md §5. */
+.rich-text blockquote {
+  padding-left: var(--s4);
+  border-left: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+}
+.rich-text img {
+  max-width: 100%;
+  height: auto;
+}
+.rich-text table {
+  display: block;
+  width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.rich-text th,
+.rich-text td {
+  padding: 6px var(--s2);
+  border: 1px solid var(--rule);
+  text-align: left;
+}
+.rich-text hr {
+  margin: var(--s4) 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+/* Display maths can be wider than the column; scroll it, not the page. */
+.rich-text .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+/* A prompt rendered inside a legend stays on one line's worth of blocks. */
+.rich-text--inline,
+.rich-text--inline p {
+  display: inline;
+  margin: 0;
+}
+
+/* ==========================================================================
+   Filter strip fieldset + plain lists
+   ========================================================================== */
+
+.toolbar__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.plain-list {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ==========================================================================
+   Accessible chart — the SVG is decorative, the table carries the numbers
+   ========================================================================== */
+
+.chart {
+  margin: 0;
+}
+.chart > figcaption {
+  margin-bottom: var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.chart__svg {
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+}
+.chart__bar {
+  fill: var(--green);
+}
+.chart__table {
+  margin-top: var(--s2);
+  border: 1px solid var(--rule);
+}
+
+@media (max-width: 720px) {
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pagination__controls .button {
+    flex: 1;
   }
 }

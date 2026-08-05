@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
-import { studentRecords, users } from "@/db/schema";
+import { accountMatches, studentRecords, users } from "@/db/schema";
 import { loadStaffSection } from "@/lib/staff-section";
 import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
@@ -18,8 +18,13 @@ import {
   confirmMatch,
   listPendingMatchesForSection,
   rejectMatch,
+  unlinkMatch,
 } from "@/modules/identity/matching";
 import { listSectionRoster } from "@/modules/catalog";
+import {
+  listClaimsForSection,
+  resolveRosterClaim,
+} from "@/modules/identity/claim";
 import { toShellUser } from "@/lib/session";
 
 /**
@@ -54,6 +59,9 @@ export default async function MatchesPage({
 
   const pending = await listPendingMatchesForSection(user.id, sectionId);
   const roster = await listSectionRoster(user.id, sectionId);
+  // Student-initiated claims (project-specs.md §6.1). A claim carries the name the
+  // student signs in with, next to the roster name, so staff can compare them.
+  const claims = await listClaimsForSection(user.id, sectionId);
 
   const userIds = [...new Set(pending.map((m) => m.userId))];
   const recordIds = [
@@ -128,7 +136,99 @@ export default async function MatchesPage({
     redirect(backTo(sectionId, "Suggestion rejected."));
   }
 
+  async function confirmClaim(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    try {
+      await resolveRosterClaim(uid, String(formData.get("claimId")), {
+        kind: "confirm",
+        studentRecordId: String(formData.get("studentRecordId")),
+      });
+    } catch (err) {
+      redirect(
+        backTo(
+          sectionId,
+          err instanceof Error ? err.message : "Could not confirm the request",
+          "error",
+        ),
+      );
+    }
+    revalidatePath(`/teach/sections/${sectionId}/matches`);
+    redirect(
+      backTo(sectionId, "Linked. The student can now use this section."),
+    );
+  }
+
+  async function rejectClaim(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    try {
+      await resolveRosterClaim(uid, String(formData.get("claimId")), {
+        kind: "reject",
+        reason: String(formData.get("reason") ?? "Not this student"),
+      });
+    } catch (err) {
+      redirect(
+        backTo(
+          sectionId,
+          err instanceof Error ? err.message : "Could not reject the request",
+          "error",
+        ),
+      );
+    }
+    revalidatePath(`/teach/sections/${sectionId}/matches`);
+    redirect(backTo(sectionId, "Request rejected."));
+  }
+
+  async function unlink(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    try {
+      await unlinkMatch(
+        uid,
+        String(formData.get("matchId")),
+        String(formData.get("reason") ?? ""),
+      );
+    } catch (err) {
+      redirect(
+        backTo(
+          sectionId,
+          err instanceof Error ? err.message : "Could not unlink",
+          "error",
+        ),
+      );
+    }
+    revalidatePath(`/teach/sections/${sectionId}/matches`);
+    redirect(
+      backTo(
+        sectionId,
+        "Unlinked. Their submissions are kept, and either account can be linked again.",
+      ),
+    );
+  }
+
   const linkedCount = roster.filter((r) => r.accountLinked).length;
+  // The unlink control needs the confirmed match's id, which the roster read model
+  // does not carry (it only reports whether an account is linked).
+  const confirmedMatches = roster.length
+    ? await db.query.accountMatches.findMany({
+        where: and(
+          inArray(
+            accountMatches.studentRecordId,
+            roster.map((r) => r.record.id),
+          ),
+          eq(accountMatches.state, "confirmed"),
+        ),
+      })
+    : [];
+  const confirmedMatchByRecord = new Map(
+    confirmedMatches
+      .filter((m) => m.studentRecordId)
+      .map((m) => [m.studentRecordId!, m.id]),
+  );
 
   return (
     <AppShell
@@ -159,6 +259,89 @@ export default async function MatchesPage({
           A confident-looking suggestion can still be the wrong person, so every
           match waits for you and every decision is recorded.
         </Alert>
+
+        {claims.length > 0 && (
+          <section className="notice">
+            <div className="notice__head">
+              <div>
+                <h2>Students asking to be linked</h2>
+                <p>
+                  {claims.length} request
+                  {claims.length === 1 ? "" : "s"}. Each student typed their own
+                  student number; compare the name on their school account with
+                  the name on the class list before you confirm.
+                </p>
+              </div>
+            </div>
+            <ul className="data-list">
+              {claims.map((row) => (
+                <li key={row.claim.id}>
+                  <span className="data-list__main">
+                    <strong>{row.account.displayName}</strong>
+                    <small>
+                      {row.account.email} · typed a number ending{" "}
+                      {row.claim.typedNumberLast4}
+                    </small>
+                    <small>
+                      {row.record
+                        ? `Class list says: ${row.record.fullName} (…${row.record.studentNumberLast4 ?? "?"})`
+                        : "That number is not on any class list."}
+                    </small>
+                    <small className="muted">{row.explanation}</small>
+                  </span>
+                  <span className="row">
+                    {row.record && (
+                      <form action={confirmClaim} className="inline-form">
+                        <input
+                          type="hidden"
+                          name="claimId"
+                          value={row.claim.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="studentRecordId"
+                          value={row.record.id}
+                        />
+                        <button
+                          className="button button--primary"
+                          type="submit"
+                        >
+                          Confirm this is them
+                        </button>
+                      </form>
+                    )}
+                    <form action={rejectClaim} className="inline-form">
+                      <input
+                        type="hidden"
+                        name="claimId"
+                        value={row.claim.id}
+                      />
+                      <label
+                        className="visually-hidden"
+                        htmlFor={`reject-reason-${row.claim.id}`}
+                      >
+                        Reason for rejecting, staff-only
+                      </label>
+                      <input
+                        id={`reject-reason-${row.claim.id}`}
+                        className="field"
+                        name="reason"
+                        placeholder="Reason (staff-only)"
+                        style={{ maxWidth: 220 }}
+                      />
+                      <button
+                        className="button button--secondary"
+                        type="submit"
+                      >
+                        Reject
+                      </button>
+                    </form>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {byAccount.size === 0 ? (
           <EmptyState title="No accounts are waiting for confirmation">
@@ -302,7 +485,12 @@ export default async function MatchesPage({
                   <span className="data-list__main">
                     <strong>{record.fullName}</strong>
                     <small>
-                      {record.studentNumber}
+                      {/* Last 4 only on screen. The full number is revealed in
+                          the audited exports, not on a page left open in a
+                          lecture hall. */}
+                      {record.studentNumberLast4
+                        ? `…${record.studentNumberLast4}`
+                        : "number not shown"}
                       {enrollment.rosterName !== record.fullName &&
                         ` · roster name: ${enrollment.rosterName}`}
                     </small>
@@ -312,7 +500,38 @@ export default async function MatchesPage({
                       <Stamp tone="neutral">Dropped</Stamp>
                     )}
                     {accountLinked ? (
-                      <Stamp tone="green">Account confirmed</Stamp>
+                      <>
+                        <Stamp tone="green">Account confirmed</Stamp>
+                        {confirmedMatchByRecord.get(record.id) && (
+                          <form action={unlink} className="inline-form">
+                            <input
+                              type="hidden"
+                              name="matchId"
+                              value={confirmedMatchByRecord.get(record.id)!}
+                            />
+                            <label
+                              className="visually-hidden"
+                              htmlFor={`unlink-reason-${record.id}`}
+                            >
+                              Why unlink this account?
+                            </label>
+                            <input
+                              id={`unlink-reason-${record.id}`}
+                              className="field"
+                              name="reason"
+                              required
+                              placeholder="Why unlink?"
+                              style={{ maxWidth: 200 }}
+                            />
+                            <button
+                              className="button button--secondary"
+                              type="submit"
+                            >
+                              Unlink
+                            </button>
+                          </form>
+                        )}
+                      </>
                     ) : (
                       <Stamp tone="amber">No account yet</Stamp>
                     )}

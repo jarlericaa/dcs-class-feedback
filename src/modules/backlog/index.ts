@@ -43,6 +43,7 @@ export async function listBacklogForCourse(
     actorUserId,
     courseId,
     "manageBacklogImports",
+    { allowArchived: true },
   );
   const rows = await db.query.backlogQuestions.findMany({
     where: eq(backlogQuestions.courseId, courseId),

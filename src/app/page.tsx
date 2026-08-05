@@ -6,7 +6,7 @@ import { accountMatches } from "@/db/schema";
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { Alert, EmptyState, Stamp, StripLabel } from "@/components/ui";
+import { Alert, EmptyState, Notice, Stamp, StripLabel } from "@/components/ui";
 import { IconForward } from "@/components/ui/icons";
 import { listSectionsForUser } from "@/modules/catalog";
 import { generateMatchCandidates } from "@/modules/identity/matching";
@@ -241,7 +241,10 @@ export default async function HomePage() {
             <StripLabel id="elsewhere">Elsewhere</StripLabel>
             <div className="row">
               {user.isTeacher && (
-                <Link className="button button--secondary" href="/teach/courses">
+                <Link
+                  className="button button--secondary"
+                  href="/teach/courses"
+                >
                   Courses and sections
                 </Link>
               )}
@@ -255,21 +258,39 @@ export default async function HomePage() {
         )}
 
         {hasNothing && (
-          <EmptyState
-            title={
-              matchStatus === "pending"
-                ? "Your account is waiting to be confirmed"
+          <div className="stack-4">
+            <EmptyState
+              title={
+                matchStatus === "pending"
+                  ? "Your account is waiting to be confirmed"
+                  : matchStatus === "unmatched"
+                    ? "We could not match you to a class list"
+                    : "You are not in any class sections yet"
+              }
+            >
+              {matchStatus === "pending"
+                ? "A teacher has to confirm that this sign-in belongs to you before your classes appear. Nothing is confirmed automatically."
                 : matchStatus === "unmatched"
-                  ? "We could not match you to a class list"
-                  : "You are not in any class sections yet"
-            }
-          >
-            {matchStatus === "pending"
-              ? "A teacher has to confirm that this sign-in belongs to you before your classes appear. Nothing is confirmed automatically."
-              : matchStatus === "unmatched"
-                ? "Your sign-in name did not match anyone on a class list. Ask the teacher who manages your section to link your account."
-                : "Once a teacher adds you to a section, its weekly form appears here."}
-          </EmptyState>
+                  ? "Your sign-in name did not match anyone on a class list. Tell us your student number and your teacher will confirm it."
+                  : "Once a teacher adds you to a section, its weekly form appears here."}
+            </EmptyState>
+
+            {matchStatus !== "confirmed" && (
+              <Notice title="Claim your place on the class list">
+                <p className="doc">
+                  Class lists carry no email address, so tell us your student
+                  number instead. Your teacher confirms every link by hand —
+                  that is deliberate: it stops someone else being matched to
+                  your name.
+                </p>
+                <div className="row" style={{ marginTop: "var(--s5)" }}>
+                  <Link className="button button--primary" href="/claim">
+                    Enter my student number
+                  </Link>
+                </div>
+              </Notice>
+            )}
+          </div>
         )}
       </div>
     </AppShell>

@@ -14,6 +14,8 @@ import {
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import { requireSectionStaff } from "@/modules/authz";
+import { toCsv } from "@/modules/exports/tabular";
+import { revealStudentNumber } from "@/modules/crypto/student-number";
 
 /**
  * Derived participation (participation-rules.md §3): there is NO stored
@@ -28,16 +30,42 @@ import { requireSectionStaff } from "@/modules/authz";
  */
 
 export interface ParticipationMatrix {
-  cycles: { id: string; cycleIndex: number; openAt: Date }[];
+  cycles: {
+    id: string;
+    cycleIndex: number;
+    openAt: Date;
+    bonusPeriodId: string | null;
+  }[];
   students: {
     studentRecordId: string;
-    studentNumber: string;
+    /** sealed; decrypt through revealStudentNumber only where authorized */
+    studentNumberCiphertext: string | null;
+    /** safe for staff list views without decrypting the table */
+    studentNumberLast4: string | null;
     fullName: string;
+    /** cycles that earned credit (valid OR flagged — decision D15) */
     participatedCycleIds: Set<string>;
+    /** flagged but still credited; STAFF-ONLY, never in a student payload */
+    flaggedCycleIds: Set<string>;
+    invalidCycleIds: Set<string>;
+    /** cycleId → the reasons; studentVisible is the only student-readable one */
+    invalidReasons: Map<
+      string,
+      { staffReason: string | null; studentVisibleReason: string | null }
+    >;
     totalWeeks: number;
   }[];
 }
 
+/**
+ * Derivation primitive — deliberately unauthorized, like every other `derive*`
+ * here. Callers authorize; this only computes.
+ *
+ * Credit rule (participation-rules.md §3): a response counts when its lifecycle
+ * is `submitted` or `locked` (a draft is not a submission) AND its validity is
+ * not `invalid` (so a `flagged` response still counts, because a flag is an
+ * unconfirmed suspicion — decision D15).
+ */
 export async function deriveParticipation(
   sectionId: string,
 ): Promise<ParticipationMatrix> {
@@ -52,7 +80,8 @@ export async function deriveParticipation(
   const enrolled = await db
     .select({
       studentRecordId: enrollments.studentRecordId,
-      studentNumber: studentRecords.studentNumber,
+      studentNumberCiphertext: studentRecords.studentNumberCiphertext,
+      studentNumberLast4: studentRecords.studentNumberLast4,
       fullName: studentRecords.fullName,
     })
     .from(enrollments)
@@ -70,15 +99,35 @@ export async function deriveParticipation(
             formResponses.cycleId,
             cycles.map((c) => c.id),
           ),
-          eq(formResponses.validity, "valid"),
+          inArray(formResponses.lifecycle, ["submitted", "locked"]),
         ),
       })
     : [];
-  const byStudent = new Map<string, Set<string>>();
+  const credited = new Map<string, Set<string>>();
+  const flagged = new Map<string, Set<string>>();
+  const invalid = new Map<string, Set<string>>();
+  const reasons = new Map<
+    string,
+    Map<string, { staffReason: string | null; studentVisibleReason: string | null }>
+  >();
+  const add = (map: Map<string, Set<string>>, key: string, value: string) => {
+    const set = map.get(key) ?? new Set<string>();
+    set.add(value);
+    map.set(key, set);
+  };
   for (const r of responses) {
-    const set = byStudent.get(r.studentRecordId) ?? new Set<string>();
-    set.add(r.cycleId);
-    byStudent.set(r.studentRecordId, set);
+    if (r.validity === "invalid") {
+      add(invalid, r.studentRecordId, r.cycleId);
+      const perStudent = reasons.get(r.studentRecordId) ?? new Map();
+      perStudent.set(r.cycleId, {
+        staffReason: r.invalidationReason ?? null,
+        studentVisibleReason: r.studentVisibleReason ?? null,
+      });
+      reasons.set(r.studentRecordId, perStudent);
+      continue;
+    }
+    if (r.validity === "flagged") add(flagged, r.studentRecordId, r.cycleId);
+    add(credited, r.studentRecordId, r.cycleId);
   }
 
   return {
@@ -86,12 +135,16 @@ export async function deriveParticipation(
       id: c.id,
       cycleIndex: c.cycleIndex,
       openAt: c.openAt,
+      bonusPeriodId: c.bonusPeriodId,
     })),
     students: enrolled.map((s) => {
-      const participated = byStudent.get(s.studentRecordId) ?? new Set<string>();
+      const participated = credited.get(s.studentRecordId) ?? new Set<string>();
       return {
         ...s,
         participatedCycleIds: participated,
+        flaggedCycleIds: flagged.get(s.studentRecordId) ?? new Set<string>(),
+        invalidCycleIds: invalid.get(s.studentRecordId) ?? new Set<string>(),
+        invalidReasons: reasons.get(s.studentRecordId) ?? new Map(),
         totalWeeks: participated.size,
       };
     }),
@@ -107,7 +160,7 @@ export async function getParticipationOverview(
   actorUserId: string,
   sectionId: string,
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation");
+  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation", { allowArchived: true });
   const matrix = await deriveParticipation(sectionId);
   const activeEnrollments = await db.query.enrollments.findMany({
     where: and(
@@ -142,22 +195,25 @@ export async function getParticipationOverview(
 }
 
 /**
- * CSV-escape a value, and neutralize spreadsheet formula injection.
+ * Plaintext student number for an identity-bearing export row.
  *
- * These exports carry student-authored text straight into a staff member's
- * spreadsheet. Excel and Sheets evaluate any cell starting with =, +, - or @
- * as a formula, so a submitted answer could execute in the reader's
- * spreadsheet. Prefixing with an apostrophe forces a literal string; the
- * apostrophe is not shown by the spreadsheet.
+ * These three reports are already gated on `exportParticipation` and audited, so
+ * revealing here is authorized. A record that predates the encryption backfill
+ * degrades to its last four characters rather than failing the whole export.
  */
-function csvEscape(value: string | number | null | undefined): string {
-  let s = value === null || value === undefined ? "" : String(value);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function toCsv(rows: (string | number | null | undefined)[][]): string {
-  return rows.map((r) => r.map(csvEscape).join(",")).join("\r\n") + "\r\n";
+function studentNumberOf(row: {
+  studentRecordId: string;
+  studentNumberCiphertext: string | null;
+  studentNumberLast4: string | null;
+}): string {
+  try {
+    return revealStudentNumber({
+      id: row.studentRecordId,
+      studentNumberCiphertext: row.studentNumberCiphertext,
+    });
+  } catch {
+    return row.studentNumberLast4 ? `…${row.studentNumberLast4}` : "";
+  }
 }
 
 async function auditExport(
@@ -179,7 +235,7 @@ export async function weeklyMatrixCsv(
   actorUserId: string,
   sectionId: string,
 ): Promise<string> {
-  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation");
+  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation", { allowArchived: true });
   const matrix = await deriveParticipation(sectionId);
   const header = [
     "Student number",
@@ -188,12 +244,16 @@ export async function weeklyMatrixCsv(
       (c) => `Week ${c.cycleIndex} (${c.openAt.toISOString().slice(0, 10)})`,
     ),
     "Total weeks",
+    "Flagged weeks (still credited)",
+    "Invalid weeks",
   ];
   const rows = matrix.students.map((s) => [
-    s.studentNumber,
+    studentNumberOf(s),
     s.fullName,
     ...matrix.cycles.map((c) => (s.participatedCycleIds.has(c.id) ? "1" : "0")),
     s.totalWeeks,
+    s.flaggedCycleIds.size,
+    s.invalidCycleIds.size,
   ]);
   await auditExport(actorUserId, sectionId, "weekly_matrix");
   return toCsv([header, ...rows]);
@@ -205,7 +265,7 @@ export async function participantListCsv(
   sectionId: string,
   opts: { fromCycleIndex?: number; toCycleIndex?: number } = {},
 ): Promise<string> {
-  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation");
+  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation", { allowArchived: true });
   const matrix = await deriveParticipation(sectionId);
   const inRange = matrix.cycles.filter(
     (c) =>
@@ -219,7 +279,7 @@ export async function participantListCsv(
   await auditExport(actorUserId, sectionId, "participant_list");
   return toCsv([
     ["Student number", "Student name"],
-    ...participants.map((s) => [s.studentNumber, s.fullName]),
+    ...participants.map((s) => [studentNumberOf(s), s.fullName]),
   ]);
 }
 
@@ -231,7 +291,7 @@ export async function detailedResponseCsv(
   actorUserId: string,
   sectionId: string,
 ): Promise<string> {
-  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation");
+  await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation", { allowArchived: true });
 
   const cycles = await db.query.weeklyCycles.findMany({
     where: eq(weeklyCycles.sectionId, sectionId),
@@ -240,9 +300,13 @@ export async function detailedResponseCsv(
   const cycleById = new Map(cycles.map((c) => [c.id, c]));
   const responses = cycles.length
     ? await db.query.formResponses.findMany({
-        where: inArray(
-          formResponses.cycleId,
-          cycles.map((c) => c.id),
+        // Drafts are not submissions: they must not appear in a staff export.
+        where: and(
+          inArray(
+            formResponses.cycleId,
+            cycles.map((c) => c.id),
+          ),
+          inArray(formResponses.lifecycle, ["submitted", "locked"]),
         ),
       })
     : [];
@@ -260,7 +324,10 @@ export async function detailedResponseCsv(
     "Submission type",
     "Category",
     "Validity",
-    "Invalidation reason",
+    "Invalidation reason (staff-only)",
+    "Student-visible reason",
+    "Revision",
+    "Last edited at",
     "Private response",
     "Publicly published",
   ];
@@ -279,10 +346,14 @@ export async function detailedResponseCsv(
     });
 
     const base = [
-      student.studentNumber,
+      studentNumberOf({
+        studentRecordId: student.id,
+        studentNumberCiphertext: student.studentNumberCiphertext,
+        studentNumberLast4: student.studentNumberLast4,
+      }),
       student.fullName,
       `Week ${cycle.cycleIndex}`,
-      response.submittedAt.toISOString(),
+      response.submittedAt?.toISOString() ?? "",
     ];
 
     for (const answer of answers) {
@@ -316,6 +387,9 @@ export async function detailedResponseCsv(
         null,
         response.validity,
         response.invalidationReason,
+        response.studentVisibleReason,
+        response.revision,
+        response.lastEditedAt?.toISOString() ?? "",
         null,
         null,
       ]);
@@ -351,6 +425,9 @@ export async function detailedResponseCsv(
         item.category,
         response.validity,
         response.invalidationReason,
+        response.studentVisibleReason,
+        response.revision,
+        response.lastEditedAt?.toISOString() ?? "",
         privateCount.length > 0 ? "yes" : "no",
         publishedLinks.length > 0 ? "yes" : "no",
       ]);

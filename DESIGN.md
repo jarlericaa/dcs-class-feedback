@@ -257,6 +257,10 @@ for:
 - page titles and panel titles;
 - text a human wrote: the student's original message, private replies, public
   questions and answers, backlog question text, teacher notes on a stamp;
+- the sanitized output of the rich-text renderer (`.rich-text`) — a teacher's
+  markdown prompt is authored text like any other, so it inherits the register.
+  Its tables and code blocks step back to the sans and mono faces, because a
+  table of numbers is data, not prose;
 - the entry screen's one headline.
 
 Never for: labels, counts, table headers, buttons, filters, form field labels,
@@ -557,13 +561,19 @@ survives colourblindness, grayscale printing and low contrast.
 
 | Tone | Shape | Means |
 |---|---|---|
-| green | filled square | open, submitted, published, valid, confirmed |
-| amber | filled triangle | needs review, scheduled, pending, draft, private reply |
-| red | filled diamond | invalid, failed, rejected, privacy risk |
+| green | filled square | open, submitted, published, valid, confirmed, counted |
+| amber | filled triangle | needs review, scheduled, pending, draft, flagged, private reply |
+| red | filled diamond | invalid, failed, rejected, not counted, privacy risk |
 | neutral | hollow square | closed, archived, skipped, not started |
 
-Cycle state always renders through `CycleStateBadge` so no page invents its own
-wording.
+Cycle state always renders through `CycleStateBadge`, validity through
+`ValidityBadge`, and a student's own credit through `CreditBadge`, so no page
+invents its own wording.
+
+**`ValidityBadge` is staff-only.** `flagged` is an internal state a student must
+never learn exists; the student-facing component is `CreditBadge`, which says
+only *counted* or *not counted*. Rendering `ValidityBadge` on a student route
+would leak the flag, so it never appears on one.
 
 **Loading.** Pages are server-rendered per navigation; the browser's own
 progress is the loading state for navigation. Where a route can be slow, Next's
@@ -649,6 +659,9 @@ Hard rules. Each one is currently satisfied; breaking one is a regression.
     participation totals.
 15. No reworded public text presented as if it were the original. The original
     is always quoted, in the document register, labelled.
+15a. No internal validity reason, staff note, or flag shown to a student. When a
+    decision removes credit, the student sees only the separate sentence a human
+    typed for them; the internal reason and note stay on the staff surface.
 16. No status communicated by colour alone.
 17. No imitation of Ed Discussion, Piazza or Slido: no third-party logo, brand
     colour, product name, exact copy, or recognisable layout. They informed the
@@ -669,7 +682,37 @@ Hard rules. Each one is currently satisfied; breaking one is a regression.
 
 ---
 
-## 12. Where the system lives
+## 12. Surfaces added after the redesign
+
+These arrived on `main` while the redesign was in flight and were brought onto
+the system as part of the merge. They follow every rule above; the notes are the
+decisions specific to them.
+
+- **`/claim`** — a student types their student number to be linked to the class
+  list. A student surface, so it takes the roomy rhythm. The reply is identical
+  whether or not the number matched, and the page says so: a uniform answer is
+  the privacy mechanism, and hiding that fact would make it read as a bug.
+- **Rich text** (`.rich-text`) — the sanitized markdown/KaTeX output of the one
+  safe renderer. Authored text, so it sits in the document register; its own
+  tables and code step back to the sans and mono faces. Long code and display
+  maths scroll inside their own box and never widen the page.
+- **Pagination** (`.pagination`) — links, not buttons, so a page is shareable
+  and works before hydration. Every existing query parameter is preserved, so
+  paging never silently drops a staff member's filters. Disabled ends keep their
+  shape and drop to `--ink-faint`.
+- **Charts** (`.chart`) — the SVG is decorative and `aria-hidden`; the
+  equivalent table is *always* rendered, never offered as an alternative. Bars
+  use the single accent. A chart that hides its numbers behind a hover is not an
+  accessible chart.
+- **The three-state validity control** — flag, confirm, dismiss, invalidate,
+  restore, plus the validity timeline, all on one staff surface. Destructive
+  steps are bordered danger buttons, never red slabs, and each states what the
+  student will and will not see.
+- **The editable weekly form** — save a draft, submit, and keep editing until
+  the deadline. The copy states the current truth on every state, and a block
+  staff have already acted on says so rather than silently refusing the edit.
+
+## 13. Where the system lives
 
 - `src/app/globals.css` — every token and every class. One stylesheet, one
   system. No CSS-in-JS, no Tailwind, no UI framework.

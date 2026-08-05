@@ -413,6 +413,7 @@ export async function listPublicationQueue(
     actorUserId,
     sectionId,
     PUBLICATION_PERMISSIONS,
+    { allowArchived: true },
   );
   const rows = await db.query.publicAnswers.findMany({
     where: eq(publicAnswers.sectionId, sectionId),
@@ -468,6 +469,7 @@ export async function getPublicAnswerForEditing(
     actorUserId,
     answer.sectionId,
     PUBLICATION_PERMISSIONS,
+    { allowArchived: true },
   );
   const links = await db.query.sourceLinks.findMany({
     where: eq(sourceLinks.publicAnswerId, publicAnswerId),
@@ -501,7 +503,7 @@ export async function listSectionQa(
   sectionId: string,
   opts: { search?: string; category?: "content" | "logistics" | "misc" } = {},
 ) {
-  await requireSectionQaAccess(db, actorUserId, sectionId);
+  await requireSectionQaAccess(db, actorUserId, sectionId, { allowArchived: true });
   const conditions = [
     eq(publicAnswers.sectionId, sectionId),
     eq(publicAnswers.state, "published"),
@@ -565,7 +567,9 @@ export async function listSectionQa(
  * other students' anything.
  */
 export async function getStudentHistory(userId: string, sectionId: string) {
-  const record = await requireEnrolledStudent(db, userId, sectionId);
+  const record = await requireEnrolledStudent(db, userId, sectionId, {
+    allowArchived: true,
+  });
   const cycles = await db.query.weeklyCycles.findMany({
     where: eq(weeklyCycles.sectionId, sectionId),
   });

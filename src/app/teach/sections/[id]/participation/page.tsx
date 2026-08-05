@@ -166,7 +166,14 @@ export default async function ParticipationPage({
                           </>
                         )}
                       </th>
-                      <td>{student.studentNumber}</td>
+                      <td>
+                        {/* Last 4 only on screen: the full number is revealed
+                            in the audited exports, not in a page anyone can
+                            leave open. */}
+                        {student.studentNumberLast4
+                          ? `…${student.studentNumberLast4}`
+                          : "—"}
+                      </td>
                       {cycles.map((cycle) => {
                         const participated = student.participatedCycleIds.has(
                           cycle.id,

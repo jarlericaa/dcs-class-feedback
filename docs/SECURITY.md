@@ -23,6 +23,14 @@ detail.
 
 - Account matching produces candidates; teacher confirmation is required under
   the current MVP policy.
+- **Teacher-confirm-all is the approved default** ([open-decisions.md](open-decisions.md)
+  D2, closed 2026-08-03). `ROSTER_CLAIM_AUTO_CONFIRM` (default `false`) is a
+  **privacy/security policy switch, not an ordinary operational tuning option**:
+  it decides whether a university account may bind to a roster record with no
+  human review. Enabling it requires **explicit owner approval equivalent to
+  reopening or revising D2**, and it must **not** be enabled casually during
+  troubleshooting or incident response. The same applies to loosening
+  `ROSTER_CLAIM_AUTO_CONFIRM_MIN_SCORE`.
 - Student access requires a confirmed match plus active enrollment.
 - Section staff access is resource-scoped; TA permissions are explicit.
 - Platform-admin status does not automatically grant course content access.
@@ -42,6 +50,8 @@ detail.
       allowed-domain restrictions.
 - [ ] `DEV_AUTH_ENABLED` cannot enable a provider in production.
 - [ ] `AUTH_SECRET` and scheduler secrets are production-grade and not committed.
+- [ ] `ROSTER_CLAIM_AUTO_CONFIRM` is `false`, unless the owner has approved a
+      revision of D2 in writing (see the invariant above).
 - [ ] No `.env`, seeded credentials, or real student data is in the repository,
       screenshots, fixtures, or documentation.
 - [ ] Every student/staff route and server action performs server-side authz.

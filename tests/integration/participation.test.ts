@@ -15,7 +15,7 @@ import {
   closeDueCycles,
 } from "@/modules/forms/cycles";
 import { submitResponse } from "@/modules/forms/submission";
-import { setValidity } from "@/modules/review";
+import { invalidateSubmission, restoreSubmission } from "@/modules/review";
 import {
   deriveParticipation,
   participantListCsv,
@@ -112,12 +112,10 @@ describe("derived participation + exports", () => {
     expect(bobRow.totalWeeks).toBe(1);
 
     // Invalidation immediately removes that week's credit.
-    await setValidity(
-      teacher.id,
-      aliceR1.responseId,
-      "invalid",
-      "empty_or_meaningless",
-    );
+    await invalidateSubmission(teacher.id, aliceR1.responseId, {
+      reason: "empty_or_meaningless",
+      studentVisibleReason: "The form was submitted blank.",
+    });
     matrix = await deriveParticipation(section.id);
     expect(
       matrix.students.find((s) => s.studentRecordId === alice.record.id)!
@@ -125,7 +123,7 @@ describe("derived participation + exports", () => {
     ).toBe(1);
 
     // Restoring validity restores credit — no separate bookkeeping.
-    await setValidity(teacher.id, aliceR1.responseId, "valid");
+    await restoreSubmission(teacher.id, aliceR1.responseId);
     matrix = await deriveParticipation(section.id);
     expect(
       matrix.students.find((s) => s.studentRecordId === alice.record.id)!
@@ -160,10 +158,11 @@ describe("derived participation + exports", () => {
     const csv = await weeklyMatrixCsv(teacher.id, section.id);
     const lines = csv.trim().split("\r\n");
     expect(lines[0]).toMatch(
-      /Student number,Student name,Week 1.*Week 2.*Total weeks/,
+      /Student number,Student name,Week 1.*Week 2.*Total weeks,Flagged weeks \(still credited\),Invalid weeks/,
     );
     expect(lines).toHaveLength(2);
-    expect(lines[1]).toMatch(/,1,0,1$/);
+    // week 1 credited, week 2 not, 1 total, 0 flagged, 0 invalid
+    expect(lines[1]).toMatch(/,1,0,1,0,0$/);
 
     const { auditEvents } = await import("@/db/schema");
     const audit = await db.query.auditEvents.findFirst({

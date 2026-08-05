@@ -332,7 +332,99 @@ Carried forward, all pre-existing:
 
 ---
 
-## 11. Commits
+## 11. Merge with `main` (2026-08-05, same day)
+
+`origin/main` had moved 14 commits ahead while this redesign was in flight —
+PR #3, "complete proj specs": 103 files, +26,784 lines. It added two migrations,
+an email module, a rich-text pipeline, a student roster-claim flow at `/claim`,
+response draft/edit/lock, three-state validity with a flag-vs-finalize split,
+export tabulation, pagination, and accessible charts. It also widened the MVP
+boundary in `AGENTS.md` and `docs/mvp-scope.md`, so notifications and editing a
+submitted response are now in scope by owner decision; those documents supersede
+the copies this branch was cut from.
+
+Main was merged in rather than the redesign being landed on top of it, because
+main's new UI was written against the old stylesheet: `/claim` and
+`roster-claim.tsx` used `card`, `card--padded` and `stack-gap`, all of which this
+redesign deleted. Merging the other way would have shipped two unstyled surfaces.
+
+**Ten files conflicted.** Each was resolved by keeping main's functionality and
+re-expressing it in this system, never by taking one side wholesale:
+
+| File | Resolution |
+|---|---|
+| `layout.tsx` | Both sides kept: the Charter font wiring and main's KaTeX stylesheet import. |
+| `page.tsx` | Kept the redesigned dashboard; added main's `/claim` call to action as a notice, and repointed the unmatched copy at it. |
+| `sections/[id]/page.tsx` | Started from main (draft/edit/lock, rich prompts, revision guard), then re-applied the redesigned shell, closed-week state and corrected copy. |
+| `teach/.../review/page.tsx` | Started from the redesign, then ported main's five validity actions, `ValidityBadge`, and the validity timeline into it. |
+| `teach/.../matches/page.tsx` | Kept main's claim requests, audited unlink and last-4-only numbers; normalised the vocabulary and labelled three inputs main left unlabelled. |
+| `teach/.../audit/page.tsx` | Took main's pagination; moved its scope alert into the page description. |
+| `teach/courses/[id]/templates/page.tsx` | Took main's student-section configuration props. |
+| `staff/roster-import.tsx` | Took main's XLSX upload and editable preview wholesale, then re-applied the vocabulary and the monospace data register for pasted CSV. |
+| `student/weekly-form.tsx` | Took main's repeatable questions, general comment and lifecycle, then re-applied the question/own-item structure, word-not-asterisk markers and submit bar. |
+| `docs/CURRENT_STATE.md` | Took main's feature status; re-applied the UI maturity section. |
+
+### Defects found and fixed during the merge
+
+1. **Accessibility regression in main's weekly form.** Main inlined the
+   `aria-invalid` / `aria-describedby` attributes and lost the shared helper, so
+   grouped controls (radios, checkboxes, scales) were no longer marked invalid at
+   all — only the plain inputs were. `tests/unit/qa-remediation.test.ts` exists
+   on this branch to guard exactly that, and it failed. The helper was restored
+   and applied to the groups as well.
+2. **Three unlabelled inputs** on main's new controls: the student-visible reason
+   on invalidate, the flag note, and the claim-reject and unlink reasons. All now
+   carry a programmatic label.
+3. **Main's appended CSS referenced deleted tokens** — `var(--accent-strong,
+   #1d4ed8)`, `var(--surface-muted, #f1f3f5)`, `var(--border, #d5d9df)` — so it
+   silently fell back to a blue link, grey code blocks and 8px radii. The whole
+   rich-text, pagination, filter and chart block was retokenised onto this system.
+4. **Pagination used `‹` and `›` glyphs** as icons; replaced with the drawn set.
+5. **Main's `FilterBar` and `.table` duplicated** primitives this system already
+   has; both now render as `.toolbar` and `.data-table`.
+6. **`#666`** in an email template, replaced with `--ink-muted`'s literal value
+   and a comment explaining why a hex is correct in an email body.
+
+### Verification after the merge
+
+| Check | Result |
+|---|---|
+| `npm run lint` | **Pass**, 0 problems |
+| `npm run typecheck` | **Pass** |
+| `npm test` | **Pass** — 7 files, 69 unit tests |
+| `npm run test:integration` | **Pass** — 12 files, 172 integration tests |
+| `npm run build` | **Pass** — 21 routes; direction contract still in the build output |
+| `impeccable detect` (`src/`) | **Pass** — 0 findings |
+| Screenshots, 17 screens × 5 widths | **Pass** — `NO PROBLEMS DETECTED`: no overflow, no HTTP error, no console error |
+| Keyboard audit, 5 routes | **Pass** — 188 tab stops, 0 unringed, 0 unlabelled, 0 duplicate ids |
+| Class audit | **Pass** — every `className` in `src/` resolves to a defined rule |
+
+Both databases needed main's migrations (`npm run db:migrate`, and the same with
+`DATABASE_URL` pointed at the test database). The existing dev roster also needed
+`npm run db:backfill:student-numbers`, because main encrypts student numbers and
+the pre-migration rows had no ciphertext — without it the claim flow correctly
+reported "that number is not on any class list".
+
+The claim → confirm → submit → review path was then driven end to end in the
+browser to populate the inbox and confirm the merged surfaces render with real
+data.
+
+### Still open after the merge
+
+- The **student-visible reason** inputs on the staff validity controls use a
+  placeholder plus a visually-hidden label rather than a visible one. They are
+  programmatically labelled, but DESIGN.md §6 prefers a visible label; in a dense
+  inline control row three visible labels crowd the action. Worth revisiting.
+- Main's `scripts/backfill-student-numbers.ts` prints a follow-up: once the
+  backfill has verified on a target database, the plaintext
+  `student_records.student_number` column is redundant and should be dropped in
+  its own migration. Not done here — it is a schema change, not a UI one.
+- The surfaces main added were brought onto the system and verified, but they
+  have not had a full design pass of their own: `/claim`, the roster preview
+  table and the validity timeline are correct and consistent rather than
+  considered. They are the obvious next slice.
+
+## 12. Commits
 
 | Commit | Contents |
 |---|---|

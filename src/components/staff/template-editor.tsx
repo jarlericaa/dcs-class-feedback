@@ -76,6 +76,11 @@ export function TemplateEditor({
   initialQuestions,
   submitLabel,
   showTitleFields = true,
+  defaultMaxStudentQuestions = 1,
+  defaultStudentQuestionPrompt = "",
+  defaultGeneralCommentEnabled = true,
+  defaultGeneralCommentPrompt = "",
+  defaultGeneralCommentRequired = false,
   defaultTitle = "",
   defaultDescription = "",
   note,
@@ -83,6 +88,11 @@ export function TemplateEditor({
   initialQuestions: DraftQuestion[];
   submitLabel: string;
   showTitleFields?: boolean;
+  defaultMaxStudentQuestions?: number;
+  defaultStudentQuestionPrompt?: string;
+  defaultGeneralCommentEnabled?: boolean;
+  defaultGeneralCommentPrompt?: string;
+  defaultGeneralCommentRequired?: boolean;
   defaultTitle?: string;
   defaultDescription?: string;
   note?: string;
@@ -201,13 +211,15 @@ export function TemplateEditor({
                 </div>
                 <div className="field-row">
                   <label htmlFor={`desc-${question.key}`}>Helper text</label>
-                  <input
+                  <textarea
                     id={`desc-${question.key}`}
-                    className="field"
+                    className="textarea-field"
+                    rows={2}
                     value={question.description}
                     onChange={(e) =>
                       update(question.key, { description: e.target.value })
                     }
+                    aria-describedby="rich-help"
                   />
                 </div>
               </div>
@@ -308,6 +320,85 @@ export function TemplateEditor({
           </fieldset>
         ))}
       </div>
+
+      <p className="helper-text" id="rich-help" style={{ marginTop: 14 }}>
+        Prompts and helper text support Markdown: <code>**bold**</code>, lists,
+        links, fenced code blocks, <code>https</code> images, and LaTeX maths
+        between <code>$…$</code> or <code>$$…$$</code>. HTML and scripts are
+        removed before students see anything.
+      </p>
+
+      <fieldset className="notice notice--pad" style={{ marginTop: "var(--s5)" }}>
+        <legend>Student questions and general comment</legend>
+        <p className="muted small" style={{ marginTop: 0 }}>
+          Each question a student adds becomes its own record you can triage,
+          answer and merge independently. The general comment is tracked
+          separately and is never published as a Q&amp;A entry.
+        </p>
+        <div className="form-grid">
+          <div className="field-row">
+            <label htmlFor="max-student-questions">
+              How many questions may a student add?
+            </label>
+            <input
+              id="max-student-questions"
+              className="field"
+              type="number"
+              name="maxStudentQuestions"
+              min={0}
+              max={10}
+              defaultValue={defaultMaxStudentQuestions}
+              aria-describedby="max-student-questions-help"
+            />
+            <span className="helper-text" id="max-student-questions-help">
+              0 hides the block entirely.
+            </span>
+          </div>
+          <div className="field-row">
+            <label htmlFor="student-question-prompt">
+              Question prompt (optional)
+            </label>
+            <input
+              id="student-question-prompt"
+              className="field"
+              name="studentQuestionPrompt"
+              defaultValue={defaultStudentQuestionPrompt}
+              placeholder="Ask a question about this week"
+            />
+          </div>
+          <div className="field-row">
+            <label htmlFor="general-comment-prompt">
+              General comment prompt (optional)
+            </label>
+            <input
+              id="general-comment-prompt"
+              className="field"
+              name="generalCommentPrompt"
+              defaultValue={defaultGeneralCommentPrompt}
+              placeholder="Anything else you want us to know?"
+            />
+          </div>
+          <div className="field-row">
+            <label htmlFor="general-comment-enabled">General comment</label>
+            <select
+              id="general-comment-enabled"
+              className="select-field"
+              name="generalComment"
+              defaultValue={
+                defaultGeneralCommentEnabled
+                  ? defaultGeneralCommentRequired
+                    ? "required"
+                    : "optional"
+                  : "off"
+              }
+            >
+              <option value="optional">Shown, optional</option>
+              <option value="required">Shown, required</option>
+              <option value="off">Not shown</option>
+            </select>
+          </div>
+        </div>
+      </fieldset>
 
       <div className="form-actions">
         <button

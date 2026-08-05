@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { sealStudentNumber } from "@/modules/crypto/student-number";
 import { db, uniq } from "./helpers";
 import {
   accountMatches,
@@ -61,12 +63,23 @@ export async function addSectionStaff(
   return row!;
 }
 
-export async function makeStudentRecord(fullName = "Juan Dela Cruz") {
+export async function makeStudentRecord(
+  fullName = "Juan Dela Cruz",
+  studentNumber = uniq("2026"),
+) {
   const normalized = fullName.toLowerCase();
+  // Sealed exactly as the real import path does, so hash lookups and the
+  // decrypt-for-export path behave identically in tests.
+  const id = randomUUID();
+  const sealed = sealStudentNumber(studentNumber, id);
   const [row] = await db
     .insert(studentRecords)
     .values({
-      studentNumber: uniq("2026"),
+      id,
+      studentNumberCiphertext: sealed.ciphertext,
+      studentNumberHash: sealed.hash,
+      studentNumberLast4: sealed.last4,
+      encKeyVersion: sealed.encKeyVersion,
       fullName,
       normalizedFullName: normalized,
       normalizedTokens: normalized.split(/\s+/).sort().join(" "),

@@ -267,9 +267,9 @@ export default async function PublicationsPage({
                 </div>
               </form>
 
-              <div className="composer-grid" style={{ marginTop: 18 }}>
+              <div className="composers">
                 {can("publishPublicAnswers") && (
-                  <div className="composer-card">
+                  <div className="composer">
                     <h3>Publish now</h3>
                     <form action={publish}>
                       <input type="hidden" name="answerId" value={answer.id} />
@@ -289,7 +289,7 @@ export default async function PublicationsPage({
                 )}
 
                 {can("schedulePublication") && (
-                  <div className="composer-card">
+                  <div className="composer">
                     <h3>
                       {answer.state === "scheduled" ? "Reschedule" : "Schedule"}
                     </h3>

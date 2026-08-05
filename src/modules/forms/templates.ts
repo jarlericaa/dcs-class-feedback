@@ -37,6 +37,46 @@ async function insertVersionQuestions(
   );
 }
 
+/**
+ * Per-version configuration for the student-originated part of the form
+ * (project-specs.md §5.2). Snapshotted onto the version, so changing it later
+ * cannot alter a cycle that already collected answers.
+ */
+export interface StudentSectionConfig {
+  /** 0–10 repeatable "Ask a Question" entries. 0 disables the block. */
+  maxStudentQuestions?: number;
+  studentQuestionPrompt?: string | null;
+  generalCommentEnabled?: boolean;
+  generalCommentPrompt?: string | null;
+  generalCommentRequired?: boolean;
+}
+
+export const DEFAULT_STUDENT_SECTION: Required<
+  Pick<
+    StudentSectionConfig,
+    "maxStudentQuestions" | "generalCommentEnabled" | "generalCommentRequired"
+  >
+> = {
+  maxStudentQuestions: 1,
+  generalCommentEnabled: true,
+  generalCommentRequired: false,
+};
+
+function normalizeStudentSection(input: StudentSectionConfig | undefined) {
+  return {
+    maxStudentQuestions: Math.max(
+      0,
+      Math.min(10, input?.maxStudentQuestions ?? DEFAULT_STUDENT_SECTION.maxStudentQuestions),
+    ),
+    studentQuestionPrompt: input?.studentQuestionPrompt?.trim() || null,
+    generalCommentEnabled:
+      input?.generalCommentEnabled ?? DEFAULT_STUDENT_SECTION.generalCommentEnabled,
+    generalCommentPrompt: input?.generalCommentPrompt?.trim() || null,
+    generalCommentRequired:
+      input?.generalCommentRequired ?? DEFAULT_STUDENT_SECTION.generalCommentRequired,
+  };
+}
+
 export async function createTemplate(
   actorUserId: string,
   input: {
@@ -45,6 +85,7 @@ export async function createTemplate(
     description?: string;
     visibility?: "private" | "course_shared";
     questions: QuestionDefinition[];
+    studentSection?: StudentSectionConfig;
   },
 ) {
   await requireCourseStaff(db, actorUserId, input.courseId);
@@ -69,6 +110,9 @@ export async function createTemplate(
         templateId: template!.id,
         versionNumber: 1,
         createdByUserId: actorUserId,
+        title: input.title,
+        description: input.description ?? null,
+        ...normalizeStudentSection(input.studentSection),
       })
       .returning();
     await insertVersionQuestions(tx, version!.id, questions);
@@ -94,6 +138,7 @@ export async function createTemplateVersion(
   templateId: string,
   questions: QuestionDefinition[],
   keepStableKeyFrom?: Record<number, string>,
+  studentSection?: StudentSectionConfig,
 ) {
   const template = await db.query.formTemplates.findFirst({
     where: eq(formTemplates.id, templateId),
@@ -125,6 +170,23 @@ export async function createTemplateVersion(
         templateId,
         versionNumber: nextNumber,
         createdByUserId: actorUserId,
+        title: template.title,
+        description: template.description,
+        // Carry the previous version's configuration forward unless this save
+        // changes it, so editing questions never silently resets the student
+        // section.
+        ...normalizeStudentSection(
+          studentSection ??
+            (latest
+              ? {
+                  maxStudentQuestions: latest.maxStudentQuestions,
+                  studentQuestionPrompt: latest.studentQuestionPrompt,
+                  generalCommentEnabled: latest.generalCommentEnabled,
+                  generalCommentPrompt: latest.generalCommentPrompt,
+                  generalCommentRequired: latest.generalCommentRequired,
+                }
+              : undefined),
+        ),
       })
       .returning();
     await insertVersionQuestions(tx, version!.id, parsed, stableKeys);
@@ -147,7 +209,7 @@ export async function listTemplatesForCourse(
   actorUserId: string,
   courseId: string,
 ) {
-  await requireCourseStaff(db, actorUserId, courseId);
+  await requireCourseStaff(db, actorUserId, courseId, { allowArchived: true });
   const templates = await db.query.formTemplates.findMany({
     where: eq(formTemplates.courseId, courseId),
     orderBy: asc(formTemplates.title),
@@ -175,7 +237,7 @@ export async function listTemplatesForSection(
   sectionId: string,
   courseId: string,
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "manageWeeklyCycles");
+  await requireSectionStaff(db, actorUserId, sectionId, "manageWeeklyCycles", { allowArchived: true });
   const templates = await db.query.formTemplates.findMany({
     where: and(
       eq(formTemplates.courseId, courseId),
@@ -204,7 +266,7 @@ export async function getTemplateDetail(
     where: eq(formTemplates.id, templateId),
   });
   if (!template) throw new Error("Template not found");
-  await requireCourseStaff(db, actorUserId, template.courseId);
+  await requireCourseStaff(db, actorUserId, template.courseId, { allowArchived: true });
   const versions = await db.query.templateVersions.findMany({
     where: eq(templateVersions.templateId, templateId),
     orderBy: desc(templateVersions.versionNumber),

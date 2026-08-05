@@ -7,6 +7,7 @@ import {
   Stamp,
   Breadcrumbs,
   EmptyState,
+  Pagination,
 } from "@/components/ui";
 import { listSectionAuditEvents } from "@/modules/audit";
 import { toShellUser } from "@/lib/session";
@@ -24,10 +25,10 @@ export default async function AuditPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ action?: string }>;
+  searchParams: Promise<{ action?: string; page?: string }>;
 }) {
   const { id: sectionId } = await params;
-  const { action } = await searchParams;
+  const { action, page } = await searchParams;
   const ctx = await loadStaffSection(sectionId);
   if (!ctx.ok || ctx.access.staff?.role === "ta") {
     return (
@@ -45,9 +46,13 @@ export default async function AuditPage({
 
   const events = await listSectionAuditEvents(user.id, sectionId, {
     action,
-    limit: 200,
+    page,
   });
-  const actions = [...new Set(events.map((e) => e.event.action))].sort();
+  // Action options come from the visible page. Offering only what is on screen
+  // is honest: a global action list would need a separate scan of the whole log.
+  const actions = [
+    ...new Set(events.rows.map((e) => e.event.action)),
+  ].sort() as string[];
 
   return (
     <AppShell
@@ -65,9 +70,10 @@ export default async function AuditPage({
         />
       }
       title="Audit history"
+      description="Append-only, and scoped to this section alone — its weeks, responses, answers, staff, schedule, roster imports and account matches. Students never see any of it."
     >
       <div className="stack-4">
-        {events.length === 0 ? (
+        {events.total === 0 ? (
           <EmptyState title="No audit records yet">
             Every important action in this section — a confirmed identity, a
             published answer, a participation decision, an export — is recorded
@@ -99,7 +105,7 @@ export default async function AuditPage({
 
             <section className="notice">
               <ul className="data-list">
-                {events.map(({ event, actor }) => (
+                {events.rows.map(({ event, actor }) => (
                   <li key={event.id}>
                     <span className="data-list__main">
                       <strong>{event.action.replace(/[._]/g, " ")}</strong>
@@ -115,16 +121,7 @@ export default async function AuditPage({
                           <summary className="muted small">
                             What changed
                           </summary>
-                          <pre
-                            className="small"
-                            style={{
-                              margin: "6px 0 0",
-                              padding: 10,
-                              overflowX: "auto",
-                              background: "var(--surface-muted)",
-                              borderRadius: 8,
-                            }}
-                          >
+                          <pre className="code-block">
                             {JSON.stringify(
                               { before: event.before, after: event.after },
                               null,
@@ -139,6 +136,14 @@ export default async function AuditPage({
                 ))}
               </ul>
             </section>
+            <Pagination
+              page={events.page}
+              totalPages={events.totalPages}
+              total={events.total}
+              basePath={`/teach/sections/${sectionId}/audit`}
+              params={{ action }}
+              label="audit records"
+            />
           </>
         )}
       </div>

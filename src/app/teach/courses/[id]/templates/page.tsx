@@ -80,6 +80,7 @@ export default async function TemplatesPage({
         description: String(formData.get("description") ?? "") || undefined,
         visibility: "course_shared",
         questions: parseQuestions(formData.get("questions")),
+        studentSection: parseStudentSection(formData),
       });
     } catch (err) {
       redirect(backTo(courseId, describe(err), "error"));
@@ -98,6 +99,8 @@ export default async function TemplatesPage({
         uid,
         templateId,
         parseQuestions(formData.get("questions")),
+        undefined,
+        parseStudentSection(formData),
       );
     } catch (err) {
       redirect(backTo(courseId, describe(err), "error"));
@@ -195,6 +198,22 @@ export default async function TemplatesPage({
               <TemplateEditor
                 showTitleFields={false}
                 submitLabel="Save as a new version"
+                defaultMaxStudentQuestions={
+                  editing.versions[0]?.maxStudentQuestions ?? 1
+                }
+                defaultStudentQuestionPrompt={
+                  editing.versions[0]?.studentQuestionPrompt ?? ""
+                }
+                defaultGeneralCommentEnabled={
+                  editing.versions[0]?.generalCommentEnabled ?? true
+                }
+                defaultGeneralCommentPrompt={
+                  editing.versions[0]?.generalCommentPrompt ?? ""
+                }
+                defaultGeneralCommentRequired={
+                  editing.versions[0]?.generalCommentRequired ?? false
+                }
+                note="Weeks that have already been generated keep the questions they were created with. Only future weeks use this version."
                 initialQuestions={editing.questions.map((q) => ({
                   key: q.id,
                   prompt: q.prompt,
@@ -226,6 +245,23 @@ export default async function TemplatesPage({
       </div>
     </AppShell>
   );
+}
+
+/** Read the student-section configuration out of either template form. */
+function parseStudentSection(formData: FormData) {
+  const generalComment = String(formData.get("generalComment") ?? "optional");
+  return {
+    maxStudentQuestions: Number.parseInt(
+      String(formData.get("maxStudentQuestions") ?? "1"),
+      10,
+    ),
+    studentQuestionPrompt:
+      String(formData.get("studentQuestionPrompt") ?? "") || null,
+    generalCommentEnabled: generalComment !== "off",
+    generalCommentPrompt:
+      String(formData.get("generalCommentPrompt") ?? "") || null,
+    generalCommentRequired: generalComment === "required",
+  };
 }
 
 function parseQuestions(raw: FormDataEntryValue | null): QuestionDefinition[] {

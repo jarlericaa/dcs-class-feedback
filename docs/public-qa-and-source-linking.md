@@ -81,15 +81,53 @@ Each class section has a **searchable, public-to-class** archive of published Q&
 Entries may be organized by: Content / Logistics / Miscellaneous; lesson/lecture/module/topic; publication date; weekly cycle; legacy vs current source.
 
 - **[Confirmed]** Teachers choose which imported legacy/backlog questions become visible to the current class — nothing from the backlog appears automatically (see [question-backlog.md](question-backlog.md)).
-- **MVP excludes:** comments, discussion threads, follow-up replies, voting/upvotes, "I also have this question," and public student identities ([mvp-scope.md](mvp-scope.md)).
+- **[Confirmed]** Archive filters: full-text search over the public question and answer, topic and
+  category, date range, source form/cycle, and bonus period, with pagination. Access requires
+  course/section enrollment or staff standing.
+- **[Confirmed]** Each entry shows a last-updated timestamp when it has been edited. Staff-only
+  revision metadata — the prior text, the editor, and the revision count — is **never** in the
+  student payload.
+- **Still excluded:** voting/upvotes, "I also have this question," and public student identities
+  ([mvp-scope.md](mvp-scope.md)). Reactions and moderated comments are **approved** as `P2` — see §8A.
 
-## 9. Open decisions affecting this area
+## 8A. Approval, revision, and unpublishing **[Confirmed — project-specs.md §6.8, §10]**
 
-- [Open D6] Unpublish support (post-MVP; `Unpublished` state reserved only).
-- [Open D7] Timezone for scheduling.
-- [Open D8] Cross-cycle merge within a section.
+- A draft written by a **Student Assistant** enters `Awaiting approval`; only an **Instructor** may
+  approve and publish it. An attempt to publish a TA-authored draft directly is refused by the
+  service, not merely hidden in the UI.
+- An **Instructor**'s own draft may be published directly.
+- Approval and rejection are recorded with the responsible Instructor; rejection requires a reason
+  and returns the entry to `Draft`.
+- The anonymity warning and the immutability of the original student wording are unchanged, and the
+  warning is re-checked when a published question is edited.
+- Editing a published entry writes a revision record holding the prior public question text, the
+  prior answer body, the editor, and the timestamp, and updates the student-visible last-updated
+  time.
+- **Unpublishing** is Instructor-only, requires a reason, is audited, and is reversible by restore.
+  An unpublished entry leaves the class archive **and** the linked asker's history (decision D16);
+  the private thread and the asker's original question survive.
+- Drafts, drafts awaiting approval, rejected drafts, scheduled answers, unpublished entries, source
+  links, and identities never enter a student-facing payload.
+- Draft creation and publish attempts are safe to retry: drafting is idempotent per request token
+  and source-link insertion cannot duplicate.
 
-See [open-decisions.md](open-decisions.md).
+## 8B. Reactions and moderated comments **[Confirmed — project-specs.md §8 P2]**
+
+- Only enrolled course members and authorized staff may react or comment.
+- A comment is `Pending` until staff approve it; the author sees their own pending comment and
+  nobody else does.
+- Commenters are pseudonymous to classmates (`Student N`, scoped to a single entry so the label
+  cannot be correlated across the archive) and identifiable to staff.
+- Staff with `moderate_discussion` may approve, reject, remove, and **lock** a discussion. Locking
+  stops new comments and leaves existing approved comments visible.
+- Every moderation action is audited by identifier and state transition; comment bodies never enter
+  audit rows.
+
+## 9. Decisions affecting this area
+
+D6 (unpublish — **approved and implemented**), D7 (institution timezone), D8 (cross-cycle merge
+within a section), D16 (unpublish hides from the asker too) are **closed**. See
+[open-decisions.md](open-decisions.md).
 
 ## 10. Related documents
 

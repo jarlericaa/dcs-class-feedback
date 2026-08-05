@@ -5,6 +5,31 @@
 > These lists reproduce the owner's stated MVP / post-MVP / out-of-scope boundary. **No item is silently added or promoted.** Where an item is a recommendation rather than a confirmed requirement, it is tagged and linked to [open-decisions.md](open-decisions.md).
 > See [product-requirements.md](product-requirements.md) for goals and [AGENTS.md](../AGENTS.md) for the rule that recommendations are not requirements.
 
+> ## Scope expansion approved 2026-08-03 — [project-specs.md](project-specs.md) is the acceptance target
+>
+> The owner approved [project-specs.md](project-specs.md) as the authoritative product
+> specification and explicitly authorized implementing every Epic A–F plus the post-pilot
+> stories `P1` (legacy import) and `P2` (reactions and moderated comments). Where this
+> document previously conflicted with it, **project-specs.md wins** and the lists below have
+> been corrected. Promoted from post-MVP / out-of-scope into approved scope:
+>
+> | Item | Was | Now | Owning doc |
+> |---|---|---|---|
+> | Editing a submitted form until the deadline | out of scope §3 | **approved** (`B3`) | [weekly-form-workflow.md](weekly-form-workflow.md) |
+> | Student-visible validity + invalidity reason | excluded (students see nothing) | **approved** (`C2`) | [participation-rules.md](participation-rules.md) |
+> | Long-exam bonus periods + student progress | absent | **approved** (`C3`) | [participation-rules.md](participation-rules.md) |
+> | Email notifications | post-MVP §2 | **approved** (`F1`) | [project-specs.md](project-specs.md) §6.9 |
+> | Unpublishing published answers | post-MVP §2, [Open D6] | **approved** (`E2`) | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) |
+> | Public-answer approval + version history | absent | **approved** (`E2`) | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) |
+> | XLSX and PDF exports | out of scope §3 (PDF) | **approved** (`C1`, `F2`) | [participation-rules.md](participation-rules.md) |
+> | Course archive + clone | absent | **approved** (`F3`) | [project-specs.md](project-specs.md) §6 |
+> | Typst / XLSX legacy parsing | post-MVP §2 | **approved** (`P1`) | [legacy-question-import.md](legacy-question-import.md) |
+> | Reactions, comments, moderation | out of scope §3 | **approved** (`P2`) | [project-specs.md](project-specs.md) §8 |
+>
+> Still **out** of scope: all AI features (`P3`), student file attachments, course-material
+> management, LMS integration, native mobile apps, public access for unenrolled users,
+> microservices, model fine-tuning.
+
 ## 1. MVP features (in scope)
 
 **[Confirmed]** unless noted. The "Owning doc / acceptance note" column points to where the detailed rule and its acceptance-level definition live.
@@ -48,7 +73,6 @@
 
 **[Confirmed]** deferred:
 
-- Notifications
 - AI answer suggestions
 - AI rewriting
 - AI classification (category/type suggestions)
@@ -60,32 +84,25 @@
 - Student-facing participation totals
 - Advanced analytics
 - LMS integration
-- Advanced legacy-file parsing
-- Automated Typst parsing
-- Automated old-spreadsheet parsing
 - **Course-material management** (see note below)
-- **Unpublishing** published answers (see note below)
 
 > **Course materials:** Mentioned in product context and future AI retrieval, but **not** an MVP implementation requirement. MVP only keeps the data model compatible (course-level ownership, category/topic tags). See [ai-future-plan.md](ai-future-plan.md) and [domain-model.md](domain-model.md).
 
-> **Unpublish:** The owner's spec says "Unpublished, if later supported." MVP promises nothing about unpublishing. An `Unpublished` state is documented only as a *possible future state* in the public-answer state model; whether/when to support it is [Open D6](open-decisions.md).
+> **Notifications, unpublishing, and legacy Typst/spreadsheet parsing** were deferred here and
+> are now **approved** — see the scope-expansion table at the top of this document.
 
 ## 3. Out of scope (unless separately approved)
 
 **[Confirmed]** excluded:
 
 - Student file attachments
-- Editing a submitted weekly form
 - Multiple weekly submissions by the same student in the same class/cycle
-- Student comments
-- Discussion threads
-- Follow-up replies on public answers
 - Question voting / upvotes / "I also have this question"
 - Public student identities
 - Native mobile applications
 - Automatic AI replies
 - Automatic AI publication
-- PDF or Word exports of published answers
+- Word exports of published answers
 - Public access for unenrolled users
 - Individual task-assignment of submissions to staff
 - Microservices

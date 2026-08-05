@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 
-import { formatDeadline, timeRemaining } from "@/lib/datetime";
+import { formatDateTime, formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { studentSectionNav } from "@/components/layout/nav";
 import {
@@ -20,11 +20,14 @@ import {
   type SubmitState,
 } from "@/components/student/weekly-form";
 import {
-  getOpenCycleForStudent,
+  editSubmittedResponse,
+  getStudentFormState,
+  saveDraft,
   submitResponse,
   SubmissionError,
 } from "@/modules/forms/submission";
 import type { QuestionOption } from "@/modules/forms/questions";
+import { renderRichText } from "@/modules/richtext/render";
 import { AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
 import { requireUser, toShellUser } from "@/lib/session";
@@ -47,9 +50,9 @@ export default async function SectionFormPage({
   const { id: sectionId } = await params;
   const { submitted } = await searchParams;
 
-  let current: Awaited<ReturnType<typeof getOpenCycleForStudent>>;
+  let current: Awaited<ReturnType<typeof getStudentFormState>>;
   try {
-    current = await getOpenCycleForStudent(user.id, sectionId);
+    current = await getStudentFormState(user.id, sectionId);
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
@@ -96,7 +99,7 @@ export default async function SectionFormPage({
             className="button button--secondary"
             href={`/sections/${sectionId}/qa`}
           >
-            Class Q&amp;A
+            Class Q&amp;A archive
           </Link>
           <Link
             className="button button--quiet"
@@ -109,32 +112,29 @@ export default async function SectionFormPage({
     );
   }
 
-  const { cycle, questions, alreadySubmitted } = current;
+  const { cycle, questions, config, response, canEdit } = current;
 
-  if (alreadySubmitted) {
+  if (response && !canEdit) {
     return (
       <AppShell
         {...shell}
-        title={`Week ${cycle.cycleIndex} is done`}
-        status={<Stamp tone="green">Submitted</Stamp>}
+        title={`Week ${cycle.cycleIndex} is closed`}
+        status={<Stamp tone="neutral">Closed</Stamp>}
       >
         <div className="stack-5">
           {submitted === "1" && (
             <Alert variant="success" title="Your form was submitted">
-              It has been recorded for week {cycle.cycleIndex}. Submissions
-              cannot be edited or withdrawn, so nothing here can be changed
-              now.
+              It has been recorded for week {cycle.cycleIndex}. The week has
+              since closed, so nothing here can be changed now.
             </Alert>
           )}
           <Notice roomy>
             <p className="doc">
-              You have nothing left to do for this week. If a staff member
-              replies to something you wrote, the reply appears under your
-              submissions — only you and the teaching team can see it.
-            </p>
-            <p className="meta" style={{ marginTop: "var(--s4)" }}>
-              This week closes{" "}
-              {formatDeadline(cycle.deadlineAt, section.timezone)}.
+              This week closed{" "}
+              {formatDeadline(cycle.deadlineAt, section.timezone)}, so it can no
+              longer be edited. If a staff member replies to something you
+              wrote, the reply appears under your submissions — only you and the
+              teaching team can see it.
             </p>
             <div className="row" style={{ marginTop: "var(--s5)" }}>
               <Link
@@ -156,24 +156,55 @@ export default async function SectionFormPage({
     );
   }
 
-  const questionViews: FormQuestionView[] = questions.map((q) => ({
-    id: q.id,
-    prompt: q.prompt,
-    description: q.description,
-    type: q.type,
-    required: q.required,
-    options: ((q.options ?? []) as QuestionOption[]).map((o) => ({
-      stableId: o.stableId,
-      label: o.label,
+  // Rendered here, on the server, so the client form never runs a sanitizer.
+  const questionViews: FormQuestionView[] = await Promise.all(
+    questions.map(async (q) => ({
+      id: q.id,
+      prompt: q.prompt,
+      description: q.description,
+      promptHtml: await renderRichText(q.prompt),
+      descriptionHtml: await renderRichText(q.description),
+      type: q.type,
+      required: q.required,
+      options: ((q.options ?? []) as QuestionOption[]).map((o) => ({
+        stableId: o.stableId,
+        label: o.label,
+      })),
+      scale: q.scale
+        ? {
+            min: (q.scale as { min: number }).min,
+            max: (q.scale as { max: number }).max,
+            step: (q.scale as { step?: number }).step ?? 1,
+          }
+        : null,
     })),
-    scale: q.scale
-      ? {
-          min: (q.scale as { min: number }).min,
-          max: (q.scale as { max: number }).max,
-          step: (q.scale as { step?: number }).step ?? 1,
-        }
-      : null,
-  }));
+  );
+
+  /**
+   * Restore the student's saved answers into the shape the form control uses, so
+   * reopening a draft shows exactly what they typed.
+   */
+  const initialAnswers: Record<string, string | string[]> = {};
+  for (const answer of response?.answers ?? []) {
+    const value = (answer.value ?? {}) as {
+      optionIds?: string[];
+      scaleValue?: number;
+      boolValue?: boolean;
+      dateValue?: string;
+      timeValue?: string;
+    };
+    if (answer.freeText) initialAnswers[answer.questionId] = answer.freeText;
+    else if (value.optionIds)
+      initialAnswers[answer.questionId] = value.optionIds;
+    else if (value.scaleValue !== undefined)
+      initialAnswers[answer.questionId] = String(value.scaleValue);
+    else if (value.boolValue !== undefined)
+      initialAnswers[answer.questionId] = value.boolValue ? "yes" : "no";
+    else if (value.dateValue)
+      initialAnswers[answer.questionId] = value.dateValue;
+    else if (value.timeValue)
+      initialAnswers[answer.questionId] = value.timeValue;
+  }
 
   async function submit(
     _prev: SubmitState,
@@ -208,51 +239,106 @@ export default async function SectionFormPage({
       }
     });
 
-    const itemText = String(formData.get("item_text") ?? "").trim();
+    // The client posts its item blocks as one JSON field. Untrusted input: the
+    // service re-validates the shape, the count against the template, and the
+    // ownership of every itemId.
+    let items: unknown = [];
     try {
-      await submitResponse(uid, cycle.id, {
-        answers,
-        studentItem: itemText
-          ? {
-              submissionType: String(formData.get("item_type") ?? "question"),
-              category: String(formData.get("item_category") ?? "content"),
-              text: itemText,
-            }
-          : undefined,
-      });
+      items = JSON.parse(String(formData.get("items") ?? "[]"));
+    } catch {
+      items = [];
+    }
+    const expectedRevisionRaw = formData.get("expectedRevision");
+    const payload = {
+      answers,
+      items,
+      expectedRevision: expectedRevisionRaw
+        ? Number(expectedRevisionRaw)
+        : undefined,
+    };
+
+    const intent = String(formData.get("intent") ?? "submit");
+    try {
+      if (intent === "draft") {
+        await saveDraft(uid, cycle.id, payload);
+        revalidatePath(`/sections/${sectionId}`);
+        return {
+          status: "saved",
+          errors: {},
+          message:
+            "Your draft is saved. It does not count until you submit, and only you can see it.",
+        };
+      }
+      const result =
+        intent === "edit"
+          ? await editSubmittedResponse(uid, cycle.id, payload)
+          : await submitResponse(uid, cycle.id, payload);
+      revalidatePath(`/sections/${sectionId}`);
+      return {
+        status: "submitted",
+        errors: {},
+        message:
+          result.rejectedItemIds.length > 0
+            ? "Saved. Some questions could not be changed because staff have already acted on them."
+            : intent === "edit"
+              ? "Your changes are saved. You can keep editing until the deadline."
+              : "Submitted. You can still edit until the deadline.",
+        rejectedItemIds: result.rejectedItemIds,
+      };
     } catch (err) {
       if (err instanceof SubmissionError) {
-        // Map per-question errors back onto the fields so the student keeps
-        // everything they typed and sees exactly what to fix.
         const errors: Record<string, string> = {};
         for (const detail of err.details) {
           errors[detail.questionId ?? ""] = detail.message;
         }
-        if (err.details.length === 0) errors[""] = err.message;
+        if (Object.keys(errors).length === 0) errors[""] = err.message;
         return { status: "error", errors };
       }
       if (err instanceof AuthzError) {
-        return {
-          status: "error",
-          errors: { "": "You are not able to submit for this section." },
-        };
+        return { status: "error", errors: { "": err.message } };
       }
       throw err;
     }
-
-    revalidatePath(`/sections/${sectionId}`);
-    redirect(`/sections/${sectionId}?submitted=1`);
   }
 
   return (
     <AppShell
       {...shell}
       title={`Week ${cycle.cycleIndex}`}
-      status={<Stamp tone="amber">Open · {timeRemaining(cycle.deadlineAt)}</Stamp>}
-      description={`Closes ${formatDeadline(cycle.deadlineAt, section.timezone)}. There is no late submission and no editing afterwards.`}
+      status={
+        <Stamp tone={response ? "green" : "amber"}>
+          {response ? "Submitted · still editable" : "Open"} ·{" "}
+          {timeRemaining(cycle.deadlineAt)}
+        </Stamp>
+      }
+      description={`Closes ${formatDeadline(cycle.deadlineAt, section.timezone)}. Your teaching team sees your name beside your answers. Anything published to the class is rewritten first and carries no name.`}
     >
       <Notice roomy>
-        <WeeklyForm questions={questionViews} action={submit} />
+        <WeeklyForm
+          questions={questionViews}
+          action={submit}
+          deadlineLabel={formatDeadline(cycle.deadlineAt, section.timezone)}
+          config={config}
+          lifecycle={response?.lifecycle ?? "new"}
+          revision={response?.revision}
+          initialAnswers={initialAnswers}
+          initialItems={
+            response?.items.map((item) => ({
+              clientKey: item.id,
+              itemId: item.id,
+              kind: item.kind,
+              submissionType: item.submissionType,
+              category: item.category,
+              text: item.text,
+              editable: item.editable,
+            })) ?? []
+          }
+          lastEditedLabel={
+            response?.lastEditedAt
+              ? formatDateTime(response.lastEditedAt, section.timezone)
+              : undefined
+          }
+        />
       </Notice>
     </AppShell>
   );

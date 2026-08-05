@@ -43,6 +43,39 @@ npm test
 npm run test:integration
 ```
 
+### Test-database safety guard
+
+Integration tests truncate every application table between tests, so
+`tests/integration/helpers.ts` refuses to start unless the connection URL
+contains **either `feedback_test` or the port `5433`**:
+
+```text
+Refusing to run integration tests against a non-test database: <url>
+```
+
+This naming/port requirement is deliberate protection: without it, a mistyped
+or inherited connection string would point that destructive cleanup at a
+development — or production — database. Fix the URL rather than relaxing the
+check.
+
+The URL comes from `TEST_DATABASE_URL` (resolved in
+`tests/integration/setup-env.ts`, which falls back to the Compose value above);
+`npm run db:migrate` reads `DATABASE_URL`, which is why the migration command
+sets it inline.
+
+**Using a locally installed PostgreSQL instead of Docker Compose:** the same
+rule applies. The simplest way to satisfy it on the default port 5432 is a
+database whose name contains `feedback_test`:
+
+```bash
+createdb feedback_test
+DATABASE_URL=postgres://localhost:5432/feedback_test npm run db:migrate
+TEST_DATABASE_URL=postgres://localhost:5432/feedback_test npm run test:integration
+```
+
+A URL such as `postgres://localhost:5432/feedback_dev` is rejected — rename the
+database (or run it on port 5433) instead.
+
 ## Environment variables
 
 The complete development contract is in `.env.example`.

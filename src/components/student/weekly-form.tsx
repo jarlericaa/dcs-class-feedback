@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { PreRenderedRichText } from "@/components/rich-text-client";
 import { Alert, FieldError } from "@/components/ui";
 
 /**
@@ -17,6 +18,16 @@ export interface FormQuestionView {
   id: string;
   prompt: string;
   description: string | null;
+  /**
+   * Sanitized HTML for `prompt` / `description`, pre-rendered on the server.
+   *
+   * This is a client component, so it cannot run the markdown pipeline itself —
+   * and it must not: shipping a sanitizer to the browser would create a second
+   * place where HTML is trusted. The plain strings above remain the fallback and
+   * the accessible label source.
+   */
+  promptHtml?: string;
+  descriptionHtml?: string;
   type:
     | "short_answer"
     | "paragraph"
@@ -33,13 +44,43 @@ export interface FormQuestionView {
 }
 
 export interface SubmitState {
-  status: "idle" | "error";
+  status: "idle" | "error" | "saved" | "submitted";
   /** questionId → message; the "" key carries a form-level message */
   errors: Record<string, string>;
+  message?: string;
+  /** items whose edit was refused because staff already acted on them */
+  rejectedItemIds?: string[];
+}
+
+/** The student's own question / general-comment blocks. */
+export interface StudentItemView {
+  clientKey: string;
+  itemId?: string;
+  kind: "question" | "general_comment";
+  submissionType: string;
+  category: string;
+  text: string;
+  /** false once staff have replied to or published it */
+  editable: boolean;
+}
+
+export interface StudentSectionConfigView {
+  maxStudentQuestions: number;
+  studentQuestionPrompt: string | null;
+  generalCommentEnabled: boolean;
+  generalCommentPrompt: string | null;
+  generalCommentRequired: boolean;
 }
 
 type AnswerValue = string | string[];
 
+/**
+ * `aria-invalid` + `aria-describedby` for one question's control.
+ *
+ * Shared so a grouped control (radios, checkboxes, a scale) is marked invalid
+ * the same way a single input is. Applying this only to inputs — the easy half —
+ * leaves the grouped questions announcing no error at all.
+ */
 export function questionErrorAttributes(
   error: string | undefined,
   describedBy: string | undefined,
@@ -50,22 +91,116 @@ export function questionErrorAttributes(
   };
 }
 
+let keyCounter = 0;
+const nextKey = () => `new-${(keyCounter += 1)}`;
+
 export function WeeklyForm({
   questions,
   action,
+  deadlineLabel,
+  config,
+  lifecycle = "new",
+  revision,
+  initialAnswers = {},
+  initialItems = [],
+  lastEditedLabel,
 }: {
   questions: FormQuestionView[];
   action: (state: SubmitState, formData: FormData) => Promise<SubmitState>;
+  deadlineLabel: string;
+  config: StudentSectionConfigView;
+  /** "new" = nothing saved yet */
+  lifecycle?: "new" | "draft" | "submitted" | "locked";
+  revision?: number;
+  initialAnswers?: Record<string, AnswerValue>;
+  initialItems?: StudentItemView[];
+  lastEditedLabel?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     status: "idle",
     errors: {},
   } satisfies SubmitState);
 
-  const [values, setValues] = useState<Record<string, AnswerValue>>({});
-  const [itemText, setItemText] = useState("");
-  const [itemType, setItemType] = useState("question");
-  const [itemCategory, setItemCategory] = useState("content");
+  const [values, setValues] =
+    useState<Record<string, AnswerValue>>(initialAnswers);
+
+  // Repeatable question blocks + the single general comment (project-specs.md
+  // §5.2). Held in state so a failed server validation never loses typed text.
+  const [items, setItems] = useState<StudentItemView[]>(() => {
+    const existing = initialItems.filter((item) => item.kind === "question");
+    const comment = initialItems.find(
+      (item) => item.kind === "general_comment",
+    );
+    return [
+      ...(existing.length > 0
+        ? existing
+        : config.maxStudentQuestions > 0
+          ? [
+              {
+                clientKey: nextKey(),
+                kind: "question" as const,
+                submissionType: "question",
+                category: "content",
+                text: "",
+                editable: true,
+              },
+            ]
+          : []),
+      ...(config.generalCommentEnabled
+        ? [
+            comment ?? {
+              clientKey: nextKey(),
+              kind: "general_comment" as const,
+              submissionType: "feedback",
+              category: "misc",
+              text: "",
+              editable: true,
+            },
+          ]
+        : []),
+    ];
+  });
+
+  const questionItems = items.filter((item) => item.kind === "question");
+  const commentItem = items.find((item) => item.kind === "general_comment");
+  const locked = lifecycle === "locked";
+  const rejected = new Set(state.rejectedItemIds ?? []);
+
+  const updateItem = (clientKey: string, patch: Partial<StudentItemView>) =>
+    setItems((prev) =>
+      prev.map((item) =>
+        item.clientKey === clientKey ? { ...item, ...patch } : item,
+      ),
+    );
+  const addQuestion = () =>
+    setItems((prev) => [
+      ...prev.filter((i) => i.kind === "question"),
+      {
+        clientKey: nextKey(),
+        kind: "question" as const,
+        submissionType: "question",
+        category: "content",
+        text: "",
+        editable: true,
+      },
+      ...prev.filter((i) => i.kind === "general_comment"),
+    ]);
+  const removeQuestion = (clientKey: string) =>
+    setItems((prev) => prev.filter((item) => item.clientKey !== clientKey));
+
+  /** Posted as one JSON field so the server sees a typed array, not loose keys. */
+  const itemsPayload = JSON.stringify(
+    items
+      .filter((item) => item.text.trim().length > 0 || item.itemId)
+      .map((item) => ({
+        clientKey: item.clientKey,
+        itemId: item.itemId,
+        kind: item.kind,
+        submissionType: item.submissionType,
+        category: item.category,
+        text: item.text,
+      })),
+  );
 
   const setValue = (questionId: string, value: AnswerValue) =>
     setValues((prev) => ({ ...prev, [questionId]: value }));
@@ -88,11 +223,19 @@ export function WeeklyForm({
 
   return (
     <form action={formAction} noValidate>
+      {/* One JSON field so the server receives a typed array of items rather
+          than a set of loose, positionally-guessed form keys. */}
+      <input type="hidden" name="items" value={itemsPayload} />
+      {/* Lost-update detection: the server refuses a save built on a stale
+          revision instead of silently overwriting a newer one. */}
+      {revision !== undefined && (
+        <input type="hidden" name="expectedRevision" value={revision} />
+      )}
       {state.status === "error" && (
         <div style={{ marginBottom: "var(--s5)" }}>
           <Alert variant="error" title="Your form was not submitted">
             {formError ??
-              `${errorCount} question${errorCount === 1 ? " needs" : "s need"} an answer before this can be sent. Everything you typed has been kept.`}
+              `Check ${errorCount} question${errorCount === 1 ? "" : "s"} below. Everything you typed has been kept.`}
           </Alert>
         </div>
       )}
@@ -111,22 +254,41 @@ export function WeeklyForm({
 
         return (
           <fieldset className="question" key={question.id}>
-            <legend>{question.prompt}</legend>
+            <legend>
+              {question.promptHtml ? (
+                <PreRenderedRichText
+                  html={question.promptHtml}
+                  className="rich-text--inline"
+                />
+              ) : (
+                question.prompt
+              )}
+            </legend>
             <p className="question__note">
-              <span className={question.required ? "required-mark" : "optional-mark"}>
+              <span
+                className={
+                  question.required ? "required-mark" : "optional-mark"
+                }
+              >
                 {question.required ? "Required" : "Optional"}
               </span>
-              {question.description && (
-                <span id={`desc-${question.id}`}>{question.description}</span>
-              )}
             </p>
+            {(question.descriptionHtml || question.description) && (
+              <div className="question__desc" id={`desc-${question.id}`}>
+                {question.descriptionHtml ? (
+                  <PreRenderedRichText html={question.descriptionHtml} />
+                ) : (
+                  <p>{question.description}</p>
+                )}
+              </div>
+            )}
 
             {(question.type === "short_answer" ||
               question.type === "paragraph") && (
               <textarea
                 className="textarea-field"
                 name={`q_${question.id}`}
-                rows={question.type === "paragraph" ? 5 : 2}
+                rows={question.type === "paragraph" ? 4 : 2}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
@@ -174,7 +336,6 @@ export function WeeklyForm({
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
-                style={{ maxWidth: 320 }}
               >
                 <option value="">Select an option…</option>
                 {question.options.map((option) => (
@@ -238,7 +399,7 @@ export function WeeklyForm({
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
-                style={{ maxWidth: 200 }}
+                style={{ maxWidth: 220 }}
               />
             )}
 
@@ -249,77 +410,215 @@ export function WeeklyForm({
         );
       })}
 
-      <fieldset className="own-item">
-        <legend>Anything you want to raise?</legend>
-        <p className="own-item__note">
-          Optional, and the only part of this form written entirely in your own
-          words. Staff can reply to you privately here. If the whole class would
-          benefit from the answer, they rewrite the question first and publish it
-          without your name — your original wording is never shown to classmates.
-        </p>
-        <div className="form-grid" style={{ marginBottom: "var(--s3)" }}>
-          <div className="field-row">
-            <label htmlFor="item_type">What is this?</label>
-            <select
-              id="item_type"
-              className="select-field"
-              name="item_type"
-              value={itemType}
-              onChange={(e) => setItemType(e.target.value)}
-            >
-              <option value="question">A question</option>
-              <option value="feedback">Feedback</option>
-              <option value="concern">A concern</option>
-              <option value="clarification">A clarification</option>
-              <option value="suggestion">A suggestion</option>
-            </select>
-          </div>
-          <div className="field-row">
-            <label htmlFor="item_category">What is it about?</label>
-            <select
-              id="item_category"
-              className="select-field"
-              name="item_category"
-              value={itemCategory}
-              onChange={(e) => setItemCategory(e.target.value)}
-            >
-              <option value="content">Course content</option>
-              <option value="logistics">Class logistics</option>
-              <option value="misc">Something else</option>
-            </select>
-          </div>
-        </div>
-        <div className="field-row">
-          <label htmlFor="item_text">
-            Your message <span className="optional-mark">optional</span>
-          </label>
-          <textarea
-            id="item_text"
-            className="textarea-field"
-            name="item_text"
-            rows={5}
-            maxLength={10000}
-            value={itemText}
-            onChange={(e) => setItemText(e.target.value)}
-            placeholder="Ask anything about this week, or tell your teacher what would help."
-            aria-invalid={state.errors.item ? "true" : undefined}
-            aria-describedby={state.errors.item ? "error-item" : undefined}
-          />
+      {config.maxStudentQuestions > 0 && (
+        <fieldset className="own-item">
+          <legend>
+            {config.studentQuestionPrompt ?? "Anything you want to raise?"}
+          </legend>
+          <p className="own-item__note">
+            <span className="optional-mark">Optional</span>
+          </p>
+          <p className="own-item__note">
+            Each question is tracked separately, so staff can answer them one at
+            a time. They can reply to you privately, or rewrite a question and
+            publish the answer to the whole class — your classmates never see
+            your name or your original wording.
+          </p>
+
+          {questionItems.map((item, index) => {
+            const refused = item.itemId ? rejected.has(item.itemId) : false;
+            const readOnly = locked || !item.editable;
+            return (
+              <div key={item.clientKey} className="own-item__block">
+                <div className="own-item__block-head">
+                  <h3 className="label">Question {index + 1}</h3>
+                  {questionItems.length > 1 && !readOnly && (
+                    <button
+                      type="button"
+                      className="button button--quiet button--small"
+                      onClick={() => removeQuestion(item.clientKey)}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                {!item.editable && !locked && (
+                  <Alert variant="info">
+                    Staff have already replied to or published this one, so its
+                    original wording is kept as it was.
+                  </Alert>
+                )}
+                {refused && (
+                  <Alert variant="warning">
+                    This could not be changed because staff have already acted
+                    on it. Your original wording stands.
+                  </Alert>
+                )}
+
+                <div className="form-grid" style={{ marginBottom: 12 }}>
+                  <div className="field-row">
+                    <label htmlFor={`item_type_${item.clientKey}`}>
+                      What is this?
+                    </label>
+                    <select
+                      id={`item_type_${item.clientKey}`}
+                      className="select-field"
+                      value={item.submissionType}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        updateItem(item.clientKey, {
+                          submissionType: e.target.value,
+                        })
+                      }
+                    >
+                      <option value="question">Question</option>
+                      <option value="feedback">Feedback</option>
+                      <option value="concern">Concern</option>
+                      <option value="clarification">Clarification</option>
+                      <option value="suggestion">Suggestion</option>
+                    </select>
+                  </div>
+                  <div className="field-row">
+                    <label htmlFor={`item_category_${item.clientKey}`}>
+                      Topic area
+                    </label>
+                    <select
+                      id={`item_category_${item.clientKey}`}
+                      className="select-field"
+                      value={item.category}
+                      disabled={readOnly}
+                      onChange={(e) =>
+                        updateItem(item.clientKey, { category: e.target.value })
+                      }
+                    >
+                      <option value="content">Course content</option>
+                      <option value="logistics">Logistics</option>
+                      <option value="misc">Something else</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="field-row">
+                  <label htmlFor={`item_text_${item.clientKey}`}>
+                    Your message
+                  </label>
+                  <textarea
+                    id={`item_text_${item.clientKey}`}
+                    className="textarea-field"
+                    rows={4}
+                    maxLength={10000}
+                    value={item.text}
+                    readOnly={readOnly}
+                    onChange={(e) =>
+                      updateItem(item.clientKey, { text: e.target.value })
+                    }
+                    placeholder="Ask anything about this week, or tell your teacher what would help."
+                    aria-invalid={state.errors.item ? "true" : undefined}
+                    aria-describedby={
+                      state.errors.item ? "error-item" : undefined
+                    }
+                  />
+                </div>
+              </div>
+            );
+          })}
+
           <FieldError id="error-item" message={state.errors.item} />
-        </div>
-      </fieldset>
+
+          {questionItems.length < config.maxStudentQuestions && !locked && (
+            <button
+              type="button"
+              className="button button--secondary own-item__add"
+              onClick={addQuestion}
+            >
+              Add another question
+            </button>
+          )}
+        </fieldset>
+      )}
+
+      {config.generalCommentEnabled && commentItem && (
+        <fieldset className="own-item">
+          <legend>{config.generalCommentPrompt ?? "Anything else?"}</legend>
+          <p className="own-item__note">
+            <span
+              className={
+                config.generalCommentRequired
+                  ? "required-mark"
+                  : "optional-mark"
+              }
+            >
+              {config.generalCommentRequired ? "Required" : "Optional"}
+            </span>
+          </p>
+          <p className="own-item__note">
+            A general comment, kept separate from your questions. It is never
+            published to the class as a Q&amp;A entry.
+          </p>
+          <div className="field-row">
+            <label className="visually-hidden" htmlFor="general_comment">
+              General comment
+            </label>
+            <textarea
+              id="general_comment"
+              className="textarea-field"
+              rows={3}
+              maxLength={10000}
+              value={commentItem.text}
+              readOnly={locked || !commentItem.editable}
+              onChange={(e) =>
+                updateItem(commentItem.clientKey, { text: e.target.value })
+              }
+            />
+          </div>
+        </fieldset>
+      )}
 
       <div className="submit-bar">
         <p className="submit-bar__note">
-          Sending is final. You cannot edit or withdraw this form afterwards.
+          {locked ? (
+            <>This week is closed, so it can no longer be changed.</>
+          ) : lifecycle === "submitted" ? (
+            <>
+              Submitted
+              {lastEditedLabel ? ` · last edited ${lastEditedLabel}` : ""}. You
+              can keep editing until {deadlineLabel}.
+            </>
+          ) : (
+            <>
+              Closes {deadlineLabel}. Save a draft as often as you like; you can
+              still edit after submitting, until the deadline.
+            </>
+          )}
         </p>
-        <button
-          className="button button--primary"
-          type="submit"
-          disabled={pending}
-        >
-          {pending ? "Submitting…" : "Submit this week's form"}
-        </button>
+        {!locked && (
+          <>
+            {lifecycle !== "submitted" && (
+              <button
+                className="button button--secondary"
+                type="submit"
+                name="intent"
+                value="draft"
+                disabled={pending}
+              >
+                {pending ? "Saving…" : "Save draft"}
+              </button>
+            )}
+            <button
+              className="button button--primary"
+              type="submit"
+              name="intent"
+              value={lifecycle === "submitted" ? "edit" : "submit"}
+              disabled={pending}
+            >
+              {pending
+                ? "Working…"
+                : lifecycle === "submitted"
+                  ? "Save changes"
+                  : "Submit this week's form"}
+            </button>
+          </>
+        )}
       </div>
     </form>
   );

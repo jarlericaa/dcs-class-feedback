@@ -208,14 +208,40 @@ describe("submission rules", () => {
     expect(response!.state).toBe("submitted");
   });
 
-  it("rejects a second submission by the same student in the same cycle", async () => {
+  /**
+   * project-specs.md §6.3 step 4 now allows editing until the deadline, so a
+   * second submit is an EDIT of the same response, not a duplicate. The rule that
+   * matters — one response per student per cycle — is asserted directly.
+   */
+  it("treats a second submission as an edit of the same response, never a duplicate", async () => {
     const { cycle, questions, student } = await openCycleWithStudent();
     const required = questions.find((q) => q.required)!;
-    const input = { answers: [{ questionId: required.id, text: "ok" }] };
-    await submitResponse(student.user.id, cycle.id, input, inWindow);
-    await expect(
-      submitResponse(student.user.id, cycle.id, input, inWindow),
-    ).rejects.toThrow(/already submitted/);
+    const first = await submitResponse(
+      student.user.id,
+      cycle.id,
+      { answers: [{ questionId: required.id, text: "first" }] },
+      inWindow,
+    );
+    const second = await submitResponse(
+      student.user.id,
+      cycle.id,
+      { answers: [{ questionId: required.id, text: "second" }] },
+      new Date(inWindow.getTime() + 60_000),
+    );
+
+    expect(second.responseId).toBe(first.responseId);
+    expect(second.firstSubmission).toBe(false);
+    expect(second.revision).toBeGreaterThan(first.revision);
+
+    const all = await db.query.formResponses.findMany();
+    expect(all).toHaveLength(1);
+    // The participation anchor never moves, so an edit cannot mint a second credit.
+    expect(all[0]!.submittedAt!.getTime()).toBe(inWindow.getTime());
+    expect(all[0]!.lastEditedAt).not.toBeNull();
+
+    const answers = await db.query.questionAnswers.findMany();
+    expect(answers).toHaveLength(1);
+    expect(answers[0]!.freeText).toBe("second");
   });
 
   it("rejects submissions missing required answers", async () => {

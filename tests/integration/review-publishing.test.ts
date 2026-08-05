@@ -25,7 +25,7 @@ import { submitResponse } from "@/modules/forms/submission";
 import {
   createPrivateResponse,
   listSubmissionsForSection,
-  setValidity,
+  invalidateSubmission,
 } from "@/modules/review";
 import {
   anonymityWarnings,
@@ -302,7 +302,11 @@ describe("review + publishing + source links", () => {
       a.studentItemId!,
       "here is a private reply",
     );
-    await setValidity(teacher.id, a.responseId, "invalid", "spam", "test note");
+    await invalidateSubmission(teacher.id, a.responseId, {
+      reason: "spam",
+      studentVisibleReason: "This did not answer the form.",
+      note: "test note",
+    });
 
     const own = await getStudentHistory(a.student.user.id, section.id);
     expect(own[0]!.items[0]!.privateResponses[0]!.body).toMatch(
@@ -373,13 +377,21 @@ describe("review + publishing + source links", () => {
       question.id,
       "q",
     );
+    // Both reasons are required: the internal one for staff, and a separate
+    // student-visible one, because the student is now told why it did not count.
     await expect(
-      setValidity(teacher.id, a.responseId, "invalid"),
-    ).rejects.toThrow(/reason/);
-    await setValidity(teacher.id, a.responseId, "invalid", "spam");
+      invalidateSubmission(teacher.id, a.responseId, {
+        reason: "spam",
+        studentVisibleReason: "   ",
+      }),
+    ).rejects.toThrow(/student-visible reason/);
+    await invalidateSubmission(teacher.id, a.responseId, {
+      reason: "spam",
+      studentVisibleReason: "This was spam.",
+    });
     const { auditEvents } = await import("@/db/schema");
     const audit = await db.query.auditEvents.findFirst({
-      where: eq(auditEvents.action, "response.validity_changed"),
+      where: eq(auditEvents.action, "validity.invalidated"),
     });
     expect(audit?.before).toMatchObject({ validity: "valid" });
     expect(audit?.after).toMatchObject({ validity: "invalid" });
