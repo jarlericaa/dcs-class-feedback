@@ -63,6 +63,54 @@ documents:
     status: proposed
     maintainer: product_and_technical_owner
     update_trigger: build_order_or_acceptance_change
+  - path: docs/INTENT-CONTEXT.md
+    audience: product_design_and_engineering
+    authority: design_engagement_context
+    status: current
+    maintainer: product_and_design_owner
+    update_trigger: user_research_ethical_stance_or_design_constraint_change
+  - path: docs/PILOT-STRATEGY.md
+    audience: product_design_and_engineering
+    authority: strategic_frame
+    status: proposed
+    maintainer: product_owner
+    update_trigger: pilot_scope_success_definition_or_research_finding_change
+  - path: docs/JOURNEY-STUDENT-SUBMIT.md
+    audience: product_design_and_engineering
+    authority: flow_design
+    status: proposed
+    maintainer: product_and_design_owner
+    update_trigger: submit_flow_deadline_policy_or_usability_finding_change
+  - path: docs/JOURNEY-TEACHER-PUBLISH.md
+    audience: product_design_and_engineering
+    authority: flow_design
+    status: proposed
+    maintainer: product_and_design_owner
+    update_trigger: publish_flow_anonymity_check_or_usability_finding_change
+  - path: docs/JOURNEY-STUDENT-FIRSTRUN.md
+    audience: product_design_and_engineering
+    authority: flow_design
+    status: proposed
+    maintainer: product_and_design_owner
+    update_trigger: matching_policy_blocked_state_or_usability_finding_change
+  - path: docs/JOURNEY-TEACHER-SETUP.md
+    audience: product_design_and_engineering
+    authority: flow_design
+    status: proposed
+    maintainer: product_and_design_owner
+    update_trigger: setup_sequence_readiness_model_or_usability_finding_change
+  - path: docs/IA-STRUCTURE.md
+    audience: product_design_and_engineering
+    authority: information_architecture
+    status: proposed
+    maintainer: product_and_design_owner
+    update_trigger: navigation_taxonomy_labelling_or_ia_research_finding_change
+  - path: docs/CONTENT-VOICE.md
+    audience: product_design_and_engineering
+    authority: content_strategy
+    status: proposed
+    maintainer: product_and_design_owner
+    update_trigger: voice_register_microcopy_pattern_or_label_decision_change
   - path: docs/UX-DESIGN-BRIEF.md
     audience: product_design_and_engineering
     authority: design_direction

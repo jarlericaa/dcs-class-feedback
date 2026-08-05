@@ -85,6 +85,14 @@ Documents use these labels:
 
 | Document | Owns |
 |---|---|
+| [INTENT-CONTEXT.md](INTENT-CONTEXT.md) | Design-engagement context: user conditions, design constraints, ethical stance, UX success criteria |
+| [PILOT-STRATEGY.md](PILOT-STRATEGY.md) | Proposed strategic frame for the pilot: five-question validation state, minimum viable investigation, Phase 1 |
+| [JOURNEY-STUDENT-SUBMIT.md](JOURNEY-STUDENT-SUBMIT.md) | Audit and proposed redesign of the student weekly submit flow |
+| [JOURNEY-TEACHER-PUBLISH.md](JOURNEY-TEACHER-PUBLISH.md) | Audit and proposed redesign of the teacher publish flow and anonymity check |
+| [JOURNEY-STUDENT-FIRSTRUN.md](JOURNEY-STUDENT-FIRSTRUN.md) | Audit and proposed redesign of first sign-in to verified identity, including the stranded-unmatched trap |
+| [JOURNEY-TEACHER-SETUP.md](JOURNEY-TEACHER-SETUP.md) | Audit and proposed redesign of cold setup: sequencing, section readiness, and the roster-before-sign-in dependency |
+| [IA-STRUCTURE.md](IA-STRUCTURE.md) | Navigation grouping, category taxonomy, labelling conventions, and Q&A archive browse/search strategy |
+| [CONTENT-VOICE.md](CONTENT-VOICE.md) | Voice framework, the user/system register rule, microcopy patterns, error inventory, and label decisions |
 | [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md) | Proposed visual system and interaction rules |
 | [DESIGN-RESEARCH.md](DESIGN-RESEARCH.md) | Comparable products and patterns worth borrowing |
 | [ED_DISCUSSION_REFERENCE_PACK.md](ED_DISCUSSION_REFERENCE_PACK.md) | Screenshot links, visual study checklist, and product-pattern translation |
