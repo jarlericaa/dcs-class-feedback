@@ -6,8 +6,11 @@ import {
   AccessDenied,
   Breadcrumbs,
   EmptyState,
+  MetaList,
   Pagination,
 } from "@/components/ui";
+import { AutoSubmitSelect } from "@/components/ui/auto-submit";
+import { auditActionLabel } from "@/lib/audit-labels";
 import { listSectionAuditEvents } from "@/modules/audit";
 import { toShellUser } from "@/lib/session";
 
@@ -69,7 +72,6 @@ export default async function AuditPage({
         />
       }
       title="Audit history"
-      description="Append-only, and scoped to this section alone — its weeks, responses, answers, staff, schedule, roster imports and account matches. Students never see any of it."
     >
       <div className="stack-4">
         {events.total === 0 ? (
@@ -80,41 +82,42 @@ export default async function AuditPage({
           </EmptyState>
         ) : (
           <>
+            {/* Choosing applies. The separate generic "Filter" button is
+                gone; it made one decision take two clicks. */}
             <form className="toolbar" method="get">
-              <label className="visually-hidden" htmlFor="audit-action">
-                Filter by action
-              </label>
-              <select
+              <AutoSubmitSelect
                 id="audit-action"
-                className="select-field"
                 name="action"
+                label="Show which action"
                 defaultValue={action ?? ""}
               >
                 <option value="">All actions</option>
                 {actions.map((value) => (
                   <option key={value} value={value}>
-                    {value}
+                    {auditActionLabel(value)}
                   </option>
                 ))}
-              </select>
-              <button className="button button--secondary" type="submit">
-                Filter
-              </button>
+              </AutoSubmitSelect>
             </form>
 
+            {events.rows.length === 0 ? (
+              <EmptyState title="No records for that action">
+                Choose a different action, or clear the filter to see everything.
+              </EmptyState>
+            ) : (
             <section className="notice">
               <ul className="data-list">
                 {events.rows.map(({ event, actor }) => (
                   <li key={event.id}>
                     <span className="data-list__main">
-                      <strong>{event.action.replace(/[._]/g, " ")}</strong>
-                      <small>
-                        {actor
-                          ? `${actor.displayName} (${actor.email})`
-                          : "System"}{" "}
-                        · {formatDateTime(event.createdAt, section.timezone)} ·{" "}
-                        {event.entityType.replace(/_/g, " ")}
-                      </small>
+                      <strong>{auditActionLabel(event.action)}</strong>
+                      <MetaList
+                        items={[
+                          actor ? actor.displayName : "System",
+                          formatDateTime(event.createdAt, section.timezone),
+                          event.entityType.replace(/_/g, " "),
+                        ]}
+                      />
                       {(event.before !== null || event.after !== null) && (
                         <details style={{ marginTop: 6 }}>
                           <summary className="muted small">
@@ -138,6 +141,7 @@ export default async function AuditPage({
                 ))}
               </ul>
             </section>
+            )}
             <Pagination
               page={events.page}
               totalPages={events.totalPages}

@@ -659,8 +659,15 @@ second.
 Every state below is designed, not incidental. Removing one is a regression.
 
 **Stamps** carry status. A stamp is a bordered rectangle at 3px radius with a
-drawn 8px shape, an uppercase word, and a tone. Three redundant channels, so it
-survives colourblindness, grayscale printing and low contrast.
+drawn 8px shape, a **sentence-case** word, and a tone. Three redundant channels,
+so it survives colourblindness, grayscale printing and low contrast.
+
+The word was tracked uppercase until the review pass. It changed because a screen
+carrying eight of them read as machine output rather than as a workspace — the
+single largest contributor to that impression — and none of the three channels
+depends on the casing. Table headers moved to sentence case for the same reason.
+All-caps in this system is now reserved for the strip label and the rail heading,
+which are printed *labels for a region* rather than words about content.
 
 | Tone | Shape | Means |
 |---|---|---|

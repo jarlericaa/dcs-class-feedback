@@ -2,13 +2,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOutAction } from "@/app/actions/session";
 import { initials } from "@/lib/datetime";
-import {
-  IconBack,
-  IconCheck,
-  IconFilter,
-  IconMenu,
-  IconSearch,
-} from "@/components/ui/icons";
+import { IconBack, IconCheck, IconMenu, IconSearch } from "@/components/ui/icons";
+import { FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
 import { CategoryMark } from "@/components/ui/icons";
 import { NAV_ICONS, type NavGroup } from "./nav";
 
@@ -233,7 +228,10 @@ export function WorkspaceShell({
   );
 
   return (
-    <div className="ws">
+    /* Two shell modes (globals.css): a single-column route is an ordinary
+       scrolling document; a multi-pane route owns one viewport box whose panes
+       scroll independently. `listPane` is what decides which. */
+    <div className={`ws${listPane ? " ws--panes" : ""}`}>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -308,56 +306,42 @@ export function WorkspaceShell({
   );
 }
 
-/**
- * One narrowing control over the list: a `<details>` disclosure whose current
- * value is printed beside it. A dimension the reader filters BY belongs here,
- * not in the rail — the rail holds destinations.
- */
-export interface ListFilter {
-  current: string;
-  /** the dimension, shown on the disclosure — "State", "Week", "Published" */
-  name: string;
-  /** fallback text for the "Showing:" line when nothing matches `current` */
-  label: string;
-  /** the "everything" option; a filter sitting on it is not worth reporting */
-  defaultKey?: string;
-  options: { key: string; label: string; href: string }[];
-}
-
 /** Search + filters + scrolling rows: the middle pane of the workspace. */
 export function ListPane({
   label = "Results",
+  header,
   searchAction,
   searchName = "q",
   searchValue,
   searchPlaceholder = "Search",
   hiddenFields,
-  filter,
-  filters,
+  filterGroups,
   /** true once a row is selected: the detail takes over on a stacked layout */
   hiddenOnMobile,
   children,
 }: {
   label?: string;
+  /** the pane's own title block — what this list is, and where it sits */
+  header?: ReactNode;
   searchAction?: string;
   searchName?: string;
   searchValue?: string;
   searchPlaceholder?: string;
   hiddenFields?: Record<string, string | undefined>;
-  filter?: ListFilter;
-  /** several dimensions; each gets its own disclosure on one row */
-  filters?: (ListFilter | undefined)[];
+  /** every narrowing dimension, in ONE popover */
+  filterGroups?: (FilterGroup | undefined)[];
   hiddenOnMobile?: boolean;
   children: ReactNode;
 }) {
-  const allFilters = (filters ?? [filter]).filter(
-    (entry): entry is ListFilter => !!entry,
+  const groups = (filterGroups ?? []).filter(
+    (group): group is FilterGroup => !!group,
   );
   return (
     <section
       className={`ws-list ${hiddenOnMobile ? "ws-list--hidden" : ""}`}
       aria-label={label}
     >
+      {header}
       <form
         className="ws-search"
         method="get"
@@ -385,57 +369,7 @@ export function ListPane({
         </button>
       </form>
 
-      {allFilters.length > 0 && (
-        <div className="ws-filterbar">
-          {/* Only the narrowings actually in force. Listing every dimension's
-              "everything" value made this line longer than the strip and it
-              ellipsised away the part that mattered. */}
-          <span className="ws-filterbar__current">
-            {(() => {
-              const active = allFilters.filter(
-                (entry) => entry.current !== (entry.defaultKey ?? "all"),
-              );
-              if (active.length === 0) return "Showing everything";
-              return `Showing: ${active
-                .map(
-                  (entry) =>
-                    entry.options.find((o) => o.key === entry.current)?.label ??
-                    entry.label,
-                )
-                .join(" · ")}`;
-            })()}
-          </span>
-          <span className="ws-filterbar__controls">
-            {allFilters.map((entry) => (
-              <details className="ws-filter" key={entry.name}>
-                <summary>
-                  <IconFilter size={13} />
-                  {entry.name}
-                </summary>
-                <div className="ws-filter__menu">
-                  {entry.options.map((option) => (
-                    <Link
-                      key={option.key}
-                      className="ws-filter__item"
-                      href={option.href}
-                    >
-                      <span className="ws-filter__check">
-                        {entry.current === option.key && (
-                          <IconCheck size={13} />
-                        )}
-                      </span>
-                      {option.label}
-                      {entry.current === option.key && (
-                        <span className="visually-hidden">(selected)</span>
-                      )}
-                    </Link>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </span>
-        </div>
-      )}
+      {groups.length > 0 && <FilterMenu groups={groups} />}
 
       <div className="ws-list__scroll">{children}</div>
     </section>

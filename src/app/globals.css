@@ -551,17 +551,22 @@ kbd {
    Stamps — status as word + shape + tone
    ========================================================================== */
 
+/* Sentence case, not tracked caps.
+   The stamp still carries three redundant channels — a word, a drawn shape and
+   a tone — so it survives grayscale and colourblindness exactly as before. What
+   changed is that a screen full of them no longer SHOUTS: all-caps status was
+   the single largest contributor to the interface reading as machine-generated.
+   Recorded in DESIGN.md §9. */
 .stamp {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 7px;
+  padding: 3px 8px;
   border: 1px solid;
   border-radius: var(--r-stamp);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -1414,13 +1419,12 @@ kbd {
   white-space: nowrap;
 }
 .data-table thead th {
-  color: var(--ink-muted);
+  color: var(--ink-soft);
   background: var(--paper-quiet);
   border-bottom: 2px solid var(--rule-ink);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 .data-table tbody tr:last-child td {
   border-bottom: 0;
@@ -1440,11 +1444,21 @@ kbd {
    effective permissions the server enforces; hiding a link is presentation,
    never authorization. */
 
+/**
+ * Two shell modes, because the two route shapes want opposite scroll behaviour.
+ *
+ * A SINGLE-COLUMN route (setup, participation, courses, the student form) is an
+ * ordinary document: the page scrolls, so browser find, End, anchor links and
+ * screenshots all behave. It gets no height at all beyond a viewport floor.
+ *
+ * A MULTI-PANE route (review inbox, Class Q&A) is an application view: the
+ * shell owns exactly one viewport box and each pane scrolls inside it. See
+ * `.ws--panes` below for why that one is taken out of flow.
+ */
 .ws {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  height: 100vh;
+  min-height: 100dvh;
 }
 
 .ws-topbar {
@@ -1549,7 +1563,30 @@ kbd {
   display: flex;
   flex: 1;
   min-width: 0;
+  /* Without this a pane with an internal scroller refuses to shrink below its
+     content height and pushes the whole shell past the viewport. */
   min-height: 0;
+}
+
+/**
+ * The multi-pane workspace: one viewport box, three independent scrollers.
+ *
+ * `position: fixed` rather than `height: 100dvh` alone, and that is deliberate.
+ * Next renders `<next-route-announcer>` as an absolutely-positioned sibling
+ * after the app. With the shell merely 100dvh tall and in flow, the announcer
+ * lands at y = 100dvh and pushes `documentElement.scrollHeight` past the
+ * viewport — a 48px strip of dead page under the rail and list, which is
+ * exactly the band this pass was asked to remove. Taking the shell out of flow
+ * leaves nothing for the announcer to sit below.
+ *
+ * `dvh` so a phone's collapsing browser chrome does not clip the last row.
+ */
+.ws--panes {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* --- rail ----------------------------------------------------------------- */
@@ -1564,6 +1601,14 @@ kbd {
   overflow-y: auto;
   background: var(--board-deep);
   border-right: 1px solid var(--rule-strong);
+}
+/* Single-column mode: the page scrolls, so the rail sticks under the top bar
+   and scrolls internally only when it is taller than the viewport. */
+.ws:not(.ws--panes) .ws-rail {
+  position: sticky;
+  top: 52px;
+  align-self: flex-start;
+  max-height: calc(100dvh - 52px);
 }
 .ws-rail__action {
   display: flex;
@@ -1688,8 +1733,12 @@ kbd {
 .ws-search input::placeholder {
   color: var(--ink-muted);
 }
+/* The ring belongs to the input, not to the whole strip. It used to read as a
+   heavy box around the entire control; it is still plainly visible. */
 .ws-search input:focus-visible {
-  outline-offset: -1px;
+  outline-width: 2px;
+  outline-offset: 1px;
+  border-radius: var(--r-control);
 }
 .ws-filterbar {
   display: flex;
@@ -1861,6 +1910,9 @@ kbd {
 .ws-page {
   flex: 1;
   min-width: 0;
+}
+/* In multi-pane mode a single-column child still has to scroll itself. */
+.ws--panes .ws-page {
   overflow-y: auto;
 }
 .ws-page__inner {
@@ -2430,9 +2482,21 @@ kbd {
 }
 
 @media (max-width: 860px) {
-  .ws {
+  /* Stacked: one column, ordinary page scroll, so the shell returns to flow. */
+  .ws--panes {
+    position: static;
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .ws--panes .ws-page,
+  .ws--panes .ws-detail,
+  .ws--panes .ws-list__scroll {
+    overflow: visible;
+  }
+  .ws--panes .ws-list,
+  .ws--panes .ws-detail {
+    min-height: 0;
   }
   .ws-rail {
     display: none;
@@ -2564,9 +2628,12 @@ kbd {
     display: none !important;
   }
   .ws,
+  .ws--panes,
   .ws-body {
+    position: static;
     display: block;
     height: auto;
+    overflow: visible;
   }
   .ws-detail,
   .ws-page {
@@ -2751,4 +2818,507 @@ kbd {
 /* The Q&A detail's provenance line sits just under the object title. */
 .qa-detail__meta {
   margin-top: var(--s2);
+}
+
+/* ==========================================================================
+   Dialog — every deliberate action
+   ==========================================================================
+   Native <dialog>: the platform owns the focus trap, Escape and aria-modal. */
+
+.dlg {
+  width: min(620px, calc(100vw - var(--s5)));
+  max-width: none;
+  max-height: min(88vh, 860px);
+  padding: 0;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--overlay-shadow);
+  overflow: hidden;
+}
+.dlg::backdrop {
+  background: rgba(28, 30, 32, 0.42);
+}
+.dlg__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.dlg__title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.008em;
+}
+/* One line beside the action it governs. Never the paragraph it replaced. */
+.dlg__desc {
+  margin-top: 4px;
+  max-width: 56ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.dlg__body {
+  padding: var(--s5);
+  overflow-y: auto;
+  max-height: calc(min(88vh, 860px) - 150px);
+}
+.dlg__body > form {
+  display: grid;
+  gap: var(--s4);
+}
+.dlg__foot {
+  padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--rule);
+  background: var(--paper-quiet);
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* A phone gets a full-screen sheet, never a shrunken desktop dialog. */
+@media (max-width: 560px) {
+  .dlg {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+  }
+  .dlg__head {
+    padding: var(--s3) var(--s4);
+  }
+  .dlg__body {
+    padding: var(--s4);
+    max-height: calc(100dvh - 130px);
+  }
+  .dlg__foot {
+    padding: var(--s3) var(--s4);
+  }
+}
+
+/* ==========================================================================
+   Filter — one button, one popover
+   ========================================================================== */
+
+.filterbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  flex: 0 0 auto;
+  padding: 6px var(--s3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.filterbar__summary {
+  min-width: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filterbar__control {
+  position: relative;
+  flex: 0 0 auto;
+}
+.filterbar__count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-stamp);
+  color: var(--paper);
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.filterbar__menu {
+  position: absolute;
+  right: 0;
+  z-index: 30;
+  min-width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: 6px;
+  padding: var(--s2) 0;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  box-shadow: var(--overlay-shadow);
+}
+.filterbar__group + .filterbar__group {
+  margin-top: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--rule);
+}
+.filterbar__group-name {
+  padding: 0 var(--s3) 4px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.filterbar__option {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px var(--s3);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.filterbar__option:hover {
+  background: var(--paper-quiet);
+}
+.filterbar__option--on {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+.filterbar__check {
+  flex: 0 0 14px;
+  color: var(--accent-deep);
+}
+
+/* The list pane's own title block: what this destination is, which section it
+   belongs to, and the way back. Replaces a top-bar string that tried to be a
+   breadcrumb, a page title and a section label at once. */
+.pane-head {
+  flex: 0 0 auto;
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--rule);
+}
+.pane-head__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pane-head__back:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pane-head__title {
+  margin-top: 2px;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.pane-head__context {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* ==========================================================================
+   Review detail — explicit sections instead of floating fragments
+   ========================================================================== */
+
+.review__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--rule);
+}
+.review__ident {
+  min-width: 0;
+}
+.review__ident .meta-list {
+  margin-top: 4px;
+}
+.review__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+/* Identity details a reviewer rarely needs: present, not in the way. */
+.review__details {
+  margin-top: var(--s3);
+}
+.review__details > summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.review__details-body {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+
+.review__section {
+  margin-top: var(--s6);
+}
+.review__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+/* Sentence case, not a tracked-caps banner. */
+.review__section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.review__count {
+  color: var(--ink-muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An aligned prompt/answer column. Used for the submitted answers and for a
+   published question/answer pair, so both read the same way. */
+.qa-pairs {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s3) 0 0;
+}
+.qa-pairs__row {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+  gap: var(--s2) var(--s4);
+  align-items: baseline;
+}
+.qa-pairs dt {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+.qa-pairs dd {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .qa-pairs__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+/* The student's own words. The indent and the register say "quoted and
+   private"; the all-caps banner that used to say it is gone. */
+.review__original {
+  margin: var(--s3) 0 0;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--rule-strong);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.review__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s4);
+}
+
+/* One response: its type, its audience and its time, grouped so the audience
+   can never be read as belonging to the wrong thing. */
+.responses {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--rule);
+}
+/* A 1px left rule plus an indent, per DESIGN.md §5 — not a 3px coloured bar.
+   The type label and its icon are what actually distinguish private from
+   public; the rule only reinforces it. */
+.response {
+  margin-top: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--rule);
+  border-left-width: 1px;
+  background: var(--paper);
+}
+.response--private {
+  border-left-color: var(--amber);
+}
+.response--public {
+  border-left-color: var(--accent);
+}
+.response__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2) var(--s4);
+  flex-wrap: wrap;
+}
+.response__type {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.response__audience {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.response__when {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.response__body {
+  margin-top: var(--s2);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .response__when {
+    margin-left: 0;
+  }
+}
+
+/* ==========================================================================
+   Account matches — a comparison, not a sentence to decode
+   ========================================================================== */
+
+.match-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.match,
+.roster-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--rule);
+}
+.match-list > :last-child {
+  border-bottom: 0;
+}
+
+/* Two labelled sides. The teacher's whole task here is comparing two names, so
+   the layout puts them beside each other and labels which is which. */
+.match__sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s4);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.match__side {
+  min-width: 0;
+}
+.match__label {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.match__name {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.match__actions,
+.roster-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.roster-row__main {
+  min-width: 0;
+}
+
+/* A labelled count. Never colour alone: the number and its noun are the signal,
+   and the attention tone only adds to them. */
+.tally {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.tally strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.tally--attention strong {
+  color: var(--amber-deep);
+}
+
+.roster-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.roster-search .field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.roster-search .select-field {
+  flex: 0 1 170px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .match,
+  .roster-row {
+    flex-direction: column;
+    padding: var(--s4);
+  }
+  .roster-search {
+    padding: var(--s3) var(--s4);
+  }
+}
+
+/* The participation matrix: an identity column on the left, week cells centred
+   so a column of "Yes" reads as a column, and the total set apart by a rule. */
+.data-table th.num,
+.data-table td.num {
+  text-align: center;
+}
+.data-table .matrix__total {
+  border-left: 1px solid var(--rule-strong);
+}
+
+/* The participation matrix: identity on the left, week cells centred so a column
+   of "Yes" reads as a column, and the total set apart by a rule. */
+.data-table th.num,
+.data-table td.num {
+  text-align: center;
+}
+.data-table .matrix__total {
+  border-left: 1px solid var(--rule-strong);
 }

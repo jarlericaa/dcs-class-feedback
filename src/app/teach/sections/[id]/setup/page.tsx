@@ -20,9 +20,11 @@ import {
 const ROLE_LABELS: Record<string, string> = {
   teacher: "Teacher",
   co_teacher: "Co-teacher",
-  ta: "Teaching assistant",
+  ta: "Student assistant",
 };
 import { IconChevron } from "@/components/ui/icons";
+import { Dialog } from "@/components/ui/dialog";
+import { EditStaffPermissions } from "@/components/staff/staff-permissions";
 import { TermFields } from "@/components/ui/term-fields";
 import { termParts } from "@/lib/term";
 import {
@@ -41,7 +43,11 @@ import {
   ScheduleError,
 } from "@/modules/forms/schedules";
 import { listTemplatesForSection } from "@/modules/forms/templates";
-import { reopenCycle, skipCycle } from "@/modules/forms/cycles";
+import {
+  reopenCycle,
+  restoreSkippedCycle,
+  skipCycle,
+} from "@/modules/forms/cycles";
 import {
   AuthzError,
   SECTION_PERMISSION_LABELS,
@@ -196,17 +202,26 @@ export default async function SetupPage({
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
     const cycleId = String(formData.get("cycleId"));
+    const intent = String(formData.get("intent"));
+    // Each transition confirms what it did, so an action never appears to have
+    // silently vanished after the redirect.
+    let done = "Week updated.";
     try {
-      if (String(formData.get("intent")) === "reopen") {
+      if (intent === "reopen") {
         await reopenCycle(uid, cycleId);
+        done = "Week reopened. It is accepting responses again.";
+      } else if (intent === "restore") {
+        await restoreSkippedCycle(uid, cycleId);
+        done = "Week restored. It is scheduled again.";
       } else {
         await skipCycle(uid, cycleId);
+        done = "Week skipped. No form opens that week; you can restore it.";
       }
     } catch (err) {
       redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(backTo(sectionId, "Cycle updated."));
+    redirect(backTo(sectionId, done));
   }
 
   // --- render --------------------------------------------------------------
@@ -393,12 +408,6 @@ export default async function SetupPage({
                       <button className="button button--primary" type="submit">
                         {active ? "Replace schedule" : "Save schedule"}
                       </button>
-                      {active && (
-                        <span className="muted small">
-                          Replacing retires the current schedule; weeks already
-                          generated are kept.
-                        </span>
-                      )}
                     </div>
                   </form>
                 )}
@@ -413,9 +422,6 @@ export default async function SetupPage({
                     >
                       Stop generating new weeks
                     </button>
-                    <span className="muted small">
-                      Existing weeks stay exactly as they are.
-                    </span>
                   </form>
                 </div>
               )}
@@ -425,10 +431,6 @@ export default async function SetupPage({
               <div className="notice__head">
                 <div>
                   <h2>Weekly cycles</h2>
-                  <p>
-                    Structural edits lock once the first response arrives, so
-                    collected answers always match the questions asked.
-                  </p>
                 </div>
               </div>
               {cycles.length === 0 ? (
@@ -448,7 +450,7 @@ export default async function SetupPage({
                         <th scope="col">Opens</th>
                         <th scope="col">Closes</th>
                         <th scope="col">Responses</th>
-                        <th scope="col">Edit lock</th>
+                        <th scope="col">Questions</th>
                         <th scope="col">
                           <span className="visually-hidden">Actions</span>
                         </th>
@@ -481,7 +483,7 @@ export default async function SetupPage({
                               {submissionCount !== validCount &&
                                 ` (${validCount} valid)`}
                             </td>
-                            <td>{editLocked ? "Locked" : "Open"}</td>
+                            <td>{editLocked ? "Locked" : "Editable"}</td>
                             <td>
                               {cycle.state === "closed" && (
                                 <form
@@ -508,6 +510,37 @@ export default async function SetupPage({
                               )}
                               {(cycle.state === "scheduled" ||
                                 cycle.state === "draft") && (
+                                /* Confirmed, because it used to be one click on
+                                   a quiet text link with no way back. */
+                                <Dialog
+                                  className="button--small"
+                                  label="Skip week"
+                                  title={`Skip week ${cycle.cycleIndex}?`}
+                                  description="No form opens that week. You can restore it later; already-generated weeks are not affected."
+                                >
+                                  <form action={cycleAction}>
+                                    <input
+                                      type="hidden"
+                                      name="cycleId"
+                                      value={cycle.id}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      name="intent"
+                                      value="skip"
+                                    />
+                                    <div className="row">
+                                      <button
+                                        className="button button--danger"
+                                        type="submit"
+                                      >
+                                        Skip week {cycle.cycleIndex}
+                                      </button>
+                                    </div>
+                                  </form>
+                                </Dialog>
+                              )}
+                              {cycle.state === "skipped" && (
                                 <form
                                   action={cycleAction}
                                   className="inline-form"
@@ -520,13 +553,13 @@ export default async function SetupPage({
                                   <input
                                     type="hidden"
                                     name="intent"
-                                    value="skip"
+                                    value="restore"
                                   />
                                   <button
-                                    className="button button--quiet button--small"
+                                    className="button button--secondary button--small"
                                     type="submit"
                                   >
-                                    Skip
+                                    Restore week
                                   </button>
                                 </form>
                               )}
@@ -566,21 +599,47 @@ export default async function SetupPage({
                     items={[
                       account?.email,
                       ROLE_LABELS[row.role] ?? row.role.replace("_", " "),
-                      row.role === "ta" &&
-                        `${SECTION_PERMISSIONS.filter((p) => row[p]).length} of ${SECTION_PERMISSIONS.length} permissions`,
                     ]}
                   />
                 </span>
                 {isOwner && account?.id !== course.ownerUserId && (
-                  <form action={dropStaff} className="inline-form">
-                    <input type="hidden" name="staffId" value={row.id} />
-                    <button
-                      className="button button--danger button--small"
-                      type="submit"
+                  <span className="row">
+                    {/* An explicit control, prefilled. The row's
+                        "N of 14 permissions" text was the only hint before, and
+                        it was not clickable. */}
+                    {account?.email && (
+                      <EditStaffPermissions
+                        action={saveStaff}
+                        email={account.email}
+                        displayName={account.displayName}
+                        role={row.role}
+                        permissions={SECTION_PERMISSIONS.map((p) => ({
+                          key: p,
+                          granted: !!row[p],
+                        }))}
+                        permissionLabels={SECTION_PERMISSION_LABELS}
+                      />
+                    )}
+                    <Dialog
+                      variant="danger"
+                      className="button--small"
+                      label="Remove"
+                      title={`Remove ${account?.displayName ?? "this person"} from this section?`}
+                      description="They lose access to this section. Nothing they already did is deleted."
                     >
-                      Remove
-                    </button>
-                  </form>
+                      <form action={dropStaff}>
+                        <input type="hidden" name="staffId" value={row.id} />
+                        <div className="row">
+                          <button
+                            className="button button--danger"
+                            type="submit"
+                          >
+                            Remove from this section
+                          </button>
+                        </div>
+                      </form>
+                    </Dialog>
+                  </span>
                 )}
               </li>
             ))}
@@ -622,7 +681,7 @@ export default async function SetupPage({
                         name="role"
                         defaultValue="ta"
                       >
-                        <option value="ta">Teaching assistant</option>
+                        <option value="ta">Student assistant</option>
                         <option value="co_teacher">Co-teacher</option>
                         <option value="teacher">Teacher</option>
                       </select>
@@ -630,18 +689,8 @@ export default async function SetupPage({
                   </div>
                   <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
                     <legend className="field-label">
-                      Assistant permissions
+                      Student assistant permissions
                     </legend>
-                    {/* Kept: this one warns about a real consequence — the
-                        export carries student names and numbers. */}
-                    <p
-                      className="helper-text"
-                      style={{ margin: "2px 0 var(--s3)" }}
-                    >
-                      Used only for a teaching assistant. Granting
-                      &ldquo;export participation&rdquo; lets them download
-                      files containing student names and numbers.
-                    </p>
                     <div className="form-grid">
                       {SECTION_PERMISSIONS.map((permission) => (
                         <label className="choice" key={permission}>
@@ -683,7 +732,6 @@ export default async function SetupPage({
                 />
               </div>
               <TermFields defaultTerm={section.term} />
-              <p className="meta">Times for this section use {section.timezone}.</p>
               <div>
                 <button className="button button--primary" type="submit">
                   Save

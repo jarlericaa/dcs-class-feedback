@@ -72,7 +72,7 @@ export function PublicAnswerComposer({
 
       <div className="field-row">
         <label htmlFor={`puba-${itemId}`}>
-          Answer <span className="optional-mark">required to publish</span>
+          Answer <span className="required-mark">Required to publish</span>
         </label>
         <textarea
           id={`puba-${itemId}`}
@@ -82,13 +82,13 @@ export function PublicAnswerComposer({
         />
       </div>
 
+      {/* The privacy risk in one line, next to the control that acts on it.
+          The behaviour is unchanged: publishNow still re-checks the
+          acknowledgment against the persisted row. */}
       {canPublish && (
-        <div className="visibility-note">
-          Publishing shows this question and answer to everyone enrolled in this
-          section. The original wording stays private, but a specific enough
-          detail can still identify the person who asked — especially in a small
-          class.
-        </div>
+        <p className="helper-text">
+          A specific detail can still identify the asker in a small class.
+        </p>
       )}
 
       <label className="choice">

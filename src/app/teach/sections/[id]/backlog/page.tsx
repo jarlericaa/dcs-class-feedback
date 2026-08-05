@@ -14,6 +14,7 @@ import {
   EmptyState,
   MetaList,
 } from "@/components/ui";
+import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 import {
   draftFromBacklog,
   importLegacyEntries,
@@ -189,7 +190,7 @@ export default async function BacklogPage({
           ]}
         />
       }
-      title={`${course.code} question backlog`}
+      title={`${course.code} Question backlog`}
       actions={
         <Link
           className="button button--secondary"
@@ -215,26 +216,21 @@ export default async function BacklogPage({
             placeholder="Search questions"
             defaultValue={sp.q ?? ""}
           />
-          <label className="visually-hidden" htmlFor="backlog-state">
-            Filter by state
-          </label>
-          <select
+          {/* Choosing applies. The separate generic "Filter" button is gone:
+              it made one decision take two clicks, and the first did nothing. */}
+          <AutoSubmitSelect
             id="backlog-state"
-            className="select-field"
             name="state"
+            label="Show which state"
             defaultValue={sp.state ?? ""}
-            
           >
             <option value="">All states ({backlog.total})</option>
             {Object.entries(backlog.counts).map(([state, count]) => (
               <option key={state} value={state}>
-                {state.replace(/_/g, " ")} ({count})
+                {sentenceCase(state)} ({count})
               </option>
             ))}
-          </select>
-          <button className="button button--secondary" type="submit">
-            Filter
-          </button>
+          </AutoSubmitSelect>
         </form>
 
         {backlog.questions.length === 0 ? (
@@ -244,13 +240,7 @@ export default async function BacklogPage({
               href: `/teach/sections/${sectionId}/backlog?import=1`,
               label: "Import questions",
             }}
-          >
-            {/* Kept: it prevents the mistake of assuming the backlog is already
-                visible to a class. */}
-            Questions land here when staff move one out of the weekly review.
-            Nothing in the backlog reaches students until you publish it to a
-            section.
-          </EmptyState>
+          />
         ) : (
           <section className="notice">
             <ul className="data-list">
@@ -260,7 +250,7 @@ export default async function BacklogPage({
                     <strong>{question.text}</strong>
                     <MetaList
                       items={[
-                        question.provenance.replace(/_/g, " "),
+                        sentenceCase(question.provenance),
                         formatDate(question.createdAt),
                         question.previouslyAnswered && "Has a previous answer",
                         visibleSectionIds.includes(sectionId) &&
@@ -270,7 +260,7 @@ export default async function BacklogPage({
                   </span>
                   <span className="row">
                     <Stamp tone={STATE_TONE[question.state] ?? "neutral"}>
-                      {question.state.replace(/_/g, " ")}
+                      {sentenceCase(question.state)}
                     </Stamp>
                     {question.state === "imported" && (
                       <form action={advance} className="inline-form">
@@ -403,6 +393,12 @@ export default async function BacklogPage({
       </div>
     </AppShell>
   );
+}
+
+/** An internal state value, said the way a person would say it. */
+function sentenceCase(value: string): string {
+  const words = value.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function describe(err: unknown): string {

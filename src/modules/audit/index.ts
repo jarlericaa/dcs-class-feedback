@@ -56,6 +56,7 @@ export type AuditAction =
   | "cycle.closed"
   | "cycle.reopened"
   | "cycle.skipped"
+  | "cycle.restored"
   | "response.submitted"
   | "response.review_state_changed"
   | "response.validity_changed"

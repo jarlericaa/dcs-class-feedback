@@ -17,3 +17,6 @@ coverage/
 
 # db
 postgres-data/
+
+# Visual QA references. Kept on disk for inspection, never committed.
+docs/ui-references/

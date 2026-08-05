@@ -15,7 +15,7 @@ import {
 } from "@/components/layout/workspace-shell";
 import { staffSectionNav, studentSectionNav } from "@/components/layout/nav";
 import { AccessDenied, Category, MetaList } from "@/components/ui";
-import { CategoryMark } from "@/components/ui/icons";
+import { CategoryMark, IconBack } from "@/components/ui/icons";
 import { listSectionQa } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
 import { getSectionWithCourse, listSectionsForUser } from "@/modules/catalog";
@@ -149,7 +149,7 @@ export default async function QaArchivePage({
   return (
     <WorkspaceShell
       user={toShellUser(user)}
-      contextTitle={`${section.title} · Class Q&A`}
+      contextTitle={section.title}
       workspaceLabel={access?.staff ? "Staff workspace" : "Student workspace"}
       primaryAction={
         access?.staff
@@ -198,18 +198,29 @@ export default async function QaArchivePage({
           hiddenOnMobile={!!sp.selected}
           searchAction={base}
           searchValue={sp.q}
-          searchPlaceholder="Search questions and answers"
+          searchPlaceholder="Search published answers"
           hiddenFields={{ category: sp.category, filter: sp.filter }}
-          filter={{
-            current: filter,
-            name: "Published",
-            label: "Everything",
-            options: TIME_FILTERS.map((f) => ({
-              key: f.key,
-              label: f.label,
-              href: link({ filter: f.key, selected: undefined }),
-            })),
-          }}
+          header={
+            <div className="pane-head">
+              <Link className="pane-head__back" href="/">
+                <IconBack size={14} />
+                Overview
+              </Link>
+              <h1 className="pane-head__title">Class Q&amp;A</h1>
+              <p className="pane-head__context">{section.title}</p>
+            </div>
+          }
+          filterGroups={[
+            {
+              name: "Published",
+              current: filter,
+              options: TIME_FILTERS.map((f) => ({
+                key: f.key,
+                label: f.label,
+                href: link({ filter: f.key, selected: undefined }),
+              })),
+            },
+          ]}
         >
           {visible.length === 0 ? (
             isFiltered ? (

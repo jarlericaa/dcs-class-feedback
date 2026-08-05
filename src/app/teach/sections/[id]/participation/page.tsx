@@ -4,7 +4,6 @@ import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
-  Alert,
   Stamp,
   Breadcrumbs,
   EmptyState,
@@ -95,15 +94,6 @@ export default async function ParticipationPage({
       }
     >
       <div className="stack-4">
-        {/* Privacy, and it sits with the controls it describes rather than at
-            the top of a page the reader may only be reading. */}
-        <Alert
-          variant="warning"
-          title="Those CSVs carry student names and numbers"
-        >
-          Every download is recorded in the audit history with your name.
-        </Alert>
-
         <div className="figure-row">
           <Figure value={summary.cycleCount} label="weeks run" />
           <Figure value={summary.activeStudentCount} label="active students" />
@@ -140,17 +130,22 @@ export default async function ParticipationPage({
                 <thead>
                   <tr>
                     <th scope="col">Student</th>
-                    <th scope="col">Number</th>
+                    {/* The student number left the matrix: an identity column
+                        between the name and the weeks split the grid in two, and
+                        the identity-bearing use is the exports, which still
+                        carry the full number under the same authorization. */}
                     {cycles.map((cycle) => (
-                      <th scope="col" key={cycle.id}>
-                        Wk {cycle.cycleIndex}
+                      <th scope="col" className="num" key={cycle.id}>
+                        Week {cycle.cycleIndex}
                         <span className="visually-hidden">
                           {" "}
                           starting {formatDate(cycle.openAt, section.timezone)}
                         </span>
                       </th>
                     ))}
-                    <th scope="col">Total</th>
+                    <th scope="col" className="num matrix__total">
+                      Total
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -165,20 +160,12 @@ export default async function ParticipationPage({
                           </>
                         )}
                       </th>
-                      <td>
-                        {/* Last 4 only on screen: the full number is revealed
-                            in the audited exports, not in a page anyone can
-                            leave open. */}
-                        {student.studentNumberLast4
-                          ? `…${student.studentNumberLast4}`
-                          : "—"}
-                      </td>
                       {cycles.map((cycle) => {
                         const participated = student.participatedCycleIds.has(
                           cycle.id,
                         );
                         return (
-                          <td key={cycle.id}>
+                          <td className="num" key={cycle.id}>
                             <span
                               aria-label={
                                 participated
@@ -191,7 +178,7 @@ export default async function ParticipationPage({
                           </td>
                         );
                       })}
-                      <td>
+                      <td className="num matrix__total">
                         <strong>{student.totalWeeks}</strong> / {cycles.length}
                       </td>
                     </tr>

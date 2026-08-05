@@ -21,15 +21,14 @@ import {
 import {
   AccessDenied,
   Alert,
-  Category,
-  Quote,
+  MetaList,
   Stamp,
-  StripLabel,
   ValidityBadge,
 } from "@/components/ui";
+import { Dialog } from "@/components/ui/dialog";
 import {
   CategoryMark,
-  IconChevron,
+  IconBack,
   IconPrivate,
   IconPublic,
 } from "@/components/ui/icons";
@@ -177,6 +176,10 @@ export default async function ReviewPage({
   // Only an instructor may finalize or reverse validity. This decides which
   // controls are rendered; the service layer is the authorization backstop.
   const isInstructor = access.staff?.isInstructor ?? false;
+  // The most recent flag, for the instructor's decision dialog.
+  const flagEvent = [...validityHistory]
+    .reverse()
+    .find((event) => event.action === "flag");
 
   const queryFor = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
@@ -359,9 +362,8 @@ export default async function ReviewPage({
   const cycleFilter =
     cycles.length > 0
       ? {
-          current: sp.cycle ?? "all",
           name: "Week",
-          label: "All weeks",
+          current: sp.cycle ?? "all",
           options: [
             {
               key: "all",
@@ -380,7 +382,7 @@ export default async function ReviewPage({
   return (
     <WorkspaceShell
       user={toShellUser(user)}
-      contextTitle={`${section.title} · Review inbox`}
+      contextTitle={section.title}
       workspaceLabel="Staff workspace"
       categories={[
         {
@@ -414,23 +416,35 @@ export default async function ReviewPage({
         <ListPane
           label="Submissions"
           hiddenOnMobile={!!sp.selected}
+          /* The hierarchy the top bar could not carry: what this destination
+             is, which section it belongs to, and the way back out. No fake
+             path, no chevron. */
+          header={
+            <div className="pane-head">
+              <Link className="pane-head__back" href="/teach/courses">
+                <IconBack size={14} />
+                My courses
+              </Link>
+              <h1 className="pane-head__title">Review inbox</h1>
+              <p className="pane-head__context">{section.title}</p>
+            </div>
+          }
           searchAction={`/teach/sections/${sectionId}/review`}
           searchName="q"
           searchValue={sp.q}
-          searchPlaceholder="Search submissions"
+          searchPlaceholder="Student name or question"
           hiddenFields={{ filter, cycle: sp.cycle, category: sp.category }}
-          filters={[
+          filterGroups={[
             {
-              current: filter,
               name: "State",
-              label: "Everything",
+              current: filter,
               options: FILTERS.map((f) => ({
                 key: f.key,
                 label:
                   f.key === "all"
                     ? `Everything (${counts.total})`
                     : f.key === "needs_review"
-                      ? `Needs review (${counts.needsReview})`
+                      ? `Needs reply (${counts.needsReview})`
                       : f.key === "answered"
                         ? `Answered (${counts.answered})`
                         : `Marked invalid (${counts.invalid})`,
@@ -537,47 +551,273 @@ export default async function ReviewPage({
           </p>
         </div>
       ) : (
-        <article>
-          <header className="submission">
-            <h1 className="object-title">
-              {selectedRow.student
-                ? selectedRow.student.fullName
-                : "Identity hidden"}
-              <span className="object-title__sub">
-                {" "}
-                · week {selectedRow.cycleIndex}
-              </span>
-            </h1>
-            <p className="submission__meta">
-              {selectedRow.student && (
-                <span className="ident">
-                  {selectedRow.student.studentNumber}
-                </span>
-              )}
-              <span>
-                {selectedRow.response.submittedAt
-                  ? `Submitted ${formatDateTime(
-                      selectedRow.response.submittedAt,
-                      section.timezone,
-                    )}`
-                  : "Draft — not submitted yet"}
-              </span>
+        <article className="review">
+          {/* Who, when, and what state — as separate elements, with this
+              submission's own actions beside them. */}
+          <header className="review__head">
+            <div className="review__ident">
+              <h1 className="object-title">
+                {selectedRow.student
+                  ? selectedRow.student.fullName
+                  : "Identity hidden"}
+              </h1>
+              <MetaList
+                items={[
+                  `Week ${selectedRow.cycleIndex}`,
+                  selectedRow.response.submittedAt
+                    ? `Submitted ${formatDateTime(
+                        selectedRow.response.submittedAt,
+                        section.timezone,
+                      )}`
+                    : "Draft — not submitted yet",
+                ]}
+              />
+            </div>
+
+            <div className="review__head-actions">
               <ValidityBadge
                 validity={
                   selectedRow.response.validity as
                     "valid" | "flagged" | "invalid"
                 }
               />
-            </p>
+              {/* Invalidation is destructive, so it is separated from the two
+                  reply actions and never a one-click state change. */}
+              {isInstructor &&
+                can("markValidity") &&
+                selectedRow.response.validity === "valid" && (
+                  <Dialog
+                    variant="danger"
+                    className="button--small"
+                    label="Mark as invalid"
+                    title="Mark this submission as invalid?"
+                    description="This removes the week's participation credit. It is recorded and can be reversed."
+                  >
+                    <form action={invalidate}>
+                      <input
+                        type="hidden"
+                        name="responseId"
+                        value={selectedRow.response.id}
+                      />
+                      <div className="field-row">
+                        <label htmlFor="invalid-reason">Reason</label>
+                        <select
+                          id="invalid-reason"
+                          className="select-field"
+                          name="reason"
+                          defaultValue="empty_or_meaningless"
+                        >
+                          {INVALID_REASONS.map((reason) => (
+                            <option key={reason.value} value={reason.value}>
+                              {reason.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="helper-text">Staff only.</span>
+                      </div>
+                      <div className="field-row">
+                        <label htmlFor="invalid-student-reason">
+                          What the student sees{" "}
+                          <span className="required-mark">Required</span>
+                        </label>
+                        <input
+                          id="invalid-student-reason"
+                          className="field"
+                          name="studentVisibleReason"
+                          required
+                        />
+                      </div>
+                      <div className="row">
+                        <button
+                          className="button button--danger"
+                          type="submit"
+                        >
+                          Mark as invalid
+                        </button>
+                      </div>
+                    </form>
+                  </Dialog>
+                )}
 
+              {/* A student assistant may flag; only an instructor decides. */}
+              {selectedRow.response.validity === "valid" &&
+                can("flagValidity") &&
+                !isInstructor && (
+                  <Dialog
+                    className="button--small"
+                    label="Flag for the instructor"
+                    title="Flag this submission?"
+                    description="The week's credit is kept until an instructor decides. The student is never told a flag exists."
+                  >
+                    <form action={flag}>
+                      <input
+                        type="hidden"
+                        name="responseId"
+                        value={selectedRow.response.id}
+                      />
+                      <div className="field-row">
+                        <label htmlFor="flag-reason">Reason</label>
+                        <select
+                          id="flag-reason"
+                          className="select-field"
+                          name="reason"
+                          defaultValue="empty_or_meaningless"
+                        >
+                          {INVALID_REASONS.map((reason) => (
+                            <option key={reason.value} value={reason.value}>
+                              {reason.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field-row">
+                        <label htmlFor="flag-note">
+                          Note for the instructor{" "}
+                          <span className="optional-mark">optional</span>
+                        </label>
+                        <input id="flag-note" className="field" name="note" />
+                      </div>
+                      <div className="row">
+                        <button
+                          className="button button--primary"
+                          type="submit"
+                        >
+                          Flag for the instructor
+                        </button>
+                      </div>
+                    </form>
+                  </Dialog>
+                )}
+
+              {isInstructor &&
+                can("markValidity") &&
+                selectedRow.response.validity === "flagged" && (
+                  <Dialog
+                    className="button--small"
+                    label="Decide on this flag"
+                    title="A student assistant flagged this submission"
+                    description={
+                      flagEvent
+                        ? `${flagEvent.actorName}: ${(flagEvent.reason ?? "no reason given").replace(/_/g, " ")}${flagEvent.staffNote ? ` — ${flagEvent.staffNote}` : ""}`
+                        : undefined
+                    }
+                  >
+                    <form action={confirmFlagged}>
+                      <input
+                        type="hidden"
+                        name="responseId"
+                        value={selectedRow.response.id}
+                      />
+                      <div className="field-row">
+                        <label htmlFor="confirm-reason">Reason</label>
+                        <select
+                          id="confirm-reason"
+                          className="select-field"
+                          name="reason"
+                          defaultValue="empty_or_meaningless"
+                        >
+                          {INVALID_REASONS.map((reason) => (
+                            <option key={reason.value} value={reason.value}>
+                              {reason.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="helper-text">Staff only.</span>
+                      </div>
+                      <div className="field-row">
+                        <label htmlFor="confirm-student-reason">
+                          What the student sees{" "}
+                          <span className="required-mark">Required</span>
+                        </label>
+                        <input
+                          id="confirm-student-reason"
+                          className="field"
+                          name="studentVisibleReason"
+                          required
+                        />
+                      </div>
+                      <div className="row">
+                        <button className="button button--danger" type="submit">
+                          Remove the credit
+                        </button>
+                      </div>
+                    </form>
+                    <form action={dismissFlag} style={{ marginTop: "var(--s4)" }}>
+                      <input
+                        type="hidden"
+                        name="responseId"
+                        value={selectedRow.response.id}
+                      />
+                      <button
+                        className="button button--secondary"
+                        type="submit"
+                      >
+                        Dismiss the flag and keep the credit
+                      </button>
+                    </form>
+                  </Dialog>
+                )}
+
+              {isInstructor &&
+                can("markValidity") &&
+                selectedRow.response.validity === "invalid" && (
+                  <form action={restoreValid} className="inline-form">
+                    <input
+                      type="hidden"
+                      name="responseId"
+                      value={selectedRow.response.id}
+                    />
+                    <button
+                      className="button button--secondary button--small"
+                      type="submit"
+                    >
+                      Restore the credit
+                    </button>
+                  </form>
+                )}
+            </div>
           </header>
 
+          {/* Identity details a reviewer rarely needs, kept out of the header. */}
+          {(selectedRow.student || validityHistory.length > 0) && (
+            <details className="review__details">
+              <summary>Details</summary>
+              <div className="review__details-body">
+                {selectedRow.student && (
+                  <p className="meta">
+                    Student number{" "}
+                    <span className="ident">
+                      {selectedRow.student.studentNumber}
+                    </span>
+                  </p>
+                )}
+                {validityHistory.length > 0 && (
+                  <ul className="plain-list">
+                    {validityHistory.map((event) => (
+                      <li className="meta" key={event.id}>
+                        {event.priorValidity} to {event.newValidity} —{" "}
+                        {event.actorName} ({event.actorRole}),{" "}
+                        {formatDateTime(event.createdAt, section.timezone)}
+                        {event.reason
+                          ? `, ${event.reason.replace(/_/g, " ")}`
+                          : ""}
+                        {event.staffNote ? `, ${event.staffNote}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </details>
+          )}
+
           {detail.answers.length > 0 && (
-            <section style={{ marginTop: "var(--s5)" }}>
-              <StripLabel>Form answers</StripLabel>
-              <dl className="answers">
+            <section className="review__section">
+              <h2 className="review__section-title">Submitted answers</h2>
+              {/* One aligned prompt/answer pair per question, so the whole set
+                  scans down a single column instead of reading as loose text. */}
+              <dl className="qa-pairs">
                 {detail.answers.map((answer, index) => (
-                  <div key={index}>
+                  <div className="qa-pairs__row" key={index}>
                     <dt>{answer.prompt}</dt>
                     <dd>{renderAnswer(answer)}</dd>
                   </div>
@@ -593,497 +833,252 @@ export default async function ReviewPage({
           )}
 
           {selectedRow.items.length === 0 ? (
-            <div style={{ marginTop: "var(--s5)" }}>
+            <section className="review__section">
               <Alert variant="info">
-                This student answered the form questions but did not add a
-                question or feedback of their own. There is nothing to answer.
+                This student answered the form questions and did not add a
+                question of their own. There is nothing to answer.
               </Alert>
-            </div>
+            </section>
           ) : (
-            <section style={{ marginTop: "var(--s6)" }}>
-              <StripLabel count={`${selectedRow.items.length}`}>
-                Written by the student
-              </StripLabel>
+            selectedRow.items.map(
+              ({ item, privateResponses, publicAnswers }) => {
+                const events = [
+                  ...privateResponses.map((response) => ({
+                    kind: "private" as const,
+                    at: response.createdAt,
+                    response,
+                  })),
+                  ...publicAnswers.map((answer) => ({
+                    kind: "public" as const,
+                    at: answer.publishedAt ?? answer.createdAt,
+                    answer,
+                  })),
+                ].sort((a, b) => a.at.getTime() - b.at.getTime());
+                const published = publicAnswers.some(
+                  (answer) => answer.state === "published",
+                );
 
-              {selectedRow.items.map(
-                ({ item, privateResponses, publicAnswers }) => {
-                  const events = [
-                    ...privateResponses.map((response) => ({
-                      kind: "private" as const,
-                      at: response.createdAt,
-                      response,
-                    })),
-                    ...publicAnswers.map((answer) => ({
-                      kind: "public" as const,
-                      at: answer.publishedAt ?? answer.createdAt,
-                      answer,
-                    })),
-                  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+                return (
+                  <section className="review__section" key={item.id}>
+                    <div className="review__section-head">
+                      <h2 className="review__section-title">
+                        Student question
+                      </h2>
+                      {/* One status, in words. */}
+                      <Stamp
+                        tone={
+                          published
+                            ? "green"
+                            : item.reviewState === "resolved"
+                              ? "green"
+                              : "amber"
+                        }
+                      >
+                        {published
+                          ? "Published"
+                          : item.reviewState === "resolved"
+                            ? "Answered"
+                            : "Needs reply"}
+                      </Stamp>
+                    </div>
 
-                  return (
-                    <div className="item" key={item.id}>
-                      <div className="item__head">
-                        <span className="row">
-                          <Category value={item.category} />
-                          <span className="meta">{item.submissionType}</span>
-                        </span>
-                        <Stamp
-                          tone={
-                            item.reviewState === "resolved" ? "green" : "amber"
-                          }
+                    {/* The category is secondary metadata, not the heading. */}
+                    <MetaList
+                      items={[
+                        categoryShortLabel(item.category),
+                        sentenceCase(item.submissionType),
+                      ]}
+                    />
+
+                    {/* Structure carries what the banner used to announce: this
+                        block is the student's own words, and it is private. */}
+                    <blockquote className="review__original">
+                      {item.originalText}
+                    </blockquote>
+
+                    <div className="review__actions">
+                      {can("sendPrivateResponses") && (
+                        <Dialog
+                          variant="primary"
+                          label="Reply privately"
+                          title="Reply privately"
+                          description={`Only ${selectedRow.student?.fullName ?? "this student"} can see this.`}
                         >
-                          {item.reviewState.replace(/_/g, " ")}
-                        </Stamp>
-                      </div>
-
-                      <Quote label="Original wording — never overwritten" staff>
-                        {item.originalText}
-                      </Quote>
-
-                      {events.length > 0 && (
-                        <section
-                          className="thread"
-                          aria-labelledby={`responses-${item.id}`}
-                        >
-                          <h3 className="label" id={`responses-${item.id}`}>
-                            {events.length} response
-                            {events.length === 1 ? "" : "s"} so far
-                          </h3>
-                          {events.map((event) => {
-                            if (event.kind === "private") {
-                              return (
-                                <article
-                                  className="event event--private"
-                                  key={`private-${event.response.id}`}
-                                >
-                                  <div className="event__mark">
-                                    <IconPrivate size={13} />
-                                  </div>
-                                  <div>
-                                    <div className="event__meta">
-                                      <strong>Private reply</strong>
-                                      <span>to this student only</span>
-                                      <span>
-                                        {formatDateTime(
-                                          event.response.createdAt,
-                                          section.timezone,
-                                        )}
-                                      </span>
-                                    </div>
-                                    <p className="event__body">
-                                      {event.response.body}
-                                    </p>
-                                  </div>
-                                </article>
-                              );
-                            }
-
-                            const { answer } = event;
-                            const label =
-                              answer.state === "published"
-                                ? "Published to the class"
-                                : answer.state === "scheduled"
-                                  ? "Scheduled to publish"
-                                  : "Public draft";
-
-                            return (
-                              <article
-                                className="event event--public"
-                                key={`public-${answer.id}`}
-                              >
-                                <div className="event__mark">
-                                  <IconPublic size={13} />
-                                </div>
-                                <div>
-                                  <div className="event__meta">
-                                    <strong>{label}</strong>
-                                    <span>without the asker&apos;s name</span>
-                                    <span>
-                                      {formatDateTime(
-                                        event.at,
-                                        section.timezone,
-                                      )}
-                                    </span>
-                                  </div>
-                                  {answer.publishFailed && (
-                                    <p style={{ marginTop: 4 }}>
-                                      <Stamp tone="red">
-                                        Publication failed
-                                      </Stamp>
-                                    </p>
-                                  )}
-                                  <p className="event__body event__body--lead">
-                                    {answer.publicQuestionText}
-                                  </p>
-                                  {answer.answerBody && (
-                                    <p className="event__body">
-                                      {answer.answerBody}
-                                    </p>
-                                  )}
-                                  <p style={{ marginTop: 6 }}>
-                                    {answer.state === "published" ? (
-                                      <Link
-                                        className="link small"
-                                        href={`/sections/${sectionId}/qa?selected=${answer.id}`}
-                                      >
-                                        See it in the class Q&amp;A
-                                      </Link>
-                                    ) : can("draftPublicAnswers") ? (
-                                      <Link
-                                        className="link small"
-                                        href={`/teach/sections/${sectionId}/publications`}
-                                      >
-                                        Finish it in the publication queue
-                                      </Link>
-                                    ) : null}
-                                  </p>
-                                </div>
-                              </article>
-                            );
-                          })}
-                        </section>
-                      )}
-
-                      {(can("sendPrivateResponses") ||
-                        can("draftPublicAnswers")) && (
-                        <div className="composers">
-                          {can("sendPrivateResponses") && (
-                            <div className="composer">
-                              <h3>Reply to this student only</h3>
-                              <p>
-                                Appears under their own submissions. No
-                                classmate can see it.
-                              </p>
-                              <form action={sendPrivate}>
-                                <input
-                                  type="hidden"
-                                  name="itemId"
-                                  value={item.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="selected"
-                                  value={selectedRow.response.id}
-                                />
-                                <label
-                                  className="visually-hidden"
-                                  htmlFor={`private-${item.id}`}
-                                >
-                                  Private reply
-                                </label>
-                                <textarea
-                                  id={`private-${item.id}`}
-                                  className="textarea-field"
-                                  name="body"
-                                  rows={4}
-                                  placeholder="Answer this student directly…"
-                                  required
-                                />
-                                <div>
-                                  <button
-                                    className="button button--secondary"
-                                    type="submit"
-                                  >
-                                    Send private reply
-                                  </button>
-                                </div>
-                              </form>
-                            </div>
-                          )}
-
-                          {can("draftPublicAnswers") && (
-                            <div className="composer">
-                              <h3>Answer the whole section</h3>
-                              <p>
-                                Rewrite the question so it cannot identify the
-                                asker. The original above stays untouched.
-                              </p>
-                              <PublicAnswerComposer
-                                action={draftOrPublish}
-                                itemId={item.id}
-                                selectedResponseId={selectedRow.response.id}
-                                originalQuestion={item.originalText}
-                                canPublish={can("publishPublicAnswers")}
+                          <form action={sendPrivate}>
+                            <input
+                              type="hidden"
+                              name="itemId"
+                              value={item.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="selected"
+                              value={selectedRow.response.id}
+                            />
+                            <div className="field-row">
+                              <label htmlFor={`private-${item.id}`}>
+                                Your reply{" "}
+                                <span className="required-mark">Required</span>
+                              </label>
+                              <textarea
+                                id={`private-${item.id}`}
+                                className="textarea-field"
+                                name="body"
+                                rows={6}
+                                required
                               />
                             </div>
-                          )}
-                        </div>
+                            <div className="row">
+                              <button
+                                className="button button--primary"
+                                type="submit"
+                              >
+                                Send private reply
+                              </button>
+                            </div>
+                          </form>
+                        </Dialog>
+                      )}
+
+                      {can("draftPublicAnswers") && (
+                        <Dialog
+                          label="Answer publicly"
+                          title="Answer this section"
+                          description="Everyone enrolled in this section sees the wording you write here."
+                        >
+                          <PublicAnswerComposer
+                            action={draftOrPublish}
+                            itemId={item.id}
+                            selectedResponseId={selectedRow.response.id}
+                            originalQuestion={item.originalText}
+                            canPublish={can("publishPublicAnswers")}
+                          />
+                        </Dialog>
                       )}
                     </div>
-                  );
-                },
-              )}
-            </section>
-          )}
-          {/* Participation credit comes LAST, and closed.
-              It used to open the pane: a validity dropdown, a
-              student-visible-reason field and a red "Remove participation
-              credit" button sat above the student's own words and above the
-              reply and publish composers. Answering is the work; removing
-              credit is a rare, destructive escape hatch, and leading with it
-              inverted the hierarchy and left a mistake one click from
-              arrival. */}
-          <details className="disclose" style={{ marginTop: "var(--s6)" }}>
-            <summary>
-              <IconChevron className="disclose__mark" size={15} />
-              Participation credit
-            </summary>
-            <div className="disclose__body">
-            {(can("markValidity") || can("flagValidity")) && (
-              <div className="validity" style={{ marginTop: "var(--s4)" }}>
-                {/* A flag is an internal state. A student is never told one
-                    exists, and never sees the internal reason — only the
-                    student-visible sentence an instructor types. */}
-                {selectedRow.response.validity === "valid" &&
-                  can("flagValidity") &&
-                  !isInstructor && (
-                    <form action={flag} className="inline-form">
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <label className="visually-hidden" htmlFor="flag-reason">
-                        Reason for flagging
-                      </label>
-                      <select
-                        id="flag-reason"
-                        className="select-field"
-                        name="reason"
-                        defaultValue="empty_or_meaningless"
-                        style={{ maxWidth: 240 }}
-                      >
-                        {INVALID_REASONS.map((reason) => (
-                          <option key={reason.value} value={reason.value}>
-                            {reason.label}
-                          </option>
-                        ))}
-                      </select>
-                      <label className="visually-hidden" htmlFor="flag-note">
-                        Note for the instructor
-                      </label>
-                      <input
-                        id="flag-note"
-                        className="field"
-                        name="note"
-                        placeholder="Note for the instructor (optional)"
-                        style={{ maxWidth: 260 }}
-                      />
-                      <button
-                        className="button button--secondary button--small"
-                        type="submit"
-                      >
-                        Flag for the instructor
-                      </button>
-                      <span className="meta">
-                        Keeps this week&apos;s credit for now. The student is
-                        never told a flag exists.
-                      </span>
-                    </form>
-                  )}
 
-                {isInstructor &&
-                  can("markValidity") &&
-                  selectedRow.response.validity === "flagged" && (
-                    <div className="stack-3">
-                      {(() => {
-                        const flagEvent = [...validityHistory]
-                          .reverse()
-                          .find((event) => event.action === "flag");
-                        return flagEvent ? (
-                          <Alert
-                            variant="warning"
-                            title="Flagged by a student assistant"
-                          >
-                            {flagEvent.actorName}:{" "}
-                            {(flagEvent.reason ?? "no reason given").replace(
-                              /_/g,
-                              " ",
-                            )}
-                            {flagEvent.staffNote
-                              ? ` — ${flagEvent.staffNote}`
-                              : ""}
-                          </Alert>
-                        ) : null;
-                      })()}
-                      <form action={confirmFlagged} className="inline-form">
-                        <input
-                          type="hidden"
-                          name="responseId"
-                          value={selectedRow.response.id}
-                        />
-                        <label
-                          className="visually-hidden"
-                          htmlFor="confirm-reason"
-                        >
-                          Internal reason for confirming the flag
-                        </label>
-                        <select
-                          id="confirm-reason"
-                          className="select-field"
-                          name="reason"
-                          defaultValue="empty_or_meaningless"
-                          style={{ maxWidth: 240 }}
-                        >
-                          {INVALID_REASONS.map((reason) => (
-                            <option key={reason.value} value={reason.value}>
-                              {reason.label}
-                            </option>
-                          ))}
-                        </select>
-                        <label
-                          className="visually-hidden"
-                          htmlFor="confirm-student-reason"
-                        >
-                          Reason the student will see
-                        </label>
-                        <input
-                          id="confirm-student-reason"
-                          className="field"
-                          name="studentVisibleReason"
-                          required
-                          placeholder="Reason the student will see"
-                          style={{ maxWidth: 300 }}
-                        />
-                        <button
-                          className="button button--danger button--small"
-                          type="submit"
-                        >
-                          Confirm — remove credit
-                        </button>
-                      </form>
-                      <form action={dismissFlag} className="inline-form">
-                        <input
-                          type="hidden"
-                          name="responseId"
-                          value={selectedRow.response.id}
-                        />
-                        <button
-                          className="button button--secondary button--small"
-                          type="submit"
-                        >
-                          Dismiss the flag — keep the credit
-                        </button>
-                      </form>
-                    </div>
-                  )}
+                    {events.length > 0 && (
+                      <div className="responses">
+                        <h3 className="review__section-title">
+                          Responses
+                          {events.length > 1 && (
+                            <span className="review__count">
+                              {events.length}
+                            </span>
+                          )}
+                        </h3>
+                        {events.map((event) => {
+                          if (event.kind === "private") {
+                            return (
+                              <article
+                                className="response response--private"
+                                key={`private-${event.response.id}`}
+                              >
+                                <div className="response__head">
+                                  <span className="response__type">
+                                    <IconPrivate size={13} />
+                                    Private reply
+                                  </span>
+                                  <span className="response__audience">
+                                    Only{" "}
+                                    {selectedRow.student?.fullName ??
+                                      "this student"}{" "}
+                                    can see this
+                                  </span>
+                                  <span className="response__when">
+                                    {formatDateTime(
+                                      event.response.createdAt,
+                                      section.timezone,
+                                    )}
+                                  </span>
+                                </div>
+                                <p className="response__body">
+                                  {event.response.body}
+                                </p>
+                              </article>
+                            );
+                          }
 
-                {isInstructor &&
-                  can("markValidity") &&
-                  selectedRow.response.validity === "valid" && (
-                    <form action={invalidate} className="inline-form">
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <label
-                        className="visually-hidden"
-                        htmlFor="invalid-reason"
-                      >
-                        Internal reason for removing credit
-                      </label>
-                      <select
-                        id="invalid-reason"
-                        className="select-field"
-                        name="reason"
-                        defaultValue="empty_or_meaningless"
-                        style={{ maxWidth: 240 }}
-                      >
-                        {INVALID_REASONS.map((reason) => (
-                          <option key={reason.value} value={reason.value}>
-                            {reason.label}
-                          </option>
-                        ))}
-                      </select>
-                      <label
-                        className="visually-hidden"
-                        htmlFor="invalid-student-reason"
-                      >
-                        Reason the student will see
-                      </label>
-                      <input
-                        id="invalid-student-reason"
-                        className="field"
-                        name="studentVisibleReason"
-                        required
-                        placeholder="Reason the student will see"
-                        style={{ maxWidth: 280 }}
-                      />
-                      <button
-                        className="button button--danger button--small"
-                        type="submit"
-                      >
-                        Remove participation credit
-                      </button>
-                      <span className="meta">
-                        Audited and reversible. The student sees the sentence
-                        you type, never the internal reason or note.
-                      </span>
-                    </form>
-                  )}
+                          const { answer } = event;
+                          const label =
+                            answer.state === "published"
+                              ? "Published answer"
+                              : answer.state === "scheduled"
+                                ? "Scheduled answer"
+                                : "Draft answer";
 
-                {isInstructor &&
-                  can("markValidity") &&
-                  selectedRow.response.validity === "invalid" && (
-                    <form action={restoreValid} className="inline-form">
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <button
-                        className="button button--secondary button--small"
-                        type="submit"
-                      >
-                        Restore participation credit
-                      </button>
-                      <span className="meta">
-                        Reason on record:{" "}
-                        {(
-                          selectedRow.response.invalidationReason ?? ""
-                        ).replace(/_/g, " ")}
-                      </span>
-                    </form>
-                  )}
-
-                {validityHistory.length > 0 && (
-                  <details className="validity__history">
-                    <summary className="meta">
-                      Validity history ({validityHistory.length})
-                    </summary>
-                    <ul className="data-list">
-                      {validityHistory.map((event) => (
-                        <li key={event.id}>
-                          <span className="data-list__main">
-                            <strong>
-                              {event.priorValidity} &rarr; {event.newValidity}
-                            </strong>
-                            <small>
-                              {event.actorName} ({event.actorRole}) ·{" "}
-                              {formatDateTime(
-                                event.createdAt,
-                                section.timezone,
+                          return (
+                            <article
+                              className="response response--public"
+                              key={`public-${answer.id}`}
+                            >
+                              <div className="response__head">
+                                <span className="response__type">
+                                  <IconPublic size={13} />
+                                  {label}
+                                </span>
+                                <span className="response__audience">
+                                  Everyone in this section, without the
+                                  asker&apos;s name
+                                </span>
+                                <span className="response__when">
+                                  {formatDateTime(event.at, section.timezone)}
+                                </span>
+                              </div>
+                              {answer.publishFailed && (
+                                <p style={{ marginTop: 4 }}>
+                                  <Stamp tone="red">Publication failed</Stamp>
+                                </p>
                               )}
-                              {event.reason
-                                ? ` · ${event.reason.replace(/_/g, " ")}`
-                                : ""}
-                              {event.staffNote ? ` · ${event.staffNote}` : ""}
-                            </small>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </div>
-            )}
-            </div>
-          </details>
+                              <dl className="qa-pairs">
+                                <div className="qa-pairs__row">
+                                  <dt>Question</dt>
+                                  <dd>{answer.publicQuestionText}</dd>
+                                </div>
+                                {answer.answerBody && (
+                                  <div className="qa-pairs__row">
+                                    <dt>Answer</dt>
+                                    <dd>{answer.answerBody}</dd>
+                                  </div>
+                                )}
+                              </dl>
+                              <p style={{ marginTop: 6 }}>
+                                {answer.state === "published" ? (
+                                  <Link
+                                    className="link small"
+                                    href={`/sections/${sectionId}/qa?selected=${answer.id}`}
+                                  >
+                                    See it in the class Q&amp;A
+                                  </Link>
+                                ) : can("draftPublicAnswers") ? (
+                                  <Link
+                                    className="link small"
+                                    href={`/teach/sections/${sectionId}/publications`}
+                                  >
+                                    Finish it in the publication queue
+                                  </Link>
+                                ) : null}
+                              </p>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+                );
+              },
+            )
+          )}
         </article>
       )}
     </WorkspaceShell>
   );
+}
+
+/** An internal enum value, said the way a person would say it. */
+function sentenceCase(value: string): string {
+  const words = value.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function truncate(text: string, max: number): string {

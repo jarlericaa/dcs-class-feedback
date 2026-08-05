@@ -350,6 +350,52 @@ export async function skipCycle(actorUserId: string, cycleId: string) {
 }
 
 /**
+ * Undo a skip: a skipped occurrence goes back to `scheduled`.
+ *
+ * `skipCycle` only accepts `draft` or `scheduled`, so a skipped cycle has never
+ * opened and cannot hold a submission. Restoring it therefore discards nothing
+ * and revives no response — the reconciliation poller simply picks it up again
+ * on its normal schedule.
+ *
+ * This exists because without it a single click permanently removed a week from
+ * a section with no way back, and nothing in the domain rules says a skip is
+ * final (see docs/UI-REVIEW-MATCHES-PRECISION.md). Deadlines stay hard and
+ * every transition stays audited.
+ */
+export async function restoreSkippedCycle(
+  actorUserId: string,
+  cycleId: string,
+) {
+  const cycle = await db.query.weeklyCycles.findFirst({
+    where: eq(weeklyCycles.id, cycleId),
+  });
+  if (!cycle) throw new Error("Cycle not found");
+  await requireSectionStaff(
+    db,
+    actorUserId,
+    cycle.sectionId,
+    "manageWeeklyCycles",
+  );
+  if (cycle.state !== "skipped") {
+    throw new Error(`Cannot restore a cycle in state ${cycle.state}`);
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .update(weeklyCycles)
+      .set({ state: "scheduled", updatedAt: new Date() })
+      .where(eq(weeklyCycles.id, cycleId));
+    await writeAudit(tx, {
+      actorUserId,
+      action: "cycle.restored",
+      entityType: "weekly_cycle",
+      entityId: cycleId,
+      before: { state: cycle.state },
+      after: { state: "scheduled" },
+    });
+  });
+}
+
+/**
  * Override one occurrence's open/deadline window (project-specs.md §6.2 step 4:
  * "Staff can pause, skip, or override a scheduled release").
  *

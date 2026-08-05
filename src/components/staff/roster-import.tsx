@@ -227,11 +227,11 @@ export function RosterImport({
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               aria-describedby="roster-file-help"
             />
+            {/* What the teacher must PROVIDE. What the parser detects, ignores
+                and refuses to store is its own business and is unchanged —
+                including that Sex Assigned at Birth is never imported. */}
             <span className="helper-text" id="roster-file-help">
-              The sheet needs a header row with a <code>Student Number</code>{" "}
-              column and a name column. Course details and the extra student
-              columns are detected automatically.{" "}
-              <strong>Sex Assigned at Birth is never imported.</strong>
+              Needs a header row with a student number column and a name column.
             </span>
           </div>
         ) : (
@@ -247,9 +247,7 @@ export function RosterImport({
               aria-describedby="csv-help"
             />
             <span className="helper-text" id="csv-help">
-              A header row is required, with a <code>student number</code>{" "}
-              column and a name column. Unrecognized columns are reported and
-              ignored.
+              Needs a header row with a student number column and a name column.
             </span>
           </div>
         )}
