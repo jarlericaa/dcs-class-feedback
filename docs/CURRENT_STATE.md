@@ -84,24 +84,38 @@ workflow:
 
 ## UI maturity
 
-Every route renders inside a shared `AppShell` with landmarks, a skip link,
-breadcrumbs, a workspace-specific privacy note, and navigation derived from the
-same effective permissions the server enforces. The design system lives in
-`src/app/globals.css` and follows [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md).
+**The interface was redesigned in full on 2026-08-05.** The visual system is
+now the departmental noticeboard described in [DESIGN.md](../DESIGN.md), which
+is the design authority; [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md) is the earlier
+[Recommended] direction it grew out of, and
+[CLAUDE_UI_SCREEN_SPEC.md](CLAUDE_UI_SCREEN_SPEC.md) still owns the screen-level
+acceptance criteria and the information architecture. Where their token tables
+disagree with DESIGN.md, DESIGN.md wins. The full before/after is in
+[CLAUDE_UI_REDESIGN_REPORT.md](CLAUDE_UI_REDESIGN_REPORT.md).
+
+Every route renders inside the same workspace chrome with landmarks, a skip
+link, breadcrumbs, a privacy note in the rail footer, and navigation derived
+from the same effective permissions the server enforces.
 
 Present:
 
-- responsive layout: sidebar at desktop, a keyboard-accessible `<details>`
-  drawer on phones, single-column collapse for the staff queue/detail split;
-- design tokens, buttons, cards, badges, alerts, tables, and form controls;
-- empty, error, success, unauthorized, closed-cycle, and no-results states;
-- a visible global focus ring, `aria-invalid` + `aria-describedby` on failing
-  fields and grouped choices, status conveyed by text and shape rather than
-  colour alone;
+- responsive layout verified at 320, 390, 768, 1024 and 1440: a persistent rail
+  at desktop, a keyboard-accessible `<details>` drawer below 860px, and a
+  URL-driven list/detail stack for the Q&A archive and the review inbox;
+- one token set, a strict 4px spacing scale, 0/2/3px radii, hairline borders and
+  no resting shadows;
+- two type registers — self-hosted Charter for text a human wrote, the platform
+  sans for everything the system says;
+- a drawn SVG icon set; no Unicode glyph or emoji stands in for an icon;
+- empty, error, success, unauthorized, closed-cycle and no-results states, each
+  with copy naming what to do next;
+- a visible global focus ring on every control including date and time inputs,
+  `aria-invalid` + `aria-describedby` on failing fields and grouped choices, and
+  status conveyed as a word plus a drawn shape plus a tone — never colour alone;
 - an accessible publication acknowledgment guard that preserves the teacher's
   public-question and answer fields while the service remains the security
   backstop;
-- review filters and week scoping.
+- review filters, category filters and week scoping, all in the URL.
 
 Not present:
 
@@ -137,8 +151,9 @@ Acceptance criteria and build order: [WEB-APP-BUILD-PLAN.md](WEB-APP-BUILD-PLAN.
 | `npm run lint` | **Pass** |
 | `npm run typecheck` | **Pass** |
 | `npm test` | **Pass** — 6 files, 44 unit tests |
-| `npm run test:integration` | **Pass** — 9 files, 114 integration tests |
+| `npm run test:integration` | **Pass** — 9 files, 115 integration tests |
 | `npm run build` | **Pass** — 20 routes |
+| `impeccable detect` | **Pass** — 0 findings across `src/` |
 | Chromium QA | **Pass after remediation** — desktop/mobile teacher→student journey plus 14 targeted fix assertions; see [qa/final-remediation-report.md](qa/final-remediation-report.md) |
 
 Integration tests need PostgreSQL. This snapshot used the documented Docker

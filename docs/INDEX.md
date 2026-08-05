@@ -13,7 +13,8 @@ not silently contradict one another.
 4. [DEVELOPMENT.md](DEVELOPMENT.md) — local setup and verification commands.
 5. [WEB-APP-BUILD-PLAN.md](WEB-APP-BUILD-PLAN.md) — the recommended UI build
    sequence.
-6. [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md) — visual and interaction direction.
+6. [../DESIGN.md](../DESIGN.md) — the design authority: visual system, tokens,
+   type registers, states, breakpoints, and forbidden patterns.
 7. [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md) — stale specs, proposed
    changes, and questions that still matter.
 8. [prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md](prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md) —
@@ -93,7 +94,9 @@ Documents use these labels:
 | [JOURNEY-TEACHER-SETUP.md](JOURNEY-TEACHER-SETUP.md) | Audit and proposed redesign of cold setup: sequencing, section readiness, and the roster-before-sign-in dependency |
 | [IA-STRUCTURE.md](IA-STRUCTURE.md) | Navigation grouping, category taxonomy, labelling conventions, and Q&A archive browse/search strategy |
 | [CONTENT-VOICE.md](CONTENT-VOICE.md) | Voice framework, the user/system register rule, microcopy patterns, error inventory, and label decisions |
-| [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md) | Proposed visual system and interaction rules |
+| [../DESIGN.md](../DESIGN.md) | **The design authority.** Visual system, tokens, type registers, density split, states, breakpoints, anti-patterns |
+| [CLAUDE_UI_REDESIGN_REPORT.md](CLAUDE_UI_REDESIGN_REPORT.md) | The 2026-08-05 redesign: before/after, routes, verification, unresolved issues |
+| [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md) | The earlier [Recommended] direction DESIGN.md grew out of; superseded for tokens |
 | [DESIGN-RESEARCH.md](DESIGN-RESEARCH.md) | Comparable products and patterns worth borrowing |
 | [ED_DISCUSSION_REFERENCE_PACK.md](ED_DISCUSSION_REFERENCE_PACK.md) | Screenshot links, visual study checklist, and product-pattern translation |
 | [prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md](prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md) | Implementation prompt for Claude Opus 5 |

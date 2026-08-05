@@ -40,6 +40,15 @@ horizontal scrolling.
 
 ## Global visual contract
 
+> **Superseded by [DESIGN.md](../DESIGN.md) as of 2026-08-05 for tokens,
+> geometry and type.** The screen specifications, the reference translation
+> table, the viewport list and the visual QA acceptance checklist below remain
+> the acceptance criteria and are all met. The token table and layout geometry
+> in this section describe the earlier direction: the implemented system uses a
+> matte board ground with hard-cornered notices, a 52px top bar, a 216px rail, a
+> 360px list pane, an 820px reading measure, and a strict 4/8/12/16/24/32/48/64
+> spacing scale. Read DESIGN.md for the current values.
+
 ### Layout geometry
 
 - Desktop sidebar: approximately 240–264px wide.

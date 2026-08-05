@@ -1,7 +1,19 @@
 # UX Design Brief
 
-**Status:** [Recommended] visual direction for owner/design review.  
+**Status:** [Recommended] visual direction for owner/design review.
+**Superseded for implementation by [DESIGN.md](../DESIGN.md) as of 2026-08-05.**
 **Working concept:** a calm academic operations workspace for honest feedback.
+
+> This brief is the origin of the current design, not its specification. The
+> implemented system keeps its goals — a calm university product, a warm neutral
+> canvas, a restrained green accent, amber for attention, red held back for
+> destruction and privacy risk, status never carried by colour alone — and
+> resolves the parts it left open. Where the token table below disagrees with
+> DESIGN.md, **DESIGN.md is authoritative**: the implemented palette is a matte
+> board rather than a near-white canvas, the accent is `#1f6b4a`, and the
+> category colour spectrum this brief never asked for has been removed. The
+> layout, information-hierarchy, forms, review-queue, privacy-confirmation and
+> accessibility sections below all still hold.
 
 ## Design goal
 

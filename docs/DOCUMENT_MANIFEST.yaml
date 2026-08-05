@@ -111,10 +111,22 @@ documents:
     status: proposed
     maintainer: product_and_design_owner
     update_trigger: voice_register_microcopy_pattern_or_label_decision_change
+  - path: DESIGN.md
+    audience: product_design_and_engineering
+    authority: design_system
+    status: current
+    maintainer: product_and_design_owner
+    update_trigger: token_type_component_state_or_breakpoint_change
+  - path: docs/CLAUDE_UI_REDESIGN_REPORT.md
+    audience: product_design_and_engineering
+    authority: redesign_record
+    status: current
+    maintainer: technical_owner
+    update_trigger: none_historical_record
   - path: docs/UX-DESIGN-BRIEF.md
     audience: product_design_and_engineering
     authority: design_direction
-    status: proposed
+    status: superseded_for_tokens_by_DESIGN.md
     maintainer: product_and_design_owner
     update_trigger: design_review_or_usability_finding
   - path: docs/DESIGN-RESEARCH.md
