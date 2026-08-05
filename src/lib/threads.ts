@@ -1,63 +1,62 @@
 import { env } from "@/env";
 
 /**
- * Presentation helpers for the thread-style workspace: category colours,
- * compact relative times, and date grouping for the list pane.
+ * Presentation helpers for the list panes: category identity, compact relative
+ * times, and date grouping.
  *
- * The information architecture follows docs/CLAUDE_UI_SCREEN_SPEC.md
- * "Reference translation" — course rail, category list, dense list, selected
- * detail. Nothing here implements a product rule.
+ * Categories carry a WORD and a SHAPE, never a colour (DESIGN.md §3). The
+ * previous eight-hue category spectrum and the deterministic avatar colour
+ * wheel are both gone: neither survived grayscale, and neither meant anything.
+ * Nothing here implements a product rule.
  */
 
-export type CategorySlug =
-  | "content"
-  | "logistics"
-  | "misc"
-  | "general"
-  | "lectures"
-  | "sections"
-  | "problem-sets"
-  | "assignments"
-  | "midterm"
-  | "final-exam"
-  | "social";
+export type CategorySlug = "content" | "logistics" | "misc";
+export type CategoryShape = "square" | "triangle" | "circle";
 
-export const QUESTION_CATEGORIES = [
-  { slug: "content" as const, label: "Course content" },
-  { slug: "logistics" as const, label: "Class logistics" },
-  { slug: "misc" as const, label: "Other" },
+export const QUESTION_CATEGORIES: {
+  slug: CategorySlug;
+  label: string;
+  short: string;
+  shape: CategoryShape;
+}[] = [
+  {
+    slug: "content",
+    label: "Course content",
+    short: "Content",
+    shape: "square",
+  },
+  {
+    slug: "logistics",
+    label: "Class logistics",
+    short: "Logistics",
+    shape: "triangle",
+  },
+  { slug: "misc", label: "Other", short: "Other", shape: "circle" },
 ];
 
+function find(value: string | null | undefined) {
+  return QUESTION_CATEGORIES.find((c) => c.slug === value);
+}
+
 export function categoryLabel(value: string | null | undefined): string {
-  return (
-    QUESTION_CATEGORIES.find((c) => c.slug === value)?.label ?? "Uncategorised"
-  );
+  return find(value)?.label ?? "Uncategorised";
 }
 
 /** Short label used inside dense list rows. */
 export function categoryShortLabel(value: string | null | undefined): string {
-  switch (value) {
-    case "content":
-      return "Content";
-    case "logistics":
-      return "Class logistics";
-    case "misc":
-      return "Other";
-    default:
-      return "General";
-  }
+  return find(value)?.short ?? "Uncategorised";
 }
 
-export function categoryClass(
-  value: string | null | undefined,
-  kind: "dot" | "label",
+/** The silhouette that distinguishes this category without using colour. */
+export function categoryShape(value: string | null | undefined): CategoryShape {
+  return find(value)?.shape ?? "circle";
+}
+
+/** "3m", "1h", "2d", "3mo" — the compact form the list panes use. */
+export function shortAgo(
+  value: Date | null | undefined,
+  now: Date = new Date(),
 ): string {
-  const slug = value ?? "general";
-  return kind === "dot" ? `cat-dot cat--${slug}` : `cat-label cat-label--${slug}`;
-}
-
-/** "3m", "1h", "2d", "3mth" — the compact form the list pane uses. */
-export function shortAgo(value: Date | null | undefined, now: Date = new Date()): string {
   if (!value) return "";
   const ms = now.getTime() - value.getTime();
   if (ms < 60_000) return "now";
@@ -68,23 +67,22 @@ export function shortAgo(value: Date | null | undefined, now: Date = new Date())
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d`;
   const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mth`;
+  if (months < 12) return `${months}mo`;
   return `${Math.floor(months / 12)}y`;
 }
 
 /**
- * Group heading for a thread: "This Week", "Last Week", or an absolute date
- * once it is older than that.
+ * Group heading for a list: "This week", "Last week", or an absolute date once
+ * it is older than that.
  */
 export function dayGroup(
   value: Date,
   now: Date = new Date(),
   timeZone: string = env.INSTITUTION_TIMEZONE,
 ): string {
-  const ms = now.getTime() - value.getTime();
-  const days = ms / 86_400_000;
-  if (days < 7) return "This Week";
-  if (days < 14) return "Last Week";
+  const days = (now.getTime() - value.getTime()) / 86_400_000;
+  if (days < 7) return "This week";
+  if (days < 14) return "Last week";
   return new Intl.DateTimeFormat("en-GB", {
     timeZone,
     day: "numeric",
@@ -108,24 +106,4 @@ export function groupByDay<T>(
     else groups.push({ label, rows: [row] });
   }
   return groups;
-}
-
-/** Deterministic avatar tint from a name, so the same person keeps a colour. */
-const AVATAR_COLOURS = [
-  "#2f6fed",
-  "#0f9d58",
-  "#d9534f",
-  "#7e57c2",
-  "#00897b",
-  "#ef6c00",
-  "#c2185b",
-  "#455a64",
-];
-
-export function avatarColour(seed: string): string {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  return AVATAR_COLOURS[hash % AVATAR_COLOURS.length]!;
 }

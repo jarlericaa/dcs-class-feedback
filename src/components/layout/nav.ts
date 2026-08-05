@@ -1,4 +1,21 @@
 import type { SectionAccess } from "@/modules/authz";
+import {
+  IconAdmin,
+  IconArchive,
+  IconAudit,
+  IconBacklog,
+  IconCourse,
+  IconForm,
+  IconHistory,
+  IconImport,
+  IconInbox,
+  IconMatrix,
+  IconOverview,
+  IconPublish,
+  IconRoster,
+  IconSetup,
+  IconWeek,
+} from "@/components/ui/icons";
 
 /**
  * Navigation is derived from the SAME effective permissions the server
@@ -8,11 +25,34 @@ import type { SectionAccess } from "@/modules/authz";
  * and action re-checks with require* before touching data.
  */
 
+/** The drawn icons the rail may use. DESIGN.md forbids glyph icons. */
+export const NAV_ICONS = {
+  overview: IconOverview,
+  form: IconForm,
+  archive: IconArchive,
+  history: IconHistory,
+  inbox: IconInbox,
+  publish: IconPublish,
+  roster: IconRoster,
+  import: IconImport,
+  matrix: IconMatrix,
+  backlog: IconBacklog,
+  setup: IconSetup,
+  audit: IconAudit,
+  course: IconCourse,
+  week: IconWeek,
+  admin: IconAdmin,
+} as const;
+
+export type NavIcon = keyof typeof NAV_ICONS;
+
 export interface NavItem {
   href: string;
   label: string;
-  icon: string;
+  icon: NavIcon;
   active?: boolean;
+  /** real count only — never a decorative number */
+  count?: number;
 }
 
 export interface NavGroup {
@@ -41,6 +81,7 @@ function mark(items: NavItem[], currentPath: string): NavItem[] {
 export function staffSectionNav(
   access: SectionAccess,
   currentPath: string,
+  counts?: { needsReview?: number },
 ): NavGroup[] {
   const id = access.section.id;
   const perms = access.staff?.permissions;
@@ -50,7 +91,8 @@ export function staffSectionNav(
     items.push({
       href: `/teach/sections/${id}/review`,
       label: "Review inbox",
-      icon: "⌂",
+      icon: "inbox",
+      count: counts?.needsReview || undefined,
     });
   }
   // Any publication capability can READ the queue; each action inside is
@@ -64,25 +106,25 @@ export function staffSectionNav(
     items.push({
       href: `/teach/sections/${id}/publications`,
       label: "Publication queue",
-      icon: "◈",
+      icon: "publish",
     });
   }
   items.push({
     href: `/sections/${id}/qa`,
     label: "Class Q&A",
-    icon: "◎",
+    icon: "archive",
   });
   if (perms.viewStudentIdentities) {
     items.push(
       {
         href: `/teach/sections/${id}/matches`,
         label: "Account matches",
-        icon: "◇",
+        icon: "roster",
       },
       {
         href: `/teach/sections/${id}/import`,
         label: "Roster import",
-        icon: "↥",
+        icon: "import",
       },
     );
   }
@@ -90,14 +132,14 @@ export function staffSectionNav(
     items.push({
       href: `/teach/sections/${id}/participation`,
       label: "Participation",
-      icon: "▤",
+      icon: "matrix",
     });
   }
   if (perms.manageBacklogImports) {
     items.push({
       href: `/teach/sections/${id}/backlog`,
       label: "Question backlog",
-      icon: "≡",
+      icon: "backlog",
     });
   }
 
@@ -106,7 +148,7 @@ export function staffSectionNav(
     manage.push({
       href: `/teach/sections/${id}/setup`,
       label: "Section setup",
-      icon: "⚙",
+      icon: "setup",
     });
   }
   // Audit browsing is not delegable to a TA in the MVP permission catalog.
@@ -114,12 +156,12 @@ export function staffSectionNav(
     manage.push({
       href: `/teach/sections/${id}/audit`,
       label: "Audit history",
-      icon: "◷",
+      icon: "audit",
     });
   }
 
   const groups: NavGroup[] = [
-    { label: "Section", items: mark(items, currentPath) },
+    { label: "This section", items: mark(items, currentPath) },
   ];
   if (manage.length > 0) {
     groups.push({ label: "Manage", items: mark(manage, currentPath) });
@@ -135,10 +177,7 @@ export function studentSectionNav(
   return [
     {
       label: "Workspace",
-      items: mark(
-        [{ href: "/", label: "Overview", icon: "⌂" }],
-        currentPath,
-      ),
+      items: mark([{ href: "/", label: "Overview", icon: "overview" }], currentPath),
     },
     {
       label: "This class",
@@ -146,18 +185,18 @@ export function studentSectionNav(
         [
           {
             href: `/sections/${sectionId}`,
-            label: "Current week",
-            icon: "⌂",
+            label: "This week's form",
+            icon: "form",
           },
           {
             href: `/sections/${sectionId}/history`,
             label: "My submissions",
-            icon: "↺",
+            icon: "history",
           },
           {
             href: `/sections/${sectionId}/qa`,
-            label: "Q&A archive",
-            icon: "?",
+            label: "Class Q&A",
+            icon: "archive",
           },
         ],
         currentPath,
@@ -171,12 +210,22 @@ export function homeNav(
   currentPath: string,
   opts: { isTeacher: boolean; isPlatformAdmin: boolean },
 ): NavGroup[] {
-  const items: NavItem[] = [{ href: "/", label: "Overview", icon: "⌂" }];
+  const items: NavItem[] = [
+    { href: "/", label: "Overview", icon: "overview" },
+  ];
   if (opts.isTeacher) {
-    items.push({ href: "/teach/courses", label: "My courses", icon: "▤" });
+    items.push({
+      href: "/teach/courses",
+      label: "My courses",
+      icon: "course",
+    });
   }
   if (opts.isPlatformAdmin) {
-    items.push({ href: "/admin", label: "Platform admin", icon: "⚙" });
+    items.push({
+      href: "/admin",
+      label: "Platform admin",
+      icon: "admin",
+    });
   }
   return [{ label: "Workspace", items: mark(items, currentPath) }];
 }

@@ -2,20 +2,28 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOutAction } from "@/app/actions/session";
 import { initials } from "@/lib/datetime";
-import type { NavGroup } from "./nav";
+import {
+  IconBack,
+  IconCheck,
+  IconFilter,
+  IconMenu,
+  IconSearch,
+} from "@/components/ui/icons";
+import { CategoryMark } from "@/components/ui/icons";
+import { NAV_ICONS, type NavGroup } from "./nav";
 
 /**
- * The workspace chrome: a fixed brand bar, a left rail carrying the course
- * list and the category list, and a body that is either a two-pane
+ * The workspace chrome: a white top bar with a hairline under it, a left rail
+ * carrying the section's destinations, and a body that is either a two-pane
  * list/detail view or a single scrolling page.
  *
- * This follows the information architecture in docs/CLAUDE_UI_SCREEN_SPEC.md
- * (course rail → category list → dense list → selected detail). The identity
- * is Class Feedback's own: no third-party logo, product name, or brand asset
- * is reproduced.
+ * The information architecture follows docs/CLAUDE_UI_SCREEN_SPEC.md (course
+ * rail → category list → dense list → selected detail); the visual world is
+ * Class Feedback's own (DESIGN.md). No third-party logo, product name, brand
+ * colour or asset is reproduced.
  *
- * Everything the rail offers is derived from the same effective permissions
- * the server enforces. Hiding a link is still never authorization.
+ * Everything the rail offers is derived from the SAME effective permissions the
+ * server enforces. Hiding a link is presentation, never authorization.
  */
 
 export interface ShellUser {
@@ -35,6 +43,8 @@ export interface RailCategory {
   href: string;
   label: string;
   slug: string;
+  /** drawn silhouette; categories never carry a colour */
+  shape: "square" | "triangle" | "circle";
   active?: boolean;
   /** real count for the current view */
   count?: number;
@@ -44,51 +54,63 @@ export interface RailCategory {
 
 function Rail({
   user,
+  workspaceLabel,
   primaryAction,
   courses,
   categories,
   navGroups,
   footer,
+  idPrefix,
 }: {
   user: ShellUser;
+  workspaceLabel?: string;
   primaryAction?: { href: string; label: string };
   courses?: RailCourse[];
   categories?: RailCategory[];
   navGroups?: NavGroup[];
   footer?: ReactNode;
+  /** the rail is rendered twice (persistent + drawer); ids must stay unique */
+  idPrefix: string;
 }) {
   return (
     <>
       {primaryAction && (
-        <Link className="ws-new-thread" href={primaryAction.href}>
-          <span aria-hidden="true">✎</span>
+        <Link className="ws-rail__action" href={primaryAction.href}>
           {primaryAction.label}
         </Link>
       )}
 
-      {courses && courses.length > 0 && (
-        <>
-          <p className="ws-rail__heading">Courses</p>
-          {courses.map((course) => (
-            <Link
-              key={course.href}
-              className={`ws-rail__item ${course.active ? "ws-rail__item--active" : ""}`}
-              href={course.href}
-              aria-current={course.active ? "page" : undefined}
-            >
-              <span />
-              <span>{course.label}</span>
-              {course.count ? (
-                <span className="ws-rail__count">{course.count}</span>
-              ) : null}
-            </Link>
-          ))}
-        </>
-      )}
+      {navGroups?.map((group) => (
+        <div key={group.label}>
+          <p className="ws-rail__heading">{group.label}</p>
+          {group.items.map((item) => {
+            const Glyph = NAV_ICONS[item.icon];
+            return (
+              <Link
+                key={item.href}
+                className={`ws-rail__item ${item.active ? "ws-rail__item--active" : ""}`}
+                href={item.href}
+                aria-current={item.active ? "page" : undefined}
+              >
+                <span className="ws-rail__icon">
+                  <Glyph size={16} />
+                </span>
+                <span className="ws-rail__text">{item.label}</span>
+                {item.count ? (
+                  <span className="ws-rail__count">
+                    {item.count}
+                    <span className="visually-hidden"> needing review</span>
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
 
       {categories && categories.length > 0 && (
         <>
-          <p className="ws-rail__heading">Categories</p>
+          <p className="ws-rail__heading">Topic</p>
           {categories.map((category) => (
             <Link
               key={category.slug}
@@ -100,62 +122,54 @@ function Rail({
               }
               aria-current={category.active ? "true" : undefined}
             >
-              <span
-                className={`cat-dot cat--${category.slug}`}
-                aria-hidden="true"
-              />
-              <span>{category.label}</span>
+              <span className="ws-rail__icon">
+                <CategoryMark shape={category.shape} size={9} />
+              </span>
+              <span className="ws-rail__text">{category.label}</span>
               {category.count !== undefined && (
-                <span className="ws-rail__count">{category.count}</span>
+                <span className="meta">{category.count}</span>
               )}
               {category.active && (
-                <span className="ws-rail__active-mark" aria-hidden="true">
-                  ✓
-                </span>
+                <>
+                  <IconCheck size={13} />
+                  <span className="visually-hidden">(filtering by this)</span>
+                </>
               )}
             </Link>
           ))}
         </>
       )}
 
-      {navGroups?.map((group) => (
-        <div key={group.label}>
-          <p className="ws-rail__heading">{group.label}</p>
-          {group.items.map((item) => (
+      {courses && courses.length > 0 && (
+        <>
+          <p className="ws-rail__heading" id={`${idPrefix}-courses`}>
+            {courses.length === 1 ? "Class section" : "Class sections"}
+          </p>
+          {courses.map((course) => (
             <Link
-              key={item.href}
-              className={`ws-rail__item ${item.active ? "ws-rail__item--active" : ""}`}
-              href={item.href}
-              aria-current={item.active ? "page" : undefined}
+              key={course.href}
+              className={`ws-rail__item ${course.active ? "ws-rail__item--active" : ""}`}
+              href={course.href}
+              aria-current={course.active ? "page" : undefined}
             >
-              <span
-                aria-hidden="true"
-                style={{ width: 10, textAlign: "center" }}
-              >
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
+              <span className="ws-rail__text">{course.label}</span>
+              {course.count ? (
+                <span className="ws-rail__count">
+                  {course.count}
+                  <span className="visually-hidden"> needing review</span>
+                </span>
+              ) : null}
             </Link>
           ))}
-        </div>
-      ))}
+        </>
+      )}
 
       <div className="ws-rail__footer">
+        {workspaceLabel && <p>{workspaceLabel}</p>}
         {footer}
-        <div style={{ marginTop: 8 }}>{user.email}</div>
+        <p style={{ marginTop: 4, overflowWrap: "anywhere" }}>{user.email}</p>
         <form action={signOutAction}>
-          <button
-            type="submit"
-            style={{
-              marginTop: 6,
-              padding: 0,
-              border: 0,
-              background: "none",
-              color: "var(--link)",
-              fontSize: "11.5px",
-              fontWeight: 600,
-            }}
-          >
+          <button className="ws-signout" type="submit">
             Sign out
           </button>
         </form>
@@ -167,36 +181,57 @@ function Rail({
 export function WorkspaceShell({
   user,
   contextTitle,
+  workspaceLabel,
   primaryAction,
   courses,
   categories,
   navGroups,
   railFooter,
-  notificationCount,
   listPane,
   selection,
   children,
 }: {
   user: ShellUser;
-  /** e.g. "DCS-101 Section A — Feedback" */
+  /** e.g. "DCS-101 Section A — Review" */
   contextTitle: string;
+  /** "Student workspace", "Staff workspace" — stated, never inferred */
+  workspaceLabel?: string;
   primaryAction?: { href: string; label: string };
   courses?: RailCourse[];
   categories?: RailCategory[];
   navGroups?: NavGroup[];
   railFooter?: ReactNode;
-  notificationCount?: number;
   /** when present the body is a two-pane list/detail view */
   listPane?: ReactNode;
   /**
    * Which of the two panes is the current view once they stack on a phone.
    * `active` means a row was explicitly chosen, so the detail replaces the
-   * list and `backHref` returns to it. Ignored above 820px, where both panes
+   * list and `backHref` returns to it. Ignored above 860px, where both panes
    * are visible together.
    */
   selection?: { active: boolean; backHref: string };
   children: ReactNode;
 }) {
+  const hasRail = !!(
+    primaryAction ||
+    courses?.length ||
+    categories?.length ||
+    navGroups?.length
+  );
+
+  const rail = (idPrefix: string) => (
+    <Rail
+      user={user}
+      workspaceLabel={workspaceLabel}
+      primaryAction={primaryAction}
+      courses={courses}
+      categories={categories}
+      navGroups={navGroups}
+      footer={railFooter}
+      idPrefix={idPrefix}
+    />
+  );
+
   return (
     <div className="ws">
       <a className="skip-link" href="#main-content">
@@ -204,69 +239,46 @@ export function WorkspaceShell({
       </a>
 
       <header className="ws-topbar">
-        <Link className="ws-brand" href="/" aria-label="Class Feedback home">
+        <Link className="ws-brand" href="/">
           <span className="ws-brand__mark" aria-hidden="true">
             cf
           </span>
-          <span className="ws-topbar__title">{contextTitle}</span>
+          <span className="ws-brand__name">Class Feedback</span>
         </Link>
+        {contextTitle && (
+          <>
+            <span className="ws-topbar__divider" aria-hidden="true" />
+            <span className="ws-topbar__title">{contextTitle}</span>
+          </>
+        )}
         <span className="ws-topbar__spacer" />
         <div className="ws-topbar__actions">
-          <details className="ws-drawer">
-            <summary aria-label="Open navigation menu">
-              <span aria-hidden="true">☰</span>
-            </summary>
-            <div className="ws-drawer__panel">
-              <Rail
-                user={user}
-                primaryAction={primaryAction}
-                courses={courses}
-                categories={categories}
-                navGroups={navGroups}
-                footer={railFooter}
-              />
-            </div>
-          </details>
-          <Link className="ws-iconbtn" href="/" aria-label="Overview">
-            <span aria-hidden="true">⌂</span>
-          </Link>
-          <Link
-            className="ws-iconbtn"
-            href="/"
-            aria-label={
-              notificationCount
-                ? `${notificationCount} items need attention`
-                : "Nothing needs attention"
-            }
-          >
-            <span aria-hidden="true">🔔</span>
-            {notificationCount ? (
-              <span className="ws-iconbtn__badge" aria-hidden="true">
-                {notificationCount}
-              </span>
-            ) : null}
-          </Link>
-          <span
-            className="ws-iconbtn"
-            title={user.displayName}
-            aria-label={`Signed in as ${user.email}`}
-          >
-            <span aria-hidden="true">{initials(user.displayName)}</span>
+          {hasRail && (
+            <details className="ws-drawer">
+              <summary>
+                <IconMenu size={16} />
+                Menu
+              </summary>
+              <nav className="ws-drawer__panel" aria-label="Workspace">
+                {rail("drawer")}
+              </nav>
+            </details>
+          )}
+          <span className="ws-account">
+            <span className="ws-account__mark" aria-hidden="true">
+              {initials(user.displayName)}
+            </span>
+            <span className="ws-account__email">{user.email}</span>
           </span>
         </div>
       </header>
 
       <div className="ws-body">
-        <nav className="ws-rail" aria-label="Workspace">
-          <Rail
-            user={user}
-            primaryAction={primaryAction}
-            courses={courses}
-            categories={categories}
-            navGroups={navGroups}
-            footer={railFooter}
-          />
-        </nav>
+        {hasRail && (
+          <nav className="ws-rail" aria-label="Workspace">
+            {rail("rail")}
+          </nav>
+        )}
 
         {listPane}
 
@@ -280,7 +292,7 @@ export function WorkspaceShell({
             <div className="ws-detail__inner">
               {selection?.active && (
                 <Link className="ws-backlink" href={selection.backHref}>
-                  <span aria-hidden="true">←</span> Back to list
+                  <IconBack size={15} /> Back to the list
                 </Link>
               )}
               {children}
@@ -298,6 +310,7 @@ export function WorkspaceShell({
 
 /** Search + filter + scrolling rows: the middle pane of the workspace. */
 export function ListPane({
+  label = "Results",
   searchAction,
   searchName = "q",
   searchValue,
@@ -308,6 +321,7 @@ export function ListPane({
   hiddenOnMobile,
   children,
 }: {
+  label?: string;
   searchAction?: string;
   searchName?: string;
   searchValue?: string;
@@ -315,6 +329,7 @@ export function ListPane({
   hiddenFields?: Record<string, string | undefined>;
   filter?: {
     current: string;
+    label: string;
     options: { key: string; label: string; href: string }[];
   };
   hiddenOnMobile?: boolean;
@@ -323,7 +338,7 @@ export function ListPane({
   return (
     <section
       className={`ws-list ${hiddenOnMobile ? "ws-list--hidden" : ""}`}
-      aria-label="Threads"
+      aria-label={label}
     >
       <form
         className="ws-search"
@@ -336,11 +351,9 @@ export function ListPane({
             <input key={key} type="hidden" name={key} value={value} />
           ) : null,
         )}
-        <span className="ws-search__icon" aria-hidden="true">
-          ⌕
-        </span>
+        <IconSearch className="ws-search__icon" size={16} />
         <label className="visually-hidden" htmlFor="ws-search-input">
-          Search
+          {searchPlaceholder}
         </label>
         <input
           id="ws-search-input"
@@ -349,24 +362,32 @@ export function ListPane({
           placeholder={searchPlaceholder}
           defaultValue={searchValue ?? ""}
         />
+        <button className="visually-hidden" type="submit">
+          Search
+        </button>
       </form>
 
       {filter && (
         <div className="ws-filterbar">
+          <span className="ws-filterbar__current">
+            Showing:{" "}
+            {filter.options.find((o) => o.key === filter.current)?.label ??
+              filter.label}
+          </span>
           <details className="ws-filter">
             <summary>
-              Filter <span aria-hidden="true">⌄</span>
+              <IconFilter size={13} />
+              Filter
             </summary>
-            <div className="ws-filter__menu" role="menu">
+            <div className="ws-filter__menu">
               {filter.options.map((option) => (
                 <Link
                   key={option.key}
                   className="ws-filter__item"
                   href={option.href}
-                  role="menuitem"
                 >
-                  <span className="ws-filter__check" aria-hidden="true">
-                    {filter.current === option.key ? "✓" : ""}
+                  <span className="ws-filter__check">
+                    {filter.current === option.key && <IconCheck size={13} />}
                   </span>
                   {option.label}
                   {filter.current === option.key && (
