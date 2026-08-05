@@ -5,21 +5,32 @@ import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 import { loadStaffSection } from "@/lib/staff-section";
 import { formatDateTime } from "@/lib/datetime";
-import { staffSectionNav } from "@/components/layout/nav";
+import { staffSectionNav, type NavGroup } from "@/components/layout/nav";
 import {
   DayGroupHeading,
   ListPane,
   WorkspaceShell,
 } from "@/components/layout/workspace-shell";
 import {
-  avatarColour,
-  categoryClass,
+  categoryShape,
   categoryShortLabel,
   groupByDay,
   QUESTION_CATEGORIES,
   shortAgo,
 } from "@/lib/threads";
-import { AccessDenied, Alert, Badge } from "@/components/ui";
+import {
+  AccessDenied,
+  Alert,
+  Category,
+  Quote,
+  Stamp,
+  StripLabel,
+} from "@/components/ui";
+import {
+  CategoryMark,
+  IconPrivate,
+  IconPublic,
+} from "@/components/ui/icons";
 import { PublicAnswerComposer } from "@/components/staff/public-answer-composer";
 import {
   createPrivateResponse,
@@ -36,19 +47,28 @@ import {
 } from "@/modules/publishing";
 
 /**
- * Staff review inbox. Queue on the left, selected submission on the right,
- * collapsing to a single column below 960px.
+ * Staff review inbox. Queue on the left, the selected submission on the right,
+ * collapsing to a single column below 860px.
  *
  * Everything shown here comes from getReviewQueue/getSubmissionDetail, which
  * mask student identity in the DATA when the actor lacks
- * view_student_identities. Nothing on this page is student-visible.
+ * view_student_identities. Nothing on this page is student-visible: validity,
+ * review state and drafts all stay inside it.
  */
 
 const FILTERS: { key: ReviewFilter; label: string }[] = [
-  { key: "all", label: "All" },
+  { key: "all", label: "Everything" },
   { key: "needs_review", label: "Needs review" },
   { key: "answered", label: "Answered" },
-  { key: "invalid", label: "Invalid" },
+  { key: "invalid", label: "Marked invalid" },
+];
+
+const INVALID_REASONS = [
+  { value: "empty_or_meaningless", label: "Empty or meaningless" },
+  { value: "spam", label: "Spam" },
+  { value: "abusive_content", label: "Abusive content" },
+  { value: "irrelevant", label: "Completely irrelevant" },
+  { value: "bad_faith_credit_attempt", label: "Bad-faith credit attempt" },
 ];
 
 export default async function ReviewPage({
@@ -72,10 +92,7 @@ export default async function ReviewPage({
   const ctx = await loadStaffSection(sectionId, "reviewResponses");
   if (!ctx.ok) {
     return (
-      <WorkspaceShell
-        user={toShellUser(ctx.user)}
-        contextTitle="Class Feedback"
-      >
+      <WorkspaceShell user={toShellUser(ctx.user)} contextTitle="Class Feedback">
         <AccessDenied what="this section's submissions" />
       </WorkspaceShell>
     );
@@ -96,9 +113,7 @@ export default async function ReviewPage({
   const searchRows = rows.filter((row) => {
     if (
       term &&
-      !row.items.some((i) =>
-        i.item.originalText.toLowerCase().includes(term),
-      ) &&
+      !row.items.some((i) => i.item.originalText.toLowerCase().includes(term)) &&
       !(row.student?.fullName.toLowerCase().includes(term) ?? false)
     ) {
       return false;
@@ -110,7 +125,7 @@ export default async function ReviewPage({
       !sp.category || row.items.some((i) => i.item.category === sp.category),
   );
   const categoryCounts = new Map(
-    QUESTION_CATEGORIES.map((category) => [category.slug, 0]),
+    QUESTION_CATEGORIES.map((category) => [category.slug as string, 0]),
   );
   for (const row of searchRows) {
     for (const item of row.items) {
@@ -192,7 +207,7 @@ export default async function ReviewPage({
     revalidatePath(`/teach/sections/${sectionId}/review`);
     redirect(
       `/teach/sections/${sectionId}/review?selected=${selected}&ok=${encodeURIComponent(
-        "Private reply sent to the student.",
+        "Private reply sent. Only this student and the teaching team can see it.",
       )}`,
     );
   }
@@ -274,25 +289,39 @@ export default async function ReviewPage({
 
   // --- render --------------------------------------------------------------
 
-  const railSections = [
-    { id: sectionId, label: `${course.code} ${section.title}` },
-  ];
+  const weekGroup: NavGroup[] =
+    cycles.length > 0
+      ? [
+          {
+            label: "Week",
+            items: [
+              {
+                href: queryFor({ cycle: undefined, selected: undefined }),
+                label: "All weeks",
+                icon: "week" as const,
+                active: !sp.cycle,
+              },
+              ...cycles.slice(0, 12).map((cycle) => ({
+                href: queryFor({ cycle: cycle.id, selected: undefined }),
+                label: `Week ${cycle.cycleIndex}${cycle.state === "open" ? " · open" : ""}`,
+                icon: "week" as const,
+                active: sp.cycle === cycle.id,
+              })),
+            ],
+          },
+        ]
+      : [];
 
   return (
     <WorkspaceShell
       user={toShellUser(user)}
-      contextTitle={`${course.code} ${section.term} — Review`}
-      notificationCount={counts.needsReview}
-      courses={railSections.map((s) => ({
-        href: `/teach/sections/${s.id}/review`,
-        label: s.label,
-        active: s.id === sectionId,
-        count: counts.needsReview || undefined,
-      }))}
+      contextTitle={`${course.code} ${section.term} · Review inbox`}
+      workspaceLabel="Staff workspace"
       categories={[
         {
           slug: "all",
-          label: "All",
+          label: "All topics",
+          shape: "circle",
           count: searchRows.reduce((count, row) => count + row.items.length, 0),
           href: queryFor({ category: undefined, selected: undefined }),
           active: !sp.category,
@@ -300,6 +329,7 @@ export default async function ReviewPage({
         ...QUESTION_CATEGORIES.map((c) => ({
           slug: c.slug,
           label: c.label,
+          shape: c.shape,
           count: categoryCounts.get(c.slug) ?? 0,
           href: queryFor({ category: c.slug, selected: undefined }),
           clearHref: queryFor({ category: undefined, selected: undefined }),
@@ -307,40 +337,26 @@ export default async function ReviewPage({
         })),
       ]}
       navGroups={[
-        ...(cycles.length > 0
-          ? [
-              {
-                label: "Weeks",
-                items: [
-                  {
-                    href: queryFor({ cycle: undefined, selected: undefined }),
-                    label: "All weeks",
-                    icon: "•",
-                    active: !sp.cycle,
-                  },
-                  ...cycles.slice(0, 12).map((cycle) => ({
-                    href: queryFor({ cycle: cycle.id, selected: undefined }),
-                    label: `Week ${cycle.cycleIndex}`,
-                    icon: cycle.state === "open" ? "○" : "·",
-                    active: sp.cycle === cycle.id,
-                  })),
-                ],
-              },
-            ]
-          : []),
-        ...staffSectionNav(access, `/teach/sections/${sectionId}/review`).map(
-          (g) => ({
-            ...g,
-            label: g.label === "Section" ? "Workspace" : g.label,
-          }),
+        ...staffSectionNav(
+          access,
+          `/teach/sections/${sectionId}/review`,
+          counts,
         ),
+        ...weekGroup,
       ]}
+      railFooter={
+        <p>
+          Everything in this workspace is staff-only. Students never see
+          validity, drafts or internal notes.
+        </p>
+      }
       selection={{
         active: !!sp.selected,
         backHref: queryFor({ selected: undefined }),
       }}
       listPane={
         <ListPane
+          label="Submissions"
           hiddenOnMobile={!!sp.selected}
           searchAction={`/teach/sections/${sectionId}/review`}
           searchName="q"
@@ -349,24 +365,25 @@ export default async function ReviewPage({
           hiddenFields={{ filter, cycle: sp.cycle, category: sp.category }}
           filter={{
             current: filter,
+            label: "Everything",
             options: FILTERS.map((f) => ({
               key: f.key,
               label:
                 f.key === "all"
-                  ? `All (${counts.total})`
+                  ? `Everything (${counts.total})`
                   : f.key === "needs_review"
                     ? `Needs review (${counts.needsReview})`
                     : f.key === "answered"
                       ? `Answered (${counts.answered})`
-                      : `Invalid (${counts.invalid})`,
+                      : `Marked invalid (${counts.invalid})`,
               href: queryFor({ filter: f.key, selected: undefined }),
             })),
           }}
         >
           {visibleRows.length === 0 ? (
-            <p style={{ padding: "22px 16px", color: "#6b7280" }}>
+            <p className="ws-list__note">
               {counts.total === 0
-                ? "No submissions yet"
+                ? "No submissions yet. They arrive as students send this week's form."
                 : "Nothing matches this filter."}
             </p>
           ) : (
@@ -376,59 +393,46 @@ export default async function ReviewPage({
                 {group.rows.map((row) => {
                   const isActive = selectedRow?.response.id === row.response.id;
                   const firstItem = row.items[0]?.item;
+                  const needsReview = !row.answered && row.items.length > 0;
                   return (
                     <Link
                       key={row.response.id}
-                      className={`ws-row ${isActive ? "ws-row--active" : ""}`}
+                      className={`ws-row ${isActive ? "ws-row--active" : ""} ${
+                        needsReview ? "ws-row--unread" : ""
+                      }`}
                       href={queryFor({ selected: row.response.id })}
                       aria-current={isActive ? "true" : undefined}
                     >
                       <span className="ws-row__top">
-                        {!row.answered && row.items.length > 0 && (
-                          <span className="ws-row__dot" aria-hidden="true" />
-                        )}
-                        <span className="ws-row__kind" aria-hidden="true">
-                          {row.items.length > 0 ? "?" : "▤"}
-                        </span>
                         <span className="ws-row__title">
                           {firstItem
-                            ? truncate(firstItem.originalText, 70)
+                            ? truncate(firstItem.originalText, 80)
                             : "Form answers only"}
                         </span>
                         <span className="ws-row__flags">
                           {row.response.validity === "invalid" && (
-                            <span
-                              className="ws-chip-s"
-                              style={{ background: "#b54747" }}
-                            >
-                              !
-                            </span>
+                            <Stamp tone="red">Invalid</Stamp>
                           )}
-                          {row.answered && <span className="ws-chip-s">A</span>}
+                          {row.answered && <Stamp tone="green">Answered</Stamp>}
+                          {needsReview && <Stamp tone="amber">New</Stamp>}
                         </span>
                       </span>
                       <span className="ws-row__meta">
                         {firstItem && (
-                          <span
-                            className={categoryClass(
-                              firstItem.category,
-                              "label",
-                            )}
-                          >
+                          <span className="category">
+                            <CategoryMark
+                              shape={categoryShape(firstItem.category)}
+                            />
                             {categoryShortLabel(firstItem.category)}
                           </span>
                         )}
                         <span>
-                          {row.student
-                            ? row.student.fullName
-                            : "Identity hidden"}
+                          {row.student ? row.student.fullName : "Identity hidden"}
                         </span>
-                        <span>Wk {row.cycleIndex}</span>
+                        <span>Week {row.cycleIndex}</span>
                         <span>{shortAgo(row.response.submittedAt)}</span>
-                        {row.items.length > 0 && (
-                          <span className="ws-row__count">
-                            <span aria-hidden="true">🗨</span> {row.items.length}
-                          </span>
+                        {row.items.length > 1 && (
+                          <span>{row.items.length} items</span>
                         )}
                       </span>
                     </Link>
@@ -440,18 +444,10 @@ export default async function ReviewPage({
         </ListPane>
       }
     >
-      {sp.ok && (
-        <div style={{ marginBottom: 16 }}>
-          <Alert variant="success">{sp.ok}</Alert>
-        </div>
-      )}
-      {sp.error && (
-        <div style={{ marginBottom: 16 }}>
-          <Alert variant="error">{sp.error}</Alert>
-        </div>
-      )}
-      {sp.warn && (
-        <div style={{ marginBottom: 16 }}>
+      <div className="stack-4" style={{ marginBottom: "var(--s5)" }}>
+        {sp.ok && <Alert variant="success">{sp.ok}</Alert>}
+        {sp.error && <Alert variant="error">{sp.error}</Alert>}
+        {sp.warn && (
           <Alert variant="warning" title="Check the wording before publishing">
             <ul>
               {sp.warn.split(" | ").map((warning, index) => (
@@ -461,387 +457,361 @@ export default async function ReviewPage({
             Tick &ldquo;I have checked the public wording&rdquo; to publish
             anyway.
           </Alert>
-        </div>
-      )}
-      {!canSeeIdentities && (
-        <div style={{ marginBottom: 16 }}>
+        )}
+        {!canSeeIdentities && (
           <Alert variant="info" title="Identities are hidden for your account">
-            You can review and respond, but you have not been granted &ldquo;see
-            student identities&rdquo; on this section.
+            You can review and respond, but you have not been granted
+            &ldquo;see student identities&rdquo; on this section.
           </Alert>
-        </div>
-      )}
+        )}
+      </div>
 
       {!selectedRow || !detail ? (
         <div className="ws-empty-detail">
-          <div>
-            <p style={{ fontSize: 17, marginBottom: 6 }}>
-              {counts.total === 0
-                ? "No submissions yet"
-                : "Select a submission"}
-            </p>
-          </div>
+          <p>
+            {counts.total === 0
+              ? "No submissions yet. They arrive as students send this week's form."
+              : "Choose a submission from the list to read it and respond."}
+          </p>
         </div>
       ) : (
-        <>
-          <div className="ws-thread-head">
-            <h1 className="ws-thread-title">
-              {selectedRow.items[0]
-                ? truncate(selectedRow.items[0].item.originalText, 90)
-                : `Week ${selectedRow.cycleIndex} submission`}{" "}
-              <span className="ws-num">#{selectedRow.cycleIndex}</span>
-            </h1>
-            <div className="ws-thread-actions">
-              <span className="ws-thread-action">
-                <strong>{selectedRow.items.length}</strong>
-                ITEMS
-              </span>
-              <span
-                className={`ws-thread-action ${
-                  selectedRow.response.validity === "valid"
-                    ? "ws-thread-action--on"
-                    : ""
-                }`}
-              >
-                <strong aria-hidden="true">
-                  {selectedRow.response.validity === "valid" ? "✔" : "✕"}
-                </strong>
-                {selectedRow.response.validity === "valid"
-                  ? "COUNTS"
-                  : "INVALID"}
-              </span>
-            </div>
-          </div>
-
-          <div className="ws-post">
-            <span
-              className="ws-avatar"
-              style={{
-                background: selectedRow.student
-                  ? avatarColour(selectedRow.student.fullName)
-                  : undefined,
-              }}
-              aria-hidden="true"
-            >
+        <article>
+          <header className="submission">
+            <h1 className="object-title">
               {selectedRow.student
-                ? selectedRow.student.fullName.slice(0, 1).toUpperCase()
-                : "?"}
-            </span>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <p className="ws-post__who" style={{ margin: 0 }}>
-                {selectedRow.student
-                  ? selectedRow.student.fullName
-                  : "Identity hidden"}
-              </p>
-              <p className="ws-post__when" style={{ margin: 0 }}>
-                {selectedRow.student
-                  ? `${selectedRow.student.studentNumber} · `
-                  : ""}
-                submitted{" "}
+                ? selectedRow.student.fullName
+                : "Identity hidden"}
+              <span className="object-title__sub">
+                {" "}
+                · week {selectedRow.cycleIndex}
+              </span>
+            </h1>
+            <p className="submission__meta">
+              {selectedRow.student && (
+                <span className="ident">
+                  {selectedRow.student.studentNumber}
+                </span>
+              )}
+              <span>
+                Submitted{" "}
                 {formatDateTime(
                   selectedRow.response.submittedAt,
                   section.timezone,
-                )}{" "}
-                · week {selectedRow.cycleIndex}
-              </p>
-
-              {can("markValidity") && (
-                <div style={{ marginTop: 12 }}>
-                  {selectedRow.response.validity === "valid" ? (
-                    <form action={invalidate} className="inline-form">
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <label
-                        className="visually-hidden"
-                        htmlFor="invalid-reason"
-                      >
-                        Reason for marking invalid
-                      </label>
-                      <select
-                        id="invalid-reason"
-                        className="select-field"
-                        name="reason"
-                        defaultValue="empty_or_meaningless"
-                        style={{ maxWidth: 240 }}
-                      >
-                        <option value="spam">Spam</option>
-                        <option value="abusive_content">Abusive content</option>
-                        <option value="empty_or_meaningless">
-                          Empty or meaningless
-                        </option>
-                        <option value="irrelevant">
-                          Completely irrelevant
-                        </option>
-                        <option value="bad_faith_credit_attempt">
-                          Bad-faith credit attempt
-                        </option>
-                      </select>
-                      <button
-                        className="button button--danger button--small"
-                        type="submit"
-                      >
-                        Mark invalid
-                      </button>
-                      <span className="muted small">
-                        Removes participation credit. Never shown to the
-                        student.
-                      </span>
-                    </form>
-                  ) : (
-                    <form action={restoreValid} className="inline-form">
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <button
-                        className="button button--secondary button--small"
-                        type="submit"
-                      >
-                        Restore participation credit
-                      </button>
-                      <span className="muted small">
-                        Marked invalid:{" "}
-                        {selectedRow.response.invalidationReason}
-                      </span>
-                    </form>
-                  )}
-                </div>
+                )}
+              </span>
+              {selectedRow.response.validity === "valid" ? (
+                <Stamp tone="green">Counts towards participation</Stamp>
+              ) : (
+                <Stamp tone="red">Participation credit removed</Stamp>
               )}
+            </p>
 
-              {detail.answers.length > 0 && (
-                <div className="source-box" style={{ marginTop: 16 }}>
-                  <p className="source-box__label">Form answers</p>
-                  <dl style={{ margin: 0 }}>
-                    {detail.answers.map((answer, index) => (
-                      <div key={index} style={{ marginBottom: 8 }}>
-                        <dt className="muted small" style={{ fontWeight: 700 }}>
-                          {answer.prompt}
-                        </dt>
-                        <dd style={{ margin: 0 }}>{renderAnswer(answer)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {detail.unansweredCount > 0 && (
-                    <p className="muted small" style={{ marginTop: 8 }}>
-                      {detail.unansweredCount} optional question
-                      {detail.unansweredCount === 1 ? "" : "s"} left blank.
-                    </p>
-                  )}
-                </div>
+            {can("markValidity") && (
+              <div style={{ marginTop: "var(--s4)" }}>
+                {selectedRow.response.validity === "valid" ? (
+                  <form action={invalidate} className="inline-form">
+                    <input
+                      type="hidden"
+                      name="responseId"
+                      value={selectedRow.response.id}
+                    />
+                    <label className="visually-hidden" htmlFor="invalid-reason">
+                      Reason for removing participation credit
+                    </label>
+                    <select
+                      id="invalid-reason"
+                      className="select-field"
+                      name="reason"
+                      defaultValue="empty_or_meaningless"
+                      style={{ maxWidth: 240 }}
+                    >
+                      {INVALID_REASONS.map((reason) => (
+                        <option key={reason.value} value={reason.value}>
+                          {reason.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="button button--danger button--small"
+                      type="submit"
+                    >
+                      Remove participation credit
+                    </button>
+                    <span className="meta">
+                      Audited, reversible, and never shown to the student.
+                    </span>
+                  </form>
+                ) : (
+                  <form action={restoreValid} className="inline-form">
+                    <input
+                      type="hidden"
+                      name="responseId"
+                      value={selectedRow.response.id}
+                    />
+                    <button
+                      className="button button--secondary button--small"
+                      type="submit"
+                    >
+                      Restore participation credit
+                    </button>
+                    <span className="meta">
+                      Reason on record:{" "}
+                      {(
+                        selectedRow.response.invalidationReason ?? ""
+                      ).replace(/_/g, " ")}
+                    </span>
+                  </form>
+                )}
+              </div>
+            )}
+          </header>
+
+          {detail.answers.length > 0 && (
+            <section style={{ marginTop: "var(--s5)" }}>
+              <StripLabel>Form answers</StripLabel>
+              <dl className="answers">
+                {detail.answers.map((answer, index) => (
+                  <div key={index}>
+                    <dt>{answer.prompt}</dt>
+                    <dd>{renderAnswer(answer)}</dd>
+                  </div>
+                ))}
+              </dl>
+              {detail.unansweredCount > 0 && (
+                <p className="meta" style={{ marginTop: "var(--s3)" }}>
+                  {detail.unansweredCount} optional question
+                  {detail.unansweredCount === 1 ? "" : "s"} left blank.
+                </p>
               )}
-            </div>
-          </div>
+            </section>
+          )}
 
-          {selectedRow.items.length === 0 && (
-            <div style={{ marginTop: 22 }}>
+          {selectedRow.items.length === 0 ? (
+            <div style={{ marginTop: "var(--s5)" }}>
               <Alert variant="info">
                 This student answered the form questions but did not add a
-                question or feedback of their own.
+                question or feedback of their own. There is nothing to answer.
               </Alert>
             </div>
-          )}
+          ) : (
+            <section style={{ marginTop: "var(--s6)" }}>
+              <StripLabel count={`${selectedRow.items.length}`}>
+                {selectedRow.items.length === 1
+                  ? "Written by the student"
+                  : "Written by the student"}
+              </StripLabel>
 
-          {selectedRow.items.length > 0 && (
-            <h2 className="ws-answers-heading">
-              {selectedRow.items.length === 1
-                ? `Student ${selectedRow.items[0]?.item.submissionType ?? "item"}`
-                : `${selectedRow.items.length} student items`}
-            </h2>
-          )}
+              {selectedRow.items.map(
+                ({ item, privateResponses, publicAnswers }) => {
+                  const events = [
+                    ...privateResponses.map((response) => ({
+                      kind: "private" as const,
+                      at: response.createdAt,
+                      response,
+                    })),
+                    ...publicAnswers.map((answer) => ({
+                      kind: "public" as const,
+                      at: answer.publishedAt ?? answer.createdAt,
+                      answer,
+                    })),
+                  ].sort((a, b) => a.at.getTime() - b.at.getTime());
 
-          {selectedRow.items.map(
-            ({ item, privateResponses, publicAnswers }) => {
-              const responseEvents = [
-                ...privateResponses.map((response) => ({
-                  kind: "private" as const,
-                  at: response.createdAt,
-                  response,
-                })),
-                ...publicAnswers.map((answer) => ({
-                  kind: "public" as const,
-                  at: answer.publishedAt ?? answer.createdAt,
-                  answer,
-                })),
-              ].sort((a, b) => a.at.getTime() - b.at.getTime());
+                  return (
+                    <div className="item" key={item.id}>
+                      <div className="item__head">
+                        <span className="row">
+                          <Category value={item.category} />
+                          <span className="meta">{item.submissionType}</span>
+                        </span>
+                        <Stamp
+                          tone={
+                            item.reviewState === "resolved" ? "green" : "amber"
+                          }
+                        >
+                          {item.reviewState.replace(/_/g, " ")}
+                        </Stamp>
+                      </div>
 
-              return (
-              <article className="ws-answer review-item-thread" key={item.id}>
-                <header className="review-item-thread__header">
-                  <span className={categoryClass(item.category, "label")}>
-                    {item.submissionType} · {categoryShortLabel(item.category)}
-                  </span>
-                  <Badge
-                    tone={item.reviewState === "resolved" ? "green" : "neutral"}
-                  >
-                    {item.reviewState.replace(/_/g, " ")}
-                  </Badge>
-                </header>
+                      <Quote label="Original wording — never overwritten" staff>
+                        {item.originalText}
+                      </Quote>
 
-                <div className="review-item-original">
-                  <p className="review-item-original__label">
-                    Original message
-                  </p>
-                  <p className="review-item-original__body">
-                    {item.originalText}
-                  </p>
-                </div>
+                      {events.length > 0 && (
+                        <section
+                          className="thread"
+                          aria-labelledby={`responses-${item.id}`}
+                        >
+                          <h3 className="label" id={`responses-${item.id}`}>
+                            {events.length} response
+                            {events.length === 1 ? "" : "s"} so far
+                          </h3>
+                          {events.map((event) => {
+                            if (event.kind === "private") {
+                              return (
+                                <article
+                                  className="event event--private"
+                                  key={`private-${event.response.id}`}
+                                >
+                                  <div className="event__mark">
+                                    <IconPrivate size={13} />
+                                  </div>
+                                  <div>
+                                    <div className="event__meta">
+                                      <strong>Private reply</strong>
+                                      <span>to this student only</span>
+                                      <span>
+                                        {formatDateTime(
+                                          event.response.createdAt,
+                                          section.timezone,
+                                        )}
+                                      </span>
+                                    </div>
+                                    <p className="event__body">
+                                      {event.response.body}
+                                    </p>
+                                  </div>
+                                </article>
+                              );
+                            }
 
-                {responseEvents.length > 0 && (
-                  <section
-                    className="review-response-history"
-                    aria-labelledby={`responses-${item.id}`}
-                  >
-                    <h3 id={`responses-${item.id}`}>
-                      Responses <span>{responseEvents.length}</span>
-                    </h3>
-                    <div className="review-response-list">
-                      {responseEvents.map((event) => {
-                        if (event.kind === "private") {
-                          return (
-                            <article
-                              className="review-response review-response--private"
-                              key={`private-${event.response.id}`}
-                            >
-                              <div className="review-response__marker" aria-hidden="true">
-                                ↙
-                              </div>
-                              <div>
-                                <div className="review-response__meta">
-                                  <strong>Private reply</strong>
-                                  <span>
-                                    {formatDateTime(
-                                      event.response.createdAt,
-                                      section.timezone,
-                                    )}
-                                  </span>
+                            const { answer } = event;
+                            const label =
+                              answer.state === "published"
+                                ? "Published to the class"
+                                : answer.state === "scheduled"
+                                  ? "Scheduled to publish"
+                                  : "Public draft";
+
+                            return (
+                              <article
+                                className="event event--public"
+                                key={`public-${answer.id}`}
+                              >
+                                <div className="event__mark">
+                                  <IconPublic size={13} />
                                 </div>
-                                <p className="review-response__body">
-                                  {event.response.body}
-                                </p>
-                              </div>
-                            </article>
-                          );
-                        }
+                                <div>
+                                  <div className="event__meta">
+                                    <strong>{label}</strong>
+                                    <span>anonymously</span>
+                                    <span>
+                                      {formatDateTime(
+                                        event.at,
+                                        section.timezone,
+                                      )}
+                                    </span>
+                                  </div>
+                                  {answer.publishFailed && (
+                                    <p style={{ marginTop: 4 }}>
+                                      <Stamp tone="red">
+                                        Publication failed
+                                      </Stamp>
+                                    </p>
+                                  )}
+                                  <p className="event__body event__body--lead">
+                                    {answer.publicQuestionText}
+                                  </p>
+                                  {answer.answerBody && (
+                                    <p className="event__body">
+                                      {answer.answerBody}
+                                    </p>
+                                  )}
+                                  <p style={{ marginTop: 6 }}>
+                                    {answer.state === "published" ? (
+                                      <Link
+                                        className="link small"
+                                        href={`/sections/${sectionId}/qa?selected=${answer.id}`}
+                                      >
+                                        See it in the class Q&amp;A
+                                      </Link>
+                                    ) : can("draftPublicAnswers") ? (
+                                      <Link
+                                        className="link small"
+                                        href={`/teach/sections/${sectionId}/publications`}
+                                      >
+                                        Finish it in the publication queue
+                                      </Link>
+                                    ) : null}
+                                  </p>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </section>
+                      )}
 
-                        const { answer } = event;
-                        const publicLabel =
-                          answer.state === "published"
-                            ? "Published to Class Q&A"
-                            : answer.state === "scheduled"
-                              ? "Scheduled public answer"
-                              : "Public answer draft";
-
-                        return (
-                          <article
-                            className="review-response review-response--public"
-                            key={`public-${answer.id}`}
-                          >
-                            <div className="review-response__marker" aria-hidden="true">
-                              ↗
-                            </div>
-                            <div>
-                              <div className="review-response__meta">
-                                <strong>{publicLabel}</strong>
-                                <span>
-                                  {formatDateTime(event.at, section.timezone)}
-                                </span>
-                              </div>
-                              {answer.publishFailed && (
-                                <p className="review-response__error">
-                                  Publication failed
-                                </p>
-                              )}
-                              <p className="review-response__question">
-                                {answer.publicQuestionText}
+                      {(can("sendPrivateResponses") ||
+                        can("draftPublicAnswers")) && (
+                        <div className="composers">
+                          {can("sendPrivateResponses") && (
+                            <div className="composer">
+                              <h3>Reply to this student only</h3>
+                              <p>
+                                Appears under their own submissions. No
+                                classmate can see it.
                               </p>
-                              {answer.answerBody && (
-                                <p className="review-response__body">
-                                  {answer.answerBody}
-                                </p>
-                              )}
-                              <div className="review-response__actions">
-                                {answer.state === "published" ? (
-                                  <Link
-                                    href={`/sections/${sectionId}/qa?selected=${answer.id}`}
+                              <form action={sendPrivate}>
+                                <input
+                                  type="hidden"
+                                  name="itemId"
+                                  value={item.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="selected"
+                                  value={selectedRow.response.id}
+                                />
+                                <label
+                                  className="visually-hidden"
+                                  htmlFor={`private-${item.id}`}
+                                >
+                                  Private reply
+                                </label>
+                                <textarea
+                                  id={`private-${item.id}`}
+                                  className="textarea-field"
+                                  name="body"
+                                  rows={4}
+                                  placeholder="Answer this student directly…"
+                                  required
+                                />
+                                <div>
+                                  <button
+                                    className="button button--secondary"
+                                    type="submit"
                                   >
-                                    View in Class Q&amp;A
-                                  </Link>
-                                ) : can("draftPublicAnswers") ? (
-                                  <Link
-                                    href={`/teach/sections/${sectionId}/publications`}
-                                  >
-                                    Open in publication queue
-                                  </Link>
-                                ) : null}
-                              </div>
+                                    Send private reply
+                                  </button>
+                                </div>
+                              </form>
                             </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </section>
-                )}
+                          )}
 
-                {(can("sendPrivateResponses") ||
-                  can("draftPublicAnswers")) && (
-                  <div className="composer-grid review-item-thread__composer">
-                    {can("sendPrivateResponses") && (
-                    <div className="composer-card">
-                      <h3>Reply privately</h3>
-                      <form action={sendPrivate}>
-                        <input type="hidden" name="itemId" value={item.id} />
-                        <input
-                          type="hidden"
-                          name="selected"
-                          value={selectedRow.response.id}
-                        />
-                        <label
-                          className="visually-hidden"
-                          htmlFor={`private-${item.id}`}
-                        >
-                          Private reply
-                        </label>
-                        <textarea
-                          id={`private-${item.id}`}
-                          className="textarea-field"
-                          name="body"
-                          rows={4}
-                          placeholder="Answer this student directly…"
-                          required
-                        />
-                        <button
-                          className="button button--secondary"
-                          type="submit"
-                        >
-                          Send private reply
-                        </button>
-                      </form>
+                          {can("draftPublicAnswers") && (
+                            <div className="composer">
+                              <h3>Answer the whole section</h3>
+                              <p>
+                                Rewrite the question so it cannot identify the
+                                asker. The original above stays untouched.
+                              </p>
+                              <PublicAnswerComposer
+                                action={draftOrPublish}
+                                itemId={item.id}
+                                selectedResponseId={selectedRow.response.id}
+                                originalQuestion={item.originalText}
+                                canPublish={can("publishPublicAnswers")}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    )}
-
-                    {can("draftPublicAnswers") && (
-                    <div className="composer-card">
-                      <h3>Answer the whole class</h3>
-                      <PublicAnswerComposer
-                        action={draftOrPublish}
-                        itemId={item.id}
-                        selectedResponseId={selectedRow.response.id}
-                        originalQuestion={item.originalText}
-                        canPublish={can("publishPublicAnswers")}
-                      />
-                    </div>
-                    )}
-                  </div>
-                )}
-              </article>
-              );
-            },
+                  );
+                },
+              )}
+            </section>
           )}
-        </>
+        </article>
       )}
     </WorkspaceShell>
   );

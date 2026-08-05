@@ -8,7 +8,7 @@ import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Badge,
+  Stamp,
   Breadcrumbs,
   EmptyState,
 } from "@/components/ui";
@@ -186,14 +186,13 @@ export default async function BacklogPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title={`${course.code} question backlog`}
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         {sp.ok && <Alert variant="success">{sp.ok}</Alert>}
         {sp.error && <Alert variant="error">{sp.error}</Alert>}
 
-        <form className="filter-bar" method="get" role="search">
+        <form className="toolbar" method="get" role="search">
           <label className="visually-hidden" htmlFor="backlog-q">
             Search the backlog
           </label>
@@ -213,7 +212,7 @@ export default async function BacklogPage({
             className="select-field"
             name="state"
             defaultValue={sp.state ?? ""}
-            style={{ flex: "0 1 220px" }}
+            
           >
             <option value="">All states ({backlog.total})</option>
             {Object.entries(backlog.counts).map(([state, count]) => (
@@ -228,9 +227,13 @@ export default async function BacklogPage({
         </form>
 
         {backlog.questions.length === 0 ? (
-          <EmptyState title="Nothing in the backlog" />
+          <EmptyState title="Nothing in the backlog">
+            Questions land here when staff move one out of the weekly review, or
+            when you import a set from an earlier semester below. Nothing in the
+            backlog is visible to students until you publish it to a section.
+          </EmptyState>
         ) : (
-          <section className="card">
+          <section className="notice">
             <ul className="data-list">
               {backlog.questions.map(({ question, visibleSectionIds }) => (
                 <li key={question.id}>
@@ -245,10 +248,10 @@ export default async function BacklogPage({
                         " · already shared with this section"}
                     </small>
                   </span>
-                  <span className="row-gap">
-                    <Badge tone={STATE_TONE[question.state] ?? "neutral"}>
+                  <span className="row">
+                    <Stamp tone={STATE_TONE[question.state] ?? "neutral"}>
                       {question.state.replace(/_/g, " ")}
-                    </Badge>
+                    </Stamp>
                     {question.state === "imported" && (
                       <form action={advance} className="inline-form">
                         <input
@@ -332,11 +335,11 @@ export default async function BacklogPage({
           </section>
         )}
 
-        <section className="card card--padded">
-          <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>
+        <section className="notice notice--pad">
+          <h2 className="panel-title">
             Import questions from a previous semester
           </h2>
-          <form action={importLegacy} className="stack-gap">
+          <form action={importLegacy} className="stack-4">
             <div className="field-row">
               <label htmlFor="entries">Questions</label>
               <textarea

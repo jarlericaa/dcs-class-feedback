@@ -2,6 +2,17 @@
 
 import { useRef, useState } from "react";
 
+/**
+ * The public-answer composer.
+ *
+ * The acknowledgment is a client-side guard that keeps a staff member from
+ * publishing by reflex; `publishNow` re-checks it against the persisted row
+ * and remains the real backstop. Failing the guard preserves both fields —
+ * losing a rewritten question because a checkbox was unticked would push
+ * people towards pasting the original back in, which is the exact risk the
+ * check exists to prevent.
+ */
+
 export function publishNeedsAcknowledgement(
   intent: string | null,
   acknowledged: boolean,
@@ -46,26 +57,40 @@ export function PublicAnswerComposer({
     >
       <input type="hidden" name="itemId" value={itemId} />
       <input type="hidden" name="selected" value={selectedResponseId} />
+
       <div className="field-row">
-        <label htmlFor={`pubq-${itemId}`}>Public question</label>
+        <label htmlFor={`pubq-${itemId}`}>Public version of the question</label>
         <textarea
           id={`pubq-${itemId}`}
           className="textarea-field"
           name="publicQuestion"
-          rows={2}
+          rows={3}
           defaultValue={originalQuestion}
           required
         />
       </div>
+
       <div className="field-row">
-        <label htmlFor={`puba-${itemId}`}>Public answer</label>
+        <label htmlFor={`puba-${itemId}`}>
+          Answer <span className="optional-mark">required to publish</span>
+        </label>
         <textarea
           id={`puba-${itemId}`}
           className="textarea-field"
           name="answerBody"
-          rows={4}
+          rows={5}
         />
       </div>
+
+      {canPublish && (
+        <div className="visibility-note">
+          Publishing shows this question and answer to everyone enrolled in this
+          section. The original wording stays private, but a specific enough
+          detail can still identify the person who asked — especially in a small
+          class.
+        </div>
+      )}
+
       <label className="choice">
         <input
           ref={acknowledgmentRef}
@@ -80,17 +105,19 @@ export function PublicAnswerComposer({
       </label>
       {acknowledgmentError && (
         <p className="field-error" id={errorId} role="alert">
-          Check the public wording before publishing.
+          Read the public wording once more, then tick the box to publish.
+          Nothing you typed has been lost.
         </p>
       )}
-      <div className="row-gap" style={{ marginTop: 12 }}>
+
+      <div className="row">
         <button
           className="button button--secondary"
           type="submit"
           name="intent"
           value="draft"
         >
-          Save as draft
+          Save as a draft
         </button>
         {canPublish && (
           <button

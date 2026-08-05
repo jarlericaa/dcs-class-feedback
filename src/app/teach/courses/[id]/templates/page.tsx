@@ -12,7 +12,7 @@ import { homeNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Badge,
+  Stamp,
   Breadcrumbs,
   EmptyState,
 } from "@/components/ui";
@@ -129,18 +129,21 @@ export default async function TemplatesPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title="Form templates"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
         {templates.length === 0 ? (
-          <EmptyState title="No templates yet" />
+          <EmptyState title="No templates yet">
+            A template is the set of questions a weekly form asks. Saving one
+            creates an immutable version; weeks already generated keep the
+            version they were built from.
+          </EmptyState>
         ) : (
-          <section className="card">
-            <div className="card__header">
+          <section className="notice">
+            <div className="notice__head">
               <div>
                 <h2>Templates in this course</h2>
               </div>
@@ -158,9 +161,9 @@ export default async function TemplatesPage({
                       )}
                     </small>
                   </span>
-                  <span className="row-gap">
+                  <span className="row">
                     {template.archived && (
-                      <Badge tone="neutral">Archived</Badge>
+                      <Stamp tone="neutral">Archived</Stamp>
                     )}
                     <Link
                       className="button button--secondary button--small"
@@ -176,8 +179,8 @@ export default async function TemplatesPage({
         )}
 
         {editing && (
-          <section className="card card--padded" id="editor">
-            <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>
+          <section className="notice notice--pad" id="editor">
+            <h2 className="panel-title">
               Edit “{editing.template.title}”
             </h2>
             <p className="muted small" style={{ margin: "0 0 6px" }}>
@@ -210,8 +213,8 @@ export default async function TemplatesPage({
         )}
 
         {!editing && (
-          <section className="card card--padded">
-            <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>New template</h2>
+          <section className="notice notice--pad">
+            <h2 className="panel-title">New template</h2>
             <form action={addTemplate}>
               <TemplateEditor
                 initialQuestions={[]}

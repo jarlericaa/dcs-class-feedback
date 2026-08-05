@@ -117,10 +117,9 @@ export default async function ImportPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title="Import the class list"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         <Alert variant="info" title="How matching works">
           Class lists only have a student number and a name, so the platform
           proposes account matches but never confirms one. You confirm every

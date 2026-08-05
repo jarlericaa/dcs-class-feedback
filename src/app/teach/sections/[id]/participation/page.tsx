@@ -5,10 +5,10 @@ import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Badge,
+  Stamp,
   Breadcrumbs,
   EmptyState,
-  Stat,
+  Figure,
 } from "@/components/ui";
 import { getParticipationOverview } from "@/modules/participation";
 import { toShellUser } from "@/lib/session";
@@ -67,10 +67,9 @@ export default async function ParticipationPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title="Participation"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         <Alert
           variant="warning"
           title="These files contain student names and numbers"
@@ -78,23 +77,23 @@ export default async function ParticipationPage({
           Every download is recorded in the audit history with your name.
         </Alert>
 
-        <div className="stat-row">
-          <Stat value={summary.cycleCount} label="weeks run" />
-          <Stat value={summary.activeStudentCount} label="active students" />
-          <Stat
+        <div className="figure-row">
+          <Figure value={summary.cycleCount} label="weeks run" />
+          <Figure value={summary.activeStudentCount} label="active students" />
+          <Figure
             value={summary.averageWeeks.toFixed(1)}
             label="average weeks participated"
           />
-          <Stat value={summary.neverParticipated} label="never participated" />
+          <Figure value={summary.neverParticipated} label="never participated" />
         </div>
 
-        <section className="card">
-          <div className="card__header">
+        <section className="notice">
+          <div className="notice__head">
             <div>
               <h2>Export</h2>
             </div>
           </div>
-          <div className="card__body row-gap">
+          <div className="notice__body row">
             <a
               className="button button--secondary"
               href={exportHref("weekly_matrix")}
@@ -117,10 +116,14 @@ export default async function ParticipationPage({
         </section>
 
         {summary.cycleCount === 0 || students.length === 0 ? (
-          <EmptyState title="Nothing to report yet" />
+          <EmptyState title="Nothing to report yet">
+            Participation is derived from valid weekly submissions. Once the
+            first week closes with submissions in it, the matrix and the exports
+            appear here.
+          </EmptyState>
         ) : (
-          <section className="card">
-            <div className="card__header">
+          <section className="notice">
+            <div className="notice__head">
               <div>
                 <h2>Weekly matrix</h2>
                 <p>
@@ -159,7 +162,7 @@ export default async function ParticipationPage({
                         {!student.active && (
                           <>
                             {" "}
-                            <Badge tone="neutral">Dropped</Badge>
+                            <Stamp tone="neutral">Dropped</Stamp>
                           </>
                         )}
                       </th>

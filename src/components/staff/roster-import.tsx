@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { Alert, Badge } from "@/components/ui";
+import { Alert, Stamp } from "@/components/ui";
 
 /**
  * Roster import: paste → preview → confirm.
@@ -69,7 +69,7 @@ export function RosterImport({
   }, {});
 
   return (
-    <div className="stack-gap">
+    <div className="stack-4">
       {state.status === "done" && state.summary && (
         <Alert variant="success" title="Import complete">
           {Object.entries(state.summary)
@@ -89,12 +89,12 @@ export function RosterImport({
         </Alert>
       )}
 
-      <form action={formAction} className="card card--padded">
+      <form action={formAction} className="notice notice--pad">
         <div className="field-row">
           <label htmlFor="csv">Paste the class list as CSV</label>
           <textarea
             id="csv"
-            className="textarea-field"
+            className="textarea-field textarea-field--data"
             name="csv"
             rows={8}
             defaultValue={state.csv}
@@ -121,14 +121,14 @@ export function RosterImport({
       </form>
 
       {state.status === "preview" && !state.fileError && (
-        <section className="card">
-          <div className="card__header">
+        <section className="notice">
+          <div className="notice__head">
             <div>
               <h2>Preview</h2>
             </div>
           </div>
 
-          <div className="card__body stack-gap">
+          <div className="notice__body stack-4">
             {(state.rowErrors?.length ?? 0) > 0 && (
               <Alert variant="warning" title="Some rows will be skipped">
                 <ul>
@@ -145,8 +145,8 @@ export function RosterImport({
               const copy = ACTION_COPY[kind as PreviewAction["kind"]];
               return (
                 <div key={kind}>
-                  <div className="row-gap" style={{ marginBottom: 8 }}>
-                    <Badge tone={copy.tone}>{copy.label}</Badge>
+                  <div className="row" style={{ marginBottom: 8 }}>
+                    <Stamp tone={copy.tone}>{copy.label}</Stamp>
                     <span className="muted small">{items.length} row(s)</span>
                   </div>
                   <ul className="data-list card">
@@ -171,8 +171,8 @@ export function RosterImport({
 
             {(state.deactivations?.length ?? 0) > 0 && (
               <div>
-                <div className="row-gap" style={{ marginBottom: 8 }}>
-                  <Badge tone="amber">Deactivate enrolment</Badge>
+                <div className="row" style={{ marginBottom: 8 }}>
+                  <Stamp tone="amber">Deactivate enrolment</Stamp>
                   <span className="muted small">
                     {state.deactivations!.length} student(s) absent from this file
                   </span>
@@ -195,8 +195,8 @@ export function RosterImport({
             )}
           </div>
 
-          <div className="card__footer">
-            <form action={formAction} className="stack-gap">
+          <div className="notice__foot">
+            <form action={formAction} className="stack-4">
               <input type="hidden" name="csv" value={state.csv} />
               <div className="field-row" style={{ maxWidth: 420 }}>
                 <label htmlFor="source">Where did this list come from?</label>

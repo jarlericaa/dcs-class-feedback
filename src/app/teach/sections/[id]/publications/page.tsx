@@ -8,7 +8,7 @@ import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Badge,
+  Stamp,
   Breadcrumbs,
   EmptyState,
 } from "@/components/ui";
@@ -169,10 +169,9 @@ export default async function PublicationsPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title="Publication queue"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
         {warn && (
@@ -194,33 +193,36 @@ export default async function PublicationsPage({
         )}
 
         {editable.length === 0 ? (
-          <EmptyState title="Nothing waiting to publish" />
+          <EmptyState title="Nothing waiting to publish">
+            Drafts and scheduled answers wait here until they go out. Start one
+            from a submission in the review inbox.
+          </EmptyState>
         ) : (
           editable.map(({ answer, sourceCount }) => (
-            <section className="card card--padded" key={answer.id}>
+            <section className="notice notice--pad" key={answer.id}>
               <div
-                className="row-gap"
+                className="row"
                 style={{ justifyContent: "space-between" }}
               >
                 <div>
-                  <p className="section-kicker">
+                  <p className="label">
                     {sourceCount} source submission
                     {sourceCount === 1 ? "" : "s"}
                     {sourceCount > 1 && " · merged"}
                   </p>
-                  <h2 style={{ margin: "2px 0 0", fontSize: 17 }}>
+                  <h2 className="panel-title">
                     {answer.publicQuestionText}
                   </h2>
                 </div>
                 {answer.publishFailed ? (
-                  <Badge tone="red">Publication failed</Badge>
+                  <Stamp tone="red">Publication failed</Stamp>
                 ) : answer.state === "scheduled" ? (
-                  <Badge tone="amber">
+                  <Stamp tone="amber">
                     Scheduled{" "}
                     {formatDateTime(answer.scheduledAt, section.timezone)}
-                  </Badge>
+                  </Stamp>
                 ) : (
-                  <Badge tone="neutral">Draft</Badge>
+                  <Stamp tone="neutral">Draft</Stamp>
                 )}
               </div>
 
@@ -234,7 +236,7 @@ export default async function PublicationsPage({
 
               <form
                 action={saveDraft}
-                className="stack-gap"
+                className="stack-4"
                 style={{ marginTop: 16 }}
               >
                 <input type="hidden" name="answerId" value={answer.id} />
@@ -346,8 +348,8 @@ export default async function PublicationsPage({
         )}
 
         {queue.published.length > 0 && (
-          <section className="card">
-            <div className="card__header">
+          <section className="notice">
+            <div className="notice__head">
               <div>
                 <h2>Recently published</h2>
               </div>
@@ -365,7 +367,7 @@ export default async function PublicationsPage({
                         " · published late by reconciliation"}
                     </small>
                   </span>
-                  <Badge tone="green">Live to this section</Badge>
+                  <Stamp tone="green">Live to this section</Stamp>
                 </li>
               ))}
             </ul>

@@ -9,7 +9,7 @@ import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Badge,
+  Stamp,
   Breadcrumbs,
   CycleStateBadge,
   EmptyState,
@@ -215,15 +215,14 @@ export default async function SetupPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title="Section setup"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
-        <section className="card card--padded">
-          <h2 style={{ margin: "0 0 4px", fontSize: 17 }}>Section details</h2>
+        <section className="notice notice--pad">
+          <h2 className="panel-title">Section details</h2>
           <form action={saveDetails} className="form-grid">
             <div className="field-row">
               <label htmlFor="section-title">Section name</label>
@@ -253,15 +252,15 @@ export default async function SetupPage({
           </form>
         </section>
 
-        <section className="card">
-          <div className="card__header">
+        <section className="notice">
+          <div className="notice__head">
             <div>
               <h2>Teaching team</h2>
             </div>
             {isOwner ? (
-              <Badge tone="green">You own this course</Badge>
+              <Stamp tone="green">You own this course</Stamp>
             ) : (
-              <Badge tone="neutral">Owner-managed</Badge>
+              <Stamp tone="neutral">Owner-managed</Stamp>
             )}
           </div>
           <ul className="data-list">
@@ -291,8 +290,8 @@ export default async function SetupPage({
           </ul>
 
           {isOwner && (
-            <div className="card__footer">
-              <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>
+            <div className="notice__foot">
+              <h3 className="panel-title">
                 Add or reconfigure a staff member
               </h3>
               <p className="muted small" style={{ margin: "0 0 14px" }}>
@@ -300,7 +299,7 @@ export default async function SetupPage({
                 participation&rdquo; lets them download files containing student
                 names and numbers.
               </p>
-              <form action={saveStaff} className="stack-gap">
+              <form action={saveStaff} className="stack-4">
                 <div className="form-grid">
                   <div className="field-row">
                     <label htmlFor="staff-email">University email</label>
@@ -352,19 +351,19 @@ export default async function SetupPage({
 
         {canManageCycles ? (
           <>
-            <section className="card">
-              <div className="card__header">
+            <section className="notice">
+              <div className="notice__head">
                 <div>
                   <h2>Weekly schedule</h2>
                 </div>
                 {active ? (
-                  <Badge tone="green">Active</Badge>
+                  <Stamp tone="green">Active</Stamp>
                 ) : (
-                  <Badge tone="amber">Not scheduled</Badge>
+                  <Stamp tone="amber">Not scheduled</Stamp>
                 )}
               </div>
 
-              <div className="card__body">
+              <div className="notice__body">
                 {active && (
                   <Alert variant="info" title="Current schedule">
                     Opens {DAY_NAMES[active.schedule.openDayOfWeek]} at{" "}
@@ -395,7 +394,7 @@ export default async function SetupPage({
                 ) : (
                   <form
                     action={saveSchedule}
-                    className="stack-gap"
+                    className="stack-4"
                     style={{ marginTop: 16 }}
                   >
                     <div className="form-grid">
@@ -521,7 +520,7 @@ export default async function SetupPage({
                         </span>
                       </div>
                     </div>
-                    <div className="row-gap">
+                    <div className="row">
                       <button className="button button--primary" type="submit">
                         {active ? "Replace schedule" : "Save schedule"}
                       </button>
@@ -537,7 +536,7 @@ export default async function SetupPage({
               </div>
 
               {active && (
-                <div className="card__footer">
+                <div className="notice__foot">
                   <form action={stopSchedule} className="inline-form">
                     <button
                       className="button button--danger button--small"
@@ -553,8 +552,8 @@ export default async function SetupPage({
               )}
             </section>
 
-            <section className="card">
-              <div className="card__header">
+            <section className="notice">
+              <div className="notice__head">
                 <div>
                   <h2>Weekly cycles</h2>
                   <p>
@@ -564,8 +563,11 @@ export default async function SetupPage({
                 </div>
               </div>
               {cycles.length === 0 ? (
-                <div className="card__body">
-                  <EmptyState title="No cycles generated yet" />
+                <div className="notice__body">
+                  <EmptyState title="No weeks generated yet">
+              Save a weekly schedule above and the platform materialises the
+              coming weeks, opening and closing each one on time.
+            </EmptyState>
                 </div>
               ) : (
                 <div className="table-scroll">

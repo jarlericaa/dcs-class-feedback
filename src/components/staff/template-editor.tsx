@@ -166,11 +166,11 @@ export function TemplateEditor({
         </div>
       )}
 
-      <div className="stack-gap" style={{ marginTop: 18 }}>
+      <div className="stack-4" style={{ marginTop: 18 }}>
         {questions.map((question, index) => (
-          <fieldset className="card card--padded" key={question.key}>
-            <legend className="section-kicker">Question {index + 1}</legend>
-            <div className="stack-gap">
+          <fieldset className="notice notice--pad" key={question.key}>
+            <legend className="label">Question {index + 1}</legend>
+            <div className="stack-4">
               <div className="field-row">
                 <label htmlFor={`prompt-${question.key}`}>Question text</label>
                 <input
@@ -260,7 +260,7 @@ export function TemplateEditor({
                 </div>
               )}
 
-              <div className="row-gap" style={{ justifyContent: "space-between" }}>
+              <div className="row" style={{ justifyContent: "space-between" }}>
                 <label className="choice" style={{ flex: "0 1 auto" }}>
                   <input
                     type="checkbox"
@@ -271,7 +271,7 @@ export function TemplateEditor({
                   />
                   <span>Required</span>
                 </label>
-                <span className="row-gap">
+                <span className="row">
                   <button
                     className="button button--quiet button--small"
                     type="button"

@@ -4,7 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
-  Badge,
+  Stamp,
   Breadcrumbs,
   EmptyState,
 } from "@/components/ui";
@@ -64,15 +64,18 @@ export default async function AuditPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title="Audit history"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         {events.length === 0 ? (
-          <EmptyState title="No audit records yet" />
+          <EmptyState title="No audit records yet">
+            Every important action in this section — a confirmed identity, a
+            published answer, a participation decision, an export — is recorded
+            here with who did it and when.
+          </EmptyState>
         ) : (
           <>
-            <form className="filter-bar" method="get">
+            <form className="toolbar" method="get">
               <label className="visually-hidden" htmlFor="audit-action">
                 Filter by action
               </label>
@@ -94,7 +97,7 @@ export default async function AuditPage({
               </button>
             </form>
 
-            <section className="card">
+            <section className="notice">
               <ul className="data-list">
                 {events.map(({ event, actor }) => (
                   <li key={event.id}>
@@ -131,7 +134,7 @@ export default async function AuditPage({
                         </details>
                       )}
                     </span>
-                    {!actor && <Badge tone="neutral">Automatic</Badge>}
+                    {!actor && <Stamp tone="neutral">Automatic</Stamp>}
                   </li>
                 ))}
               </ul>

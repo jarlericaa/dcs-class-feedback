@@ -5,7 +5,7 @@ import { currentUserId } from "@/auth";
 import { formatDate } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { AccessDenied, Alert, Badge, Breadcrumbs } from "@/components/ui";
+import { AccessDenied, Alert, Stamp, Breadcrumbs } from "@/components/ui";
 import {
   CatalogError,
   listAccountsForAdmin,
@@ -90,14 +90,13 @@ export default async function AdminPage({
           ]}
         />
       }
-      eyebrow="Platform administration"
       title="Accounts and roles"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
-        <form className="filter-bar" method="get" role="search">
+        <form className="toolbar" method="get" role="search">
           <label className="visually-hidden" htmlFor="admin-q">
             Search accounts
           </label>
@@ -114,8 +113,8 @@ export default async function AdminPage({
           </button>
         </form>
 
-        <section className="card">
-          <div className="card__header">
+        <section className="notice">
+          <div className="notice__head">
             <div>
               <h2>Accounts</h2>
               <p>
@@ -132,16 +131,16 @@ export default async function AdminPage({
                     {account.email} · joined {formatDate(account.createdAt)}
                   </small>
                 </span>
-                <span className="row-gap">
+                <span className="row">
                   {account.isPlatformAdmin && (
-                    <Badge tone="neutral">Admin</Badge>
+                    <Stamp tone="neutral">Admin</Stamp>
                   )}
                   {account.isTeacher ? (
-                    <Badge tone="green">Teacher</Badge>
+                    <Stamp tone="green">Teacher</Stamp>
                   ) : (
-                    <Badge tone="neutral">Standard</Badge>
+                    <Stamp tone="neutral">Standard</Stamp>
                   )}
-                  {!account.active && <Badge tone="red">Deactivated</Badge>}
+                  {!account.active && <Stamp tone="red">Deactivated</Stamp>}
                   <form action={toggleTeacher} className="inline-form">
                     <input type="hidden" name="email" value={account.email} />
                     <input

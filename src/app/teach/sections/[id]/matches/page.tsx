@@ -10,7 +10,7 @@ import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Badge,
+  Stamp,
   Breadcrumbs,
   EmptyState,
 } from "@/components/ui";
@@ -148,10 +148,9 @@ export default async function MatchesPage({
           ]}
         />
       }
-      eyebrow="Staff only"
       title="Account matches"
     >
-      <div className="stack-gap">
+      <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
@@ -167,8 +166,8 @@ export default async function MatchesPage({
             appears here.
           </EmptyState>
         ) : (
-          <section className="card">
-            <div className="card__header">
+          <section className="notice">
+            <div className="notice__head">
               <div>
                 <h2>Waiting for your decision</h2>
                 <p>
@@ -177,19 +176,19 @@ export default async function MatchesPage({
                 </p>
               </div>
             </div>
-            <div className="card__body stack-gap">
+            <div className="notice__body stack-4">
               {[...byAccount.entries()].map(([accountId, matches]) => {
                 const account = userById.get(accountId);
                 const ambiguous = matches.length > 1;
                 return (
-                  <article className="card card--padded" key={accountId}>
+                  <article className="notice notice--pad" key={accountId}>
                     <div
-                      className="row-gap"
+                      className="row"
                       style={{ justifyContent: "space-between" }}
                     >
                       <div>
-                        <p className="section-kicker">Signed-in account</p>
-                        <h3 style={{ margin: "2px 0 0", fontSize: 16 }}>
+                        <p className="label">Signed-in account</p>
+                        <h3 className="panel-title">
                           {account?.displayName ?? "Unknown"}
                         </h3>
                         <p className="muted small" style={{ margin: 0 }}>
@@ -197,11 +196,11 @@ export default async function MatchesPage({
                         </p>
                       </div>
                       {ambiguous ? (
-                        <Badge tone="red">
+                        <Stamp tone="red">
                           Ambiguous · {matches.length} possible students
-                        </Badge>
+                        </Stamp>
                       ) : (
-                        <Badge tone="amber">Suggested match</Badge>
+                        <Stamp tone="amber">Suggested match</Stamp>
                       )}
                     </div>
 
@@ -235,7 +234,7 @@ export default async function MatchesPage({
                                   ` · name similarity ${(score * 100).toFixed(0)}%`}
                               </small>
                             </span>
-                            <span className="row-gap">
+                            <span className="row">
                               <form action={confirm} className="inline-form">
                                 <input
                                   type="hidden"
@@ -274,8 +273,8 @@ export default async function MatchesPage({
           </section>
         )}
 
-        <section className="card">
-          <div className="card__header">
+        <section className="notice">
+          <div className="notice__head">
             <div>
               <h2>Class list</h2>
               <p>
@@ -285,7 +284,7 @@ export default async function MatchesPage({
             </div>
           </div>
           {roster.length === 0 ? (
-            <div className="card__body">
+            <div className="notice__body">
               <EmptyState
                 title="No students imported yet"
                 action={{
@@ -308,14 +307,14 @@ export default async function MatchesPage({
                         ` · roster name: ${enrollment.rosterName}`}
                     </small>
                   </span>
-                  <span className="row-gap">
+                  <span className="row">
                     {enrollment.status === "deactivated" && (
-                      <Badge tone="neutral">Dropped</Badge>
+                      <Stamp tone="neutral">Dropped</Stamp>
                     )}
                     {accountLinked ? (
-                      <Badge tone="green">Account confirmed</Badge>
+                      <Stamp tone="green">Account confirmed</Stamp>
                     ) : (
-                      <Badge tone="amber">No account yet</Badge>
+                      <Stamp tone="amber">No account yet</Stamp>
                     )}
                   </span>
                 </li>
