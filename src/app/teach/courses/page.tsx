@@ -5,8 +5,16 @@ import { currentUserId } from "@/auth";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { AccessDenied, Alert, Stamp, EmptyState } from "@/components/ui";
+import {
+  AccessDenied,
+  Alert,
+  Stamp,
+  EmptyState,
+  MetaList,
+} from "@/components/ui";
+import { TermFields } from "@/components/ui/term-fields";
 import { IconPlus } from "@/components/ui/icons";
+import { termParts } from "@/lib/term";
 import {
   CatalogError,
   createCourse,
@@ -187,10 +195,16 @@ export default async function CoursesPage({
                     <li key={section.id}>
                       <span className="data-list__main">
                         <strong>{section.title}</strong>
-                        <small>
-                          {section.term} · {section.timezone}
-                          {!section.active && " · inactive"}
-                        </small>
+                        {/* The term reads as words, and the timezone is gone —
+                            nobody scans a course list for it, and glued to the
+                            term with a dot it made the row's only metadata
+                            line unreadable. It lives in section setup. */}
+                        <MetaList
+                          items={[
+                            ...termParts(section.term),
+                            !section.active && "Inactive",
+                          ]}
+                        />
                       </span>
                       <span className="row">
                         <Link
@@ -199,8 +213,10 @@ export default async function CoursesPage({
                         >
                           Review inbox
                         </Link>
+                        {/* A real destination, so it looks like one. It was a
+                            quiet text link beside a bordered sibling. */}
                         <Link
-                          className="button button--quiet button--small"
+                          className="button button--secondary button--small"
                           href={`/teach/sections/${section.id}/setup`}
                         >
                           Section setup
@@ -224,18 +240,8 @@ export default async function CoursesPage({
                   Add a section
                 </summary>
                 <div className="disclose__body">
-                  <form action={addSection} className="form-grid">
+                  <form action={addSection} className="stack-4">
                     <input type="hidden" name="courseId" value={course.id} />
-                    <div className="field-row">
-                      <label htmlFor={`term-${course.id}`}>Term</label>
-                      <input
-                        id={`term-${course.id}`}
-                        className="field"
-                        name="term"
-                        placeholder="AY2026-1"
-                        required
-                      />
-                    </div>
                     <div className="field-row">
                       <label htmlFor={`sectitle-${course.id}`}>
                         Section name
@@ -248,9 +254,12 @@ export default async function CoursesPage({
                         required
                       />
                     </div>
-                    <button className="button button--primary" type="submit">
-                      Add section
-                    </button>
+                    <TermFields />
+                    <div>
+                      <button className="button button--primary" type="submit">
+                        Add section
+                      </button>
+                    </div>
                   </form>
                 </div>
               </details>

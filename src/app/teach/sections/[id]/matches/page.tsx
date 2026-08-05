@@ -13,6 +13,7 @@ import {
   Stamp,
   Breadcrumbs,
   EmptyState,
+  MetaList,
 } from "@/components/ui";
 import {
   confirmMatch,
@@ -243,7 +244,7 @@ export default async function MatchesPage({
         <Breadcrumbs
           items={[
             { href: "/", label: "Overview" },
-            { label: `${course.code} · ${section.term}` },
+            { label: course.code },
             { label: "Account matches" },
           ]}
         />
@@ -275,10 +276,12 @@ export default async function MatchesPage({
                 <li key={row.claim.id}>
                   <span className="data-list__main">
                     <strong>{row.account.displayName}</strong>
-                    <small>
-                      {row.account.email} · typed a number ending{" "}
-                      {row.claim.typedNumberLast4}
-                    </small>
+                    <MetaList
+                      items={[
+                        row.account.email,
+                        `Typed a number ending ${row.claim.typedNumberLast4}`,
+                      ]}
+                    />
                     {/* One line, not two: this used to print "That number is
                         not on any class list." immediately above the service's
                         own "The number they typed is not on any roster." */}

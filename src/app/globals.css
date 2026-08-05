@@ -289,6 +289,40 @@ kbd {
   font-size: 12px;
   letter-spacing: -0.01em;
 }
+
+/* Metadata as separate facts.
+   No middle dots at all: whitespace does the separating, so each fact reads as
+   its own thing rather than as a clause in a generated sentence, a fact can be
+   dropped without leaving a stray dot behind, and the row wraps BETWEEN facts
+   instead of mid-phrase. On a narrow screen they stack cleanly. */
+.meta-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--s4);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.meta-list__item {
+  white-space: nowrap;
+}
+/* A long fact — an email, a hand-typed term — may wrap on its own. */
+.meta-list__item:only-child,
+.meta-list__item:last-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* What this object needs from the reader, as a sentence. Never a count pair. */
+.status-line {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.status-line--attention {
+  color: var(--amber-deep);
+  font-weight: 600;
+}
 .measure {
   max-width: 68ch;
 }
@@ -865,10 +899,14 @@ kbd {
   margin-top: 1px;
 }
 
+/* Fields sharing a row share a left edge and a top edge. `align-items: end`
+   was bottom-aligning cells of different heights, so a textarea beside a select
+   dragged its label out of line with its neighbour's — the misalignment visible
+   at every width in the template editor. */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  align-items: end;
+  align-items: start;
   gap: var(--s4);
 }
 /* a submit sitting in the grid keeps its own width instead of stretching */
@@ -963,6 +1001,246 @@ kbd {
 }
 .disclose--inset[open] > summary {
   border-bottom: 1px solid var(--rule);
+}
+
+/* ==========================================================================
+   Template editor
+   ==========================================================================
+   The list's heading carries the list's own actions, so "Add question" does not
+   have to sit at the bottom of the whole form competing with save. */
+
+.editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin: var(--s5) 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 2px solid var(--rule-ink);
+}
+.editor-head__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.editor-head__count {
+  color: var(--ink-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A question is a hairline-divided row, not a card inside a card. */
+.q-list {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.q-item {
+  display: grid;
+  gap: var(--s3);
+  min-width: 0;
+  margin: 0;
+  padding: var(--s4) var(--s5);
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+}
+.q-list > .q-item:last-child {
+  border-bottom: 0;
+}
+/* Standing alone (the student-additions block) it keeps its own frame. */
+.q-item:not(.q-list > .q-item) {
+  border: 1px solid var(--rule);
+}
+.q-item__legend {
+  float: left;
+  width: 100%;
+  padding: 0 0 var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.q-item__legend + * {
+  clear: both;
+}
+/* The type select does not need to span the column. */
+.q-item__type {
+  max-width: 280px;
+}
+.q-item__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--rule);
+}
+.q-item__required {
+  flex: 0 1 auto;
+}
+
+/* Answer choices: one real row per choice. A textarea of newline-separated
+   labels made each option look like an accidental line break and gave a teacher
+   nothing to click to remove one. */
+.options {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.options__list {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+.options__row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+.options__number {
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.options__remove {
+  flex: 0 0 auto;
+}
+.options__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-top: var(--s3);
+}
+
+@media (max-width: 480px) {
+  .q-item {
+    padding: var(--s4);
+  }
+  /* The number stays with its field; the remove control drops beneath rather
+     than squeezing the input to nothing. */
+  .options__row {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+  .options__remove {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* ==========================================================================
+   Student-form preview
+   ==========================================================================
+   A native <dialog>, so the focus trap, Escape and aria-modal are the
+   platform's. It renders the real student form; nothing in it can submit. */
+
+.preview {
+  width: min(760px, calc(100vw - var(--s5)));
+  max-width: none;
+  max-height: min(88vh, 900px);
+  padding: 0;
+  border: 1px solid var(--rule-strong);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--overlay-shadow);
+  overflow: hidden;
+}
+.preview::backdrop {
+  background: rgba(28, 30, 32, 0.42);
+}
+.preview__bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.preview__title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.008em;
+}
+.preview__sub {
+  margin-top: 4px;
+  max-width: 52ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.preview__body {
+  padding: var(--s5);
+  overflow-y: auto;
+  max-height: calc(min(88vh, 900px) - 86px);
+}
+
+@media (max-width: 480px) {
+  .preview {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+  }
+  .preview__bar {
+    padding: var(--s3) var(--s4);
+  }
+  .preview__body {
+    padding: var(--s4);
+    max-height: calc(100dvh - 84px);
+  }
+}
+
+/* The academic term builder: two inputs and the year they derive, said back. */
+.term-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.term-fields__grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s3);
+  max-width: 420px;
+  margin-top: 6px;
+}
+.term-fields__year {
+  font-variant-numeric: tabular-nums;
+}
+.term-fields__derived {
+  margin-top: 6px;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.term-fields__derived strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 400px) {
+  .term-fields__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* A segmented choice: pick a mode, do not perform an action. It must never look
@@ -2468,4 +2746,9 @@ kbd {
   .pagination__controls .button {
     flex: 1;
   }
+}
+
+/* The Q&A detail's provenance line sits just under the object title. */
+.qa-detail__meta {
+  margin-top: var(--s2);
 }

@@ -890,3 +890,63 @@ decisions specific to them.
 Inline `style` attributes are for one-off geometry only (a max-width on a single
 select, a grid template that exists once). Anything that appears twice becomes a
 class.
+
+---
+
+## 14. Metadata, status, and asking for a term
+
+Three patterns added by the precision pass
+([docs/UI-PRECISION-PASS.md](docs/UI-PRECISION-PASS.md)). They exist because the
+first two passes fixed layout and colour and left the interface still *reading*
+as generated.
+
+### Metadata is separate facts — `MetaList`
+
+`DCS-101 · AY2026-1 · Asia/Manila` is three unrelated facts welded into one
+sentence: none can be scanned, none can be dropped or styled independently, and
+the row wraps mid-phrase. Metadata renders through `MetaList`, which lays each
+fact out as its own element separated by whitespace — **no middle dots** — so a
+missing fact leaves no stray separator and a narrow screen stacks cleanly.
+
+**A string built by joining unrelated facts with `·` is a defect.** One
+separator between two genuinely paired facts (a top-bar context label) is fine.
+
+### Status is a sentence, and only said once — `ReviewStatusLine`
+
+`1 submission · 1 answered` beside a `Nothing waiting` stamp said the same thing
+twice and told the teacher nothing to do. A status region carries **one**
+treatment: the sentence that names what the object needs
+(`3 submissions need replies` / `All submissions answered` / `No submissions
+yet`). A stamp appears alongside only when it carries *different* information —
+for example that the viewer cannot see the queue at all.
+
+A sentence may never claim more than the counts prove. `0 submissions · 0
+answered` under "Nothing waiting" implied a handled week when nothing had
+arrived.
+
+### The academic term — `TermFields` and `lib/term.ts`
+
+`class_sections.term` stores `AY{year}-{1|2|M}`. That is a storage key: it is
+never shown to a person and never typed by one.
+
+- **Asking:** `TermFields` takes a start year and a semester
+  (`1st semester` / `2nd semester` / `Midyear`) and shows the derived academic
+  year back live (`2026-2027`) through `role="status"`. No `AY` prefix, no end
+  year.
+- **Showing:** `termParts()` returns the two facts for `MetaList`;
+  `formatTerm()` joins them only where a single string is unavoidable, such as an
+  `aria-label`.
+- **Legacy:** a value the adapter cannot parse is rendered verbatim and
+  resubmitted unchanged. A term somebody typed by hand is still the truth about
+  that section, so it is never rewritten to fit the format.
+
+The timezone is a section-setup fact, not a course-list fact. It does not belong
+in a row's primary scan line.
+
+### Authoring choices — `.options`
+
+Answer choices are edited as one numbered input per choice with a per-row remove
+and an `Add option` button, never as a newline-separated textarea. An option that
+already exists **keeps its `stableId`** when its label is corrected: answers store
+`optionIds` and exports join on them, so deriving the id from the label would
+silently re-identify every option a teacher touched.

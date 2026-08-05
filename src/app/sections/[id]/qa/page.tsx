@@ -14,7 +14,7 @@ import {
   WorkspaceShell,
 } from "@/components/layout/workspace-shell";
 import { staffSectionNav, studentSectionNav } from "@/components/layout/nav";
-import { AccessDenied, Category } from "@/components/ui";
+import { AccessDenied, Category, MetaList } from "@/components/ui";
 import { CategoryMark } from "@/components/ui/icons";
 import { listSectionQa } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
@@ -149,7 +149,7 @@ export default async function QaArchivePage({
   return (
     <WorkspaceShell
       user={toShellUser(user)}
-      contextTitle={`${course.code} ${section.term} · Class Q&A`}
+      contextTitle={`${section.title} · Class Q&A`}
       workspaceLabel={access?.staff ? "Staff workspace" : "Student workspace"}
       primaryAction={
         access?.staff
@@ -236,7 +236,7 @@ export default async function QaArchivePage({
                         <CategoryMark shape={categoryShape(entry.category)} />
                         {categoryShortLabel(entry.category)}
                       </span>
-                      <span>Asked anonymously</span>
+                      <span>No asker shown</span>
                       <span>{shortAgo(entry.publishedAt)}</span>
                       {entry.sourceOrigin === "legacy" && (
                         <span>Earlier semester</span>
@@ -268,12 +268,19 @@ export default async function QaArchivePage({
       ) : (
         <article>
           <h1 className="object-title">{active.question}</h1>
-          <p className="meta" style={{ marginTop: "var(--s2)" }}>
-            Asked anonymously · published{" "}
-            {formatDateTime(active.publishedAt, section.timezone)}
-            {active.sourceOrigin === "legacy" &&
-              " · carried over from an earlier semester"}
-          </p>
+          {/* "Anonymous" is never used unqualified in this product
+              (CONTENT-VOICE P3): it would imply a guarantee the system does not
+              make. What is true is that classmates cannot see who asked. */}
+          <MetaList
+            className="qa-detail__meta"
+            items={[
+              "Asked by a classmate, name not shown",
+              `Published ${formatDateTime(active.publishedAt, section.timezone)}`,
+              active.sourceOrigin === "legacy"
+                ? "Carried over from an earlier semester"
+                : null,
+            ]}
+          />
           {/* No "Answered" stamp: everything in this archive is answered by
               definition, so the badge distinguished nothing. */}
           <div className="row" style={{ marginTop: "var(--s3)" }}>
@@ -287,7 +294,7 @@ export default async function QaArchivePage({
               active.answers.map((answer) => (
                 <section className="answer" key={answer.id}>
                   <p className="answer__by">
-                    Answered by the teaching team ·{" "}
+                    Answered by the teaching team,{" "}
                     {formatDateTime(answer.publishedAt, section.timezone)}
                   </p>
                   <div className="doc">

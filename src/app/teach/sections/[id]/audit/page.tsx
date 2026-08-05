@@ -63,7 +63,7 @@ export default async function AuditPage({
         <Breadcrumbs
           items={[
             { href: "/", label: "Overview" },
-            { label: `${course.code} · ${section.term}` },
+            { label: course.code },
             { label: "Audit history" },
           ]}
         />

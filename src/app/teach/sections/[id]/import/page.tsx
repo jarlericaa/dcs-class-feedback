@@ -187,7 +187,7 @@ export default async function ImportPage({
         <Breadcrumbs
           items={[
             { href: "/", label: "Overview" },
-            { label: `${course.code} · ${section.term}` },
+            { label: course.code },
             { label: "Roster import" },
           ]}
         />

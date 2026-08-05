@@ -15,6 +15,7 @@ import {
   Stamp,
   Breadcrumbs,
   EmptyState,
+  MetaList,
 } from "@/components/ui";
 import { IconPlus } from "@/components/ui/icons";
 import { TemplateEditor } from "@/components/staff/template-editor";
@@ -156,6 +157,10 @@ export default async function TemplatesPage({
         {error && <Alert variant="error">{error}</Alert>}
 
         {templates.length === 0 ? (
+          /* CONTENT-VOICE §5: title, one sentence, the action. The paragraph
+             that used to define what a template is and explain immutable
+             versioning is gone — an instructor does not need the definition, and
+             the version rule belongs beside the save button, where it applies. */
           <EmptyState
             title="No templates yet"
             action={{
@@ -164,9 +169,7 @@ export default async function TemplatesPage({
             }}
             primary
           >
-            A template is the set of questions a weekly form asks. Saving one
-            creates an immutable version, so weeks already generated keep the
-            questions their students answered.
+            A weekly schedule needs a template to copy into each form.
           </EmptyState>
         ) : (
           <section className="notice">
@@ -175,13 +178,21 @@ export default async function TemplatesPage({
                 <li key={template.id}>
                   <span className="data-list__main">
                     <strong>{template.title}</strong>
-                    <small>
-                      {questionCount} question{questionCount === 1 ? "" : "s"} ·
-                      version {latestVersion?.versionNumber ?? 0} ·{" "}
-                      {formatDate(
-                        latestVersion?.createdAt ?? template.createdAt,
-                      )}
-                    </small>
+                    {/* Three separate facts. They were one run-on sentence:
+                        "4 questions · version 2 · 5 Aug 2026". */}
+                    <MetaList
+                      items={[
+                        `${questionCount} question${questionCount === 1 ? "" : "s"}`,
+                        // The version number only earns a place once there is
+                        // more than one; "Version 1" tells a teacher nothing.
+                        (latestVersion?.versionNumber ?? 0) > 1
+                          ? `Version ${latestVersion?.versionNumber}`
+                          : null,
+                        `Updated ${formatDate(
+                          latestVersion?.createdAt ?? template.createdAt,
+                        )}`,
+                      ]}
+                    />
                   </span>
                   <span className="row">
                     {template.archived && (
@@ -202,11 +213,9 @@ export default async function TemplatesPage({
 
         {editing && (
           <section className="notice notice--pad" id="editor">
-            <h2 className="panel-title">
-              Edit “{editing.template.title}”
-            </h2>
-            <p className="muted small" style={{ margin: "0 0 6px" }}>
-              Version {(editing.versions[0]?.versionNumber ?? 0) + 1}
+            <h2 className="panel-title">{editing.template.title}</h2>
+            <p className="muted small" style={{ margin: "4px 0 0" }}>
+              Editing as version {(editing.versions[0]?.versionNumber ?? 0) + 1}
             </p>
             <form action={addVersion}>
               <input
@@ -217,6 +226,7 @@ export default async function TemplatesPage({
               <TemplateEditor
                 showTitleFields={false}
                 submitLabel="Save as a new version"
+                versionNote="Saving creates a new version. Weeks already generated keep their current questions."
                 defaultMaxStudentQuestions={
                   editing.versions[0]?.maxStudentQuestions ?? 1
                 }
@@ -232,16 +242,22 @@ export default async function TemplatesPage({
                 defaultGeneralCommentRequired={
                   editing.versions[0]?.generalCommentRequired ?? false
                 }
-                note="Weeks that have already been generated keep the questions they were created with. Only future weeks use this version."
                 initialQuestions={editing.questions.map((q) => ({
                   key: q.id,
                   prompt: q.prompt,
                   description: q.description ?? "",
                   type: q.type,
                   required: q.required,
-                  optionsText: ((q.options ?? []) as { label: string }[])
-                    .map((o) => o.label)
-                    .join("\n"),
+                  // Carry each option's existing stableId through the editor.
+                  // Answers store optionIds and exports join on them, so an
+                  // option must keep its identity when its label is corrected.
+                  options: (
+                    (q.options ?? []) as { stableId: string; label: string }[]
+                  ).map((o, index) => ({
+                    key: `${q.id}-${o.stableId ?? index}`,
+                    stableId: o.stableId,
+                    label: o.label,
+                  })),
                   scaleMin: (q.scale as { min?: number } | null)?.min ?? 1,
                   scaleMax: (q.scale as { max?: number } | null)?.max ?? 5,
                 }))}

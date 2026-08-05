@@ -18,7 +18,7 @@ import { requireUser, toShellUser } from "@/lib/session";
 
 /**
  * The student's own record: their answers, private replies to them, and
- * whether their question was published anonymously.
+ * whether their question was published without their name.
  *
  * The projection comes from getStudentHistory, which deliberately excludes
  * validity, review state, dispositions, staff notes and drafts. Nothing here
@@ -66,7 +66,7 @@ export default async function HistoryPage({
         <Breadcrumbs
           items={[
             { href: "/", label: "Overview" },
-            { href: `/sections/${sectionId}`, label: `${course.code} ${section.term}` },
+            { href: `/sections/${sectionId}`, label: course.code },
             { label: "My submissions" },
           ]}
         />
@@ -79,15 +79,17 @@ export default async function HistoryPage({
       roomy
     >
       {history.length === 0 ? (
+        /* CONTENT-VOICE §5: "No X", never "You have not X" — absence should
+           not read as a failing. */
         <EmptyState
-          title="You have not submitted anything yet"
+          title="No submissions yet"
           action={{
             href: `/sections/${sectionId}`,
-            label: "Go to this week's form",
+            label: "Fill in the form",
           }}
+          primary
         >
-          Once you send a weekly form it stays here, together with any reply
-          your teaching team writes back to you.
+          Your submitted forms and any replies appear here.
         </EmptyState>
       ) : (
         <div className="stack-4">
@@ -132,7 +134,7 @@ export default async function HistoryPage({
                         tone="private"
                         label={
                           <>
-                            Private reply from your teaching team ·{" "}
+                            Private reply from your teaching team,{" "}
                             {formatDateTime(reply.createdAt, section.timezone)}
                           </>
                         }
@@ -146,7 +148,7 @@ export default async function HistoryPage({
                         tone="public"
                         label={
                           <>
-                            Published to your class anonymously ·{" "}
+                            Published to your class without your name,{" "}
                             {formatDateTime(
                               item.publicAnswer.publishedAt,
                               section.timezone,

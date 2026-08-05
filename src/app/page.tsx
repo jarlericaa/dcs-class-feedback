@@ -4,9 +4,17 @@ import { db } from "@/db";
 import { accountMatches } from "@/db/schema";
 
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
+import { termParts } from "@/lib/term";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { Alert, EmptyState, Stamp, StripLabel } from "@/components/ui";
+import {
+  Alert,
+  EmptyState,
+  MetaList,
+  ReviewStatusLine,
+  Stamp,
+  StripLabel,
+} from "@/components/ui";
 import { IconForward } from "@/components/ui/icons";
 import { listSectionsForUser } from "@/modules/catalog";
 import { generateMatchCandidates } from "@/modules/identity/matching";
@@ -148,15 +156,15 @@ export default async function HomePage() {
                   <div className="notice__body">
                     <div className="spread">
                       <div style={{ minWidth: 0 }}>
-                        <p className="meta">
-                          {course?.code ?? ""} · {section.term}
-                        </p>
+                        <MetaList
+                          items={[course?.code, ...termParts(section.term)]}
+                        />
                         <h3 className="panel-title" style={{ marginTop: 4 }}>
                           {section.title}
                         </h3>
                       </div>
                       {state.kind === "open" && (
-                        <Stamp tone="amber">Open · not submitted</Stamp>
+                        <Stamp tone="amber">Not submitted</Stamp>
                       )}
                       {state.kind === "submitted" && (
                         <Stamp tone="green">Submitted</Stamp>
@@ -166,14 +174,26 @@ export default async function HomePage() {
                       )}
                     </div>
                     <div className="section-notice__foot">
-                      <span className="meta">
-                        {state.kind === "none"
-                          ? "Nothing to complete right now"
-                          : `Week ${state.cycleIndex} · closes ${formatDeadline(
+                      {/* The week, the deadline, and how long is left were one
+                          dot-chained sentence that stated the deadline twice in
+                          two formats. Separate facts now, and the remaining
+                          time only while it is short enough to act on. */}
+                      {state.kind === "none" ? (
+                        <span className="meta">No form is open right now</span>
+                      ) : (
+                        <MetaList
+                          items={[
+                            `Week ${state.cycleIndex}`,
+                            `Closes ${formatDeadline(
                               state.deadlineAt,
                               section.timezone,
-                            )} · ${timeRemaining(state.deadlineAt)}`}
-                      </span>
+                            )}`,
+                            state.kind === "open"
+                              ? timeRemaining(state.deadlineAt)
+                              : null,
+                          ]}
+                        />
+                      )}
                       <span className="section-notice__action">
                         {state.kind === "open"
                           ? "Fill in the form"
@@ -207,33 +227,29 @@ export default async function HomePage() {
                   <div className="notice__body">
                     <div className="spread">
                       <div style={{ minWidth: 0 }}>
-                        <p className="meta">
-                          {course?.code ?? ""} · {section.term}
-                        </p>
+                        <MetaList
+                          items={[course?.code, ...termParts(section.term)]}
+                        />
                         <h3 className="panel-title" style={{ marginTop: 4 }}>
                           {section.title}
                         </h3>
                       </div>
-                      {counts && counts.needsReview > 0 ? (
-                        <Stamp tone="amber">
-                          {counts.needsReview} need review
-                        </Stamp>
-                      ) : counts ? (
-                        <Stamp tone="green">Nothing waiting</Stamp>
-                      ) : (
-                        <Stamp tone="neutral">Staff access</Stamp>
-                      )}
+                      {/* ONE status treatment. The line in the footer says what
+                          this section needs, so a stamp repeating it would be a
+                          second copy of the same fact. The only stamp left is
+                          the one carrying DIFFERENT information: that this
+                          account cannot see the queue at all. */}
+                      {!counts && <Stamp tone="neutral">Staff access</Stamp>}
                     </div>
                     <div className="section-notice__foot">
-                      <span className="meta">
-                        {counts
-                          ? `${counts.total} submission${counts.total === 1 ? "" : "s"} · ${counts.answered} answered${
-                              counts.invalid > 0
-                                ? ` · ${counts.invalid} invalid`
-                                : ""
-                            }`
-                          : "Open the section workspace"}
-                      </span>
+                      {counts ? (
+                        <ReviewStatusLine
+                          total={counts.total}
+                          needsReview={counts.needsReview}
+                        />
+                      ) : (
+                        <span className="meta">Open the section workspace</span>
+                      )}
                       <span className="section-notice__action">
                         Review inbox
                         <IconForward size={15} />

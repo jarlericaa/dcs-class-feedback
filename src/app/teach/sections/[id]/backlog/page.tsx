@@ -12,6 +12,7 @@ import {
   Stamp,
   Breadcrumbs,
   EmptyState,
+  MetaList,
 } from "@/components/ui";
 import {
   draftFromBacklog,
@@ -183,7 +184,7 @@ export default async function BacklogPage({
         <Breadcrumbs
           items={[
             { href: "/", label: "Overview" },
-            { label: `${course.code} · ${section.term}` },
+            { label: course.code },
             { label: "Question backlog" },
           ]}
         />
@@ -238,7 +239,7 @@ export default async function BacklogPage({
 
         {backlog.questions.length === 0 ? (
           <EmptyState
-            title="Nothing in the backlog"
+            title="No questions in the backlog"
             action={{
               href: `/teach/sections/${sectionId}/backlog?import=1`,
               label: "Import questions",
@@ -257,14 +258,15 @@ export default async function BacklogPage({
                 <li key={question.id}>
                   <span className="data-list__main">
                     <strong>{question.text}</strong>
-                    <small>
-                      {question.provenance.replace(/_/g, " ")} ·{" "}
-                      {formatDate(question.createdAt)}
-                      {question.previouslyAnswered &&
-                        " · has a previous answer"}
-                      {visibleSectionIds.includes(sectionId) &&
-                        " · already shared with this section"}
-                    </small>
+                    <MetaList
+                      items={[
+                        question.provenance.replace(/_/g, " "),
+                        formatDate(question.createdAt),
+                        question.previouslyAnswered && "Has a previous answer",
+                        visibleSectionIds.includes(sectionId) &&
+                          "Already shared with this section",
+                      ]}
+                    />
                   </span>
                   <span className="row">
                     <Stamp tone={STATE_TONE[question.state] ?? "neutral"}>

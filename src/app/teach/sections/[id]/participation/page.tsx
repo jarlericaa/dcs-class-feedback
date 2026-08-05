@@ -63,7 +63,7 @@ export default async function ParticipationPage({
         <Breadcrumbs
           items={[
             { href: "/", label: "Overview" },
-            { label: `${course.code} · ${section.term}` },
+            { label: course.code },
             { label: "Participation" },
           ]}
         />
@@ -115,7 +115,7 @@ export default async function ParticipationPage({
         </div>
 
         {summary.cycleCount === 0 || students.length === 0 ? (
-          <EmptyState title="Nothing to report yet">
+          <EmptyState title="No participation to report yet">
             Participation is derived from valid weekly submissions. Once the
             first week closes with submissions in it, the matrix and the exports
             appear here.
@@ -128,7 +128,7 @@ export default async function ParticipationPage({
                 <p>
                   {students.length} student{students.length === 1 ? "" : "s"}
                   {summary.deactivatedStudentCount > 0 &&
-                    ` · ${summary.deactivatedStudentCount} dropped, kept for the record`}
+                    `, including ${summary.deactivatedStudentCount} dropped and kept for the record`}
                 </p>
               </div>
             </div>

@@ -13,8 +13,18 @@ import {
   Breadcrumbs,
   CycleStateBadge,
   EmptyState,
+  MetaList,
 } from "@/components/ui";
+
+/** The domain's role names, in the product's sentence case. */
+const ROLE_LABELS: Record<string, string> = {
+  teacher: "Teacher",
+  co_teacher: "Co-teacher",
+  ta: "Teaching assistant",
+};
 import { IconChevron } from "@/components/ui/icons";
+import { TermFields } from "@/components/ui/term-fields";
+import { termParts } from "@/lib/term";
 import {
   assignSectionStaff,
   CatalogError,
@@ -552,11 +562,14 @@ export default async function SetupPage({
               <li key={row.id}>
                 <span className="data-list__main">
                   <strong>{account?.displayName ?? "Unknown account"}</strong>
-                  <small>
-                    {account?.email} · {row.role.replace("_", "-")}
-                    {row.role === "ta" &&
-                      ` · ${SECTION_PERMISSIONS.filter((p) => row[p]).length} of ${SECTION_PERMISSIONS.length} permissions`}
-                  </small>
+                  <MetaList
+                    items={[
+                      account?.email,
+                      ROLE_LABELS[row.role] ?? row.role.replace("_", " "),
+                      row.role === "ta" &&
+                        `${SECTION_PERMISSIONS.filter((p) => row[p]).length} of ${SECTION_PERMISSIONS.length} permissions`,
+                    ]}
+                  />
                 </span>
                 {isOwner && account?.id !== course.ownerUserId && (
                   <form action={dropStaff} className="inline-form">
@@ -649,15 +662,16 @@ export default async function SetupPage({
           )}
         </section>
 
-        {/* Renaming happens once, if ever, so it no longer occupies a titled
-            panel at the top of the page. */}
+        {/* Name, term and timezone: the section's own details, changed rarely,
+            so they no longer occupy a titled panel at the top of the page. The
+            timezone lives here rather than in the course list's scan line. */}
         <details className="disclose">
           <summary>
             <IconChevron className="disclose__mark" size={15} />
-            Rename this section
+            Section details
           </summary>
           <div className="disclose__body">
-            <form action={saveDetails} className="form-grid">
+            <form action={saveDetails} className="stack-4">
               <div className="field-row">
                 <label htmlFor="section-title">Section name</label>
                 <input
@@ -668,19 +682,13 @@ export default async function SetupPage({
                   required
                 />
               </div>
-              <div className="field-row">
-                <label htmlFor="section-term">Term</label>
-                <input
-                  id="section-term"
-                  className="field"
-                  name="term"
-                  defaultValue={section.term}
-                  required
-                />
+              <TermFields defaultTerm={section.term} />
+              <p className="meta">Times for this section use {section.timezone}.</p>
+              <div>
+                <button className="button button--primary" type="submit">
+                  Save
+                </button>
               </div>
-              <button className="button button--primary" type="submit">
-                Save
-              </button>
             </form>
           </div>
         </details>

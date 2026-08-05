@@ -104,6 +104,7 @@ export function WeeklyForm({
   initialAnswers = {},
   initialItems = [],
   lastEditedLabel,
+  preview = false,
 }: {
   questions: FormQuestionView[];
   action: (state: SubmitState, formData: FormData) => Promise<SubmitState>;
@@ -115,6 +116,12 @@ export function WeeklyForm({
   initialAnswers?: Record<string, AnswerValue>;
   initialItems?: StudentItemView[];
   lastEditedLabel?: string;
+  /**
+   * Teacher looking at their own draft template. Every control stays live so
+   * the reading is honest, but the submit bar is replaced: a preview has
+   * nowhere to post, and the caller passes an inert action.
+   */
+  preview?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, {
     status: "idle",
@@ -576,6 +583,13 @@ export function WeeklyForm({
         </fieldset>
       )}
 
+      {preview ? (
+        <div className="submit-bar">
+          <p className="submit-bar__note">
+            This is a preview. Students see a submit button here.
+          </p>
+        </div>
+      ) : (
       <div className="submit-bar">
         <p className="submit-bar__note">
           {locked ? (
@@ -622,6 +636,7 @@ export function WeeklyForm({
           </>
         )}
       </div>
+      )}
     </form>
   );
 }

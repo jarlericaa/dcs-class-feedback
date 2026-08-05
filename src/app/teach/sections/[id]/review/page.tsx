@@ -342,7 +342,7 @@ export default async function ReviewPage({
     redirect(
       `/teach/sections/${sectionId}/review?selected=${selected}&ok=${encodeURIComponent(
         intent === "publish"
-          ? "Published to this section, anonymously."
+          ? "Published to this section without your name on it."
           : "Saved as a draft. Finish it in the publication queue.",
       )}`,
     );
@@ -380,7 +380,7 @@ export default async function ReviewPage({
   return (
     <WorkspaceShell
       user={toShellUser(user)}
-      contextTitle={`${course.code} ${section.term} · Review inbox`}
+      contextTitle={`${section.title} · Review inbox`}
       workspaceLabel="Staff workspace"
       categories={[
         {
@@ -697,7 +697,7 @@ export default async function ReviewPage({
                                 <div>
                                   <div className="event__meta">
                                     <strong>{label}</strong>
-                                    <span>anonymously</span>
+                                    <span>without the asker&apos;s name</span>
                                     <span>
                                       {formatDateTime(
                                         event.at,

@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 
-import { formatDate } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
 import { AccessDenied, Alert, Stamp, Breadcrumbs } from "@/components/ui";
@@ -121,9 +120,7 @@ export default async function AdminPage({
               <li key={account.id}>
                 <span className="data-list__main">
                   <strong>{account.displayName}</strong>
-                  <small>
-                    {account.email} · joined {formatDate(account.createdAt)}
-                  </small>
+                  <small>{account.email}</small>
                 </span>
                 <span className="row">
                   {account.isPlatformAdmin && (

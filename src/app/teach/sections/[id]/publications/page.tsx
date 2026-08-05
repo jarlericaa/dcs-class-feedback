@@ -11,6 +11,7 @@ import {
   Stamp,
   Breadcrumbs,
   EmptyState,
+  MetaList,
 } from "@/components/ui";
 import {
   AnonymityCheckRequired,
@@ -97,7 +98,9 @@ export default async function PublicationsPage({
       redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
-    redirect(backTo(sectionId, "Published to this section."));
+    redirect(
+      backTo(sectionId, "Published to this section without the asker's name."),
+    );
   }
 
   async function schedule(formData: FormData) {
@@ -132,7 +135,12 @@ export default async function PublicationsPage({
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
     redirect(
-      backTo(sectionId, "Scheduled. The reconciliation poller publishes it."),
+      // CONTENT-VOICE §4 A1: "reconciliation poller" is a module name, and the
+      // teacher's actual question is when. Both answered now.
+      backTo(
+        sectionId,
+        `Scheduled for ${formatDateTime(parseLocalToUtc(when, timezone), timezone)}. It publishes automatically — you do not need to be here.`,
+      ),
     );
   }
 
@@ -146,7 +154,7 @@ export default async function PublicationsPage({
       redirect(backTo(sectionId, describe(err), "error"));
     }
     revalidatePath(`/teach/sections/${sectionId}/publications`);
-    redirect(backTo(sectionId, "Schedule cancelled. It is a draft again."));
+    redirect(backTo(sectionId, "Schedule cancelled. This is a draft again."));
   }
 
   const editable = [...queue.failed, ...queue.drafts, ...queue.scheduled];
@@ -164,7 +172,7 @@ export default async function PublicationsPage({
         <Breadcrumbs
           items={[
             { href: "/", label: "Overview" },
-            { label: `${course.code} · ${section.term}` },
+            { label: course.code },
             { label: "Publication queue" },
           ]}
         />
@@ -194,7 +202,7 @@ export default async function PublicationsPage({
 
         {editable.length === 0 ? (
           <EmptyState
-            title="Nothing waiting to publish"
+            title="No answers waiting to publish"
             action={{
               href: `/teach/sections/${sectionId}/review`,
               label: "Review inbox",
@@ -215,7 +223,7 @@ export default async function PublicationsPage({
                   <p className="label">
                     {sourceCount} source submission
                     {sourceCount === 1 ? "" : "s"}
-                    {sourceCount > 1 && " · merged"}
+                    {sourceCount > 1 && ", merged"}
                   </p>
                   <h2 className="panel-title">
                     {answer.publicQuestionText}
@@ -366,13 +374,14 @@ export default async function PublicationsPage({
                 <li key={answer.id}>
                   <span className="data-list__main">
                     <strong>{answer.publicQuestionText}</strong>
-                    <small>
-                      Published{" "}
-                      {formatDateTime(answer.publishedAt, section.timezone)} ·{" "}
-                      {sourceCount} source{sourceCount === 1 ? "" : "s"}
-                      {answer.publishedLate &&
-                        " · published late by reconciliation"}
-                    </small>
+                    <MetaList
+                      items={[
+                        `Published ${formatDateTime(answer.publishedAt, section.timezone)}`,
+                        `${sourceCount} source submission${sourceCount === 1 ? "" : "s"}`,
+                        // "published late by reconciliation" named the module.
+                        answer.publishedLate && "Published later than scheduled",
+                      ]}
+                    />
                   </span>
                   <Stamp tone="green">Live to this section</Stamp>
                 </li>
@@ -385,9 +394,24 @@ export default async function PublicationsPage({
   );
 }
 
+/**
+ * The register boundary (CONTENT-VOICE §3).
+ *
+ * A module error is SYSTEM copy — invariant-shaped, no recovery path — and must
+ * never reach a teacher verbatim. This used to return `err.message` for any
+ * Error, so all 35 module strings could surface as-is; a teacher reading
+ * "Cannot publish an answer in state published" learns that the product talks
+ * about them in database states.
+ *
+ * An AuthzError is already user-facing copy. Everything else maps to the one
+ * honest generic, and the original is left for the server log.
+ */
 function describe(err: unknown): string {
   if (err instanceof AuthzError) return err.message;
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) {
+    console.error("[publications] unmapped module error", err);
+    return "That did not work. Nothing was changed.";
+  }
   throw err;
 }
 

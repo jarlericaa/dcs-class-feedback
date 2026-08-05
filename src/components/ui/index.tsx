@@ -232,6 +232,66 @@ export function AccessDenied({ what = "this page" }: { what?: string }) {
   );
 }
 
+/**
+ * Metadata as separate elements, never a string built with middle dots.
+ *
+ * `DCS-101 · AY2026-1 · Asia/Manila` reads as generated telemetry: three
+ * unrelated facts welded into one sentence, so none of them can be scanned and
+ * none can be styled or dropped independently. Each fact is its own element
+ * here, the separator is presentational, and a fact with no value simply is not
+ * rendered rather than leaving a stray dot behind.
+ */
+export function MetaList({
+  items,
+  className,
+}: {
+  items: (string | null | undefined | false)[];
+  className?: string;
+}) {
+  const facts = items.filter((item): item is string => !!item && item !== "");
+  if (facts.length === 0) return null;
+  return (
+    <p className={`meta-list${className ? ` ${className}` : ""}`}>
+      {facts.map((fact, index) => (
+        <span className="meta-list__item" key={`${fact}-${index}`}>
+          {fact}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+/**
+ * What this section needs from the teacher, in words.
+ *
+ * This replaces `1 submission · 1 answered`, which restated the status stamp in
+ * metadata and told the teacher nothing to do. A count only appears when it is
+ * the subject of the sentence, and the sentence only claims what the counts
+ * prove — `0 submissions · 0 answered` beside "Nothing waiting" used to imply
+ * the week was handled when nothing had arrived.
+ */
+export function ReviewStatusLine({
+  total,
+  needsReview,
+}: {
+  total: number;
+  needsReview: number;
+}) {
+  if (total === 0) {
+    return <p className="status-line">No submissions yet</p>;
+  }
+  if (needsReview > 0) {
+    return (
+      <p className="status-line status-line--attention">
+        {needsReview === 1
+          ? "1 submission needs a reply"
+          : `${needsReview} submissions need replies`}
+      </p>
+    );
+  }
+  return <p className="status-line">All submissions answered</p>;
+}
+
 /** A real count and what it counts. Never a decorative number. */
 export function Figure({
   value,

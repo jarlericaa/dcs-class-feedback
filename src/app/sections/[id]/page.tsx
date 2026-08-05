@@ -80,7 +80,7 @@ export default async function SectionFormPage({
       <Breadcrumbs
         items={[
           { href: "/", label: "Overview" },
-          { label: `${course.code} ${section.term}` },
+          { label: course.code },
         ]}
       />
     ),
@@ -305,11 +305,16 @@ export default async function SectionFormPage({
     <AppShell
       {...shell}
       title={`Week ${cycle.cycleIndex}`}
+      /* A stamp carries one state. It used to carry three facts chained with
+         middle dots; the time remaining is a separate fact and belongs beside
+         it, not inside it. */
       status={
-        <Stamp tone={response ? "green" : "amber"}>
-          {response ? "Submitted · still editable" : "Open"} ·{" "}
-          {timeRemaining(cycle.deadlineAt)}
-        </Stamp>
+        <>
+          <Stamp tone={response ? "green" : "amber"}>
+            {response ? "Submitted" : "Not submitted"}
+          </Stamp>
+          <span className="meta">{timeRemaining(cycle.deadlineAt)} left</span>
+        </>
       }
       /* The deadline, and who can see the name attached. What happens to text
          that gets published is now stated on the block where a student writes
