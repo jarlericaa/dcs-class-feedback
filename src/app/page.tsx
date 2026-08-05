@@ -6,7 +6,7 @@ import { accountMatches } from "@/db/schema";
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { Alert, EmptyState, Notice, Stamp, StripLabel } from "@/components/ui";
+import { Alert, EmptyState, Stamp, StripLabel } from "@/components/ui";
 import { IconForward } from "@/components/ui/icons";
 import { listSectionsForUser } from "@/modules/catalog";
 import { generateMatchCandidates } from "@/modules/identity/matching";
@@ -93,10 +93,15 @@ export default async function HomePage() {
     })),
   );
 
-  const firstName = user.displayName.split(" ")[0] ?? "there";
   const open = studentCards.filter((c) => c.state.kind === "open");
   const hasNothing = staffCards.length === 0 && studentCards.length === 0;
   const isStaffView = staffCards.length > 0;
+  // A batten divides one region from the next, so it earns its place only when
+  // there IS a next one. With a single region the page title already names it.
+  const showStrips = studentCards.length > 0 && staffCards.length > 0;
+  // A count belongs on a label when it tells the reader something the cards do
+  // not — that is, when there are more than a screenful.
+  const countIf = (n: number) => (n > 4 ? `${n}` : undefined);
 
   return (
     <AppShell
@@ -106,13 +111,11 @@ export default async function HomePage() {
         isTeacher: user.isTeacher,
         isPlatformAdmin: user.isPlatformAdmin,
       })}
-      title={`Hello, ${firstName}`}
+      title="Overview"
       description={
         open.length > 0
-          ? `${open.length} weekly form${open.length === 1 ? " is" : "s are"} open right now. Everything else can wait.`
-          : studentCards.length > 0
-            ? "Nothing is waiting on you right now."
-            : undefined
+          ? `${open.length} weekly form${open.length === 1 ? " is" : "s are"} open right now.`
+          : undefined
       }
       roomy={!isStaffView}
     >
@@ -126,10 +129,15 @@ export default async function HomePage() {
         )}
 
         {studentCards.length > 0 && (
-          <section aria-labelledby="your-classes">
-            <StripLabel id="your-classes" count={`${studentCards.length}`}>
-              Your classes
-            </StripLabel>
+          <section aria-labelledby={showStrips ? "your-classes" : undefined}>
+            {showStrips && (
+              <StripLabel
+                id="your-classes"
+                count={countIf(studentCards.length)}
+              >
+                Your classes
+              </StripLabel>
+            )}
             <div className="stack-4">
               {studentCards.map(({ section, course, state }) => (
                 <Link
@@ -183,10 +191,12 @@ export default async function HomePage() {
         )}
 
         {staffCards.length > 0 && (
-          <section aria-labelledby="teaching">
-            <StripLabel id="teaching" count={`${staffCards.length}`}>
-              Sections you teach
-            </StripLabel>
+          <section aria-labelledby={showStrips ? "teaching" : undefined}>
+            {showStrips && (
+              <StripLabel id="teaching" count={countIf(staffCards.length)}>
+                Sections you teach
+              </StripLabel>
+            )}
             <div className="stack-4">
               {staffCards.map(({ section, course, counts }) => (
                 <Link
@@ -225,7 +235,7 @@ export default async function HomePage() {
                           : "Open the section workspace"}
                       </span>
                       <span className="section-notice__action">
-                        Open the review inbox
+                        Review inbox
                         <IconForward size={15} />
                       </span>
                     </div>
@@ -236,62 +246,46 @@ export default async function HomePage() {
           </section>
         )}
 
-        {(user.isTeacher || user.isPlatformAdmin) && (
-          <section aria-labelledby="elsewhere">
-            <StripLabel id="elsewhere">Elsewhere</StripLabel>
-            <div className="row">
-              {user.isTeacher && (
-                <Link
-                  className="button button--secondary"
-                  href="/teach/courses"
-                >
-                  Courses and sections
-                </Link>
-              )}
-              {user.isPlatformAdmin && (
-                <Link className="button button--secondary" href="/admin">
-                  Platform administration
-                </Link>
-              )}
-            </div>
-          </section>
-        )}
+        {/* "Elsewhere" used to sit here: a page region whose whole body was a
+            button already permanently in the rail. Removed — the rail is the
+            navigation, and repeating it costs a region for nothing. */}
 
-        {hasNothing && (
-          <div className="stack-4">
+        {/* Nothing here yet. One empty state, carrying the one action that
+            actually moves this person forward — which differs by why the page
+            is empty. A teacher with no courses creates one; an unconfirmed
+            student claims their place; a confirmed student can only wait. */}
+        {hasNothing &&
+          (user.isTeacher ? (
+            <EmptyState
+              title="No class sections yet"
+              action={{ href: "/teach/courses?new=1", label: "New course" }}
+              primary
+            >
+              A course holds the class sections students join, and each section
+              runs its own weekly form.
+            </EmptyState>
+          ) : matchStatus === "confirmed" ? (
+            <EmptyState title="You are not in any class sections yet">
+              Once a teacher adds you to a section, its weekly form appears
+              here.
+            </EmptyState>
+          ) : (
             <EmptyState
               title={
                 matchStatus === "pending"
                   ? "Your account is waiting to be confirmed"
-                  : matchStatus === "unmatched"
-                    ? "We could not match you to a class list"
-                    : "You are not in any class sections yet"
+                  : "We could not match you to a class list"
               }
+              action={{ href: "/claim", label: "Enter my student number" }}
+              primary
             >
-              {matchStatus === "pending"
-                ? "A teacher has to confirm that this sign-in belongs to you before your classes appear. Nothing is confirmed automatically."
-                : matchStatus === "unmatched"
-                  ? "Your sign-in name did not match anyone on a class list. Tell us your student number and your teacher will confirm it."
-                  : "Once a teacher adds you to a section, its weekly form appears here."}
+              {/* Privacy, not onboarding: a student needs to know the link is
+                  confirmed by a person, because that is what stops someone
+                  else being matched to their name. */}
+              Class lists carry no email address, so your teacher confirms every
+              link by hand. Nothing is confirmed automatically.
             </EmptyState>
-
-            {matchStatus !== "confirmed" && (
-              <Notice title="Claim your place on the class list">
-                <p className="doc">
-                  Class lists carry no email address, so tell us your student
-                  number instead. Your teacher confirms every link by hand —
-                  that is deliberate: it stops someone else being matched to
-                  your name.
-                </p>
-                <div className="row" style={{ marginTop: "var(--s5)" }}>
-                  <Link className="button button--primary" href="/claim">
-                    Enter my student number
-                  </Link>
-                </div>
-              </Notice>
-            )}
-          </div>
-        )}
+          ))}
       </div>
     </AppShell>
   );

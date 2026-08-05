@@ -18,7 +18,7 @@ export type { ShellUser };
 const WORKSPACE_LABEL: Record<Workspace, string> = {
   staff: "Staff workspace",
   student: "Student workspace",
-  admin: "Platform administration",
+  admin: "Platform admin",
   home: "Your workspace",
 };
 

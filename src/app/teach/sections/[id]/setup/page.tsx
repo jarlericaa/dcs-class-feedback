@@ -14,6 +14,7 @@ import {
   CycleStateBadge,
   EmptyState,
 } from "@/components/ui";
+import { IconChevron } from "@/components/ui/icons";
 import {
   assignSectionStaff,
   CatalogError,
@@ -221,134 +222,10 @@ export default async function SetupPage({
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
-        <section className="notice notice--pad">
-          <h2 className="panel-title">Section details</h2>
-          <form action={saveDetails} className="form-grid">
-            <div className="field-row">
-              <label htmlFor="section-title">Section name</label>
-              <input
-                id="section-title"
-                className="field"
-                name="title"
-                defaultValue={section.title}
-                required
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="section-term">Term</label>
-              <input
-                id="section-term"
-                className="field"
-                name="term"
-                defaultValue={section.term}
-                required
-              />
-            </div>
-            <div className="field-row" style={{ alignSelf: "end" }}>
-              <button className="button button--primary" type="submit">
-                Save details
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section className="notice">
-          <div className="notice__head">
-            <div>
-              <h2>Teaching team</h2>
-            </div>
-            {isOwner ? (
-              <Stamp tone="green">You own this course</Stamp>
-            ) : (
-              <Stamp tone="neutral">Owner-managed</Stamp>
-            )}
-          </div>
-          <ul className="data-list">
-            {staff.map(({ staff: row, user: account }) => (
-              <li key={row.id}>
-                <span className="data-list__main">
-                  <strong>{account?.displayName ?? "Unknown account"}</strong>
-                  <small>
-                    {account?.email} · {row.role.replace("_", "-")}
-                    {row.role === "ta" &&
-                      ` · ${SECTION_PERMISSIONS.filter((p) => row[p]).length} of ${SECTION_PERMISSIONS.length} permissions`}
-                  </small>
-                </span>
-                {isOwner && account?.id !== course.ownerUserId && (
-                  <form action={dropStaff} className="inline-form">
-                    <input type="hidden" name="staffId" value={row.id} />
-                    <button
-                      className="button button--danger button--small"
-                      type="submit"
-                    >
-                      Remove
-                    </button>
-                  </form>
-                )}
-              </li>
-            ))}
-          </ul>
-
-          {isOwner && (
-            <div className="notice__foot">
-              <h3 className="panel-title">
-                Add or reconfigure a staff member
-              </h3>
-              <p className="muted small" style={{ margin: "0 0 14px" }}>
-                They must have signed in at least once. Granting &ldquo;export
-                participation&rdquo; lets them download files containing student
-                names and numbers.
-              </p>
-              <form action={saveStaff} className="stack-4">
-                <div className="form-grid">
-                  <div className="field-row">
-                    <label htmlFor="staff-email">University email</label>
-                    <input
-                      id="staff-email"
-                      className="field"
-                      name="email"
-                      type="email"
-                      placeholder="assistant@up.edu.ph"
-                      required
-                    />
-                  </div>
-                  <div className="field-row">
-                    <label htmlFor="staff-role">Role</label>
-                    <select
-                      id="staff-role"
-                      className="select-field"
-                      name="role"
-                      defaultValue="ta"
-                    >
-                      <option value="ta">Teaching assistant</option>
-                      <option value="co_teacher">Co-teacher</option>
-                      <option value="teacher">Teacher</option>
-                    </select>
-                  </div>
-                </div>
-                <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                  <legend className="field-label" style={{ marginBottom: 8 }}>
-                    Assistant permissions (ignored for teacher and co-teacher)
-                  </legend>
-                  <div className="form-grid">
-                    {SECTION_PERMISSIONS.map((permission) => (
-                      <label className="choice" key={permission}>
-                        <input type="checkbox" name={`perm_${permission}`} />
-                        <span>{SECTION_PERMISSION_LABELS[permission]}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                <div>
-                  <button className="button button--primary" type="submit">
-                    Save teaching staff
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-        </section>
-
+        {/* Ordered by how often a teacher actually comes here: the schedule and
+            its weeks first, then the team, then renaming. The 14-checkbox staff
+            form used to sit at the top fully expanded, pushing the schedule
+            below the fold on a page nobody visits to assign a TA. */}
         {canManageCycles ? (
           <>
             <section className="notice">
@@ -364,22 +241,6 @@ export default async function SetupPage({
               </div>
 
               <div className="notice__body">
-                {active && (
-                  <Alert variant="info" title="Current schedule">
-                    Opens {DAY_NAMES[active.schedule.openDayOfWeek]} at{" "}
-                    {active.schedule.openTime}, closes{" "}
-                    {DAY_NAMES[active.schedule.deadlineDayOfWeek]} at{" "}
-                    {active.schedule.deadlineTime}, from{" "}
-                    {active.schedule.startDate}
-                    {active.schedule.occurrenceCount
-                      ? ` for ${active.schedule.occurrenceCount} weeks`
-                      : active.schedule.endDate
-                        ? ` until ${active.schedule.endDate}`
-                        : ""}
-                    . Template: {active.template?.title ?? "unknown"}.
-                  </Alert>
-                )}
-
                 {templates.length === 0 ? (
                   <EmptyState
                     title="This course has no form template yet"
@@ -392,11 +253,9 @@ export default async function SetupPage({
                     cycle.
                   </EmptyState>
                 ) : (
-                  <form
-                    action={saveSchedule}
-                    className="stack-4"
-                    style={{ marginTop: 16 }}
-                  >
+                  /* The populated form IS the current schedule, so the info
+                     alert that used to restate all of it in prose is gone. */
+                  <form action={saveSchedule} className="stack-4">
                     <div className="form-grid">
                       <div className="field-row">
                         <label htmlFor="templateId">Form template</label>
@@ -565,9 +424,9 @@ export default async function SetupPage({
               {cycles.length === 0 ? (
                 <div className="notice__body">
                   <EmptyState title="No weeks generated yet">
-              Save a weekly schedule above and the platform materialises the
-              coming weeks, opening and closing each one on time.
-            </EmptyState>
+                    Save a weekly schedule above and the coming weeks are
+                    generated for you, opening and closing each one on time.
+                  </EmptyState>
                 </div>
               ) : (
                 <div className="table-scroll">
@@ -681,6 +540,150 @@ export default async function SetupPage({
             recurrence&rdquo; permission on this section.
           </Alert>
         )}
+
+        <section className="notice">
+          <div className="notice__head">
+            <div>
+              <h2>Teaching team</h2>
+            </div>
+          </div>
+          <ul className="data-list">
+            {staff.map(({ staff: row, user: account }) => (
+              <li key={row.id}>
+                <span className="data-list__main">
+                  <strong>{account?.displayName ?? "Unknown account"}</strong>
+                  <small>
+                    {account?.email} · {row.role.replace("_", "-")}
+                    {row.role === "ta" &&
+                      ` · ${SECTION_PERMISSIONS.filter((p) => row[p]).length} of ${SECTION_PERMISSIONS.length} permissions`}
+                  </small>
+                </span>
+                {isOwner && account?.id !== course.ownerUserId && (
+                  <form action={dropStaff} className="inline-form">
+                    <input type="hidden" name="staffId" value={row.id} />
+                    <button
+                      className="button button--danger button--small"
+                      type="submit"
+                    >
+                      Remove
+                    </button>
+                  </form>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          {/* Owner-only, and closed: fourteen permission checkboxes are the
+              largest thing on this page and are set once a term. Whether the
+              reader owns the course is now said by this control existing,
+              rather than by a stamp in the panel header. */}
+          {isOwner && (
+            <details className="disclose disclose--inset">
+              <summary>
+                <IconChevron className="disclose__mark" size={15} />
+                Add or change a staff member
+              </summary>
+              <div className="disclose__body">
+                <form action={saveStaff} className="stack-4">
+                  <div className="form-grid">
+                    <div className="field-row">
+                      <label htmlFor="staff-email">University email</label>
+                      <input
+                        id="staff-email"
+                        className="field"
+                        name="email"
+                        type="email"
+                        placeholder="assistant@up.edu.ph"
+                        required
+                        aria-describedby="staff-email-help"
+                      />
+                      <span className="helper-text" id="staff-email-help">
+                        They must have signed in at least once.
+                      </span>
+                    </div>
+                    <div className="field-row">
+                      <label htmlFor="staff-role">Role</label>
+                      <select
+                        id="staff-role"
+                        className="select-field"
+                        name="role"
+                        defaultValue="ta"
+                      >
+                        <option value="ta">Teaching assistant</option>
+                        <option value="co_teacher">Co-teacher</option>
+                        <option value="teacher">Teacher</option>
+                      </select>
+                    </div>
+                  </div>
+                  <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+                    <legend className="field-label">
+                      Assistant permissions
+                    </legend>
+                    {/* Kept: this one warns about a real consequence — the
+                        export carries student names and numbers. */}
+                    <p
+                      className="helper-text"
+                      style={{ margin: "2px 0 var(--s3)" }}
+                    >
+                      Used only for a teaching assistant. Granting
+                      &ldquo;export participation&rdquo; lets them download
+                      files containing student names and numbers.
+                    </p>
+                    <div className="form-grid">
+                      {SECTION_PERMISSIONS.map((permission) => (
+                        <label className="choice" key={permission}>
+                          <input type="checkbox" name={`perm_${permission}`} />
+                          <span>{SECTION_PERMISSION_LABELS[permission]}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                  <div>
+                    <button className="button button--primary" type="submit">
+                      Save teaching staff
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </details>
+          )}
+        </section>
+
+        {/* Renaming happens once, if ever, so it no longer occupies a titled
+            panel at the top of the page. */}
+        <details className="disclose">
+          <summary>
+            <IconChevron className="disclose__mark" size={15} />
+            Rename this section
+          </summary>
+          <div className="disclose__body">
+            <form action={saveDetails} className="form-grid">
+              <div className="field-row">
+                <label htmlFor="section-title">Section name</label>
+                <input
+                  id="section-title"
+                  className="field"
+                  name="title"
+                  defaultValue={section.title}
+                  required
+                />
+              </div>
+              <div className="field-row">
+                <label htmlFor="section-term">Term</label>
+                <input
+                  id="section-term"
+                  className="field"
+                  name="term"
+                  defaultValue={section.term}
+                  required
+                />
+              </div>
+              <button className="button button--primary" type="submit">
+                Save
+              </button>
+            </form>
+          </div>
+        </details>
       </div>
     </AppShell>
   );

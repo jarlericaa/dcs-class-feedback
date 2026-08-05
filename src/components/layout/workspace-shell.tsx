@@ -308,7 +308,23 @@ export function WorkspaceShell({
   );
 }
 
-/** Search + filter + scrolling rows: the middle pane of the workspace. */
+/**
+ * One narrowing control over the list: a `<details>` disclosure whose current
+ * value is printed beside it. A dimension the reader filters BY belongs here,
+ * not in the rail — the rail holds destinations.
+ */
+export interface ListFilter {
+  current: string;
+  /** the dimension, shown on the disclosure — "State", "Week", "Published" */
+  name: string;
+  /** fallback text for the "Showing:" line when nothing matches `current` */
+  label: string;
+  /** the "everything" option; a filter sitting on it is not worth reporting */
+  defaultKey?: string;
+  options: { key: string; label: string; href: string }[];
+}
+
+/** Search + filters + scrolling rows: the middle pane of the workspace. */
 export function ListPane({
   label = "Results",
   searchAction,
@@ -317,6 +333,7 @@ export function ListPane({
   searchPlaceholder = "Search",
   hiddenFields,
   filter,
+  filters,
   /** true once a row is selected: the detail takes over on a stacked layout */
   hiddenOnMobile,
   children,
@@ -327,14 +344,15 @@ export function ListPane({
   searchValue?: string;
   searchPlaceholder?: string;
   hiddenFields?: Record<string, string | undefined>;
-  filter?: {
-    current: string;
-    label: string;
-    options: { key: string; label: string; href: string }[];
-  };
+  filter?: ListFilter;
+  /** several dimensions; each gets its own disclosure on one row */
+  filters?: (ListFilter | undefined)[];
   hiddenOnMobile?: boolean;
   children: ReactNode;
 }) {
+  const allFilters = (filters ?? [filter]).filter(
+    (entry): entry is ListFilter => !!entry,
+  );
   return (
     <section
       className={`ws-list ${hiddenOnMobile ? "ws-list--hidden" : ""}`}
@@ -367,36 +385,55 @@ export function ListPane({
         </button>
       </form>
 
-      {filter && (
+      {allFilters.length > 0 && (
         <div className="ws-filterbar">
+          {/* Only the narrowings actually in force. Listing every dimension's
+              "everything" value made this line longer than the strip and it
+              ellipsised away the part that mattered. */}
           <span className="ws-filterbar__current">
-            Showing:{" "}
-            {filter.options.find((o) => o.key === filter.current)?.label ??
-              filter.label}
+            {(() => {
+              const active = allFilters.filter(
+                (entry) => entry.current !== (entry.defaultKey ?? "all"),
+              );
+              if (active.length === 0) return "Showing everything";
+              return `Showing: ${active
+                .map(
+                  (entry) =>
+                    entry.options.find((o) => o.key === entry.current)?.label ??
+                    entry.label,
+                )
+                .join(" · ")}`;
+            })()}
           </span>
-          <details className="ws-filter">
-            <summary>
-              <IconFilter size={13} />
-              Filter
-            </summary>
-            <div className="ws-filter__menu">
-              {filter.options.map((option) => (
-                <Link
-                  key={option.key}
-                  className="ws-filter__item"
-                  href={option.href}
-                >
-                  <span className="ws-filter__check">
-                    {filter.current === option.key && <IconCheck size={13} />}
-                  </span>
-                  {option.label}
-                  {filter.current === option.key && (
-                    <span className="visually-hidden">(selected)</span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </details>
+          <span className="ws-filterbar__controls">
+            {allFilters.map((entry) => (
+              <details className="ws-filter" key={entry.name}>
+                <summary>
+                  <IconFilter size={13} />
+                  {entry.name}
+                </summary>
+                <div className="ws-filter__menu">
+                  {entry.options.map((option) => (
+                    <Link
+                      key={option.key}
+                      className="ws-filter__item"
+                      href={option.href}
+                    >
+                      <span className="ws-filter__check">
+                        {entry.current === option.key && (
+                          <IconCheck size={13} />
+                        )}
+                      </span>
+                      {option.label}
+                      {entry.current === option.key && (
+                        <span className="visually-hidden">(selected)</span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </span>
         </div>
       )}
 

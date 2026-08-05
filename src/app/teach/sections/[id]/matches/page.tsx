@@ -254,22 +254,19 @@ export default async function MatchesPage({
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
-        <Alert variant="info" title="Nothing is verified automatically">
-          Class lists have no email address, so matching relies on names alone.
-          A confident-looking suggestion can still be the wrong person, so every
-          match waits for you and every decision is recorded.
-        </Alert>
-
+        {/* The page used to open with a three-line "Nothing is verified
+            automatically" alert. Every row here already offers "This is them"
+            and "Not this student", so the sentence that actually prevents a
+            wrong match now sits on the panel that has those buttons. */}
         {claims.length > 0 && (
           <section className="notice">
             <div className="notice__head">
               <div>
                 <h2>Students asking to be linked</h2>
                 <p>
-                  {claims.length} request
-                  {claims.length === 1 ? "" : "s"}. Each student typed their own
-                  student number; compare the name on their school account with
-                  the name on the class list before you confirm.
+                  Compare the name on the school account with the name on the
+                  class list before you confirm — a matching student number is
+                  not proof of identity.
                 </p>
               </div>
             </div>
@@ -282,12 +279,17 @@ export default async function MatchesPage({
                       {row.account.email} · typed a number ending{" "}
                       {row.claim.typedNumberLast4}
                     </small>
+                    {/* One line, not two: this used to print "That number is
+                        not on any class list." immediately above the service's
+                        own "The number they typed is not on any roster." */}
                     <small>
                       {row.record
                         ? `Class list says: ${row.record.fullName} (…${row.record.studentNumberLast4 ?? "?"})`
-                        : "That number is not on any class list."}
+                        : row.explanation}
                     </small>
-                    <small className="muted">{row.explanation}</small>
+                    {row.record && (
+                      <small className="muted">{row.explanation}</small>
+                    )}
                   </span>
                   <span className="row">
                     {row.record && (
@@ -343,12 +345,10 @@ export default async function MatchesPage({
           </section>
         )}
 
-        {byAccount.size === 0 ? (
-          <EmptyState title="No accounts are waiting for confirmation">
-            When a student signs in for the first time, their suggested match
-            appears here.
-          </EmptyState>
-        ) : (
+        {/* Absence needs no panel. This used to render an empty state BETWEEN
+            two populated panels, which made a page full of content read as
+            empty. */}
+        {byAccount.size > 0 && (
           <section className="notice">
             <div className="notice__head">
               <div>

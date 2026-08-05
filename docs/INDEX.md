@@ -96,6 +96,7 @@ Documents use these labels:
 | [CONTENT-VOICE.md](CONTENT-VOICE.md) | Voice framework, the user/system register rule, microcopy patterns, error inventory, and label decisions |
 | [../DESIGN.md](../DESIGN.md) | **The design authority.** Visual system, tokens, type registers, density split, states, breakpoints, anti-patterns |
 | [CLAUDE_UI_REDESIGN_REPORT.md](CLAUDE_UI_REDESIGN_REPORT.md) | The 2026-08-05 redesign: before/after, routes, verification, unresolved issues |
+| [UI-CORRECTION-LIST.md](UI-CORRECTION-LIST.md) | The second pass over the running app: prioritized hierarchy, content and colour corrections, and why the final palette was chosen |
 | [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md) | The earlier [Recommended] direction DESIGN.md grew out of; superseded for tokens |
 | [DESIGN-RESEARCH.md](DESIGN-RESEARCH.md) | Comparable products and patterns worth borrowing |
 | [ED_DISCUSSION_REFERENCE_PACK.md](ED_DISCUSSION_REFERENCE_PACK.md) | Screenshot links, visual study checklist, and product-pattern translation |

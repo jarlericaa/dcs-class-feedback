@@ -16,6 +16,7 @@ import {
   Breadcrumbs,
   EmptyState,
 } from "@/components/ui";
+import { IconPlus } from "@/components/ui/icons";
 import { TemplateEditor } from "@/components/staff/template-editor";
 import {
   createTemplate,
@@ -39,11 +40,16 @@ export default async function TemplatesPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ edit?: string; error?: string; ok?: string }>;
+  searchParams: Promise<{
+    edit?: string;
+    error?: string;
+    ok?: string;
+    new?: string;
+  }>;
 }) {
   const user = await requireUser();
   const { id: courseId } = await params;
-  const { edit, error, ok } = await searchParams;
+  const { edit, error, ok, new: newTemplate } = await searchParams;
 
   let templates;
   try {
@@ -133,24 +139,37 @@ export default async function TemplatesPage({
         />
       }
       title="Form templates"
+      actions={
+        !editing && (
+          <Link
+            className="button button--primary"
+            href={`/teach/courses/${courseId}/templates?new=1`}
+          >
+            <IconPlus size={15} />
+            New template
+          </Link>
+        )
+      }
     >
       <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
         {templates.length === 0 ? (
-          <EmptyState title="No templates yet">
+          <EmptyState
+            title="No templates yet"
+            action={{
+              href: `/teach/courses/${courseId}/templates?new=1`,
+              label: "New template",
+            }}
+            primary
+          >
             A template is the set of questions a weekly form asks. Saving one
-            creates an immutable version; weeks already generated keep the
-            version they were built from.
+            creates an immutable version, so weeks already generated keep the
+            questions their students answered.
           </EmptyState>
         ) : (
           <section className="notice">
-            <div className="notice__head">
-              <div>
-                <h2>Templates in this course</h2>
-              </div>
-            </div>
             <ul className="data-list">
               {templates.map(({ template, latestVersion, questionCount }) => (
                 <li key={template.id}>
@@ -231,8 +250,12 @@ export default async function TemplatesPage({
           </section>
         )}
 
-        {!editing && (
-          <section className="notice notice--pad">
+        {/* Closed unless asked for. It used to be a permanently-open editor
+            below the list, which meant the page's create action — the last
+            control inside it — was only reachable by scrolling past an editor
+            the reader had not opened. */}
+        {!editing && (newTemplate === "1" || !!error) && (
+          <section className="notice notice--pad" id="new-template">
             <h2 className="panel-title">New template</h2>
             <form action={addTemplate}>
               <TemplateEditor

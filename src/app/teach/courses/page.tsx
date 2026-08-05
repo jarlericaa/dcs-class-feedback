@@ -6,6 +6,7 @@ import { currentUserId } from "@/auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
 import { AccessDenied, Alert, Stamp, EmptyState } from "@/components/ui";
+import { IconPlus } from "@/components/ui/icons";
 import {
   CatalogError,
   createCourse,
@@ -19,14 +20,19 @@ import { requireUser, toShellUser } from "@/lib/session";
  * Course and section setup. Creating a course requires the teacher capability
  * (Open D3); creating a section requires staff on that course. Both checks are
  * enforced in modules/catalog, not here.
+ *
+ * Both create forms are disclosures rather than standing panels. "New course"
+ * lives in the page header and opens the top one through the URL (`?new=1`), so
+ * the page's own reason to exist is never below a list of courses; "Add a
+ * section" is one collapsed row of the course it belongs to.
  */
 export default async function CoursesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; ok?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string; new?: string }>;
 }) {
   const user = await requireUser();
-  const { error, ok } = await searchParams;
+  const { error, ok, new: newCourse } = await searchParams;
 
   if (!user.isTeacher) {
     return (
@@ -38,13 +44,16 @@ export default async function CoursesPage({
           isPlatformAdmin: user.isPlatformAdmin,
         })}
         title="My courses"
-        >
+      >
         <AccessDenied what="course management" />
       </AppShell>
     );
   }
 
   const courses = await listCoursesForUser(user.id);
+  // Opened by the header action, or by the reader clicking the summary. Kept in
+  // the URL so the state survives the redirect a failed create performs.
+  const createOpen = newCourse === "1" || !!error;
 
   async function addCourse(formData: FormData) {
     "use server";
@@ -90,15 +99,66 @@ export default async function CoursesPage({
         isPlatformAdmin: user.isPlatformAdmin,
       })}
       title="My courses"
+      actions={
+        <Link className="button button--primary" href="/teach/courses?new=1">
+          <IconPlus size={15} />
+          New course
+        </Link>
+      }
     >
       <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
+        {/* Opened by the header action, which is this form's only entry point —
+            a standing "New course" summary directly under a "New course" button
+            says the same thing twice. It is a URL, so it works without
+            JavaScript. */}
+        {createOpen && (
+          <section className="notice notice--pad" id="new-course">
+            <h2 className="panel-title">New course</h2>
+            <form action={addCourse} className="form-grid">
+              <div className="field-row">
+                <label htmlFor="course-code">Course code</label>
+                <input
+                  id="course-code"
+                  className="field"
+                  name="code"
+                  placeholder="DCS-101"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="field-row">
+                <label htmlFor="course-title">Course title</label>
+                <input
+                  id="course-title"
+                  className="field"
+                  name="title"
+                  placeholder="Introduction to Computing"
+                  required
+                />
+              </div>
+              <div className="row">
+                <button className="button button--primary" type="submit">
+                  Create course
+                </button>
+                <Link className="button button--quiet" href="/teach/courses">
+                  Cancel
+                </Link>
+              </div>
+            </form>
+          </section>
+        )}
+
         {courses.length === 0 ? (
-          <EmptyState title="You do not have any courses yet">
+          <EmptyState
+            title="No courses yet"
+            action={{ href: "/teach/courses?new=1", label: "New course" }}
+            primary
+          >
             A course owns its templates, its question backlog and its class
-            sections. Create one below to get started.
+            sections.
           </EmptyState>
         ) : (
           courses.map(({ course, isOwner, sections }) => (
@@ -106,27 +166,22 @@ export default async function CoursesPage({
               <div className="notice__head">
                 <div>
                   <h2>{course.title}</h2>
-                  <p>
-                    {course.code} · {sections.length} section
-                    {sections.length === 1 ? "" : "s"}
-                  </p>
+                  <p>{course.code}</p>
                 </div>
                 <div className="row">
-                  {isOwner ? (
-                    <Stamp tone="green">Owner</Stamp>
-                  ) : (
-                    <Stamp tone="neutral">Course staff</Stamp>
-                  )}
+                  {/* Only the exceptional standing is stamped: a stamp on every
+                      row of a list you mostly own signals nothing. */}
+                  {!isOwner && <Stamp tone="neutral">Course staff</Stamp>}
                   <Link
                     className="button button--secondary button--small"
                     href={`/teach/courses/${course.id}/templates`}
                   >
-                    Templates
+                    Form templates
                   </Link>
                 </div>
               </div>
 
-              {sections.length > 0 && (
+              {sections.length > 0 ? (
                 <ul className="data-list">
                   {sections.map((section) => (
                     <li key={section.id}>
@@ -148,80 +203,60 @@ export default async function CoursesPage({
                           className="button button--quiet button--small"
                           href={`/teach/sections/${section.id}/setup`}
                         >
-                          Setup
+                          Section setup
                         </Link>
                       </span>
                     </li>
                   ))}
                 </ul>
+              ) : (
+                <div className="notice__body">
+                  <p className="muted small">
+                    No class sections yet. A section is what students join and
+                    what the weekly form belongs to.
+                  </p>
+                </div>
               )}
 
-              <div className="notice__foot">
-                <form action={addSection} className="form-grid">
-                  <input type="hidden" name="courseId" value={course.id} />
-                  <div className="field-row">
-                    <label htmlFor={`term-${course.id}`}>Term</label>
-                    <input
-                      id={`term-${course.id}`}
-                      className="field"
-                      name="term"
-                      placeholder="AY2026-1"
-                      required
-                    />
-                  </div>
-                  <div className="field-row">
-                    <label htmlFor={`sectitle-${course.id}`}>
-                      Section name
-                    </label>
-                    <input
-                      id={`sectitle-${course.id}`}
-                      className="field"
-                      name="title"
-                      placeholder={`${course.code} Section A`}
-                      required
-                    />
-                  </div>
-                  <div className="field-row" style={{ alignSelf: "end" }}>
+              <details className="disclose disclose--inset">
+                <summary>
+                  <IconPlus size={15} />
+                  Add a section
+                </summary>
+                <div className="disclose__body">
+                  <form action={addSection} className="form-grid">
+                    <input type="hidden" name="courseId" value={course.id} />
+                    <div className="field-row">
+                      <label htmlFor={`term-${course.id}`}>Term</label>
+                      <input
+                        id={`term-${course.id}`}
+                        className="field"
+                        name="term"
+                        placeholder="AY2026-1"
+                        required
+                      />
+                    </div>
+                    <div className="field-row">
+                      <label htmlFor={`sectitle-${course.id}`}>
+                        Section name
+                      </label>
+                      <input
+                        id={`sectitle-${course.id}`}
+                        className="field"
+                        name="title"
+                        placeholder={`${course.code} Section A`}
+                        required
+                      />
+                    </div>
                     <button className="button button--primary" type="submit">
                       Add section
                     </button>
-                  </div>
-                </form>
-              </div>
+                  </form>
+                </div>
+              </details>
             </section>
           ))
         )}
-
-        <section className="notice notice--pad">
-          <h2 className="panel-title">Create a course</h2>
-          <form action={addCourse} className="form-grid">
-            <div className="field-row">
-              <label htmlFor="course-code">Course code</label>
-              <input
-                id="course-code"
-                className="field"
-                name="code"
-                placeholder="DCS-101"
-                required
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="course-title">Course title</label>
-              <input
-                id="course-title"
-                className="field"
-                name="title"
-                placeholder="Introduction to Computing"
-                required
-              />
-            </div>
-            <div className="field-row" style={{ alignSelf: "end" }}>
-              <button className="button button--primary" type="submit">
-                Create course
-              </button>
-            </div>
-          </form>
-        </section>
       </div>
     </AppShell>
   );

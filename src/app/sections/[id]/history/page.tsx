@@ -72,7 +72,10 @@ export default async function HistoryPage({
         />
       }
       title="My submissions"
-      description="Only you and your teaching team can see this page. Submitted forms cannot be edited or withdrawn."
+      /* Privacy, and it was also wrong: it said a submitted form cannot be
+         edited while /sections/[id] says "Submitted · still editable". The
+         implemented rule is that a week stays editable until its deadline. */
+      description="Only you and your teaching team can see this page. A week can be edited until its deadline, and is fixed after that."
       roomy
     >
       {history.length === 0 ? (
@@ -88,11 +91,12 @@ export default async function HistoryPage({
         </EmptyState>
       ) : (
         <div className="stack-4">
-          <p className="meta">
-            {history.length} submission{history.length === 1 ? "" : "s"}
-            {answeredCount > 0 &&
-              ` · ${answeredCount} with a reply or published answer`}
-          </p>
+          {answeredCount > 0 && (
+            <p className="meta">
+              {answeredCount} of {history.length} {history.length === 1 ? "week has" : "weeks have"} a reply or a
+              published answer
+            </p>
+          )}
 
           <Notice flush>
             {history.map((entry) => (

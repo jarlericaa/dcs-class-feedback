@@ -4,7 +4,6 @@ import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
-  Stamp,
   Breadcrumbs,
   EmptyState,
   Pagination,
@@ -131,7 +130,10 @@ export default async function AuditPage({
                         </details>
                       )}
                     </span>
-                    {!actor && <Stamp tone="neutral">Automatic</Stamp>}
+                    {/* No stamp: the line above already reads "System · …",
+                        and an AUTOMATIC badge on twenty of twenty-five rows
+                        carried no signal while competing with the stamps that
+                        do. */}
                   </li>
                 ))}
               </ul>

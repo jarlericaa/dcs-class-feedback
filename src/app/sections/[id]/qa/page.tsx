@@ -14,7 +14,7 @@ import {
   WorkspaceShell,
 } from "@/components/layout/workspace-shell";
 import { staffSectionNav, studentSectionNav } from "@/components/layout/nav";
-import { AccessDenied, Category, Stamp } from "@/components/ui";
+import { AccessDenied, Category } from "@/components/ui";
 import { CategoryMark } from "@/components/ui/icons";
 import { listSectionQa } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
@@ -156,11 +156,18 @@ export default async function QaArchivePage({
           ? undefined
           : { href: `/sections/${sectionId}`, label: "This week's form" }
       }
-      courses={railSections.map((s) => ({
-        href: `/sections/${s.id}/qa`,
-        label: s.title,
-        active: s.id === sectionId,
-      }))}
+      /* A one-item group whose only entry links to the page you are already on
+         is chrome pretending to be structure, so the section switcher appears
+         only when there is somewhere else to switch to. */
+      courses={
+        railSections.length > 1
+          ? railSections.map((s) => ({
+              href: `/sections/${s.id}/qa`,
+              label: s.title,
+              active: s.id === sectionId,
+            }))
+          : undefined
+      }
       navGroups={navGroups}
       categories={[
         {
@@ -181,12 +188,6 @@ export default async function QaArchivePage({
           active: sp.category === c.slug,
         })),
       ]}
-      railFooter={
-        <p>
-          Published answers are visible to everyone in this section, and to
-          nobody outside it.
-        </p>
-      }
       selection={{
         active: !!sp.selected,
         backHref: link({ selected: undefined }),
@@ -201,6 +202,7 @@ export default async function QaArchivePage({
           hiddenFields={{ category: sp.category, filter: sp.filter }}
           filter={{
             current: filter,
+            name: "Published",
             label: "Everything",
             options: TIME_FILTERS.map((f) => ({
               key: f.key,
@@ -210,11 +212,11 @@ export default async function QaArchivePage({
           }}
         >
           {visible.length === 0 ? (
-            <p className="ws-list__note">
-              {isFiltered
-                ? "No published answers match. Try a different word, or clear the filters."
-                : "No answers have been published to this class yet."}
-            </p>
+            isFiltered ? (
+              <p className="ws-list__note">
+                Nothing matches. Try a different word, or clear the filters.
+              </p>
+            ) : null
           ) : (
             groups.map((group) => (
               <div key={group.label}>
@@ -248,12 +250,19 @@ export default async function QaArchivePage({
         </ListPane>
       }
     >
+      {/* One empty message, not two. The list pane and this pane both used to
+          print one, and this one addressed staff as though they were students:
+          "when YOUR TEACHING TEAM answers a question". Staff are the teaching
+          team, so the wording now follows the reader's role, and the list pane
+          says nothing when it has nothing. */}
       {!active ? (
         <div className="ws-empty-detail">
           <p>
             {isFiltered
               ? "Nothing matches your search. Try a different word, or clear the filters."
-              : "Nothing has been published to this class yet. When your teaching team answers a question for everyone, it appears here."}
+              : access?.staff
+                ? "Nothing has been published to this class yet. An answer you publish from the review inbox appears here."
+                : "Nothing has been published to this class yet. When your teaching team answers a question for everyone, it appears here."}
           </p>
         </div>
       ) : (
@@ -265,9 +274,10 @@ export default async function QaArchivePage({
             {active.sourceOrigin === "legacy" &&
               " · carried over from an earlier semester"}
           </p>
+          {/* No "Answered" stamp: everything in this archive is answered by
+              definition, so the badge distinguished nothing. */}
           <div className="row" style={{ marginTop: "var(--s3)" }}>
             <Category value={active.category} />
-            <Stamp tone="green">Answered</Stamp>
           </div>
 
           <div className="stack-5" style={{ marginTop: "var(--s6)" }}>
@@ -288,9 +298,10 @@ export default async function QaArchivePage({
             )}
           </div>
 
+          {/* Anonymity, so it stays — but as one sentence, not three. */}
           <p className="meta" style={{ marginTop: "var(--s7)" }}>
-            The wording above was written by staff for the whole class. The
-            original message and who sent it are never shown here.
+            Staff wrote this wording for the whole class. The original message,
+            and who sent it, are never shown here.
           </p>
         </article>
       )}

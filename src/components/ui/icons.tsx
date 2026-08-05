@@ -183,6 +183,20 @@ export const IconForward = (p: IconProps) => (
   </Icon>
 );
 
+/** The disclosure chevron. Rotates 90° when its <details> opens. */
+export const IconChevron = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m9 5 7 7-7 7" />
+  </Icon>
+);
+
+/** Opens a create form. Never stands alone — it always sits beside its word. */
+export const IconPlus = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+
 export const IconWarning = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 4 2.5 20.5h19z" />

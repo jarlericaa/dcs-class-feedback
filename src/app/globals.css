@@ -4,14 +4,18 @@
  * One stylesheet, one system. The authority for everything in it is DESIGN.md
  * at the repository root; read that first. In short:
  *
- *   - a matte board ground with hard-cornered white notices squared onto it;
+ *   - a stone ground with hard-cornered white notices squared onto it;
  *   - two type registers — Charter for text a human wrote, the platform sans
  *     for anything the system says;
- *   - one accent (institutional green) with amber and red held in reserve;
+ *   - ONE accent (deep blue-green), spent only on action: primary buttons,
+ *     links, active navigation, focus, a checked choice, a positive state.
+ *     Amber and red are signals held in reserve. The accent is never a
+ *     decorative container, a tinted input stroke, an icon colour or a brand
+ *     fill — the interface belongs to Class Feedback, not to an institution;
  *   - status as a stamp: a word AND a shape AND a tone, never colour alone;
  *   - borders carry the structure; nothing has a resting shadow;
- *   - chrome that works before hydration (<details> drawer and filter, GET
- *     search) and a focus ring that is never removed.
+ *   - chrome that works before hydration (<details> drawer, filter and
+ *     disclosures, GET search) and a focus ring that is never removed.
  */
 
 /* ==========================================================================
@@ -20,46 +24,47 @@
 
 :root {
   /* ground and paper */
-  --board: #e9e8de;
-  --board-deep: #e0dfd2;
+  --board: #f1f0ee;
+  --board-deep: #e8e7e4;
   --paper: #ffffff;
-  --paper-quiet: #f6f6f0;
+  --paper-quiet: #f8f7f5;
 
-  /* ink */
-  --ink: #1c1e19;
-  --ink-soft: #3f443c;
-  --ink-muted: #5f655a;
-  --ink-faint: #7c8377;
+  /* ink — contrast on paper: 16.7 / 8.8 / 5.3 / 3.2 */
+  --ink: #1c1e20;
+  --ink-soft: #474b4e;
+  --ink-muted: #676c70;
+  --ink-faint: #8b9095;
 
   /* rules */
-  --rule: #d5d4c6;
-  --rule-strong: #bcbbaa;
-  --rule-ink: #8e8f80;
+  --rule: #e2e0dd;
+  --rule-strong: #c9c6c2;
+  --rule-ink: #9b9893;
 
-  /* the accent */
-  --green: #1f6b4a;
-  --green-deep: #14523a;
-  --green-wash: #e0ece2;
-  --green-edge: #b6cfbc;
+  /* the one accent — deep blue-green. 7.3:1 under white text,
+     9.6:1 as text on paper. */
+  --accent: #1c5f63;
+  --accent-deep: #164c50;
+  --accent-wash: #e5eeef;
+  --accent-edge: #b9d2d4;
 
   /* the two signals */
-  --amber: #8a5510;
-  --amber-deep: #6d4109;
-  --amber-wash: #f5e9d3;
-  --amber-edge: #dcc496;
-  --red: #a3372f;
-  --red-deep: #812722;
-  --red-wash: #f5e2df;
-  --red-edge: #dcb3ae;
+  --amber: #8a5a12;
+  --amber-deep: #6e470e;
+  --amber-wash: #f6ecd8;
+  --amber-edge: #e0cda4;
+  --red: #9c3b30;
+  --red-deep: #7d2f26;
+  --red-wash: #f6e4e1;
+  --red-edge: #e0b8b2;
 
-  --focus: #14523a;
+  --focus: #164c50;
 
   /* radius — nothing else exists */
   --r-control: 2px;
   --r-stamp: 3px;
 
   /* the one elevation */
-  --overlay-shadow: 0 12px 28px rgba(28, 30, 25, 0.18);
+  --overlay-shadow: 0 12px 28px rgba(28, 30, 32, 0.16);
 
   /* spacing scale */
   --s1: 4px;
@@ -152,7 +157,7 @@ kbd {
 }
 
 ::selection {
-  background: var(--green-wash);
+  background: var(--accent-wash);
   color: var(--ink);
 }
 
@@ -174,7 +179,7 @@ kbd {
   z-index: 60;
   padding: 10px 16px;
   color: #fff;
-  background: var(--green-deep);
+  background: var(--accent-deep);
   font-weight: 600;
 }
 .skip-link:focus {
@@ -288,7 +293,7 @@ kbd {
   max-width: 68ch;
 }
 .link {
-  color: var(--green-deep);
+  color: var(--accent-deep);
   text-decoration: underline;
   text-underline-offset: 2px;
   font-weight: 600;
@@ -387,7 +392,7 @@ kbd {
   text-underline-offset: 2px;
 }
 .breadcrumbs a:hover {
-  color: var(--green-deep);
+  color: var(--accent-deep);
 }
 
 /* ==========================================================================
@@ -471,7 +476,7 @@ kbd {
   border-left-color: var(--amber-edge);
 }
 .quote--public {
-  border-left-color: var(--green-edge);
+  border-left-color: var(--accent-edge);
 }
 
 /* A whole notice that is itself a link — one class section on the board. */
@@ -499,7 +504,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--green-deep);
+  color: var(--accent-deep);
   font-size: 13px;
   font-weight: 600;
 }
@@ -530,9 +535,9 @@ kbd {
   flex: 0 0 auto;
 }
 .stamp--green {
-  color: var(--green-deep);
-  border-color: var(--green-edge);
-  background: var(--green-wash);
+  color: var(--accent-deep);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
 }
 .stamp--amber {
   color: var(--amber-deep);
@@ -624,12 +629,12 @@ kbd {
 }
 .button--primary {
   color: #fff;
-  background: var(--green);
-  border-color: var(--green);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 .button--primary:hover {
-  background: var(--green-deep);
-  border-color: var(--green-deep);
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
 }
 .button--secondary {
   color: var(--ink);
@@ -709,9 +714,9 @@ kbd {
   background: var(--red-wash);
 }
 .alert--success {
-  color: var(--green-deep);
-  border-color: var(--green-edge);
-  background: var(--green-wash);
+  color: var(--accent-deep);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
 }
 .alert--warning {
   color: var(--amber-deep);
@@ -822,8 +827,8 @@ kbd {
 .field:focus,
 .select-field:focus,
 .textarea-field:focus {
-  border-color: var(--green);
-  box-shadow: 0 0 0 3px var(--green-wash);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
 }
 .field:focus-visible,
 .select-field:focus-visible,
@@ -906,6 +911,92 @@ kbd {
   flex: 0 0 auto;
 }
 
+/* --- progressive disclosure ----------------------------------------------
+   An occasional form (create a course, add a section, configure a TA, import a
+   set of old questions) is a <details>, not a permanently-open panel. Closed,
+   it costs one control's height; open, it is an ordinary bordered region. Works
+   before hydration, and the summary IS the action's name, so the page header no
+   longer has to compete with a form the reader did not ask for. */
+.disclose {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.disclose > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.disclose > summary::-webkit-details-marker {
+  display: none;
+}
+.disclose > summary:hover {
+  background: var(--paper-quiet);
+}
+.disclose[open] > summary {
+  border-bottom: 1px solid var(--rule);
+}
+/* A drawn chevron that rotates. The only rotation in the system, and it is
+   describing state, not decorating. */
+.disclose__mark {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  transition: transform 0.12s ease;
+}
+.disclose[open] .disclose__mark {
+  transform: rotate(90deg);
+}
+.disclose__body {
+  padding: var(--s4);
+}
+/* Nested inside a notice (a per-course "add a section"), it is a row of that
+   notice rather than a box within a box. */
+.disclose--inset {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.disclose--inset[open] > summary {
+  border-bottom: 1px solid var(--rule);
+}
+
+/* A segmented choice: pick a mode, do not perform an action. It must never look
+   like a primary button, because the page's one primary action is elsewhere. */
+.segment {
+  display: inline-flex;
+  margin-bottom: var(--s3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-control);
+  overflow: hidden;
+}
+.segment__option {
+  min-height: 34px;
+  padding: 7px 14px;
+  border: 0;
+  color: var(--ink-muted);
+  background: var(--paper);
+  font-size: 13px;
+  font-weight: 600;
+}
+.segment__option + .segment__option {
+  border-left: 1px solid var(--rule-strong);
+}
+.segment__option:hover {
+  background: var(--paper-quiet);
+}
+.segment__option[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--board-deep);
+}
+.segment__option:focus-visible {
+  outline-offset: -3px;
+}
+
 .choice-list {
   display: grid;
   gap: 6px;
@@ -927,11 +1018,11 @@ kbd {
   border-color: var(--rule-strong);
 }
 .choice:has(input:checked) {
-  border-color: #a9c8b3;
-  background: var(--green-wash);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
 }
 .choice input {
-  accent-color: var(--green);
+  accent-color: var(--accent);
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
@@ -1094,6 +1185,8 @@ kbd {
   gap: var(--s2);
   min-width: 0;
 }
+/* The product mark is identity, not action, so it does NOT take the accent —
+   the accent has to mean "this is the thing to click". */
 .ws-brand__mark {
   display: inline-grid;
   place-items: center;
@@ -1101,8 +1194,8 @@ kbd {
   width: 24px;
   height: 24px;
   border-radius: var(--r-control);
-  color: #fff;
-  background: var(--green);
+  color: var(--paper);
+  background: var(--ink);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -1167,7 +1260,7 @@ kbd {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--green-deep);
+  color: var(--accent-deep);
   font-size: 12px;
   font-weight: 600;
   text-decoration: underline;
@@ -1203,16 +1296,16 @@ kbd {
   min-height: 34px;
   margin-bottom: var(--s3);
   padding: 6px 10px;
-  border: 1px solid var(--green);
+  border: 1px solid var(--accent);
   border-radius: var(--r-control);
   color: #fff;
-  background: var(--green);
+  background: var(--accent);
   font-size: 13px;
   font-weight: 600;
 }
 .ws-rail__action:hover {
-  background: var(--green-deep);
-  border-color: var(--green-deep);
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
 }
 .ws-rail__heading {
   margin: var(--s4) 0 6px;
@@ -1239,11 +1332,11 @@ kbd {
   transition: background-color 0.12s ease;
 }
 .ws-rail__item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.7);
 }
 .ws-rail__item--active {
-  color: var(--green-deep);
-  background: var(--green-wash);
+  color: var(--accent-deep);
+  background: var(--accent-wash);
   font-weight: 600;
 }
 .ws-rail__icon {
@@ -1251,7 +1344,7 @@ kbd {
   color: var(--ink-faint);
 }
 .ws-rail__item--active .ws-rail__icon {
-  color: var(--green-deep);
+  color: var(--accent-deep);
 }
 .ws-rail__text {
   flex: 1;
@@ -1338,6 +1431,12 @@ kbd {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ws-filterbar__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: 0 0 auto;
+}
 .ws-filter {
   position: relative;
   flex: 0 0 auto;
@@ -1360,14 +1459,18 @@ kbd {
   display: none;
 }
 .ws-filter[open] > summary {
-  border-color: var(--green);
-  color: var(--green-deep);
+  border-color: var(--accent);
+  color: var(--accent-deep);
 }
 .ws-filter__menu {
   position: absolute;
   right: 0;
   z-index: 30;
   min-width: 190px;
+  /* A term's worth of weeks is a long list; it scrolls inside the menu rather
+     than running off the bottom of the pane. */
+  max-height: 60vh;
+  overflow-y: auto;
   margin-top: 6px;
   padding: var(--s1) 0;
   border: 1px solid var(--rule-strong);
@@ -1387,7 +1490,7 @@ kbd {
 }
 .ws-filter__check {
   flex: 0 0 14px;
-  color: var(--green-deep);
+  color: var(--accent-deep);
 }
 
 .ws-list__scroll {
@@ -1425,8 +1528,8 @@ kbd {
   background: var(--paper-quiet);
 }
 .ws-row--active {
-  border-left-color: var(--green);
-  background: var(--green-wash);
+  border-left-color: var(--accent);
+  background: var(--accent-wash);
 }
 .ws-row--unread .ws-row__title {
   font-weight: 700;
@@ -1492,7 +1595,7 @@ kbd {
   align-items: center;
   gap: 6px;
   margin-bottom: var(--s4);
-  color: var(--green-deep);
+  color: var(--accent-deep);
   font-size: 13px;
   font-weight: 600;
 }
@@ -1533,8 +1636,8 @@ kbd {
   display: none;
 }
 .ws-drawer[open] > summary {
-  border-color: var(--green);
-  color: var(--green-deep);
+  border-color: var(--accent);
+  color: var(--accent-deep);
 }
 .ws-drawer__panel {
   position: fixed;
@@ -1621,9 +1724,10 @@ kbd {
   font-size: 13px;
   line-height: 1.5;
 }
+/* Neutral: a tick beside a commitment is punctuation, not an action. */
 .entry__terms svg {
   margin-top: 3px;
-  color: var(--green);
+  color: var(--ink-faint);
 }
 .entry__signin {
   display: flex;
@@ -1733,7 +1837,7 @@ kbd {
 .own-item__block {
   padding-top: var(--s4);
   margin-top: var(--s4);
-  border-top: 1px solid var(--green-edge);
+  border-top: 1px solid var(--rule);
 }
 .own-item__block:first-of-type {
   padding-top: 0;
@@ -1757,12 +1861,16 @@ kbd {
   margin-top: var(--s4);
 }
 
-/* The student's own item: their part of the sheet, visibly theirs. */
+/* The student's own item. It used to be a green-washed bordered container with
+   tinted inputs — a decorative coloured box, and on a phone most of the page.
+   It is now the same hairline rhythm as every other question on the sheet: the
+   sheet reads as one continuous form instead of a form with two boxes glued to
+   the end. */
 .own-item {
-  margin: var(--s5) 0 0;
-  padding: var(--s5);
-  border: 1px solid var(--green-edge);
-  background: var(--green-wash);
+  margin: 0;
+  padding: var(--s5) 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
 }
 .own-item > legend {
   float: left;
@@ -1771,21 +1879,17 @@ kbd {
   font-family: var(--serif);
   font-size: 18px;
   font-weight: 700;
+  line-height: 1.35;
 }
 .own-item > legend + * {
   clear: both;
 }
 .own-item__note {
-  margin: 6px 0 var(--s4);
-  max-width: 62ch;
-  color: var(--ink-soft);
+  margin: var(--s2) 0 var(--s3);
+  max-width: 68ch;
+  color: var(--ink-muted);
   font-size: 13px;
   line-height: 1.5;
-}
-.own-item .field,
-.own-item .select-field,
-.own-item .textarea-field {
-  border-color: var(--green-edge);
 }
 
 .submit-bar {
@@ -1922,9 +2026,9 @@ kbd {
   background: var(--amber-wash);
 }
 .event--public .event__mark {
-  color: var(--green-deep);
-  border-color: var(--green-edge);
-  background: var(--green-wash);
+  color: var(--accent-deep);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
 }
 .event__meta {
   display: flex;
@@ -1975,10 +2079,14 @@ kbd {
   gap: var(--s4);
   margin-top: var(--s4);
 }
+/* Two destinations for one reply — to the student, or to the whole class. The
+   boundary is a privacy boundary, so the two stay visually separate; but they
+   are hairline regions on the page's own paper, not filled cards inside a card.
+   The amber visibility note is what should catch the eye here. */
 .composer {
   padding: var(--s4);
   border: 1px solid var(--rule);
-  background: var(--paper-quiet);
+  background: var(--paper);
 }
 .composer > h3 {
   font-size: 14px;
@@ -2114,7 +2222,7 @@ kbd {
     padding: var(--s3) var(--s4);
   }
   .own-item {
-    padding: var(--s4);
+    padding: var(--s4) 0;
   }
   .form-actions,
   .submit-bar {
@@ -2235,7 +2343,7 @@ kbd {
   margin-top: var(--s1);
 }
 .rich-text a {
-  color: var(--green-deep);
+  color: var(--accent-deep);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -2343,8 +2451,9 @@ kbd {
   height: auto;
   max-height: 220px;
 }
+/* Bars are data, not action, so they stay off the accent. */
 .chart__bar {
-  fill: var(--green);
+  fill: var(--rule-ink);
 }
 .chart__table {
   margin-top: var(--s2);

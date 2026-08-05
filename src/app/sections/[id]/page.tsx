@@ -311,7 +311,10 @@ export default async function SectionFormPage({
           {timeRemaining(cycle.deadlineAt)}
         </Stamp>
       }
-      description={`Closes ${formatDeadline(cycle.deadlineAt, section.timezone)}. Your teaching team sees your name beside your answers. Anything published to the class is rewritten first and carries no name.`}
+      /* The deadline, and who can see the name attached. What happens to text
+         that gets published is now stated on the block where a student writes
+         it, so it is not also repeated up here. */
+      description={`Closes ${formatDeadline(cycle.deadlineAt, section.timezone)}. Your teaching team sees your name beside your answers; your classmates never do.`}
     >
       <Notice roomy>
         <WeeklyForm

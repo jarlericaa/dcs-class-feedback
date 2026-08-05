@@ -63,9 +63,13 @@ export function EntryScreen({ error }: { error?: string }) {
               </li>
               <li>
                 <IconCheck size={15} />
+                {/* This said a submitted form can never be edited, which the
+                    product does not do: a week stays editable until its
+                    deadline. Overstating a restriction is as much a broken
+                    promise as overstating the anonymity. */}
                 <span>
-                  A submitted form cannot be edited or withdrawn, so read it
-                  before you send it.
+                  You can keep editing a week&apos;s form until its deadline.
+                  After that it is fixed.
                 </span>
               </li>
             </ul>

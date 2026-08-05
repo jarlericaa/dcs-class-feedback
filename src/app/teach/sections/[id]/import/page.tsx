@@ -4,7 +4,7 @@ import { currentUserId } from "@/auth";
 import { loadStaffSection } from "@/lib/staff-section";
 import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
-import { AccessDenied, Alert, Breadcrumbs } from "@/components/ui";
+import { AccessDenied, Breadcrumbs } from "@/components/ui";
 import {
   RosterImport,
   type ImportState,
@@ -194,14 +194,10 @@ export default async function ImportPage({
       }
       title="Import the class list"
     >
-      <div className="stack-4">
-        <Alert variant="info" title="How matching works">
-          Class lists only have a student number and a name, so the platform
-          proposes account matches but never confirms one. You confirm every
-          student on the account matches page.
-        </Alert>
-        <RosterImport action={run} />
-      </div>
+      {/* The "How matching works" alert that used to lead this page repeated
+          the account matches page. The reader is here to upload a file; the
+          field's own helper text carries what is never imported. */}
+      <RosterImport action={run} />
     </AppShell>
   );
 }

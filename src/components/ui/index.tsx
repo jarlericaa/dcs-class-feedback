@@ -4,6 +4,7 @@ import {
   CategoryMark,
   IconBack,
   IconCheck,
+  IconChevron,
   IconError,
   IconForward,
   IconInfo,
@@ -153,21 +154,63 @@ export function StripLabel({
   );
 }
 
+/**
+ * An occasional form, closed by default.
+ *
+ * A create-or-configure form that is always expanded pushes the page's actual
+ * content out of reach, so every one of them lives behind this instead. The
+ * summary carries the action's name, which is also how the reader finds it —
+ * `<details>`, so it works with JavaScript off and its open state is real.
+ */
+export function Disclose({
+  label,
+  inset,
+  id,
+  children,
+}: {
+  label: string;
+  /** sits inside a notice as one of its rows rather than as its own box */
+  inset?: boolean;
+  id?: string;
+  children: ReactNode;
+}) {
+  return (
+    <details className={`disclose${inset ? " disclose--inset" : ""}`} id={id}>
+      <summary>
+        <IconChevron className="disclose__mark" size={15} />
+        {label}
+      </summary>
+      <div className="disclose__body">{children}</div>
+    </details>
+  );
+}
+
+/**
+ * Nothing is here yet. An empty state states what is missing and carries the
+ * action that fills it — an empty state that only describes the next step makes
+ * the reader go and find it.
+ */
 export function EmptyState({
   title,
   children,
   action,
+  primary,
 }: {
   title: string;
   children?: ReactNode;
   action?: { href: string; label: string };
+  /** the action IS this page's main action, so it looks like it */
+  primary?: boolean;
 }) {
   return (
     <div className="empty">
       <h2>{title}</h2>
       {children && <p>{children}</p>}
       {action && (
-        <Link className="button button--secondary" href={action.href}>
+        <Link
+          className={`button button--${primary ? "primary" : "secondary"}`}
+          href={action.href}
+        >
           {action.label}
         </Link>
       )}

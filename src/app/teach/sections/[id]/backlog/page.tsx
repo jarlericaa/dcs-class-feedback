@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
@@ -53,6 +54,7 @@ export default async function BacklogPage({
     q?: string;
     ok?: string;
     error?: string;
+    import?: string;
   }>;
 }) {
   const { id: sectionId } = await params;
@@ -187,6 +189,14 @@ export default async function BacklogPage({
         />
       }
       title={`${course.code} question backlog`}
+      actions={
+        <Link
+          className="button button--secondary"
+          href={`/teach/sections/${sectionId}/backlog?import=1`}
+        >
+          Import questions
+        </Link>
+      }
     >
       <div className="stack-4">
         {sp.ok && <Alert variant="success">{sp.ok}</Alert>}
@@ -227,10 +237,18 @@ export default async function BacklogPage({
         </form>
 
         {backlog.questions.length === 0 ? (
-          <EmptyState title="Nothing in the backlog">
-            Questions land here when staff move one out of the weekly review, or
-            when you import a set from an earlier semester below. Nothing in the
-            backlog is visible to students until you publish it to a section.
+          <EmptyState
+            title="Nothing in the backlog"
+            action={{
+              href: `/teach/sections/${sectionId}/backlog?import=1`,
+              label: "Import questions",
+            }}
+          >
+            {/* Kept: it prevents the mistake of assuming the backlog is already
+                visible to a class. */}
+            Questions land here when staff move one out of the weekly review.
+            Nothing in the backlog reaches students until you publish it to a
+            section.
           </EmptyState>
         ) : (
           <section className="notice">
@@ -335,10 +353,14 @@ export default async function BacklogPage({
           </section>
         )}
 
-        <section className="notice notice--pad">
-          <h2 className="panel-title">
-            Import questions from a previous semester
-          </h2>
+        {/* Opened by the header action, which is this form's only entry point.
+            Expanded by default it used to be the only visible submit button on
+            a page whose real work is triaging the rows above it. */}
+        {(sp.import === "1" || !!sp.error) && (
+          <section className="notice notice--pad" id="import">
+            <h2 className="panel-title">
+              Import questions from a previous semester
+            </h2>
           <form action={importLegacy} className="stack-4">
             <div className="field-row">
               <label htmlFor="entries">Questions</label>
@@ -362,14 +384,20 @@ export default async function BacklogPage({
                 placeholder="AY2025-2 Q&A document"
               />
             </div>
-            <div>
-              <button className="button button--secondary" type="submit">
+            <div className="row">
+              <button className="button button--primary" type="submit">
                 Import anonymously
               </button>
+              <Link
+                className="button button--quiet"
+                href={`/teach/sections/${sectionId}/backlog`}
+              >
+                Cancel
+              </Link>
             </div>
           </form>
-        </section>
-
+          </section>
+        )}
       </div>
     </AppShell>
   );

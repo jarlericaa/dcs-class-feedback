@@ -2,27 +2,30 @@
 name: Class Feedback
 description: A university weekly-feedback workspace built like a departmental noticeboard — typed notices on a matte board, stamped, dated, and never rounded into cards.
 colors:
-  board: "#e9e8de"
-  board-deep: "#e0dfd2"
+  board: "#f1f0ee"
+  board-deep: "#e8e7e4"
   paper: "#ffffff"
-  paper-quiet: "#f6f6f0"
-  ink: "#1c1e19"
-  ink-soft: "#3f443c"
-  ink-muted: "#5f655a"
-  ink-faint: "#7c8377"
-  rule: "#d5d4c6"
-  rule-strong: "#bcbbaa"
-  rule-ink: "#8e8f80"
-  stamp-green: "#1f6b4a"
-  stamp-green-deep: "#14523a"
-  stamp-green-wash: "#e0ece2"
-  stamp-amber: "#8a5510"
-  stamp-amber-deep: "#6d4109"
-  stamp-amber-wash: "#f5e9d3"
-  stamp-red: "#a3372f"
-  stamp-red-deep: "#812722"
-  stamp-red-wash: "#f5e2df"
-  focus: "#14523a"
+  paper-quiet: "#f8f7f5"
+  ink: "#1c1e20"
+  ink-soft: "#474b4e"
+  ink-muted: "#676c70"
+  ink-faint: "#8b9095"
+  rule: "#e2e0dd"
+  rule-strong: "#c9c6c2"
+  rule-ink: "#9b9893"
+  accent: "#1c5f63"
+  accent-deep: "#164c50"
+  accent-wash: "#e5eeef"
+  accent-edge: "#b9d2d4"
+  amber: "#8a5a12"
+  amber-deep: "#6e470e"
+  amber-wash: "#f6ecd8"
+  amber-edge: "#e0cda4"
+  red: "#9c3b30"
+  red-deep: "#7d2f26"
+  red-wash: "#f6e4e1"
+  red-edge: "#e0b8b2"
+  focus: "#164c50"
 typography:
   document:
     fontFamily: "var(--font-document), Charter, 'Bitstream Charter', 'Iowan Old Style', Georgia, serif"
@@ -117,7 +120,7 @@ spacing:
   "8": "64px"
 components:
   button-primary:
-    backgroundColor: "{colors.stamp-green}"
+    backgroundColor: "{colors.accent}"
     textColor: "#ffffff"
     rounded: "{rounded.control}"
     padding: "9px 16px"
@@ -136,8 +139,8 @@ components:
     height: "38px"
   button-danger:
     backgroundColor: "{colors.paper}"
-    textColor: "{colors.stamp-red-deep}"
-    borderColor: "#d9b7b3"
+    textColor: "{colors.red-deep}"
+    borderColor: "{colors.red-edge}"
     rounded: "{rounded.control}"
     height: "38px"
   notice:
@@ -151,22 +154,22 @@ components:
     rounded: "{rounded.control}"
     padding: "8px 10px"
     height: "38px"
-  stamp-green:
-    backgroundColor: "{colors.stamp-green-wash}"
-    textColor: "{colors.stamp-green-deep}"
-    borderColor: "#b6cfbc"
+  stamp-positive:
+    backgroundColor: "{colors.accent-wash}"
+    textColor: "{colors.accent-deep}"
+    borderColor: "{colors.accent-edge}"
     rounded: "{rounded.stamp}"
     padding: "3px 7px"
-  stamp-amber:
-    backgroundColor: "{colors.stamp-amber-wash}"
-    textColor: "{colors.stamp-amber-deep}"
-    borderColor: "#dcc496"
+  stamp-attention:
+    backgroundColor: "{colors.amber-wash}"
+    textColor: "{colors.amber-deep}"
+    borderColor: "{colors.amber-edge}"
     rounded: "{rounded.stamp}"
     padding: "3px 7px"
-  stamp-red:
-    backgroundColor: "{colors.stamp-red-wash}"
-    textColor: "{colors.stamp-red-deep}"
-    borderColor: "#dcb3ae"
+  stamp-critical:
+    backgroundColor: "{colors.red-wash}"
+    textColor: "{colors.red-deep}"
+    borderColor: "{colors.red-edge}"
     rounded: "{rounded.stamp}"
     padding: "3px 7px"
   stamp-neutral:
@@ -181,8 +184,17 @@ components:
     rounded: "{rounded.control}"
     padding: "6px 8px"
   rail-item-active:
-    backgroundColor: "{colors.stamp-green-wash}"
-    textColor: "{colors.stamp-green-deep}"
+    backgroundColor: "{colors.accent-wash}"
+    textColor: "{colors.accent-deep}"
+  brand-mark:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.paper}"
+    rounded: "{rounded.control}"
+  disclose:
+    backgroundColor: "{colors.paper}"
+    borderColor: "{colors.rule}"
+    rounded: "{rounded.none}"
+    padding: "16px"
   topbar:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
@@ -226,7 +238,7 @@ authored text from machine text without reading a word, which is what keeps a
 reworded public version from ever being mistaken for the original.
 
 **It is calm because the board is calm.** Ink on paper on board, one
-institutional green, and two signal colours held in reserve. Nothing glows,
+one deep blue-green accent, and two signal colours held in reserve. Nothing glows,
 nothing gradients, nothing floats.
 
 ### The rut this refuses
@@ -314,60 +326,95 @@ headings above 11px.
 
 ## 3. Colour roles
 
-A restrained strategy: a matte ground, white paper, one institutional accent,
-two signals. **One accent total.** The previous system ran three accents in
-three zones (plum chrome, blue navigation, green content) plus an eight-hue
-category spectrum; all of it is removed. Introducing a second accent is a
-regression, not a decision.
+A neutral canvas, white paper, **one restrained accent**, two signals held in
+reserve.
+
+The accent's job is to answer "what do I click?" — so it is spent only where
+that question is being asked. Every place it was doing decorative work has been
+taken off it, because an accent applied to headings, containers, icons, brand
+marks and chart fills stops meaning anything.
+
+### Why this palette and not the obvious one
+
+The first version of this system ran an **institutional green** (`#1f6b4a`) on a
+matte olive ground. It read as the university rather than as the product: UP DCS
+is the operating unit named in the footer, not the visual identity, and
+[PRODUCT.md](PRODUCT.md) is explicit that their official identity is not binding
+here. Three directions were built as the same review-inbox screen and compared
+at real density:
+
+| | Direction | Verdict |
+|---|---|---|
+| A | warm neutral + muted green | The incumbent identity with the volume lowered; the pale green selection wash sat uneasily on the warm ground. **Rejected** as the direction closest to UP DCS. |
+| B | soft stone + deep blue-green | Distinctly not a forest green; lowest-glare ground of the three; the accent reads serious without becoming a corporate blue. **Chosen.** |
+| C | light neutral + restrained ink-blue | Crispest accent semantics, but the saturated blue button and blue selection read as a generic institutional portal, and the blue wash vibrated against the neutral grey. **Rejected.** |
+
+The deciding criterion was a long staff review session: a low-chroma ground and
+a dark, desaturated accent do not fatigue across forty submissions, and nothing
+on the page competes with the one control that matters.
 
 ### Ground and paper
 
 | Token | Value | Use |
 |---|---|---|
-| `--board` | `#e9e8de` | The app canvas. The board itself. |
-| `--board-deep` | `#e0dfd2` | Rail and list-pane ground; recessed regions. |
-| `--paper` | `#ffffff` | Notices, panels, detail pane, inputs. |
-| `--paper-quiet` | `#f6f6f0` | Quoted blocks, table header rows, disabled fills. |
+| `--board` | `#f1f0ee` | The app canvas. Warm-neutral stone, not white — a page-wide white ground glares across a long session. |
+| `--board-deep` | `#e8e7e4` | Rail and list-pane ground; recessed regions; a pressed segment. |
+| `--paper` | `#ffffff` | Notices, panels, detail pane, inputs, composers. |
+| `--paper-quiet` | `#f8f7f5` | Quoted blocks, table header rows, disclosure summaries on hover, disabled fills. |
 
 ### Ink
 
-| Token | Value | Use | Contrast on paper |
-|---|---|---|---|
-| `--ink` | `#1c1e19` | Primary text. | 15.9:1 |
-| `--ink-soft` | `#3f443c` | Secondary text that is still read. | 9.7:1 |
-| `--ink-muted` | `#5f655a` | Metadata, labels, placeholders. | 5.9:1 |
-| `--ink-faint` | `#7c8377` | Rail headings, decorative rules' text. Never body. | 4.0:1 — large text and non-text only |
+| Token | Value | Use | On paper | On canvas |
+|---|---|---|---|---|
+| `--ink` | `#1c1e20` | Primary text. | 16.7:1 | 15.3:1 |
+| `--ink-soft` | `#474b4e` | Secondary text that is still read. | 8.8:1 | 8.1:1 |
+| `--ink-muted` | `#676c70` | Metadata, labels, helper text, placeholders. | 5.3:1 | 4.7:1 |
+| `--ink-faint` | `#8b9095` | Non-text marks and large text only. Never body. | 3.2:1 | — |
 
 ### Rules
 
 | Token | Value | Use |
 |---|---|---|
-| `--rule` | `#d5d4c6` | Default hairline: panel edges, row dividers, table rules. |
-| `--rule-strong` | `#bcbbaa` | Input strokes, secondary button borders, pane seams. |
-| `--rule-ink` | `#8e8f80` | The one heavier rule: a 2px batten under a strip label. |
+| `--rule` | `#e2e0dd` | Default hairline: panel edges, row dividers, table rules, disclosure seams. |
+| `--rule-strong` | `#c9c6c2` | Input strokes, secondary button borders, pane seams, segment borders. |
+| `--rule-ink` | `#9b9893` | The one heavier rule — a 2px batten under a strip label — and chart bars. |
 
-### The accent
+### The accent — deep blue-green
 
-**Institutional green.** `--stamp-green` `#1f6b4a`, deep `#14523a`, wash
-`#e0ece2`. It carries: the primary button, the focus ring, the active
-navigation row, the checked state of a form choice, and the positive stamp. It
-is the only accent. `#14523a` on white is 8.4:1; white on `#1f6b4a` is 5.6:1.
+| Token | Value | Role |
+|---|---|---|
+| `--accent` | `#1c5f63` | Primary button fill; the checked border of a choice; the active list-row edge. White text on it is **7.3:1**. |
+| `--accent-deep` | `#164c50` | Anything the accent has to *say*: links, the row-action link, the focus ring, text on `--accent-wash`. **9.6:1** on paper, **8.1:1** on its own wash. |
+| `--accent-wash` | `#e5eeef` | The active navigation row, the selected list row, a checked choice, the positive stamp's ground, text selection. |
+| `--accent-edge` | `#b9d2d4` | The 1px edge of anything on the wash. |
+
+**The accent carries exactly six things.** A primary button. A link. The active
+navigation row. The focus ring. A checked choice. A positive state (the green
+stamp, the public-answer quote rule). Nothing else.
+
+It was explicitly **removed** from: the product mark in the top bar (identity is
+not action — the mark is `--ink`), the student's own-question container and its
+input strokes (a decorative wash), the entry screen's tick icons, and chart bar
+fills. Reintroducing any of these is a regression.
 
 ### The two signals
 
-- **Amber.** `--stamp-amber` `#8a5510`, deep `#6d4109`, wash `#f5e9d3`. Needs
-  attention, pending, scheduled, open-and-not-yet-done, private reply. Amber
-  says *notice this*, never *something is wrong*.
-- **Red.** `--stamp-red` `#a3372f`, deep `#812722`, wash `#f5e2df`. **Reserved.**
-  Destruction, invalid input, invalidated participation, privacy risk, failure.
-  Never for emphasis, never for a count, never for a category, never for brand.
-  If red is on screen, something is irreversible or wrong.
+- **Amber.** `--amber` `#8a5a12`, deep `#6e470e`, wash `#f6ecd8`, edge
+  `#e0cda4`. Needs attention, pending, scheduled, open-and-not-yet-done,
+  private reply, an identity-bearing export. Amber says *notice this*, never
+  *something is wrong*. `#6e470e` on its wash is 7.0:1.
+- **Red.** `--red` `#9c3b30`, deep `#7d2f26`, wash `#f6e4e1`, edge `#e0b8b2`.
+  **Reserved.** Destruction, invalid input, invalidated participation, privacy
+  risk, failure. Never for emphasis, never for a count, never for a category,
+  never for brand. If red is on screen, something is irreversible or wrong.
+  `#7d2f26` on its wash is 7.4:1.
 
 ### The wash-plus-ink rule
 
-Every signal ships as a triple: base hue for solid fills, `-deep` for text,
-`-wash` for backgrounds. Coloured text always sits on its own wash using the
-deep step. Never the base hue as body text on white; never white text on a wash.
+Every accent and signal ships as a quad: base hue for solid fills, `-deep` for
+text, `-wash` for backgrounds, `-edge` for the 1px border of a washed element.
+Coloured text always sits on its own wash using the deep step. Never the base
+hue as body text on white; never white text on a wash.
 
 ### Categories carry no colour
 
@@ -441,10 +488,10 @@ panel feel important is a defect.
 
 | Variant | Fill | Text | Border | Hover |
 |---|---|---|---|---|
-| Primary | `--stamp-green` | white | same | `--stamp-green-deep` |
+| Primary | `--accent` | white | same | `--accent-deep` |
 | Secondary | `--paper` | `--ink` | `--rule-strong` | `--paper-quiet` |
 | Quiet | transparent | `--ink-muted` | none | `--paper-quiet`, text `--ink` |
-| Danger | `--paper` | `--stamp-red-deep` | `#d9b7b3` | `--stamp-red-wash` |
+| Danger | `--paper` | `--red-deep` | `--red-edge` | `--red-wash` |
 
 One primary action per view. Destruction is a *bordered* button, never a red
 slab: it should look serious, not eager to be clicked. Disabled buttons keep
@@ -466,17 +513,17 @@ like it while they write.
   into chip soup and stops meaning anything.
 - **Optional:** the word `optional` in `--ink-muted` beside the label.
 - **Help:** 13px `--ink-muted` below the label, above the field.
-- **Focus:** pointer focus shifts the border to `--stamp-green` and adds a 3px
-  `--stamp-green-wash` glow — warm rather than shouted, which matters when a
+- **Focus:** pointer focus shifts the border to `--accent` and adds a 3px
+  `--accent-wash` glow — warm rather than shouted, which matters when a
   student is mid-sentence on something uncomfortable. Keyboard focus keeps the
   global 3px outline as well, and the glow steps aside so the two never stack.
   No control anywhere sets `outline: none`.
-- **Error:** `aria-invalid="true"` → border `--stamp-red`, fill `#fffbfa`, and a
+- **Error:** `aria-invalid="true"` → border `--red`, fill `#fffbfa`, and a
   `FieldError` wired via `aria-describedby` carrying a drawn warning icon and a
   sentence that names the problem *and* the fix.
 - **Choices:** radio and checkbox rows are full-width 38px targets with a 1px
-  border; checked fills `--stamp-green-wash` and shifts the border to
-  `#a9c8b3` through `:has(input:checked)`. Native inputs are kept and tinted
+  border; checked fills `--accent-wash` and shifts the border to
+  `--accent-edge` through `:has(input:checked)`. Native inputs are kept and tinted
   with `accent-color`.
 - **Search** is a plain GET form. Filters are `<details>` disclosures. Both work
   before hydration.
@@ -495,7 +542,8 @@ gone. Decorative icons are `aria-hidden`; an icon-only control carries an
 ## 7. Navigation behaviour
 
 **Chrome, not brand.** A 52px white top bar with a 1px `--rule-strong` bottom
-edge. It carries the product mark (a 24px green square with `cf`), the current
+edge. It carries the product mark (a 24px `--ink` square with `cf` — identity,
+not action, so it does not take the accent), the current
 context, and the account. There is no coloured brand band; the board's identity
 comes from the board, not from a stripe of paint.
 
@@ -526,6 +574,61 @@ Rules that hold across every route:
   authorization — every page re-checks.
 - **Real counts only.** A count pill with a decorative number is a defect.
 - `aria-current` marks the active rail item and the selected list row.
+
+### The rail holds destinations. Filters go in the list pane.
+
+A dimension the reader narrows *by* — week, state, topic, time — is a filter, and
+it belongs to the list it narrows, as a `<details>` disclosure on the filter
+strip. Putting one in the rail costs a row per value: the review inbox's week
+list grew to twelve rail rows, pushed the section's real destinations to the top
+of a 24-row rail, and duplicated a filter the list pane already had.
+
+The filter strip prints only the narrowings actually in force. A strip that lists
+every dimension's "everything" value is longer than the pane and ellipsises away
+the part that matters.
+
+---
+
+## 7a. Information hierarchy
+
+Every page answers three questions, in this order, and the layout is judged on
+whether it does:
+
+1. **Where am I?** The page title names the place and matches the rail item that
+   leads here. A greeting is not an answer; neither is a third name for a
+   destination the bar and rail already name two other ways.
+2. **What is the main action?** It sits **in the page header**, beside the title,
+   as the one primary button. Never at the bottom of a list — a reader with forty
+   courses would have to scroll past all of them to create the forty-first.
+3. **What should I do next?** Empty states carry the action that fills them, and
+   a row's onward link uses the same wording as the destination it opens.
+
+Rules that follow from that:
+
+- **One primary per view.** A mode switch, a segmented choice and a filter are
+  not primary actions and must not be styled as one (`.segment`, not two filled
+  buttons).
+- **Destructive actions never lead.** They come last, and behind a disclosure if
+  the surface's real work is something else. The review inbox opened on a
+  validity dropdown and a red *Remove participation credit* button; answering is
+  the work, so credit removal now sits closed at the foot of the pane.
+- **Occasional forms are disclosed, not standing.** A create-or-configure form
+  that is always expanded takes the page's best space and buries its own submit.
+  It becomes a `<details class="disclose">` whose summary is the action's name,
+  or — when a header action already names it — a region rendered only when the
+  URL asks for it (`?new=1`), so the entry point exists exactly once.
+- **Order by frequency.** Section setup leads with the weekly schedule a teacher
+  returns to, not the fourteen-checkbox staff form set once a term.
+- **Equivalent actions match.** The same destination is worded and placed the
+  same way everywhere — "Review inbox" at the end of a row, on the home card, in
+  the courses list, and in the rail.
+
+### Progressive disclosure — `.disclose`
+
+`<details class="disclose">` with a rotating chevron: closed it costs one
+control's height, open it is an ordinary bordered region. `.disclose--inset`
+makes it one row of the notice it sits inside rather than a box within a box.
+Native `<details>`, so it works before hydration and its state is real.
 
 ---
 
@@ -561,7 +664,7 @@ survives colourblindness, grayscale printing and low contrast.
 
 | Tone | Shape | Means |
 |---|---|---|
-| green | filled square | open, submitted, published, valid, confirmed, counted |
+| accent | filled square | open, submitted, published, valid, confirmed, counted |
 | amber | filled triangle | needs review, scheduled, pending, draft, flagged, private reply |
 | red | filled diamond | invalid, failed, rejected, not counted, privacy risk |
 | neutral | hollow square | closed, archived, skipped, not started |
@@ -592,7 +695,7 @@ first line naming the problem, and a sentence naming the recovery. Field-level
 errors are wired through `aria-describedby` and never replace the value the
 person typed.
 
-**Success.** A green-wash alert with `role="status"`, stating what changed and
+**Success.** An accent-wash alert with `role="status"`, stating what changed and
 what is now true — "Published to this section, anonymously." Success after an
 irreversible action also states the irreversibility.
 
@@ -635,8 +738,13 @@ Hard rules. Each one is currently satisfied; breaking one is a regression.
 2. No `box-shadow` at rest. Shadows exist only on the drawer and the filter menu.
 3. No glassmorphism, backdrop blur, gradient text, glow, or floating blobs.
 4. No purple, no gradient brand bar, no coloured chrome band of any hue.
-5. No second accent colour. Green is the only accent; amber and red are signals
-   under §3's reserve rules.
+5. No second accent colour. The deep blue-green is the only accent; amber and
+   red are signals under §3's reserve rules.
+5a. No accent on decoration. The accent is a primary button, a link, active
+   navigation, focus, a checked choice, or a positive state — never a brand
+   mark, a container fill, an input stroke, an icon tint, a heading, or a chart
+   bar. This is how it stayed meaningful; spending it everywhere is how the
+   previous version stopped meaning anything.
 6. No category colour spectrum. Categories are words plus shapes.
 7. No coloured `border-left` above 1px.
 8. No decorative illustration, hero metric, sparkline, progress ring, or
@@ -678,7 +786,60 @@ Hard rules. Each one is currently satisfied; breaking one is a regression.
     is a hard invariant.
 23. No modal for a task that needs neither interruption nor protected focus.
 24. No animation beyond a 120ms background/border transition on interactive
-    elements; `prefers-reduced-motion: reduce` kills all of it globally.
+    elements, plus the disclosure chevron's 120ms rotation, which describes
+    state; `prefers-reduced-motion: reduce` kills all of it globally.
+
+**Hierarchy** (see §7a)
+
+25. No page-level primary action below the content it acts on. It belongs in the
+    page header beside the title.
+26. No permanently-expanded occasional form. It is a `.disclose`, or a region
+    the URL opens.
+27. No destructive control above the surface's actual work.
+28. No two entry points, side by side, for one action — a header button and a
+    standing summary with the same label is one too many.
+29. No badge for the absence of a state ("Standard", "Automatic" on every row).
+    A stamp that appears on most rows distinguishes nothing.
+30. No empty state without the action that fills it, and no empty state rendered
+    between two populated panels.
+31. No explanatory paragraph repeated across routes, and none parked in the rail
+    footer. Explanation earns its place only where it prevents a likely mistake,
+    states a privacy or anonymity rule, explains an unusual state, or is needed
+    to finish the task.
+32. No filter in the rail. Filters belong to the list they narrow.
+
+---
+
+## 11a. The second pass — what it corrected and why
+
+The first redesign fixed the visual language and left the **product** decisions
+underneath it wrong. A review of the running application found three classes of
+defect; the corrections are §3 (palette), §7a (hierarchy) and anti-patterns
+25–32. The full route-by-route list, with the reasoning for each, is
+[docs/UI-CORRECTION-LIST.md](docs/UI-CORRECTION-LIST.md).
+
+The three things that were actually wrong:
+
+1. **Page-level create actions sat at the bottom of the page**, below the list
+   they added to — on courses, templates, and the question backlog — so a
+   teacher with many rows had to scroll past all of them to add one. And the
+   review inbox opened on a red *Remove participation credit* button, above the
+   student's words and above the composers that do the page's real work.
+2. **Explanation had accumulated past the point of being read.** Duplicated
+   explainers across routes, an `AUTOMATIC` stamp on twenty of twenty-five audit
+   rows, a `STANDARD` badge encoding the absence of a role, two panels of
+   green-washed instructional prose on the student form, the same fact printed
+   twice in one claim row, and a copy contradiction about the one rule students
+   care about (a submitted week *is* editable until its deadline; two surfaces
+   said it is not).
+3. **The accent was doing decoration**, so it had stopped meaning "click this" —
+   and being an institutional forest green on an olive ground, it read as the
+   university rather than as the product.
+
+The test of whether this holds is not that it looks calmer. It is: the primary
+action is in the header on every page that has one, the destructive one is last,
+nothing explains itself twice, and the accent appears only where something can
+be acted on.
 
 ---
 

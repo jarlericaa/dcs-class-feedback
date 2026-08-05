@@ -190,15 +190,17 @@ export function RosterImport({
         className="notice notice--pad"
         encType="multipart/form-data"
       >
+        {/* A segmented choice, not two primary buttons. Styling the selected
+            mode as primary put two filled buttons above the page's actual
+            primary action and made a mode switch look like the thing to do. */}
         <div
-          className="row"
+          className="segment"
           role="group"
           aria-label="How to provide the class list"
-          style={{ marginBottom: 12 }}
         >
           <button
             type="button"
-            className={`button ${mode === "file" ? "button--primary" : "button--secondary"}`}
+            className="segment__option"
             aria-pressed={mode === "file"}
             onClick={() => setMode("file")}
           >
@@ -206,7 +208,7 @@ export function RosterImport({
           </button>
           <button
             type="button"
-            className={`button ${mode === "paste" ? "button--primary" : "button--secondary"}`}
+            className="segment__option"
             aria-pressed={mode === "paste"}
             onClick={() => setMode("paste")}
           >
@@ -253,11 +255,8 @@ export function RosterImport({
         )}
 
         <div className="form-actions">
-          <p className="muted small" style={{ margin: 0 }}>
-            Previewing changes nothing.
-          </p>
           <button
-            className="button button--secondary"
+            className="button button--primary"
             type="submit"
             name="intent"
             value="preview"

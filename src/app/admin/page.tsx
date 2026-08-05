@@ -38,7 +38,7 @@ export default async function AdminPage({
           isTeacher: user.isTeacher,
           isPlatformAdmin: false,
         })}
-        title="Platform administration"
+        title="Platform admin"
       >
         <AccessDenied what="platform administration" />
       </AppShell>
@@ -90,7 +90,7 @@ export default async function AdminPage({
           ]}
         />
       }
-      title="Accounts and roles"
+      title="Accounts"
     >
       <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
@@ -113,15 +113,9 @@ export default async function AdminPage({
           </button>
         </form>
 
+        {/* The panel head used to repeat the page title and its own row count.
+            The page title names the thing; the rows are the count. */}
         <section className="notice">
-          <div className="notice__head">
-            <div>
-              <h2>Accounts</h2>
-              <p>
-                {accounts.length} account{accounts.length === 1 ? "" : "s"}
-              </p>
-            </div>
-          </div>
           <ul className="data-list">
             {accounts.map((account) => (
               <li key={account.id}>
@@ -135,11 +129,11 @@ export default async function AdminPage({
                   {account.isPlatformAdmin && (
                     <Stamp tone="neutral">Admin</Stamp>
                   )}
-                  {account.isTeacher ? (
-                    <Stamp tone="green">Teacher</Stamp>
-                  ) : (
-                    <Stamp tone="neutral">Standard</Stamp>
-                  )}
+                  {/* Only a granted role is stamped. "Standard" was a badge
+                      for the ABSENCE of one, on most rows, distinguishing
+                      nothing. The button beside it already says which way the
+                      change goes. */}
+                  {account.isTeacher && <Stamp tone="green">Teacher</Stamp>}
                   {!account.active && <Stamp tone="red">Deactivated</Stamp>}
                   <form action={toggleTeacher} className="inline-form">
                     <input type="hidden" name="email" value={account.email} />

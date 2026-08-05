@@ -415,14 +415,14 @@ export function WeeklyForm({
           <legend>
             {config.studentQuestionPrompt ?? "Anything you want to raise?"}
           </legend>
+          {/* One line, not two paragraphs. What a student needs before typing
+              is the privacy consequence — that an answer may go to the whole
+              class, reworded, without their name. How staff track items
+              internally is not their concern. */}
           <p className="own-item__note">
-            <span className="optional-mark">Optional</span>
-          </p>
-          <p className="own-item__note">
-            Each question is tracked separately, so staff can answer them one at
-            a time. They can reply to you privately, or rewrite a question and
-            publish the answer to the whole class — your classmates never see
-            your name or your original wording.
+            <span className="optional-mark">Optional.</span> Staff may reply
+            privately, or rewrite the question and answer it for the whole class
+            — never with your name or your own wording.
           </p>
 
           {questionItems.map((item, index) => {
@@ -430,18 +430,21 @@ export function WeeklyForm({
             const readOnly = locked || !item.editable;
             return (
               <div key={item.clientKey} className="own-item__block">
-                <div className="own-item__block-head">
-                  <h3 className="label">Question {index + 1}</h3>
-                  {questionItems.length > 1 && !readOnly && (
-                    <button
-                      type="button"
-                      className="button button--quiet button--small"
-                      onClick={() => removeQuestion(item.clientKey)}
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
+                {/* "Question 1" numbers nothing when only one is allowed. */}
+                {config.maxStudentQuestions > 1 && (
+                  <div className="own-item__block-head">
+                    <h3 className="label">Question {index + 1}</h3>
+                    {questionItems.length > 1 && !readOnly && (
+                      <button
+                        type="button"
+                        className="button button--quiet button--small"
+                        onClick={() => removeQuestion(item.clientKey)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 {!item.editable && !locked && (
                   <Alert variant="info">
@@ -548,12 +551,11 @@ export function WeeklyForm({
                   : "optional-mark"
               }
             >
-              {config.generalCommentRequired ? "Required" : "Optional"}
-            </span>
-          </p>
-          <p className="own-item__note">
-            A general comment, kept separate from your questions. It is never
-            published to the class as a Q&amp;A entry.
+              {config.generalCommentRequired ? "Required." : "Optional."}
+            </span>{" "}
+            {/* Kept: it is the difference between this box and the one above,
+                and a student could otherwise expect an answer here. */}
+            Never published to the class.
           </p>
           <div className="field-row">
             <label className="visually-hidden" htmlFor="general_comment">

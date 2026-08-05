@@ -193,9 +193,16 @@ export default async function PublicationsPage({
         )}
 
         {editable.length === 0 ? (
-          <EmptyState title="Nothing waiting to publish">
-            Drafts and scheduled answers wait here until they go out. Start one
-            from a submission in the review inbox.
+          <EmptyState
+            title="Nothing waiting to publish"
+            action={{
+              href: `/teach/sections/${sectionId}/review`,
+              label: "Review inbox",
+            }}
+            primary
+          >
+            Drafts and scheduled answers wait here. You start one from a
+            submission.
           </EmptyState>
         ) : (
           editable.map(({ answer, sourceCount }) => (

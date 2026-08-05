@@ -10,6 +10,7 @@ import {
   EmptyState,
   Figure,
 } from "@/components/ui";
+import { IconDownload } from "@/components/ui/icons";
 import { getParticipationOverview } from "@/modules/participation";
 import { toShellUser } from "@/lib/session";
 
@@ -68,11 +69,37 @@ export default async function ParticipationPage({
         />
       }
       title="Participation"
+      /* The three exports were a titled card whose whole body was these three
+         buttons. They are what this page is for, so they sit in its header. */
+      actions={
+        <>
+          <a
+            className="button button--secondary"
+            href={exportHref("weekly_matrix")}
+          >
+            <IconDownload size={15} />
+            Weekly matrix
+          </a>
+          <a
+            className="button button--secondary"
+            href={exportHref("participants")}
+          >
+            <IconDownload size={15} />
+            Participating students
+          </a>
+          <a className="button button--secondary" href={exportHref("detailed")}>
+            <IconDownload size={15} />
+            Detailed responses
+          </a>
+        </>
+      }
     >
       <div className="stack-4">
+        {/* Privacy, and it sits with the controls it describes rather than at
+            the top of a page the reader may only be reading. */}
         <Alert
           variant="warning"
-          title="These files contain student names and numbers"
+          title="Those CSVs carry student names and numbers"
         >
           Every download is recorded in the audit history with your name.
         </Alert>
@@ -86,34 +113,6 @@ export default async function ParticipationPage({
           />
           <Figure value={summary.neverParticipated} label="never participated" />
         </div>
-
-        <section className="notice">
-          <div className="notice__head">
-            <div>
-              <h2>Export</h2>
-            </div>
-          </div>
-          <div className="notice__body row">
-            <a
-              className="button button--secondary"
-              href={exportHref("weekly_matrix")}
-            >
-              Weekly matrix CSV
-            </a>
-            <a
-              className="button button--secondary"
-              href={exportHref("participants")}
-            >
-              Participating students CSV
-            </a>
-            <a
-              className="button button--secondary"
-              href={exportHref("detailed")}
-            >
-              Detailed responses CSV
-            </a>
-          </div>
-        </section>
 
         {summary.cycleCount === 0 || students.length === 0 ? (
           <EmptyState title="Nothing to report yet">
