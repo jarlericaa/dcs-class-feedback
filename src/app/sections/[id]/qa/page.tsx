@@ -2,8 +2,7 @@ import Link from "next/link";
 import { requireUser, toShellUser } from "@/lib/session";
 import { formatDateTime } from "@/lib/datetime";
 import {
-  avatarColour,
-  categoryClass,
+  categoryShape,
   categoryShortLabel,
   groupByDay,
   QUESTION_CATEGORIES,
@@ -14,29 +13,27 @@ import {
   ListPane,
   WorkspaceShell,
 } from "@/components/layout/workspace-shell";
-import {
-  staffSectionNav,
-  studentSectionNav,
-} from "@/components/layout/nav";
-import { AccessDenied } from "@/components/ui";
+import { staffSectionNav, studentSectionNav } from "@/components/layout/nav";
+import { AccessDenied, Category, Stamp } from "@/components/ui";
+import { CategoryMark } from "@/components/ui/icons";
 import { listSectionQa } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
 import { getSectionWithCourse, listSectionsForUser } from "@/modules/catalog";
 
 /**
  * Section Q&A archive — the class-facing knowledge archive, as a three-pane
- * workspace: course/category rail, dense searchable list, selected answer.
+ * workspace: section/topic rail, dense searchable list, selected answer.
  *
  * Access is enforced by listSectionQa (enrolled students and section staff
- * only). Its projection has no source links, identities or drafts, so nothing
- * rendered here can reveal who asked.
+ * only). Its projection carries no source links, identities or drafts, so
+ * nothing rendered here can reveal who asked.
  */
 
 const TIME_FILTERS = [
-  { key: "all", label: "All" },
-  { key: "week", label: "This week" },
-  { key: "month", label: "This month" },
-  { key: "legacy", label: "Earlier semesters" },
+  { key: "all", label: "Everything" },
+  { key: "week", label: "Published this week" },
+  { key: "month", label: "Published this month" },
+  { key: "legacy", label: "Carried over from earlier semesters" },
 ] as const;
 
 type TimeFilter = (typeof TIME_FILTERS)[number]["key"];
@@ -77,8 +74,7 @@ export default async function QaArchivePage({
 
   const { section, course } = await getSectionWithCourse(sectionId);
   const access = await authz.getSectionAccess(user.id, sectionId);
-  const { staffSections, studentSections, courseById } =
-    await listSectionsForUser(user.id);
+  const { staffSections, studentSections } = await listSectionsForUser(user.id);
 
   const base = `/sections/${sectionId}/qa`;
   const navGroups = access?.staff
@@ -102,30 +98,31 @@ export default async function QaArchivePage({
   const filter = (TIME_FILTERS.find((f) => f.key === sp.filter)?.key ??
     "all") as TimeFilter;
   const now = Date.now();
-  const visible = entries.filter((entry) => {
-    const at = entry.publishedAt?.getTime() ?? 0;
+  const withinFilter = (publishedAt: Date | null, origin: string | null) => {
+    const at = publishedAt?.getTime() ?? 0;
     switch (filter) {
       case "week":
         return now - at < 7 * 86_400_000;
       case "month":
         return now - at < 30 * 86_400_000;
       case "legacy":
-        return entry.sourceOrigin === "legacy";
+        return origin === "legacy";
       default:
         return true;
     }
-  });
-  const categoryCounts = new Map(
-    QUESTION_CATEGORIES.map((category) => [category.slug, 0]),
+  };
+
+  const visible = entries.filter((entry) =>
+    withinFilter(entry.publishedAt, entry.sourceOrigin),
   );
+  const categoryCounts = new Map(
+    QUESTION_CATEGORIES.map((category) => [category.slug as string, 0]),
+  );
+  let allCount = 0;
   for (const entry of allEntries) {
-    const at = entry.publishedAt?.getTime() ?? 0;
-    const includedByTime =
-      filter === "all" ||
-      (filter === "week" && now - at < 7 * 86_400_000) ||
-      (filter === "month" && now - at < 30 * 86_400_000) ||
-      (filter === "legacy" && entry.sourceOrigin === "legacy");
-    if (includedByTime && entry.category && categoryCounts.has(entry.category)) {
+    if (!withinFilter(entry.publishedAt, entry.sourceOrigin)) continue;
+    allCount += 1;
+    if (entry.category && categoryCounts.has(entry.category)) {
       categoryCounts.set(
         entry.category,
         categoryCounts.get(entry.category)! + 1,
@@ -143,7 +140,7 @@ export default async function QaArchivePage({
   );
   const isFiltered = !!(sp.q?.trim() || sp.category || filter !== "all");
 
-  // Courses in the rail are the user's real sections, in whichever capacity.
+  // Sections in the rail are the user's real sections, in whichever capacity.
   const railSections = [
     ...studentSections,
     ...staffSections.filter((s) => !studentSections.some((x) => x.id === s.id)),
@@ -152,49 +149,51 @@ export default async function QaArchivePage({
   return (
     <WorkspaceShell
       user={toShellUser(user)}
-      contextTitle={`${course.code} ${section.term} — Q&A`}
+      contextTitle={`${course.code} ${section.term} · Class Q&A`}
+      workspaceLabel={access?.staff ? "Staff workspace" : "Student workspace"}
       primaryAction={
         access?.staff
           ? undefined
-          : { href: `/sections/${sectionId}`, label: "Weekly form" }
+          : { href: `/sections/${sectionId}`, label: "This week's form" }
       }
       courses={railSections.map((s) => ({
         href: `/sections/${s.id}/qa`,
-        label: `${courseById.get(s.courseId)?.code ?? ""} ${s.title}`.trim(),
+        label: s.title,
         active: s.id === sectionId,
       }))}
       navGroups={navGroups}
       categories={[
         {
           slug: "all",
-          label: "All",
-          count: allEntries.filter((entry) => {
-            const at = entry.publishedAt?.getTime() ?? 0;
-            return (
-              filter === "all" ||
-              (filter === "week" && now - at < 7 * 86_400_000) ||
-              (filter === "month" && now - at < 30 * 86_400_000) ||
-              (filter === "legacy" && entry.sourceOrigin === "legacy")
-            );
-          }).length,
+          label: "All topics",
+          shape: "circle",
+          count: allCount,
           href: link({ category: undefined, selected: undefined }),
           active: !sp.category,
         },
         ...QUESTION_CATEGORIES.map((c) => ({
           slug: c.slug,
           label: c.label,
+          shape: c.shape,
           count: categoryCounts.get(c.slug) ?? 0,
           href: link({ category: c.slug, selected: undefined }),
           clearHref: link({ category: undefined, selected: undefined }),
           active: sp.category === c.slug,
         })),
       ]}
+      railFooter={
+        <p>
+          Published answers are visible to everyone in this section, and to
+          nobody outside it.
+        </p>
+      }
       selection={{
         active: !!sp.selected,
         backHref: link({ selected: undefined }),
       }}
       listPane={
         <ListPane
+          label="Published answers"
           hiddenOnMobile={!!sp.selected}
           searchAction={base}
           searchValue={sp.q}
@@ -202,6 +201,7 @@ export default async function QaArchivePage({
           hiddenFields={{ category: sp.category, filter: sp.filter }}
           filter={{
             current: filter,
+            label: "Everything",
             options: TIME_FILTERS.map((f) => ({
               key: f.key,
               label: f.label,
@@ -210,7 +210,7 @@ export default async function QaArchivePage({
           }}
         >
           {visible.length === 0 ? (
-            <p style={{ padding: "22px 16px", color: "#6b7280" }}>
+            <p className="ws-list__note">
               {isFiltered
                 ? "No published answers match. Try a different word, or clear the filters."
                 : "No answers have been published to this class yet."}
@@ -227,25 +227,18 @@ export default async function QaArchivePage({
                     aria-current={active?.id === entry.id ? "true" : undefined}
                   >
                     <span className="ws-row__top">
-                      <span className="ws-row__kind" aria-hidden="true">
-                        ?
-                      </span>
                       <span className="ws-row__title">{entry.question}</span>
                     </span>
                     <span className="ws-row__meta">
-                      <span className={categoryClass(entry.category, "label")}>
+                      <span className="category">
+                        <CategoryMark shape={categoryShape(entry.category)} />
                         {categoryShortLabel(entry.category)}
                       </span>
-                      <span>Anonymous</span>
+                      <span>Asked anonymously</span>
                       <span>{shortAgo(entry.publishedAt)}</span>
                       {entry.sourceOrigin === "legacy" && (
-                        <span title="Carried over from an earlier semester">
-                          earlier semester
-                        </span>
+                        <span>Earlier semester</span>
                       )}
-                      <span className="ws-row__count">
-                        <span aria-hidden="true">✓</span> answered
-                      </span>
                     </span>
                   </Link>
                 ))}
@@ -257,78 +250,49 @@ export default async function QaArchivePage({
     >
       {!active ? (
         <div className="ws-empty-detail">
-          <div>
-            <p style={{ fontSize: 17, marginBottom: 6 }}>
-              {isFiltered
-                ? "Nothing matches your search"
-                : "No published answers yet"}
-            </p>
-          </div>
+          <p>
+            {isFiltered
+              ? "Nothing matches your search. Try a different word, or clear the filters."
+              : "Nothing has been published to this class yet. When your teaching team answers a question for everyone, it appears here."}
+          </p>
         </div>
       ) : (
-        <>
-          <div className="ws-thread-head">
-            <h1 className="ws-thread-title">{active.question}</h1>
+        <article>
+          <h1 className="object-title">{active.question}</h1>
+          <p className="meta" style={{ marginTop: "var(--s2)" }}>
+            Asked anonymously · published{" "}
+            {formatDateTime(active.publishedAt, section.timezone)}
+            {active.sourceOrigin === "legacy" &&
+              " · carried over from an earlier semester"}
+          </p>
+          <div className="row" style={{ marginTop: "var(--s3)" }}>
+            <Category value={active.category} />
+            <Stamp tone="green">Answered</Stamp>
           </div>
 
-          <div className="ws-post">
-            <span className="ws-avatar ws-avatar--anon" aria-hidden="true">
-              ?
-            </span>
-            <div style={{ minWidth: 0 }}>
-              <p className="ws-post__who" style={{ margin: 0 }}>
-                Anonymous
-              </p>
-              <p className="ws-post__when" style={{ margin: 0 }}>
-                Published{" "}
-                {formatDateTime(active.publishedAt, section.timezone)}
-              </p>
-            </div>
-          </div>
-
-          <h2 className="ws-answers-heading">
-            {active.answers.length} {active.answers.length === 1 ? "Answer" : "Answers"}
-          </h2>
-
-          {active.answers.map((answer) => (
-            <div className="ws-answer" key={answer.id}>
-              <div className="ws-post">
-                <span
-                  className="ws-avatar"
-                  style={{ background: avatarColour(course.code) }}
-                  aria-hidden="true"
-                >
-                  {course.code.slice(0, 1).toUpperCase()}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 16,
-                    }}
-                  >
-                    <div>
-                      <p className="ws-post__who" style={{ margin: 0 }}>
-                        Teaching team
-                      </p>
-                      <p className="ws-post__when" style={{ margin: 0 }}>
-                        {formatDateTime(answer.publishedAt, section.timezone)}
-                      </p>
-                    </div>
-                    <span className="ws-endorsed">
-                      <span aria-hidden="true">✔</span> STAFF ANSWER
-                    </span>
-                  </div>
-                  <div className="ws-post__body">
+          <div className="stack-5" style={{ marginTop: "var(--s6)" }}>
+            {active.answers.length === 0 ? (
+              <p className="muted">No answer text was recorded.</p>
+            ) : (
+              active.answers.map((answer) => (
+                <section className="answer" key={answer.id}>
+                  <p className="answer__by">
+                    Answered by the teaching team ·{" "}
+                    {formatDateTime(answer.publishedAt, section.timezone)}
+                  </p>
+                  <div className="doc">
                     {answer.answer ?? "No answer text was recorded."}
                   </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </>
+                </section>
+              ))
+            )}
+          </div>
+
+          <p className="meta" style={{ marginTop: "var(--s7)" }}>
+            The wording above was written by staff for the whole class. The
+            original message and who sent it are never shown here.
+          </p>
+        </article>
       )}
     </WorkspaceShell>
   );

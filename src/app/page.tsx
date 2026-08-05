@@ -6,7 +6,8 @@ import { accountMatches } from "@/db/schema";
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
-import { Badge, EmptyState, Stat } from "@/components/ui";
+import { Alert, EmptyState, Stamp, StripLabel } from "@/components/ui";
+import { IconForward } from "@/components/ui/icons";
 import { listSectionsForUser } from "@/modules/catalog";
 import { generateMatchCandidates } from "@/modules/identity/matching";
 import { getOpenCycleForStudent } from "@/modules/forms/submission";
@@ -16,9 +17,12 @@ import { currentUserId } from "@/auth";
 import { EntryScreen } from "@/components/marketing/entry-screen";
 
 /**
- * Role-aware home. Shows the next useful action per section using REAL data
- * only — no decorative counters. Student cards never carry staff metrics and
- * staff cards never carry another section's data.
+ * Role-aware home: the board a person sees when they walk up to it.
+ *
+ * Each class is one posted notice carrying the only three things that decide
+ * what happens next — which class, what state this week is in, and when it
+ * closes. Every number is real; there are no decorative counters, and a
+ * student card never carries staff metrics.
  */
 
 type StudentCardState =
@@ -90,60 +94,71 @@ export default async function HomePage() {
   );
 
   const firstName = user.displayName.split(" ")[0] ?? "there";
-  const actionable = studentCards.filter((c) => c.state.kind === "open").length;
+  const open = studentCards.filter((c) => c.state.kind === "open");
   const hasNothing = staffCards.length === 0 && studentCards.length === 0;
+  const isStaffView = staffCards.length > 0;
 
   return (
     <AppShell
       user={toShellUser(user)}
-      workspace={staffCards.length > 0 ? "staff" : "student"}
+      workspace={isStaffView ? "staff" : "student"}
       navGroups={homeNav("/", {
         isTeacher: user.isTeacher,
         isPlatformAdmin: user.isPlatformAdmin,
       })}
-      eyebrow="Overview"
       title={`Hello, ${firstName}`}
       description={
-        actionable > 0
-          ? `You have ${actionable} weekly form${actionable === 1 ? "" : "s"} open right now.`
-          : undefined
+        open.length > 0
+          ? `${open.length} weekly form${open.length === 1 ? " is" : "s are"} open right now. Everything else can wait.`
+          : studentCards.length > 0
+            ? "Nothing is waiting on you right now."
+            : undefined
       }
+      roomy={!isStaffView}
     >
-      <div className="dashboard-grid">
-        <div className="dashboard-stack">
-          {studentCards.length > 0 && (
-            <section className="card" aria-labelledby="your-classes">
-              <div className="card__header">
-                <div>
-                  <h2 id="your-classes">Your classes</h2>
-                </div>
-              </div>
-              <div className="card__body card-stack">
-                {studentCards.map(({ section, course, state }) => (
-                  <Link
-                    className="section-card card"
-                    key={section.id}
-                    href={`/sections/${section.id}`}
-                  >
-                    <div className="section-card__top">
-                      <div>
-                        <p className="section-kicker">
+      <div className="stack-6">
+        {matchStatus === "pending" && studentCards.length > 0 && (
+          <Alert variant="info" title="Your account is still being confirmed">
+            A teacher has to match your sign-in to the class list before your
+            submissions count towards participation. You can still fill in the
+            form.
+          </Alert>
+        )}
+
+        {studentCards.length > 0 && (
+          <section aria-labelledby="your-classes">
+            <StripLabel id="your-classes" count={`${studentCards.length}`}>
+              Your classes
+            </StripLabel>
+            <div className="stack-4">
+              {studentCards.map(({ section, course, state }) => (
+                <Link
+                  className="notice section-notice"
+                  key={section.id}
+                  href={`/sections/${section.id}`}
+                >
+                  <div className="notice__body">
+                    <div className="spread">
+                      <div style={{ minWidth: 0 }}>
+                        <p className="meta">
                           {course?.code ?? ""} · {section.term}
                         </p>
-                        <h3 className="section-card__title">{section.title}</h3>
+                        <h3 className="panel-title" style={{ marginTop: 4 }}>
+                          {section.title}
+                        </h3>
                       </div>
                       {state.kind === "open" && (
-                        <Badge tone="amber">Open — action needed</Badge>
+                        <Stamp tone="amber">Open · not submitted</Stamp>
                       )}
                       {state.kind === "submitted" && (
-                        <Badge tone="green">Submitted</Badge>
+                        <Stamp tone="green">Submitted</Stamp>
                       )}
                       {state.kind === "none" && (
-                        <Badge tone="neutral">No open form</Badge>
+                        <Stamp tone="neutral">No form open</Stamp>
                       )}
                     </div>
-                    <div className="section-card__bottom">
-                      <span className="section-card__meta">
+                    <div className="section-notice__foot">
+                      <span className="meta">
                         {state.kind === "none"
                           ? "Nothing to complete right now"
                           : `Week ${state.cycleIndex} · closes ${formatDeadline(
@@ -151,49 +166,56 @@ export default async function HomePage() {
                               section.timezone,
                             )} · ${timeRemaining(state.deadlineAt)}`}
                       </span>
-                      <span className="section-card__action">
+                      <span className="section-notice__action">
                         {state.kind === "open"
-                          ? "Complete the form →"
-                          : "Open class →"}
+                          ? "Fill in the form"
+                          : state.kind === "submitted"
+                            ? "See my submissions"
+                            : "Open this class"}
+                        <IconForward size={15} />
                       </span>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
-          {staffCards.length > 0 && (
-            <section className="card" aria-labelledby="teaching-spaces">
-              <div className="card__header">
-                <div>
-                  <h2 id="teaching-spaces">Teaching spaces</h2>
-                </div>
-              </div>
-              <div className="card__body card-stack">
-                {staffCards.map(({ section, course, counts }) => (
-                  <Link
-                    className="section-card card"
-                    key={section.id}
-                    href={`/teach/sections/${section.id}/review`}
-                  >
-                    <div className="section-card__top">
-                      <div>
-                        <p className="section-kicker">
+        {staffCards.length > 0 && (
+          <section aria-labelledby="teaching">
+            <StripLabel id="teaching" count={`${staffCards.length}`}>
+              Sections you teach
+            </StripLabel>
+            <div className="stack-4">
+              {staffCards.map(({ section, course, counts }) => (
+                <Link
+                  className="notice section-notice"
+                  key={section.id}
+                  href={`/teach/sections/${section.id}/review`}
+                >
+                  <div className="notice__body">
+                    <div className="spread">
+                      <div style={{ minWidth: 0 }}>
+                        <p className="meta">
                           {course?.code ?? ""} · {section.term}
                         </p>
-                        <h3 className="section-card__title">{section.title}</h3>
+                        <h3 className="panel-title" style={{ marginTop: 4 }}>
+                          {section.title}
+                        </h3>
                       </div>
                       {counts && counts.needsReview > 0 ? (
-                        <Badge tone="amber">
-                          {counts.needsReview} needs review
-                        </Badge>
+                        <Stamp tone="amber">
+                          {counts.needsReview} need review
+                        </Stamp>
+                      ) : counts ? (
+                        <Stamp tone="green">Nothing waiting</Stamp>
                       ) : (
-                        <Badge tone="neutral">Staff</Badge>
+                        <Stamp tone="neutral">Staff access</Stamp>
                       )}
                     </div>
-                    <div className="section-card__bottom">
-                      <span className="section-card__meta">
+                    <div className="section-notice__foot">
+                      <span className="meta">
                         {counts
                           ? `${counts.total} submission${counts.total === 1 ? "" : "s"} · ${counts.answered} answered${
                               counts.invalid > 0
@@ -202,58 +224,53 @@ export default async function HomePage() {
                             }`
                           : "Open the section workspace"}
                       </span>
-                      <span className="section-card__action">
-                        Open workspace →
+                      <span className="section-notice__action">
+                        Open the review inbox
+                        <IconForward size={15} />
                       </span>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
-          {hasNothing && (
-            <EmptyState
-              title={
-                matchStatus === "pending"
-                  ? "Your account is waiting to be confirmed"
-                  : matchStatus === "unmatched"
-                    ? "We could not match you to a class list"
-                    : "No sections yet"
-              }
-            />
-          )}
-        </div>
+        {(user.isTeacher || user.isPlatformAdmin) && (
+          <section aria-labelledby="elsewhere">
+            <StripLabel id="elsewhere">Elsewhere</StripLabel>
+            <div className="row">
+              {user.isTeacher && (
+                <Link className="button button--secondary" href="/teach/courses">
+                  Courses and sections
+                </Link>
+              )}
+              {user.isPlatformAdmin && (
+                <Link className="button button--secondary" href="/admin">
+                  Platform administration
+                </Link>
+              )}
+            </div>
+          </section>
+        )}
 
-        <aside className="dashboard-stack">
-          {studentCards.length > 0 && (
-            <section className="card card--padded">
-              <p className="section-kicker">Your week</p>
-              <div className="stat-row" style={{ marginTop: 14 }}>
-                <Stat value={studentCards.length} label="classes" />
-                <Stat value={actionable} label="forms open" />
-              </div>
-            </section>
-          )}
-
-          {user.isTeacher && (
-            <section className="card card--padded">
-              <p className="section-kicker">Teaching</p>
-              <Link className="button button--secondary" href="/teach/courses">
-                Manage courses
-              </Link>
-            </section>
-          )}
-
-          {user.isPlatformAdmin && (
-            <section className="card card--padded">
-              <p className="section-kicker">Platform</p>
-              <Link className="button button--secondary" href="/admin">
-                Platform administration
-              </Link>
-            </section>
-          )}
-        </aside>
+        {hasNothing && (
+          <EmptyState
+            title={
+              matchStatus === "pending"
+                ? "Your account is waiting to be confirmed"
+                : matchStatus === "unmatched"
+                  ? "We could not match you to a class list"
+                  : "You are not in any class sections yet"
+            }
+          >
+            {matchStatus === "pending"
+              ? "A teacher has to confirm that this sign-in belongs to you before your classes appear. Nothing is confirmed automatically."
+              : matchStatus === "unmatched"
+                ? "Your sign-in name did not match anyone on a class list. Ask the teacher who manages your section to link your account."
+                : "Once a teacher adds you to a section, its weekly form appears here."}
+          </EmptyState>
+        )}
       </div>
     </AppShell>
   );

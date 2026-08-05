@@ -3,7 +3,14 @@ import Link from "next/link";
 import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { studentSectionNav } from "@/components/layout/nav";
-import { AccessDenied, Badge, EmptyState } from "@/components/ui";
+import {
+  AccessDenied,
+  Breadcrumbs,
+  EmptyState,
+  Notice,
+  Quote,
+  Stamp,
+} from "@/components/ui";
 import { getStudentHistory } from "@/modules/publishing";
 import { AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
@@ -54,9 +61,19 @@ export default async function HistoryPage({
       user={toShellUser(user)}
       workspace="student"
       navGroups={studentSectionNav(sectionId, `/sections/${sectionId}/history`)}
-      contextLabel={section.title}
-      eyebrow={`${course.code} · ${section.term}`}
+      contextLabel={`${course.code} · ${section.title}`}
+      breadcrumbs={
+        <Breadcrumbs
+          items={[
+            { href: "/", label: "Overview" },
+            { href: `/sections/${sectionId}`, label: `${course.code} ${section.term}` },
+            { label: "My submissions" },
+          ]}
+        />
+      }
       title="My submissions"
+      description="Only you and your teaching team can see this page. Submitted forms cannot be edited or withdrawn."
+      roomy
     >
       {history.length === 0 ? (
         <EmptyState
@@ -65,100 +82,105 @@ export default async function HistoryPage({
             href: `/sections/${sectionId}`,
             label: "Go to this week's form",
           }}
-        />
+        >
+          Once you send a weekly form it stays here, together with any reply
+          your teaching team writes back to you.
+        </EmptyState>
       ) : (
-        <div className="stack-gap">
-          <p className="muted small" style={{ margin: 0 }}>
+        <div className="stack-4">
+          <p className="meta">
             {history.length} submission{history.length === 1 ? "" : "s"}
-            {answeredCount > 0 && ` · ${answeredCount} answered`}
+            {answeredCount > 0 &&
+              ` · ${answeredCount} with a reply or published answer`}
           </p>
-          <section className="card">
+
+          <Notice flush>
             {history.map((entry) => (
-              <article className="history-item" key={entry.responseId}>
-                <div
-                  className="row-gap"
-                  style={{ justifyContent: "space-between" }}
-                >
-                  <div>
-                    <h2>Week {entry.cycleIndex}</h2>
-                    <p className="history-item__meta">
-                      Submitted{" "}
-                      {formatDateTime(entry.submittedAt, section.timezone)}
-                    </p>
-                  </div>
-                  <Badge tone="green">Submitted</Badge>
+              <article className="record" key={entry.responseId}>
+                <div className="record__head">
+                  <h2>Week {entry.cycleIndex}</h2>
+                  <span className="meta">
+                    Submitted{" "}
+                    {formatDateTime(entry.submittedAt, section.timezone)}
+                  </span>
                 </div>
 
                 {entry.answers.length > 0 && (
-                  <dl style={{ margin: "14px 0 0" }}>
+                  <dl className="answers">
                     {entry.answers.map((answer, index) => (
-                      <div key={index} style={{ marginBottom: 10 }}>
-                        <dt className="muted small" style={{ fontWeight: 700 }}>
-                          {answer.prompt}
-                        </dt>
-                        <dd style={{ margin: "2px 0 0" }}>
-                          {renderAnswer(answer)}
-                        </dd>
+                      <div key={index}>
+                        <dt>{answer.prompt}</dt>
+                        <dd>{renderAnswer(answer)}</dd>
                       </div>
                     ))}
                   </dl>
                 )}
 
                 {entry.items.map((item) => (
-                  <div key={item.id} style={{ marginTop: 16 }}>
-                    <div className="source-box source-box--original">
-                      <p className="source-box__label">
-                        Your {item.submissionType}
-                      </p>
-                      <p>{item.originalText}</p>
-                    </div>
-                    <div className="row-gap" style={{ marginTop: 10 }}>
-                      {item.status === "answered" ? (
-                        <Badge tone="green">Answered</Badge>
-                      ) : (
-                        <Badge tone="neutral">Submitted</Badge>
-                      )}
-                    </div>
+                  <div className="stack-3" key={item.id} style={{ marginTop: "var(--s5)" }}>
+                    <Quote label={`Your ${item.submissionType}`}>
+                      {item.originalText}
+                    </Quote>
 
                     {item.privateResponses.map((reply, index) => (
-                      <div className="reply-box" key={index}>
-                        <strong>Private reply from your teaching team</strong>
-                        <p>{reply.body}</p>
-                        <p className="muted small" style={{ marginTop: 6 }}>
-                          {formatDateTime(reply.createdAt, section.timezone)}
-                        </p>
-                      </div>
+                      <Quote
+                        key={index}
+                        tone="private"
+                        label={
+                          <>
+                            Private reply from your teaching team ·{" "}
+                            {formatDateTime(reply.createdAt, section.timezone)}
+                          </>
+                        }
+                      >
+                        {reply.body}
+                      </Quote>
                     ))}
 
-                    {item.publicAnswer && (
-                      <div className="reply-box">
-                        <strong>Published to your class, anonymously</strong>
-                        <p style={{ fontWeight: 650 }}>
+                    {item.publicAnswer ? (
+                      <Quote
+                        tone="public"
+                        label={
+                          <>
+                            Published to your class anonymously ·{" "}
+                            {formatDateTime(
+                              item.publicAnswer.publishedAt,
+                              section.timezone,
+                            )}
+                          </>
+                        }
+                      >
+                        <strong>
                           {item.publicAnswer.rewordedQuestion}
-                        </p>
+                        </strong>
                         {item.publicAnswer.answer && (
-                          <p style={{ marginTop: 8 }}>
+                          <>
+                            {"\n\n"}
                             {item.publicAnswer.answer}
-                          </p>
+                          </>
                         )}
-                        <p className="muted small" style={{ marginTop: 6 }}>
-                          Published{" "}
-                          {formatDateTime(
-                            item.publicAnswer.publishedAt,
-                            section.timezone,
-                          )}
+                      </Quote>
+                    ) : (
+                      item.privateResponses.length === 0 && (
+                        <p className="meta">
+                          <Stamp tone="neutral">No reply yet</Stamp>{" "}
+                          <span style={{ marginLeft: 8 }}>
+                            Your teaching team has not written back about this
+                            one.
+                          </span>
                         </p>
-                      </div>
+                      )
                     )}
                   </div>
                 ))}
               </article>
             ))}
-          </section>
-          <p className="muted small" style={{ margin: 0 }}>
-            Submitted responses cannot be edited or withdrawn.{" "}
-            <Link href={`/sections/${sectionId}/qa`}>
-              Browse the class Q&amp;A archive
+          </Notice>
+
+          <p className="meta">
+            Looking for an answer that went out to everyone?{" "}
+            <Link className="link" href={`/sections/${sectionId}/qa`}>
+              Browse the class Q&amp;A
             </Link>
             .
           </p>

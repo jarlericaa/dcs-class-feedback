@@ -72,7 +72,9 @@ export function WeeklyForm({
 
   const toggleCheckbox = (questionId: string, optionId: string) =>
     setValues((prev) => {
-      const current = Array.isArray(prev[questionId]) ? (prev[questionId] as string[]) : [];
+      const current = Array.isArray(prev[questionId])
+        ? (prev[questionId] as string[])
+        : [];
       return {
         ...prev,
         [questionId]: current.includes(optionId)
@@ -87,10 +89,10 @@ export function WeeklyForm({
   return (
     <form action={formAction} noValidate>
       {state.status === "error" && (
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: "var(--s5)" }}>
           <Alert variant="error" title="Your form was not submitted">
             {formError ??
-              `Check ${errorCount} question${errorCount === 1 ? "" : "s"} below. Everything you typed has been kept.`}
+              `${errorCount} question${errorCount === 1 ? " needs" : "s need"} an answer before this can be sent. Everything you typed has been kept.`}
           </Alert>
         </div>
       )}
@@ -99,44 +101,40 @@ export function WeeklyForm({
         const error = state.errors[question.id];
         const errorId = `error-${question.id}`;
         const describedBy =
-          [question.description ? `desc-${question.id}` : null, error ? errorId : null]
+          [
+            question.description ? `desc-${question.id}` : null,
+            error ? errorId : null,
+          ]
             .filter(Boolean)
             .join(" ") || undefined;
         const value = values[question.id];
 
         return (
-          <fieldset className="question-block" key={question.id}>
-            <legend>
-              {question.prompt}{" "}
-              {question.required ? (
-                <span className="required-mark" aria-hidden="true">
-                  *
-                </span>
-              ) : (
-                <span className="muted small">(optional)</span>
+          <fieldset className="question" key={question.id}>
+            <legend>{question.prompt}</legend>
+            <p className="question__note">
+              <span className={question.required ? "required-mark" : "optional-mark"}>
+                {question.required ? "Required" : "Optional"}
+              </span>
+              {question.description && (
+                <span id={`desc-${question.id}`}>{question.description}</span>
               )}
-              {question.required && (
-                <span className="visually-hidden"> (required)</span>
-              )}
-            </legend>
-            {question.description && (
-              <p className="question-description" id={`desc-${question.id}`}>
-                {question.description}
-              </p>
-            )}
+            </p>
 
-            {(question.type === "short_answer" || question.type === "paragraph") && (
+            {(question.type === "short_answer" ||
+              question.type === "paragraph") && (
               <textarea
                 className="textarea-field"
                 name={`q_${question.id}`}
-                rows={question.type === "paragraph" ? 4 : 2}
+                rows={question.type === "paragraph" ? 5 : 2}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
               />
             )}
 
-            {(question.type === "multiple_choice" || question.type === "checkboxes") && (
+            {(question.type === "multiple_choice" ||
+              question.type === "checkboxes") && (
               <div
                 className="choice-list"
                 role="group"
@@ -150,7 +148,9 @@ export function WeeklyForm({
                   return (
                     <label className="choice" key={option.stableId}>
                       <input
-                        type={question.type === "checkboxes" ? "checkbox" : "radio"}
+                        type={
+                          question.type === "checkboxes" ? "checkbox" : "radio"
+                        }
                         name={`q_${question.id}`}
                         value={option.stableId}
                         checked={checked}
@@ -174,6 +174,7 @@ export function WeeklyForm({
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
+                style={{ maxWidth: 320 }}
               >
                 <option value="">Select an option…</option>
                 {question.options.map((option) => (
@@ -237,20 +238,26 @@ export function WeeklyForm({
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
-                style={{ maxWidth: 220 }}
+                style={{ maxWidth: 200 }}
               />
             )}
 
-            <div style={{ marginTop: 8 }}>
+            <div className="question__error">
               <FieldError id={errorId} message={error} />
             </div>
           </fieldset>
         );
       })}
 
-      <fieldset className="student-item">
-        <legend>Your own question or feedback (optional)</legend>
-        <div className="form-grid" style={{ marginBottom: 12 }}>
+      <fieldset className="own-item">
+        <legend>Anything you want to raise?</legend>
+        <p className="own-item__note">
+          Optional, and the only part of this form written entirely in your own
+          words. Staff can reply to you privately here. If the whole class would
+          benefit from the answer, they rewrite the question first and publish it
+          without your name — your original wording is never shown to classmates.
+        </p>
+        <div className="form-grid" style={{ marginBottom: "var(--s3)" }}>
           <div className="field-row">
             <label htmlFor="item_type">What is this?</label>
             <select
@@ -260,15 +267,15 @@ export function WeeklyForm({
               value={itemType}
               onChange={(e) => setItemType(e.target.value)}
             >
-              <option value="question">Question</option>
+              <option value="question">A question</option>
               <option value="feedback">Feedback</option>
-              <option value="concern">Concern</option>
-              <option value="clarification">Clarification</option>
-              <option value="suggestion">Suggestion</option>
+              <option value="concern">A concern</option>
+              <option value="clarification">A clarification</option>
+              <option value="suggestion">A suggestion</option>
             </select>
           </div>
           <div className="field-row">
-            <label htmlFor="item_category">Topic area</label>
+            <label htmlFor="item_category">What is it about?</label>
             <select
               id="item_category"
               className="select-field"
@@ -278,17 +285,19 @@ export function WeeklyForm({
             >
               <option value="content">Course content</option>
               <option value="logistics">Class logistics</option>
-              <option value="misc">Other</option>
+              <option value="misc">Something else</option>
             </select>
           </div>
         </div>
         <div className="field-row">
-          <label htmlFor="item_text">Your message</label>
+          <label htmlFor="item_text">
+            Your message <span className="optional-mark">optional</span>
+          </label>
           <textarea
             id="item_text"
             className="textarea-field"
             name="item_text"
-            rows={4}
+            rows={5}
             maxLength={10000}
             value={itemText}
             onChange={(e) => setItemText(e.target.value)}
@@ -300,8 +309,15 @@ export function WeeklyForm({
         </div>
       </fieldset>
 
-      <div className="form-actions">
-        <button className="button button--primary" type="submit" disabled={pending}>
+      <div className="submit-bar">
+        <p className="submit-bar__note">
+          Sending is final. You cannot edit or withdraw this form afterwards.
+        </p>
+        <button
+          className="button button--primary"
+          type="submit"
+          disabled={pending}
+        >
           {pending ? "Submitting…" : "Submit this week's form"}
         </button>
       </div>
@@ -309,7 +325,11 @@ export function WeeklyForm({
   );
 }
 
-function scaleValues(scale: { min: number; max: number; step: number }): number[] {
+function scaleValues(scale: {
+  min: number;
+  max: number;
+  step: number;
+}): number[] {
   const step = scale.step > 0 ? scale.step : 1;
   const values: number[] = [];
   for (let v = scale.min; v <= scale.max; v += step) values.push(v);

@@ -6,7 +6,14 @@ import { currentUserId } from "@/auth";
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { studentSectionNav } from "@/components/layout/nav";
-import { AccessDenied, Alert, Badge, EmptyState } from "@/components/ui";
+import {
+  AccessDenied,
+  Alert,
+  Breadcrumbs,
+  EmptyState,
+  Notice,
+  Stamp,
+} from "@/components/ui";
 import {
   WeeklyForm,
   type FormQuestionView,
@@ -64,26 +71,32 @@ export default async function SectionFormPage({
     user: toShellUser(user),
     workspace: "student" as const,
     navGroups: studentSectionNav(sectionId, `/sections/${sectionId}`),
-    contextLabel: section.title,
+    contextLabel: `${course.code} · ${section.title}`,
+    roomy: true,
+    breadcrumbs: (
+      <Breadcrumbs
+        items={[
+          { href: "/", label: "Overview" },
+          { label: `${course.code} ${section.term}` },
+        ]}
+      />
+    ),
   };
 
   if (!current) {
     return (
-      <AppShell
-        {...shell}
-        eyebrow={`${course.code} · ${section.term}`}
-        title={section.title}
-      >
-        <EmptyState title="No form is open at the moment" />
-        <div
-          className="row-gap"
-          style={{ marginTop: 16, justifyContent: "center" }}
-        >
+      <AppShell {...shell} title={section.title}>
+        <EmptyState title="No form is open at the moment">
+          Weekly forms open on a schedule set by your teaching team. When the
+          next one opens it appears here, and you will have until its deadline
+          to send it.
+        </EmptyState>
+        <div className="row" style={{ marginTop: "var(--s4)" }}>
           <Link
             className="button button--secondary"
             href={`/sections/${sectionId}/qa`}
           >
-            Class Q&amp;A archive
+            Class Q&amp;A
           </Link>
           <Link
             className="button button--quiet"
@@ -102,35 +115,28 @@ export default async function SectionFormPage({
     return (
       <AppShell
         {...shell}
-        eyebrow={`${course.code} · Week ${cycle.cycleIndex}`}
-        title="You have completed this week's form"
+        title={`Week ${cycle.cycleIndex} is done`}
+        status={<Stamp tone="green">Submitted</Stamp>}
       >
-        <div className="stack-gap">
+        <div className="stack-5">
           {submitted === "1" && (
-            <Alert variant="success" title="Submitted">
-              Your response was recorded. Submissions cannot be edited, so
-              nothing here can be changed or withdrawn.
+            <Alert variant="success" title="Your form was submitted">
+              It has been recorded for week {cycle.cycleIndex}. Submissions
+              cannot be edited or withdrawn, so nothing here can be changed
+              now.
             </Alert>
           )}
-          <section className="card card--padded">
-            <div
-              className="row-gap"
-              style={{ justifyContent: "space-between" }}
-            >
-              <div>
-                <p className="section-kicker">Week {cycle.cycleIndex}</p>
-                <h2 style={{ margin: "4px 0 6px", fontSize: 20 }}>
-                  Submitted · edits are closed
-                </h2>
-                <p className="muted" style={{ margin: 0 }}>
-                  Closed {formatDeadline(cycle.deadlineAt, section.timezone)}.
-                  If a staff member replies to your question, it appears in your
-                  submissions.
-                </p>
-              </div>
-              <Badge tone="green">Submitted</Badge>
-            </div>
-            <div className="row-gap" style={{ marginTop: 18 }}>
+          <Notice roomy>
+            <p className="doc">
+              You have nothing left to do for this week. If a staff member
+              replies to something you wrote, the reply appears under your
+              submissions — only you and the teaching team can see it.
+            </p>
+            <p className="meta" style={{ marginTop: "var(--s4)" }}>
+              This week closes{" "}
+              {formatDeadline(cycle.deadlineAt, section.timezone)}.
+            </p>
+            <div className="row" style={{ marginTop: "var(--s5)" }}>
               <Link
                 className="button button--primary"
                 href={`/sections/${sectionId}/history`}
@@ -141,10 +147,10 @@ export default async function SectionFormPage({
                 className="button button--secondary"
                 href={`/sections/${sectionId}/qa`}
               >
-                Class Q&amp;A archive
+                Class Q&amp;A
               </Link>
             </div>
-          </section>
+          </Notice>
         </div>
       </AppShell>
     );
@@ -241,26 +247,13 @@ export default async function SectionFormPage({
   return (
     <AppShell
       {...shell}
-      eyebrow={`${course.code} · ${section.term}`}
-      title={`Week ${cycle.cycleIndex} feedback`}
-      actions={
-        <Badge tone="amber">Open · {timeRemaining(cycle.deadlineAt)}</Badge>
-      }
+      title={`Week ${cycle.cycleIndex}`}
+      status={<Stamp tone="amber">Open · {timeRemaining(cycle.deadlineAt)}</Stamp>}
+      description={`Closes ${formatDeadline(cycle.deadlineAt, section.timezone)}. There is no late submission and no editing afterwards.`}
     >
-      <section className="card form-card">
-        <div className="form-card__top">
-          <h2>{section.title}</h2>
-          <p>
-            Closes {formatDeadline(cycle.deadlineAt, section.timezone)}.
-          </p>
-        </div>
-        <div className="form-body">
-          <WeeklyForm
-            questions={questionViews}
-            action={submit}
-          />
-        </div>
-      </section>
+      <Notice roomy>
+        <WeeklyForm questions={questionViews} action={submit} />
+      </Notice>
     </AppShell>
   );
 }
