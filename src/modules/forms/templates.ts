@@ -6,10 +6,17 @@ import { requireCourseStaff, requireSectionStaff } from "@/modules/authz";
 import { questionDefinitionSchema, type QuestionDefinition } from "./questions";
 
 /**
- * Templates snapshot on apply (weekly-form-workflow.md §6):
+ * Form definitions ("templates" is the historical table name).
+ *
+ * Definitions snapshot on apply (weekly-form-workflow.md §6):
  * - every save creates a NEW immutable TemplateVersion with its own question rows
- * - already-generated cycles keep their snapshot; no version is ever mutated
+ * - already-generated instances keep their snapshot; no version is ever mutated
  * - stableKey carries question identity across versions/snapshots for exports
+ *
+ * A definition owns the course, title, description, optional purpose label,
+ * ownership, and archived state. It does NOT own a delivery pattern: weekly is
+ * one of four delivery modes and lives on the schedule
+ * (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §2.1).
  */
 
 async function insertVersionQuestions(
@@ -83,6 +90,8 @@ export async function createTemplate(
     courseId: string;
     title: string;
     description?: string;
+    /** Optional organizing label. Free text on purpose — see the schema comment. */
+    purpose?: string;
     visibility?: "private" | "course_shared";
     questions: QuestionDefinition[];
     studentSection?: StudentSectionConfig;
@@ -101,6 +110,7 @@ export async function createTemplate(
         ownerUserId: actorUserId,
         title: input.title,
         description: input.description,
+        purpose: input.purpose?.trim() || null,
         visibility: input.visibility ?? "private",
       })
       .returning();
@@ -121,7 +131,12 @@ export async function createTemplate(
       action: "template.created",
       entityType: "form_template",
       entityId: template!.id,
-      after: { title: input.title, questionCount: questions.length },
+      after: {
+        title: input.title,
+        purpose: input.purpose?.trim() || null,
+        questionCount: questions.length,
+      },
+      courseId: input.courseId,
     });
     return { template: template!, version: version! };
   });
@@ -202,8 +217,67 @@ export async function createTemplateVersion(
 }
 
 /**
- * Templates of a course with their latest version and question count, for the
- * template list and the schedule picker. Course-staff only.
+ * Rename a form, or change its description, purpose label, or archived state.
+ *
+ * These are properties of the DEFINITION, not of any occurrence: changing them
+ * touches no snapshot, so no already-collected answer is affected. Every
+ * occurrence keeps the title it was generated with, because that title is
+ * snapshotted onto its version.
+ */
+export async function updateTemplateDetails(
+  actorUserId: string,
+  templateId: string,
+  input: {
+    title?: string;
+    description?: string | null;
+    purpose?: string | null;
+    archived?: boolean;
+  },
+) {
+  const template = await db.query.formTemplates.findFirst({
+    where: eq(formTemplates.id, templateId),
+  });
+  if (!template) throw new Error("Form not found");
+  await requireCourseStaff(db, actorUserId, template.courseId);
+  const title = input.title?.trim();
+  if (input.title !== undefined && !title) {
+    throw new Error("A form needs a name.");
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .update(formTemplates)
+      .set({
+        ...(title ? { title } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description?.trim() || null }
+          : {}),
+        ...(input.purpose !== undefined
+          ? { purpose: input.purpose?.trim() || null }
+          : {}),
+        ...(input.archived !== undefined ? { archived: input.archived } : {}),
+      })
+      .where(eq(formTemplates.id, templateId));
+    await writeAudit(tx, {
+      actorUserId,
+      action: "template.created",
+      entityType: "form_template",
+      entityId: templateId,
+      before: {
+        title: template.title,
+        description: template.description,
+        purpose: template.purpose,
+        archived: template.archived,
+      },
+      after: input,
+      courseId: template.courseId,
+      metadata: { detailsUpdated: true },
+    });
+  });
+}
+
+/**
+ * Definitions of a course with their latest version and question count, for the
+ * form list and the delivery picker. Course-staff only.
  */
 export async function listTemplatesForCourse(
   actorUserId: string,

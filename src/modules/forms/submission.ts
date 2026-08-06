@@ -2,18 +2,24 @@ import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, type DbOrTx } from "@/db";
 import {
+  classSections,
+  formInstanceSections,
+  formInstances,
   formQuestions,
   formResponseRevisions,
   formResponses,
+  lessonsTopics,
+  formTemplates,
   privateResponses,
   questionAnswers,
   sourceLinks,
   studentSubmissionItems,
   templateVersions,
-  weeklyCycles,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import { requireEnrolledStudent, requireSectionStaff } from "@/modules/authz";
+import { requireAudienceStudent } from "./audience";
+import { hasSequence, instanceLabel } from "./instances";
 import { DEFAULT_STUDENT_SECTION } from "./templates";
 import { answerInputSchema, validateAnswers } from "./questions";
 
@@ -24,11 +30,16 @@ import { answerInputSchema, validateAnswers } from "./questions";
  *
  * Design decisions worth knowing before changing anything here:
  *
- * - **One row, three phases.** A `(cycle, student)` pair has at most one
+ * - **One row, three phases.** An `(instance, student)` pair has at most one
  *   `form_responses` row, enforced by a unique index. The draft, the submission
  *   and the locked version are the same row in different states, which is what
- *   makes "one response per cycle" and "editing cannot mint a second credit"
- *   structural rather than something this service has to remember.
+ *   makes "one response per form instance" and "editing cannot mint a second
+ *   credit" structural rather than something this service has to remember.
+ * - **A shared form cannot be answered twice.** The uniqueness key is
+ *   (instance, studentRecord) and deliberately does NOT include the section, so a
+ *   student enrolled in two targeted sections still has exactly one response. The
+ *   section they are attributed to is resolved once, on the first save, and
+ *   recorded on the row.
  * - **`submittedAt` is written once.** Participation is anchored to it, so an
  *   edit bumps `revision`/`lastEditedAt` and never looks like a new submission.
  * - **Original wording is immutable.** Editing an item withdraws the old row and
@@ -152,14 +163,14 @@ const FALLBACK_CONFIG = {
 /**
  * The student-section configuration in force for a cycle.
  *
- * Read from the cycle's snapshotted template version, so changing a template
- * later cannot alter a week that already collected answers. A cycle with no
- * template version predates the configuration and falls back to the documented
+ * Read from the instance's snapshotted definition version, so changing a form
+ * later cannot alter an occurrence that already collected answers. An instance
+ * with no version predates the configuration and falls back to the documented
  * defaults rather than hiding the student block entirely.
  */
 export async function getStudentSectionConfig(dbx: DbOrTx, cycleId: string) {
-  const cycle = await dbx.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
+  const cycle = await dbx.query.formInstances.findFirst({
+    where: eq(formInstances.id, cycleId),
   });
   if (!cycle?.templateVersionId) return FALLBACK_CONFIG;
   const version = await dbx.query.templateVersions.findFirst({
@@ -408,17 +419,19 @@ async function saveResponse(
 ) {
   const input = parseInput(rawInput);
 
-  const cyclePeek = await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
+  const cyclePeek = await db.query.formInstances.findFirst({
+    where: eq(formInstances.id, cycleId),
   });
   if (!cyclePeek) throw new SubmissionError("Form not found");
 
-  // Authorization: confirmed match + active enrollment in the cycle's section.
-  const studentRecord = await requireEnrolledStudent(
-    db,
-    userId,
-    cyclePeek.sectionId,
-  );
+  /**
+   * Authorization: a confirmed match plus an active enrolment in at least one of
+   * this instance's AUDIENCE sections — never the instance's legacy anchor
+   * column. `attributedSectionId` is the section this response belongs to for
+   * review, participation, publication, and history.
+   */
+  const { studentRecordId, sectionId: attributedSectionId } =
+    await requireAudienceStudent(db, userId, cycleId);
 
   const config = await getStudentSectionConfig(db, cycleId);
   const questions = await db.query.formQuestions.findMany({
@@ -442,8 +455,8 @@ async function saveResponse(
     // the close or observes the closed state here.
     const [cycle] = await tx
       .select()
-      .from(weeklyCycles)
-      .where(eq(weeklyCycles.id, cycleId))
+      .from(formInstances)
+      .where(eq(formInstances.id, cycleId))
       .for("share")
       .limit(1);
     if (!cycle) throw new SubmissionError("Form not found");
@@ -466,7 +479,7 @@ async function saveResponse(
       .where(
         and(
           eq(formResponses.cycleId, cycleId),
-          eq(formResponses.studentRecordId, studentRecord.id),
+          eq(formResponses.studentRecordId, studentRecordId),
         ),
       )
       .for("update")
@@ -505,7 +518,8 @@ async function saveResponse(
           .insert(formResponses)
           .values({
             cycleId,
-            studentRecordId: studentRecord.id,
+            studentRecordId,
+            sectionId: attributedSectionId,
             lifecycle: phase === "draft" ? "draft" : "submitted",
             submittedAt: phase === "draft" ? null : now,
             revision: 1,
@@ -516,7 +530,9 @@ async function saveResponse(
         responseId = created!.id;
       } catch (err) {
         // unique (cycleId, studentRecordId) violation → another request won the
-        // race between the SELECT above and this INSERT.
+        // race between the SELECT above and this INSERT. The section is NOT in
+        // that key, so a student in two targeted sections lands here too — which
+        // is exactly the duplicate this guard is meant to refuse.
         if (isUniqueViolation(err)) throw new ResponseConflictError();
         throw err;
       }
@@ -607,7 +623,8 @@ async function saveResponse(
         questionItems: items.questions.length,
         hasGeneralComment: items.comments.length > 0,
       },
-      sectionId: cycle.sectionId,
+      sectionId: attributedSectionId,
+      courseId: cycle.courseId,
     });
 
     const liveItems = await tx.query.studentSubmissionItems.findMany({
@@ -667,7 +684,25 @@ export function editSubmittedResponse(
 }
 
 export interface StudentFormState {
-  cycle: typeof weeklyCycles.$inferSelect;
+  instance: typeof formInstances.$inferSelect;
+  /** @deprecated same row as `instance`; kept for callers not yet renamed */
+  cycle: typeof formInstances.$inferSelect;
+  /** what the student is told this form is called */
+  formTitle: string;
+  /** shown only when the occurrence actually has a number */
+  sequenceLabel: string | null;
+  /** the teacher's focus for this occurrence, if they set one */
+  focusLabel: string | null;
+  topicTitle: string | null;
+  /** the section this response is attributed to — internal, never displayed */
+  attributedSectionId: string;
+  /**
+   * True only when the student is in more than one of this form's sections, which
+   * is the one case where naming a section tells them something.
+   */
+  showSectionLabel: boolean;
+  sectionTitle: string | null;
+  timezone: string;
   questions: (typeof formQuestions.$inferSelect)[];
   config: Awaited<ReturnType<typeof getStudentSectionConfig>>;
   response: {
@@ -692,89 +727,224 @@ export interface StudentFormState {
 }
 
 /**
- * Everything the student form needs: the open cycle, its questions, the student's
- * own draft or submission, and whether editing is still allowed.
+ * Everything the student form needs for ONE form instance: its questions, the
+ * student's own draft or submission, and whether editing is still allowed.
+ *
+ * Access is via the instance's audience, so a form shared by several sections is
+ * one form to the student — not one per section. The projection deliberately
+ * carries no audience list, no counts, and nothing about any other section.
  */
-export async function getStudentFormState(
+export async function getStudentFormStateForInstance(
   userId: string,
-  sectionId: string,
+  instanceId: string,
   /**
    * Injectable so the deadline comparison is testable. Every other service here
    * already takes one; this read model needs it for the same reason.
    */
   at: Date = new Date(),
 ): Promise<StudentFormState | null> {
+  const { studentRecordId, sectionId, enrolledSectionCount } =
+    await requireAudienceStudent(db, userId, instanceId, {
+      allowArchived: true,
+    });
+  const instance = await db.query.formInstances.findFirst({
+    where: eq(formInstances.id, instanceId),
+  });
+  if (!instance) return null;
+
+  const questions = await db.query.formQuestions.findMany({
+    where: eq(formQuestions.cycleId, instance.id),
+    orderBy: asc(formQuestions.displayOrder),
+  });
+  const config = await getStudentSectionConfig(db, instance.id);
+  const version = instance.templateVersionId
+    ? await db.query.templateVersions.findFirst({
+        where: eq(templateVersions.id, instance.templateVersionId),
+      })
+    : null;
+  const template = version
+    ? await db.query.formTemplates.findFirst({
+        where: eq(formTemplates.id, version.templateId),
+      })
+    : null;
+  const topic = instance.topicId
+    ? await db.query.lessonsTopics.findFirst({
+        where: eq(lessonsTopics.id, instance.topicId),
+      })
+    : null;
+  const section = await db.query.classSections.findFirst({
+    where: eq(classSections.id, sectionId),
+  });
+
+  const existing = await db.query.formResponses.findFirst({
+    where: and(
+      eq(formResponses.cycleId, instance.id),
+      eq(formResponses.studentRecordId, studentRecordId),
+    ),
+  });
+  let response: StudentFormState["response"] = null;
+  if (existing) {
+    const answers = await db.query.questionAnswers.findMany({
+      where: eq(questionAnswers.responseId, existing.id),
+    });
+    const items = await db.query.studentSubmissionItems.findMany({
+      where: and(
+        eq(studentSubmissionItems.responseId, existing.id),
+        isNull(studentSubmissionItems.withdrawnAt),
+      ),
+      orderBy: asc(studentSubmissionItems.ordinal),
+    });
+    const editable = new Map<string, boolean>();
+    for (const item of items) {
+      editable.set(item.id, !(await itemIsTouched(db, item)));
+    }
+    response = {
+      id: existing.id,
+      lifecycle: existing.lifecycle as "draft" | "submitted" | "locked",
+      revision: existing.revision,
+      submittedAt: existing.submittedAt,
+      lastEditedAt: existing.lastEditedAt,
+      answers: answers.map((a) => ({
+        questionId: a.questionId,
+        value: a.value,
+        freeText: a.freeText,
+      })),
+      items: items.map((item) => ({
+        id: item.id,
+        kind: item.kind as "question" | "general_comment",
+        ordinal: item.ordinal,
+        submissionType: item.submissionType,
+        category: item.category,
+        text: item.originalText,
+        editable: editable.get(item.id) ?? true,
+      })),
+    };
+  }
+  /**
+   * Editable only while the write path would actually accept it: the form open,
+   * inside its window, and the response not locked. Kept in step with
+   * `saveResponse` on purpose — offering an edit the server will refuse is worse
+   * than not offering one.
+   */
+  const now = at.getTime();
+  const withinWindow =
+    instance.state === "open" &&
+    now >= instance.openAt.getTime() &&
+    now < instance.deadlineAt.getTime();
+
+  return {
+    instance,
+    cycle: instance,
+    formTitle:
+      instance.title ?? version?.title ?? template?.title ?? "Class feedback",
+    sequenceLabel: hasSequence(instance) ? instanceLabel(instance) : null,
+    focusLabel: instance.focusLabel,
+    topicTitle: topic?.title ?? null,
+    attributedSectionId: sectionId,
+    showSectionLabel: enrolledSectionCount > 1,
+    sectionTitle: section?.title ?? null,
+    timezone: section?.timezone ?? "Asia/Manila",
+    questions,
+    config,
+    response,
+    canEdit: response?.lifecycle !== "locked" && withinWindow,
+  };
+}
+
+/**
+ * The form instances a student can act on through one section right now.
+ *
+ * "Through one section" means the instance's audience includes it — so a
+ * course-wide form appears once, not once per membership. Ordered by deadline,
+ * because the one closing soonest is the one that matters.
+ */
+export async function listOpenInstancesForStudent(
+  userId: string,
+  sectionId: string,
+  /** Injectable so the deadline comparison is testable, like every other read here. */
+  at: Date = new Date(),
+) {
   const studentRecord = await requireEnrolledStudent(db, userId, sectionId, {
     allowArchived: true,
   });
-  const open = await db.query.weeklyCycles.findMany({
-    where: and(
-      eq(weeklyCycles.sectionId, sectionId),
-      eq(weeklyCycles.state, "open"),
-    ),
-    orderBy: asc(weeklyCycles.openAt),
+  const audienceRows = await db.query.formInstanceSections.findMany({
+    where: eq(formInstanceSections.sectionId, sectionId),
+  });
+  const ids = audienceRows.map((r) => r.instanceId);
+  if (ids.length === 0) return [];
+  const open = await db.query.formInstances.findMany({
+    where: and(inArray(formInstances.id, ids), eq(formInstances.state, "open")),
+    orderBy: asc(formInstances.deadlineAt),
   });
   const now = at.getTime();
-  for (const cycle of open) {
-    if (now >= cycle.deadlineAt.getTime()) continue;
-    const questions = await db.query.formQuestions.findMany({
-      where: eq(formQuestions.cycleId, cycle.id),
-      orderBy: asc(formQuestions.displayOrder),
-    });
-    const config = await getStudentSectionConfig(db, cycle.id);
-    const existing = await db.query.formResponses.findFirst({
-      where: and(
-        eq(formResponses.cycleId, cycle.id),
-        eq(formResponses.studentRecordId, studentRecord.id),
+  const live = open.filter(
+    (i) => now < i.deadlineAt.getTime() && now >= i.openAt.getTime(),
+  );
+  if (live.length === 0) return [];
+
+  const responses = await db.query.formResponses.findMany({
+    where: and(
+      inArray(
+        formResponses.cycleId,
+        live.map((i) => i.id),
       ),
-    });
-    let response: StudentFormState["response"] = null;
-    if (existing) {
-      const answers = await db.query.questionAnswers.findMany({
-        where: eq(questionAnswers.responseId, existing.id),
-      });
-      const items = await db.query.studentSubmissionItems.findMany({
-        where: and(
-          eq(studentSubmissionItems.responseId, existing.id),
-          isNull(studentSubmissionItems.withdrawnAt),
+      eq(formResponses.studentRecordId, studentRecord.id),
+    ),
+  });
+  const byInstance = new Map(responses.map((r) => [r.cycleId, r]));
+  const versionIds = [
+    ...new Set(
+      live.map((i) => i.templateVersionId).filter((v): v is string => !!v),
+    ),
+  ];
+  const versions = versionIds.length
+    ? await db.query.templateVersions.findMany({
+        where: inArray(templateVersions.id, versionIds),
+      })
+    : [];
+  const versionById = new Map(versions.map((v) => [v.id, v]));
+  const templates = versions.length
+    ? await db.query.formTemplates.findMany({
+        where: inArray(
+          formTemplates.id,
+          versions.map((v) => v.templateId),
         ),
-        orderBy: asc(studentSubmissionItems.ordinal),
-      });
-      const editable = new Map<string, boolean>();
-      for (const item of items) {
-        editable.set(item.id, !(await itemIsTouched(db, item)));
-      }
-      response = {
-        id: existing.id,
-        lifecycle: existing.lifecycle as "draft" | "submitted" | "locked",
-        revision: existing.revision,
-        submittedAt: existing.submittedAt,
-        lastEditedAt: existing.lastEditedAt,
-        answers: answers.map((a) => ({
-          questionId: a.questionId,
-          value: a.value,
-          freeText: a.freeText,
-        })),
-        items: items.map((item) => ({
-          id: item.id,
-          kind: item.kind as "question" | "general_comment",
-          ordinal: item.ordinal,
-          submissionType: item.submissionType,
-          category: item.category,
-          text: item.originalText,
-          editable: editable.get(item.id) ?? true,
-        })),
-      };
-    }
+      })
+    : [];
+  const templateById = new Map(templates.map((t) => [t.id, t]));
+
+  return live.map((instance) => {
+    const version = instance.templateVersionId
+      ? versionById.get(instance.templateVersionId)
+      : undefined;
+    const template = version ? templateById.get(version.templateId) : undefined;
+    const existing = byInstance.get(instance.id);
     return {
-      cycle,
-      questions,
-      config,
-      response,
-      canEdit: response?.lifecycle !== "locked",
+      instance,
+      formTitle:
+        instance.title ?? version?.title ?? template?.title ?? "Class feedback",
+      sequenceLabel: hasSequence(instance) ? instanceLabel(instance) : null,
+      focusLabel: instance.focusLabel,
+      alreadySubmitted:
+        existing?.lifecycle === "submitted" || existing?.lifecycle === "locked",
+      hasDraft: existing?.lifecycle === "draft",
     };
-  }
-  return null;
+  });
+}
+
+/**
+ * @deprecated Section-keyed entry point kept for existing callers. Resolves the
+ * section's soonest live instance and delegates, so there is one implementation.
+ */
+export async function getStudentFormState(
+  userId: string,
+  sectionId: string,
+  at: Date = new Date(),
+): Promise<StudentFormState | null> {
+  const open = await listOpenInstancesForStudent(userId, sectionId, at);
+  const first = open[0];
+  if (!first) return null;
+  return getStudentFormStateForInstance(userId, first.instance.id, at);
 }
 
 /**
@@ -807,12 +977,15 @@ export async function listResponseRevisions(
     where: eq(formResponses.id, responseId),
   });
   if (!response) throw new SubmissionError("Response not found");
-  const cycle = (await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, response.cycleId),
-  }))!;
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "reviewResponses", {
-    allowArchived: true,
-  });
+  // The response's own section, not the instance's: with a shared form the
+  // instance has several, and only the asker's own one may authorize this read.
+  await requireSectionStaff(
+    db,
+    actorUserId,
+    response.sectionId,
+    "reviewResponses",
+    { allowArchived: true },
+  );
   return db.query.formResponseRevisions.findMany({
     where: eq(formResponseRevisions.responseId, responseId),
     orderBy: asc(formResponseRevisions.revision),

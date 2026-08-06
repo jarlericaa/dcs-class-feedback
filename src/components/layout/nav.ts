@@ -205,6 +205,61 @@ export function studentSectionNav(
   ];
 }
 
+/**
+ * Staff destinations for one COURSE — the primary workspace.
+ *
+ * Forms come first because they are the work objects. Class lists and access sit
+ * in their own destination: sections still decide who can reach a form, but they
+ * are not what a teacher comes here to work on.
+ */
+export function courseNav(
+  courseId: string,
+  currentPath: string,
+  opts: {
+    needsReview?: number;
+    /** false hides the review destination; the server still refuses it */
+    canReview?: boolean;
+    canManageForms?: boolean;
+  } = {},
+): NavGroup[] {
+  const items: NavItem[] = [
+    {
+      href: `/teach/courses/${courseId}`,
+      label: "Forms",
+      icon: "form",
+    },
+  ];
+  if (opts.canReview !== false) {
+    items.push({
+      href: `/teach/courses/${courseId}/responses`,
+      label: "Responses",
+      icon: "inbox",
+      count: opts.needsReview || undefined,
+    });
+  }
+  items.push({
+    href: `/teach/courses/${courseId}/sections`,
+    label: "Class lists & access",
+    icon: "roster",
+  });
+  // The question backlog stays on its section route: it is course-scoped data,
+  // but the page it lives on is still section-shaped, and a link to a route that
+  // does not exist is worse than one more click.
+  return [
+    {
+      label: "Workspace",
+      items: mark(
+        [
+          { href: "/", label: "Overview", icon: "overview" },
+          { href: "/teach/courses", label: "My courses", icon: "course" },
+        ],
+        currentPath,
+      ),
+    },
+    { label: "This course", items: mark(items, currentPath) },
+  ];
+}
+
 /** Top-level destinations shown when no section is selected. */
 export function homeNav(
   currentPath: string,

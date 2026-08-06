@@ -11,7 +11,6 @@ import {
   studentRecords,
   studentSubmissionItems,
   users,
-  weeklyCycles,
 } from "@/db/schema";
 
 /**
@@ -429,6 +428,12 @@ export async function requireItemAsker(
       itemId: studentSubmissionItems.id,
       studentRecordId: formResponses.studentRecordId,
       cycleId: formResponses.cycleId,
+      /**
+       * The asker's OWN section, from the response. With a form shared by several
+       * sections the instance has no single one, and the thread belongs to the
+       * section this student answered through.
+       */
+      sectionId: formResponses.sectionId,
     })
     .from(studentSubmissionItems)
     .innerJoin(
@@ -443,10 +448,7 @@ export async function requireItemAsker(
   if (!row || row.studentRecordId !== record.id) {
     throw new AuthzError("No access to this question");
   }
-  const cycle = await dbx.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, row.cycleId),
-  });
-  return { studentRecordId: record.id, sectionId: cycle!.sectionId };
+  return { studentRecordId: record.id, sectionId: row.sectionId };
 }
 
 /** The StudentRecord bound to this user via a confirmed match, or null. */

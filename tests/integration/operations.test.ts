@@ -6,6 +6,7 @@ import {
   enroll,
   makeCourse,
   makeEnrolledStudent,
+  makeInstance,
   makeSection,
   makeStudentRecord,
   makeUser,
@@ -66,19 +67,14 @@ async function makeOpenCycleSection() {
   const course = await makeCourse(teacher.id);
   const section = await makeSection(course.id);
   await addSectionStaff(section.id, teacher.id, "teacher");
-  const { weeklyCycles } = await import("@/db/schema");
   const now = Date.now();
-  const [cycle] = await db
-    .insert(weeklyCycles)
-    .values({
-      sectionId: section.id,
-      cycleIndex: 1,
-      openAt: new Date(now - 3600_000),
-      deadlineAt: new Date(now + 3600_000),
-      state: "open",
-    })
-    .returning();
-  return { teacher, course, section, cycle: cycle! };
+  const cycle = await makeInstance({
+    courseId: course.id,
+    sectionIds: [section.id],
+    openAt: new Date(now - 3600_000),
+    deadlineAt: new Date(now + 3600_000),
+  });
+  return { teacher, course, section, cycle };
 }
 
 const BASE_RECURRENCE = {
@@ -166,10 +162,19 @@ describe("recurrence scheduling", () => {
     expect(cycles.every((c) => c.submissionCount === 0)).toBe(true);
     expect(cycles.every((c) => c.editLocked === false)).toBe(true);
 
+    // Delivery and audience are audited separately: the audience is the
+    // access-bearing half of the change and has to be findable as such.
     const events = await db.query.auditEvents.findMany({
-      where: eq(auditEvents.action, "recurrence.configured"),
+      where: eq(auditEvents.action, "form.delivery_configured"),
     });
     expect(events).toHaveLength(1);
+    const audience = await db.query.auditEvents.findMany({
+      where: eq(auditEvents.action, "form.audience_set"),
+    });
+    expect(audience).toHaveLength(1);
+    expect(
+      (audience[0]!.after as { sectionIds: string[] }).sectionIds,
+    ).toEqual([section.id]);
   });
 
   it("retires the previous schedule instead of mutating it", async () => {
@@ -208,7 +213,10 @@ describe("recurrence scheduling", () => {
     });
     const before = await listCyclesForSection(teacher.id, section.id);
 
-    await deactivateSchedule(teacher.id, section.id);
+    // Delivery belongs to the FORM now, so it is stopped by schedule id rather
+    // than by section: one schedule may serve several sections.
+    const active = await getActiveSchedule(section.id);
+    await deactivateSchedule(teacher.id, active!.schedule.id);
     expect(await getActiveSchedule(section.id)).toBeNull();
     const after = await listCyclesForSection(teacher.id, section.id);
     expect(after.length).toBe(before.length);
@@ -251,27 +259,24 @@ async function makeSubmittedItem() {
   const course = await makeCourse(teacher.id);
   const section = await makeSection(course.id);
   await addSectionStaff(section.id, teacher.id, "teacher");
-  const { weeklyCycles, studentSubmissionItems, formResponses } =
+  const { studentSubmissionItems, formResponses } =
     await import("@/db/schema");
   const now = new Date();
-  const [cycle] = await db
-    .insert(weeklyCycles)
-    .values({
-      sectionId: section.id,
-      cycleIndex: 1,
-      openAt: new Date(now.getTime() - 3600_000),
-      deadlineAt: new Date(now.getTime() + 3600_000),
-      state: "open",
-    })
-    .returning();
+  const cycle = await makeInstance({
+    courseId: course.id,
+    sectionIds: [section.id],
+    openAt: new Date(now.getTime() - 3600_000),
+    deadlineAt: new Date(now.getTime() + 3600_000),
+  });
   const { user, record } = await makeEnrolledStudent(section.id, teacher.id);
   const [response] = await db
     .insert(formResponses)
     .values({
-        cycleId: cycle!.id,
-        studentRecordId: record.id,
-        submittedAt: new Date(),
-      })
+      cycleId: cycle.id,
+      studentRecordId: record.id,
+      sectionId: section.id,
+      submittedAt: new Date(),
+    })
     .returning();
   const [item] = await db
     .insert(studentSubmissionItems)
@@ -283,7 +288,7 @@ async function makeSubmittedItem() {
         "I could not read the slides from the back of my Tuesday lab.",
     })
     .returning();
-  return { teacher, course, section, cycle: cycle!, user, record, item: item! };
+  return { teacher, course, section, cycle, user, record, item: item! };
 }
 
 describe("publication queue", () => {

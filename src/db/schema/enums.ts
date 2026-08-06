@@ -76,7 +76,55 @@ export const templateVisibility = pgEnum("template_visibility", [
   "course_shared",
 ]);
 
+/**
+ * @deprecated Superseded by `formDeliveryMode`. Kept so the column keeps a valid
+ * type; nothing reads it. A new enum was introduced rather than adding values
+ * here because Postgres refuses to *use* an enum value added in the same
+ * transaction, and drizzle's migrator wraps every pending file in one — an
+ * `ALTER TYPE` would have forced a second migration file for no product gain.
+ */
 export const recurrenceFrequency = pgEnum("recurrence_frequency", ["weekly"]);
+
+/**
+ * How a form is delivered (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §3).
+ * Weekly is ONE mode, not the identity of a form.
+ */
+export const formDeliveryMode = pgEnum("form_delivery_mode", [
+  /** exactly one instance, with an explicit open/deadline window */
+  "one_time",
+  /** one instance per week */
+  "weekly",
+  /** one instance every N weeks (N ≥ 2), same day/time controls */
+  "custom_recurring",
+  /** staff create, open, and close each instance by hand */
+  "manual",
+]);
+
+/**
+ * Who may receive a form. `all_sections` re-resolves to the course's ACTIVE
+ * sections each time instances are generated, so a section added mid-term is
+ * included without the teacher editing the schedule; `selected_sections` is a
+ * fixed list. Either way the resolved list is written to the audience table, so
+ * an instance's audience is always an explicit, auditable set of rows.
+ */
+export const formAudienceMode = pgEnum("form_audience_mode", [
+  "all_sections",
+  "selected_sections",
+]);
+
+/**
+ * Where an instance-side question came from, so the per-occurrence editor can
+ * show what is inherited and what is this occurrence's own, and so exports can
+ * tell an edited question from a new one. NULL on definition-side rows.
+ */
+export const instanceQuestionOrigin = pgEnum("instance_question_origin", [
+  /** copied from the source definition version and unchanged */
+  "inherited",
+  /** copied, then edited for this occurrence only */
+  "modified",
+  /** added to this occurrence only; absent from the definition */
+  "instance_only",
+]);
 
 export const weeklyCycleState = pgEnum("weekly_cycle_state", [
   "draft",

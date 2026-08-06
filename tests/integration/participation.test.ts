@@ -4,10 +4,14 @@ import { db, truncateAll } from "./helpers";
 import {
   makeCourse,
   makeEnrolledStudent,
+  makeSchedule,
   makeSection,
   makeUser,
 } from "./fixtures";
-import { formQuestions, recurrenceSchedules, weeklyCycles } from "@/db/schema";
+import {
+  formInstances,
+  formQuestions,
+} from "@/db/schema";
 import { createTemplate } from "@/modules/forms/templates";
 import {
   generateCyclesForSchedule,
@@ -40,28 +44,20 @@ describe("derived participation + exports", () => {
         { prompt: "Q", type: "short_answer", required: true, displayOrder: 0 },
       ],
     });
-    const [schedule] = await db
-      .insert(recurrenceSchedules)
-      .values({
-        sectionId: section.id,
-        openDayOfWeek: 1,
-        openTime: "08:00:00",
-        deadlineDayOfWeek: 5,
-        deadlineTime: "17:00:00",
-        startDate: "2026-01-05",
-        occurrenceCount: 2,
-        templateId: template.id,
-        timezone: "Asia/Manila",
-      })
-      .returning();
+    const schedule = await makeSchedule({
+      courseId: course.id,
+      sectionIds: [section.id],
+      templateId: template.id,
+      occurrenceCount: 2,
+    });
     await generateCyclesForSchedule(
-      schedule!,
+      schedule,
       new Date("2026-01-31T00:00:00Z"),
     );
     // open both weeks' cycles (week1 will be closed later)
     await openDueCycles(new Date("2026-01-12T01:00:00Z"));
-    const cycles = await db.query.weeklyCycles.findMany({
-      where: eq(weeklyCycles.scheduleId, schedule!.id),
+    const cycles = await db.query.formInstances.findMany({
+      where: eq(formInstances.scheduleId, schedule.id),
     });
     const cycle1 = cycles.find((c) => c.cycleIndex === 1)!;
     const cycle2 = cycles.find((c) => c.cycleIndex === 2)!;

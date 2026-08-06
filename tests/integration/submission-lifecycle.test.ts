@@ -4,16 +4,16 @@ import { db, truncateAll } from "./helpers";
 import {
   makeCourse,
   makeEnrolledStudent,
+  makeSchedule,
   makeSection,
   makeUser,
 } from "./fixtures";
 import {
   auditEvents,
+  formInstances,
   formQuestions,
   privateResponses,
-  recurrenceSchedules,
   studentSubmissionItems,
-  weeklyCycles,
 } from "@/db/schema";
 import { createTemplate } from "@/modules/forms/templates";
 import {
@@ -70,24 +70,17 @@ async function openCycle(
     ],
     studentSection,
   });
-  const [schedule] = await db
-    .insert(recurrenceSchedules)
-    .values({
-      sectionId: section.id,
-      openDayOfWeek: 1,
-      openTime: "08:00:00",
-      deadlineDayOfWeek: 5,
-      deadlineTime: "17:00:00",
-      startDate: "2026-01-05",
-      occurrenceCount: 1,
-      templateId: template.id,
-      timezone: TZ,
-    })
-    .returning();
-  await generateCyclesForSchedule(schedule!, new Date("2026-01-05T00:00:00Z"));
+  const schedule = await makeSchedule({
+    courseId: course.id,
+    sectionIds: [section.id],
+    templateId: template.id,
+    occurrenceCount: 1,
+    timezone: TZ,
+  });
+  await generateCyclesForSchedule(schedule, new Date("2026-01-05T00:00:00Z"));
   await openDueCycles(IN_WINDOW);
-  const cycle = (await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.sectionId, section.id),
+  const cycle = (await db.query.formInstances.findFirst({
+    where: eq(formInstances.scheduleId, schedule.id),
   }))!;
   // The cycle-side snapshot, not the template-side row.
   const question = (await db.query.formQuestions.findFirst({
@@ -271,9 +264,9 @@ describe("draft → submit → edit → deadline lock", () => {
     );
     // Close the cycle without locking, as if the scheduler died mid-sweep.
     await db
-      .update(weeklyCycles)
+      .update(formInstances)
       .set({ state: "closed" })
-      .where(eq(weeklyCycles.id, cycle.id));
+      .where(eq(formInstances.id, cycle.id));
 
     expect(await lockDueResponses(AFTER_DEADLINE)).toBe(1);
     expect(await lockDueResponses(AFTER_DEADLINE)).toBe(0);

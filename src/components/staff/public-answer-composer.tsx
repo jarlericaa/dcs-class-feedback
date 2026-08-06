@@ -24,12 +24,19 @@ export function PublicAnswerComposer({
   action,
   itemId,
   selectedResponseId,
+  sectionId,
   originalQuestion,
   canPublish,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   itemId: string;
   selectedResponseId: string;
+  /**
+   * The asker's own section — the ONLY section this answer may be published to.
+   * A form shared across sections does not widen a publication, and the server
+   * refuses any other target for this item.
+   */
+  sectionId: string;
   originalQuestion: string;
   canPublish: boolean;
 }) {
@@ -57,6 +64,7 @@ export function PublicAnswerComposer({
     >
       <input type="hidden" name="itemId" value={itemId} />
       <input type="hidden" name="selected" value={selectedResponseId} />
+      <input type="hidden" name="sectionId" value={sectionId} />
 
       <div className="field-row">
         <label htmlFor={`pubq-${itemId}`}>Public version of the question</label>

@@ -2,6 +2,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
   enrollments,
+  formInstances,
   formQuestions,
   formResponses,
   privateResponses,
@@ -10,17 +11,23 @@ import {
   sourceLinks,
   studentRecords,
   studentSubmissionItems,
-  weeklyCycles,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import { requireSectionStaff } from "@/modules/authz";
+import { instanceIdsForSection } from "@/modules/forms/audience";
+import { instanceLabel } from "@/modules/forms/instances";
 import { toCsv } from "@/modules/exports/tabular";
 import { revealStudentNumber } from "@/modules/crypto/student-number";
 
 /**
  * Derived participation (participation-rules.md §3): there is NO stored
- * participation table. A student participated in a cycle iff a FormResponse
- * exists for (cycle, student) with validity Valid. (All review states count —
+ * participation table. A student participated in an occurrence iff a FormResponse
+ * exists for (instance, student) with validity Valid.
+ *
+ * Per-section, and stays per-section under a shared form: the occurrences counted
+ * are those whose AUDIENCE includes this section, and the responses counted are
+ * those attributed to it. A course-wide form therefore contributes one column to
+ * each of its sections' matrices, carrying only that section's own answers. (All review states count —
  * review progress is independent of participation.) Marking a response
  * invalid removes the credit with no separate bookkeeping. Legacy/backlog
  * items never create responses, so they can never count.
@@ -33,6 +40,8 @@ export interface ParticipationMatrix {
   cycles: {
     id: string;
     cycleIndex: number;
+    /** "Week 3", "This form", or the occurrence's own title — never "cycle". */
+    label: string;
     openAt: Date;
     bonusPeriodId: string | null;
   }[];
@@ -69,14 +78,17 @@ export interface ParticipationMatrix {
 export async function deriveParticipation(
   sectionId: string,
 ): Promise<ParticipationMatrix> {
-  const cycles = await db.query.weeklyCycles.findMany({
-    where: and(
-      eq(weeklyCycles.sectionId, sectionId),
-      // skipped/draft cycles never collected anything
-      inArray(weeklyCycles.state, ["open", "closed", "archived"]),
-    ),
-    orderBy: asc(weeklyCycles.cycleIndex),
-  });
+  const instanceIds = await instanceIdsForSection(db, sectionId);
+  const cycles = instanceIds.length
+    ? await db.query.formInstances.findMany({
+        where: and(
+          inArray(formInstances.id, instanceIds),
+          // skipped/draft occurrences never collected anything
+          inArray(formInstances.state, ["open", "closed", "archived"]),
+        ),
+        orderBy: [asc(formInstances.openAt), asc(formInstances.cycleIndex)],
+      })
+    : [];
   const enrolled = await db
     .select({
       studentRecordId: enrollments.studentRecordId,
@@ -99,6 +111,8 @@ export async function deriveParticipation(
             formResponses.cycleId,
             cycles.map((c) => c.id),
           ),
+          // This section's own responses only.
+          eq(formResponses.sectionId, sectionId),
           inArray(formResponses.lifecycle, ["submitted", "locked"]),
         ),
       })
@@ -134,6 +148,8 @@ export async function deriveParticipation(
     cycles: cycles.map((c) => ({
       id: c.id,
       cycleIndex: c.cycleIndex,
+      /** "Week 3", "This form", or the occurrence's title — never "cycle". */
+      label: instanceLabel(c),
       openAt: c.openAt,
       bonusPeriodId: c.bonusPeriodId,
     })),
@@ -241,7 +257,7 @@ export async function weeklyMatrixCsv(
     "Student number",
     "Student name",
     ...matrix.cycles.map(
-      (c) => `Week ${c.cycleIndex} (${c.openAt.toISOString().slice(0, 10)})`,
+      (c) => `${c.label} (${c.openAt.toISOString().slice(0, 10)})`,
     ),
     "Total weeks",
     "Flagged weeks (still credited)",
@@ -293,19 +309,25 @@ export async function detailedResponseCsv(
 ): Promise<string> {
   await requireSectionStaff(db, actorUserId, sectionId, "exportParticipation", { allowArchived: true });
 
-  const cycles = await db.query.weeklyCycles.findMany({
-    where: eq(weeklyCycles.sectionId, sectionId),
-    orderBy: asc(weeklyCycles.cycleIndex),
-  });
+  const instanceIds = await instanceIdsForSection(db, sectionId);
+  const cycles = instanceIds.length
+    ? await db.query.formInstances.findMany({
+        where: inArray(formInstances.id, instanceIds),
+        orderBy: [asc(formInstances.openAt), asc(formInstances.cycleIndex)],
+      })
+    : [];
   const cycleById = new Map(cycles.map((c) => [c.id, c]));
   const responses = cycles.length
     ? await db.query.formResponses.findMany({
         // Drafts are not submissions: they must not appear in a staff export.
+        // Scoped to this section, so a shared form does not export another
+        // section's answers into this one's file.
         where: and(
           inArray(
             formResponses.cycleId,
             cycles.map((c) => c.id),
           ),
+          eq(formResponses.sectionId, sectionId),
           inArray(formResponses.lifecycle, ["submitted", "locked"]),
         ),
       })
@@ -314,7 +336,7 @@ export async function detailedResponseCsv(
   const header = [
     "Student number",
     "Student name",
-    "Weekly cycle",
+    "Form occurrence",
     "Submitted at",
     "Question stable id",
     "Question text",
@@ -352,7 +374,7 @@ export async function detailedResponseCsv(
         studentNumberLast4: student.studentNumberLast4,
       }),
       student.fullName,
-      `Week ${cycle.cycleIndex}`,
+      instanceLabel(cycle),
       response.submittedAt?.toISOString() ?? "",
     ];
 

@@ -10,6 +10,40 @@ conventions, and the Q&A archive's browse/search strategy.
 [qa/page.tsx](../src/app/sections/[id]/qa/page.tsx), plus the route inventory in
 [CURRENT_STATE.md](CURRENT_STATE.md).
 
+> ## Superseded in part, 2026-08-06 — the course is now the primary workspace
+>
+> This file's audit and its findings still hold for what they examined, but its
+> §3 route map and §4 "hub-and-spoke **per section**" pattern describe the IA as
+> it was. The product now treats the **course** as the primary workspace and the
+> **form** as the work object; a section is the access/audience context. Model and
+> rationale: [FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md).
+>
+> Current staff structure:
+>
+> ```
+> My courses  (/teach/courses)                   course code is the identity
+> └── Course workspace  (/teach/courses/[id])    ← default: Forms
+>       ├── Forms                                the work objects
+>       │     ├── New form            → /forms/new       details · audience · delivery · questions
+>       │     ├── Form                → /forms/[formId]  occurrences · audience · delivery · base questions
+>       │     └── One occurrence      → …/instances/[instanceId]  "Customize Week 4"
+>       ├── Responses  (/responses)              ONE inbox per course, filterable by form,
+>       │                                        occurrence and **section**
+>       └── Class lists & access  (/sections)    rosters, matches, staff, section details
+> ```
+>
+> Students reach a **form**, not a section: `/forms/[id]`. `/sections/[id]`
+> survives as a resolver, and `/teach/sections/[id]/review` redirects into the
+> course inbox with that section preselected.
+>
+> **Findings this resolves.** F1's complaint that the question backlog sits in the
+> section group while being course-level is now structurally answered for forms:
+> anything course-owned is reached from the course workspace. The
+> "hub-and-spoke makes cross-section work expensive" trade-off in §4 is no longer
+> accepted for the form workflow — a shared form has one inbox precisely so that
+> comparing sections costs nothing. Sections remain independent spokes for the
+> things that genuinely are per-section (rosters, matching, publication, audit).
+
 > **This document corrects one proposal made elsewhere.**
 > [JOURNEY-TEACHER-SETUP.md](JOURNEY-TEACHER-SETUP.md) §5 proposed reordering the
 > staff nav by section readiness. **That is the wrong mechanism** — see F1. The

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Alert, Disclose } from "@/components/ui";
 import { IconPlus } from "@/components/ui/icons";
 import { TemplatePreview } from "@/components/staff/template-preview";
@@ -63,6 +63,13 @@ export interface DraftOption {
 
 export interface DraftQuestion {
   key: string;
+  /**
+   * Carried through the editor so a question keeps its identity across an edit.
+   * Answers and exports join on it, and the per-occurrence editor uses it to tell
+   * "this question, reworded" from "a new question". Absent for a row the reader
+   * added in this session.
+   */
+  stableKey?: string;
   prompt: string;
   description: string;
   type: QuestionType;
@@ -125,6 +132,11 @@ export function TemplateEditor({
   defaultTitle = "",
   defaultDescription = "",
   versionNote,
+  lockedStructure = false,
+  lockedNote,
+  hideStudentSection = false,
+  previewLabel = "Preview form",
+  extraActions,
 }: {
   initialQuestions: DraftQuestion[];
   submitLabel: string;
@@ -138,6 +150,20 @@ export function TemplateEditor({
   defaultDescription?: string;
   /** shown beside the save button, where the rule actually applies */
   versionNote?: string;
+  /**
+   * Someone has already answered this form, so structural change is refused
+   * server-side (D4). The controls that would make one are removed rather than
+   * left to fail: add, remove, reorder, answer type, required, and choices.
+   * Wording stays editable, because that is what the policy allows.
+   */
+  lockedStructure?: boolean;
+  /** why the structure is locked, in the reader's terms */
+  lockedNote?: string;
+  /** the per-occurrence editor inherits these settings and cannot change them */
+  hideStudentSection?: boolean;
+  previewLabel?: string;
+  /** e.g. a "Reset to the base form" control, placed beside save */
+  extraActions?: ReactNode;
 }) {
   const [questions, setQuestions] = useState<DraftQuestion[]>(
     initialQuestions.length > 0 ? initialQuestions : [emptyQuestion(0)],
@@ -232,6 +258,7 @@ export function TemplateEditor({
    * one derived from its label, and order comes from position in the list.
    */
   const serializedQuestions = questions.map((q, index) => ({
+    ...(q.stableKey ? { stableKey: q.stableKey } : {}),
     prompt: q.prompt.trim(),
     description: q.description.trim() || undefined,
     type: q.type,
@@ -317,16 +344,18 @@ export function TemplateEditor({
             type="button"
             onClick={() => setPreviewOpen(true)}
           >
-            Preview form
+            {previewLabel}
           </button>
-          <button
-            className="button button--secondary button--small"
-            type="button"
-            onClick={addQuestion}
-          >
-            <IconPlus size={14} />
-            Add question
-          </button>
+          {!lockedStructure && (
+            <button
+              className="button button--secondary button--small"
+              type="button"
+              onClick={addQuestion}
+            >
+              <IconPlus size={14} />
+              Add question
+            </button>
+          )}
         </div>
       </div>
 
@@ -377,6 +406,7 @@ export function TemplateEditor({
                   id={`type-${question.key}`}
                   className="select-field"
                   value={question.type}
+                  disabled={lockedStructure}
                   onChange={(e) =>
                     changeType(question, e.target.value as QuestionType)
                   }
@@ -427,7 +457,7 @@ export function TemplateEditor({
                           className="button button--quiet button--small options__remove"
                           type="button"
                           onClick={() => removeOption(question.key, option.key)}
-                          disabled={question.options.length <= 2}
+                          disabled={lockedStructure || question.options.length <= 2}
                           aria-label={`Remove choice ${optionIndex + 1}`}
                           title={
                             question.options.length <= 2
@@ -441,14 +471,16 @@ export function TemplateEditor({
                     ))}
                   </ol>
                   <div className="options__foot">
-                    <button
-                      className="button button--secondary button--small"
-                      type="button"
-                      onClick={() => addOption(question.key)}
-                    >
-                      <IconPlus size={14} />
-                      Add option
-                    </button>
+                    {!lockedStructure && (
+                      <button
+                        className="button button--secondary button--small"
+                        type="button"
+                        onClick={() => addOption(question.key)}
+                      >
+                        <IconPlus size={14} />
+                        Add option
+                      </button>
+                    )}
                     {/* Inline, and only once it is actually wrong — the server
                         rejects this too, so this is the early warning. */}
                     {filled < 2 && (
@@ -498,44 +530,47 @@ export function TemplateEditor({
                   <input
                     type="checkbox"
                     checked={question.required}
+                    disabled={lockedStructure}
                     onChange={(e) =>
                       update(question.key, { required: e.target.checked })
                     }
                   />
                   <span>Required</span>
                 </label>
-                <span className="row">
-                  <button
-                    className="button button--quiet button--small"
-                    type="button"
-                    onClick={() => move(index, -1)}
-                    disabled={index === 0}
-                  >
-                    Move up
-                  </button>
-                  <button
-                    className="button button--quiet button--small"
-                    type="button"
-                    onClick={() => move(index, 1)}
-                    disabled={index === questions.length - 1}
-                  >
-                    Move down
-                  </button>
-                  <button
-                    className="button button--danger button--small"
-                    type="button"
-                    onClick={() =>
-                      setQuestions((prev) =>
-                        prev.length === 1
-                          ? prev
-                          : prev.filter((q) => q.key !== question.key),
-                      )
-                    }
-                    disabled={questions.length === 1}
-                  >
-                    Remove
-                  </button>
-                </span>
+                {!lockedStructure && (
+                  <span className="row">
+                    <button
+                      className="button button--quiet button--small"
+                      type="button"
+                      onClick={() => move(index, -1)}
+                      disabled={index === 0}
+                    >
+                      Move up
+                    </button>
+                    <button
+                      className="button button--quiet button--small"
+                      type="button"
+                      onClick={() => move(index, 1)}
+                      disabled={index === questions.length - 1}
+                    >
+                      Move down
+                    </button>
+                    <button
+                      className="button button--danger button--small"
+                      type="button"
+                      onClick={() =>
+                        setQuestions((prev) =>
+                          prev.length === 1
+                            ? prev
+                            : prev.filter((q) => q.key !== question.key),
+                        )
+                      }
+                      disabled={questions.length === 1}
+                    >
+                      Remove
+                    </button>
+                  </span>
+                )}
               </div>
             </fieldset>
           );
@@ -555,7 +590,13 @@ export function TemplateEditor({
         </Disclose>
       </div>
 
-      <fieldset className="q-item" style={{ marginTop: "var(--s5)" }}>
+      <fieldset
+        className="q-item"
+        style={{
+          marginTop: "var(--s5)",
+          display: hideStudentSection ? "none" : undefined,
+        }}
+      >
         <legend className="q-item__legend">Student additions</legend>
         {/* One fact, and it is the one that bears on the decision: what a
             student writes here can be answered for the whole class. How staff
@@ -625,6 +666,15 @@ export function TemplateEditor({
         </div>
       </fieldset>
 
+      {lockedStructure && (
+        <div style={{ marginTop: "var(--s5)" }}>
+          <Alert variant="warning" title="The questions are locked">
+            {lockedNote ??
+              "Someone has already answered this form. You can still fix wording; adding, removing, reordering or retyping a question would invalidate the answers already given."}
+          </Alert>
+        </div>
+      )}
+
       {versionNote && (
         <div style={{ marginTop: "var(--s5)" }}>
           <Alert variant="info">{versionNote}</Alert>
@@ -632,12 +682,13 @@ export function TemplateEditor({
       )}
 
       <div className="form-actions" style={{ marginTop: "var(--s5)" }}>
+        {extraActions}
         <button
           className="button button--secondary"
           type="button"
           onClick={() => setPreviewOpen(true)}
         >
-          Preview form
+          {previewLabel}
         </button>
         <button className="button button--primary" type="submit">
           {submitLabel}

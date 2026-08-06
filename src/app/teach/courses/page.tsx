@@ -8,31 +8,33 @@ import { homeNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Stamp,
   EmptyState,
   MetaList,
+  Stamp,
 } from "@/components/ui";
-import { TermFields } from "@/components/ui/term-fields";
-import { IconPlus } from "@/components/ui/icons";
+import { IconForward, IconPlus } from "@/components/ui/icons";
 import { termParts } from "@/lib/term";
 import {
   CatalogError,
   createCourse,
-  createSection,
   listCoursesForUser,
 } from "@/modules/catalog";
+import { listCourseForms } from "@/modules/forms/instances";
 import { AuthzError } from "@/modules/authz";
 import { requireUser, toShellUser } from "@/lib/session";
 
 /**
- * Course and section setup. Creating a course requires the teacher capability
- * (Open D3); creating a section requires staff on that course. Both checks are
- * enforced in modules/catalog, not here.
+ * The list of courses a teacher works in.
  *
- * Both create forms are disclosures rather than standing panels. "New course"
- * lives in the page header and opens the top one through the URL (`?new=1`), so
- * the page's own reason to exist is never below a list of courses; "Add a
- * section" is one collapsed row of the course it belongs to.
+ * The COURSE CODE is the identity: `CS 33` is what a teacher and a student both
+ * call this thing, so it is the heading. The title is secondary metadata, and the
+ * academic year/semester is quiet context that keeps two offerings of the same
+ * code apart.
+ *
+ * Sections are deliberately absent from this list. They decide who can reach a
+ * form, not what a teacher comes here to do, so they live one destination inside
+ * the course. What each row shows instead is the course's forms and whether any
+ * of them needs attention.
  */
 export default async function CoursesPage({
   searchParams,
@@ -59,8 +61,14 @@ export default async function CoursesPage({
   }
 
   const courses = await listCoursesForUser(user.id);
-  // Opened by the header action, or by the reader clicking the summary. Kept in
-  // the URL so the state survives the redirect a failed create performs.
+  const withForms = await Promise.all(
+    courses.map(async (entry) => ({
+      ...entry,
+      forms: await listCourseForms(user.id, entry.course.id).catch(() => []),
+    })),
+  );
+  // Opened by the header action, or by a failed create. Kept in the URL so the
+  // state survives the redirect.
   const createOpen = newCourse === "1" || !!error;
 
   async function addCourse(formData: FormData) {
@@ -77,25 +85,6 @@ export default async function CoursesPage({
     }
     revalidatePath("/teach/courses");
     redirect(`/teach/courses?ok=${encodeURIComponent("Course created.")}`);
-  }
-
-  async function addSection(formData: FormData) {
-    "use server";
-    const uid = await currentUserId();
-    if (!uid) redirect("/signin");
-    try {
-      await createSection(uid, {
-        courseId: String(formData.get("courseId") ?? ""),
-        term: String(formData.get("term") ?? ""),
-        title: String(formData.get("title") ?? ""),
-      });
-    } catch (err) {
-      redirect(`/teach/courses?error=${encodeURIComponent(describe(err))}`);
-    }
-    revalidatePath("/teach/courses");
-    redirect(
-      `/teach/courses?ok=${encodeURIComponent("Section created. Set its schedule next.")}`,
-    );
   }
 
   return (
@@ -118,10 +107,6 @@ export default async function CoursesPage({
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
-        {/* Opened by the header action, which is this form's only entry point —
-            a standing "New course" summary directly under a "New course" button
-            says the same thing twice. It is a URL, so it works without
-            JavaScript. */}
         {createOpen && (
           <section className="notice notice--pad" id="new-course">
             <h2 className="panel-title">New course</h2>
@@ -132,10 +117,15 @@ export default async function CoursesPage({
                   id="course-code"
                   className="field"
                   name="code"
-                  placeholder="DCS-101"
+                  placeholder="CS 33"
                   required
                   autoFocus
+                  aria-describedby="course-code-help"
                 />
+                <span className="helper-text" id="course-code-help">
+                  How you and your students refer to it. This is the name shown
+                  everywhere.
+                </span>
               </div>
               <div className="field-row">
                 <label htmlFor="course-title">Course title</label>
@@ -159,112 +149,81 @@ export default async function CoursesPage({
           </section>
         )}
 
-        {courses.length === 0 ? (
+        {withForms.length === 0 ? (
           <EmptyState
             title="No courses yet"
             action={{ href: "/teach/courses?new=1", label: "New course" }}
             primary
           >
-            A course owns its templates, its question backlog and its class
-            sections.
+            A course owns its forms, its class lists and its question backlog.
           </EmptyState>
         ) : (
-          courses.map(({ course, isOwner, sections }) => (
-            <section className="notice" key={course.id}>
-              <div className="notice__head">
-                <div>
-                  <h2>{course.title}</h2>
-                  <p>{course.code}</p>
-                </div>
-                <div className="row">
-                  {/* Only the exceptional standing is stamped: a stamp on every
-                      row of a list you mostly own signals nothing. */}
-                  {!isOwner && <Stamp tone="neutral">Course staff</Stamp>}
-                  <Link
-                    className="button button--secondary button--small"
-                    href={`/teach/courses/${course.id}/templates`}
-                  >
-                    Form templates
-                  </Link>
-                </div>
-              </div>
-
-              {sections.length > 0 ? (
-                <ul className="data-list">
-                  {sections.map((section) => (
-                    <li key={section.id}>
-                      <span className="data-list__main">
-                        <strong>{section.title}</strong>
-                        {/* The term reads as words, and the timezone is gone —
-                            nobody scans a course list for it, and glued to the
-                            term with a dot it made the row's only metadata
-                            line unreadable. It lives in section setup. */}
-                        <MetaList
-                          items={[
-                            ...termParts(section.term),
-                            !section.active && "Inactive",
-                          ]}
-                        />
-                      </span>
-                      <span className="row">
-                        <Link
-                          className="button button--secondary button--small"
-                          href={`/teach/sections/${section.id}/review`}
-                        >
-                          Review inbox
-                        </Link>
-                        {/* A real destination, so it looks like one. It was a
-                            quiet text link beside a bordered sibling. */}
-                        <Link
-                          className="button button--secondary button--small"
-                          href={`/teach/sections/${section.id}/setup`}
-                        >
-                          Section setup
-                        </Link>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
+          withForms.map(({ course, isOwner, sections, forms }) => {
+            const openForms = forms.filter((f) => f.openInstance);
+            const needsReview = forms.reduce(
+              (sum, f) => sum + f.needsReviewCount,
+              0,
+            );
+            const terms = [...new Set(sections.map((s) => s.term))];
+            return (
+              <Link
+                className="notice section-notice"
+                key={course.id}
+                href={`/teach/courses/${course.id}`}
+              >
                 <div className="notice__body">
-                  <p className="muted small">
-                    No class sections yet. A section is what students join and
-                    what the weekly form belongs to.
-                  </p>
-                </div>
-              )}
-
-              <details className="disclose disclose--inset">
-                <summary>
-                  <IconPlus size={15} />
-                  Add a section
-                </summary>
-                <div className="disclose__body">
-                  <form action={addSection} className="stack-4">
-                    <input type="hidden" name="courseId" value={course.id} />
-                    <div className="field-row">
-                      <label htmlFor={`sectitle-${course.id}`}>
-                        Section name
-                      </label>
-                      <input
-                        id={`sectitle-${course.id}`}
-                        className="field"
-                        name="title"
-                        placeholder={`${course.code} Section A`}
-                        required
+                  <div className="spread">
+                    <div style={{ minWidth: 0 }}>
+                      {/* The code IS the heading. The title reads underneath it
+                          as what the code stands for, which is the order a
+                          teacher actually needs. */}
+                      <h2 className="panel-title">{course.code}</h2>
+                      <MetaList
+                        items={[
+                          course.title,
+                          ...(terms.length === 1
+                            ? termParts(terms[0]!)
+                            : terms.length > 1
+                              ? [`${terms.length} terms`]
+                              : []),
+                        ]}
                       />
                     </div>
-                    <TermFields />
-                    <div>
-                      <button className="button button--primary" type="submit">
-                        Add section
-                      </button>
+                    <div className="row">
+                      {course.archivedAt && (
+                        <Stamp tone="neutral">Archived</Stamp>
+                      )}
+                      {!isOwner && <Stamp tone="neutral">Course staff</Stamp>}
                     </div>
-                  </form>
+                  </div>
+                  <div className="section-notice__foot">
+                    {/* Forms and attention first — the two facts that decide
+                        whether this course needs the teacher today. */}
+                    <MetaList
+                      items={[
+                        forms.length === 0
+                          ? "No forms yet"
+                          : `${forms.length} form${forms.length === 1 ? "" : "s"}`,
+                        openForms.length > 0
+                          ? `${openForms.length} open now`
+                          : null,
+                        needsReview > 0
+                          ? `${needsReview} response${needsReview === 1 ? "" : "s"} to answer`
+                          : null,
+                        sections.length === 0
+                          ? "No class lists yet"
+                          : `${sections.length} section${sections.length === 1 ? "" : "s"}`,
+                      ]}
+                    />
+                    <span className="section-notice__action">
+                      Open {course.code}
+                      <IconForward size={15} />
+                    </span>
+                  </div>
                 </div>
-              </details>
-            </section>
-          ))
+              </Link>
+            );
+          })
         )}
       </div>
     </AppShell>

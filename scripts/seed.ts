@@ -173,25 +173,29 @@ async function main() {
   }
 
   const hasSchedule = await db.query.recurrenceSchedules.findFirst({
-    where: eq(recurrenceSchedules.sectionId, section!.id),
+    where: eq(recurrenceSchedules.templateId, template!.id),
   });
   if (!hasSchedule) {
-    // Start on the Monday two weeks ago so one cycle is open right now:
+    // Start on the Monday two weeks ago so one occurrence is open right now:
     // opens Monday 08:00, closes Sunday 23:59 (institution timezone).
+    // Delivered to every section of the course, which is the ordinary case — the
+    // sections answer the same form and the teacher reviews them together.
     const today = new Date();
     const monday = new Date(today);
     monday.setDate(today.getDate() - ((today.getDay() + 6) % 7) - 14);
     const startDate = monday.toISOString().slice(0, 10);
-    await db.insert(recurrenceSchedules).values({
-      sectionId: section!.id,
+    const { configureDelivery } = await import("../src/modules/forms/schedules");
+    await configureDelivery(teacher.id, course!.id, {
+      templateId: template!.id,
+      deliveryMode: "weekly",
+      audienceMode: "all_sections",
+      sectionIds: [],
       openDayOfWeek: 1,
-      openTime: "08:00:00",
+      openTime: "08:00",
       deadlineDayOfWeek: 0,
-      deadlineTime: "23:59:00",
+      deadlineTime: "23:59",
       startDate,
       occurrenceCount: 16,
-      templateId: template!.id,
-      timezone: env.INSTITUTION_TIMEZONE,
     });
   }
 

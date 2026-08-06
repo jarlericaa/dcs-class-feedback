@@ -28,15 +28,17 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 ### Forms & templates
 
 - **Lesson / Topic** — course-level content unit. Fields: → Course, title, kind (lesson/lecture/module/topic), order.
-- **FormTemplate** — reusable question set. Fields: → Course (or → owning User for private), title, description, visibility (private-by-default / course-shared), archived flag. See [weekly-form-workflow.md](weekly-form-workflow.md).
-- **TemplateVersion** — an immutable snapshot of a template's questions/settings. Applying a template copies from a version; later template edits create new versions and never mutate already-generated cycles.
-- **RecurrenceSchedule** — per-section recurring config. Fields: → ClassSection, frequency, open day/time, deadline day/time, start date, end date or occurrence count, → FormTemplate (source), timezone, active flag.
-- **WeeklyCycle** — a weekly instance. Fields: → ClassSection, cycle index/sequence, open-at, deadline-at, → source RecurrenceSchedule, → snapshot of questions (see FormQuestion), state (§3.1). A uniqueness constraint prevents duplicate cycles for the same section+window (idempotent generation).
-- **FormQuestion** — a question *as snapshotted into a cycle* (not the live template question). Fields: → WeeklyCycle (or → TemplateVersion for template-side), prompt, description, type (§ question types in [weekly-form-workflow.md](weekly-form-workflow.md)), choices/scale settings, required flag, display order, → default category, → Lesson/Topic, validation rules.
+- **FormTemplate** — a reusable **form definition** ("template" is the historical name). Fields: → Course, owner → User, title, description, optional purpose label, visibility (private-by-default / course-shared), archived flag. A definition does **not** own a delivery pattern: weekly is one of four delivery modes and lives on the schedule. See [FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md).
+- **TemplateVersion** — an immutable snapshot of a definition's questions/settings. Generating an instance copies from a version; later edits create new versions and never mutate an already-generated instance.
+- **RecurrenceSchedule** — the **delivery configuration** of one form. Fields: → Course, delivery mode (`one_time` / `weekly` / `custom_recurring` / `manual`), audience mode, interval weeks, open day/time, deadline day/time, start date, end date or occurrence count, one-time open/deadline instants, → FormTemplate (source), timezone, active flag. `→ ClassSection` survives only as the legacy anchor of a schedule created before audiences existed.
+- **FormScheduleSections** — the **audience** of a delivery configuration: which sections receive instances generated from it. Explicit rows, never inferred.
+- **FormInstance** (physical table `weekly_cycles`) — the questionnaire students actually answer. Fields: → Course, delivery mode, sequence number, open-at, deadline-at, → source RecurrenceSchedule, → source TemplateVersion, → snapshot of questions (see FormQuestion), optional per-occurrence title, optional focus label and → Lesson/Topic, customized-at/by, state (§3.1). A uniqueness constraint on `(schedule, sequence)` plus an audience-overlap check makes generation idempotent.
+- **FormInstanceSections** — the **audience** of one instance: every section whose students may answer it. This is what access decisions read; `FormInstance → ClassSection` is a legacy anchor and is not consulted.
+- **FormQuestion** — a question *as snapshotted into an instance* (not the live definition question). Fields: → FormInstance (or → TemplateVersion for definition-side), prompt, description, type (§ question types in [weekly-form-workflow.md](weekly-form-workflow.md)), choices/scale settings, required flag, display order, → default category, → Lesson/Topic, validation rules, **origin** (inherited / modified for this occurrence / added to this occurrence only), stable key.
 
 ### Submissions & responses
 
-- **FormResponse** — one student's completed form for a cycle. Fields: → WeeklyCycle, → StudentRecord, submission timestamp, state (§3.2), participation validity (§3.3), invalidation reason (staff-only). **Unique on (WeeklyCycle, StudentRecord)** — enforces one submission per student per section per cycle.
+- **FormResponse** — one student's completed form instance. Fields: → FormInstance, → StudentRecord, **→ ClassSection (the attribution section — the audience section the student answered through)**, submission timestamp, state (§3.2), participation validity (§3.3), invalidation reason (staff-only). **Unique on (FormInstance, StudentRecord)** — one submission per student per form instance. The section is deliberately **not** part of that key, so a student enrolled in two targeted sections still has exactly one response ([FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §2.4](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md)).
 - **QuestionAnswer** — an answer to one FormQuestion within a FormResponse. Fields: → FormResponse, → FormQuestion, value(s) (stores stable option ids *and* labels where applicable), free text.
 - **StudentSubmissionItem** — the student-originated question/feedback/concern/clarification/suggestion within a FormResponse. Fields: → FormResponse, submission type (student-selected, staff-correctable), broad category (Content/Logistics/Misc), → Lesson/Topic (for content), original text (**immutable**), review state (§3.4), response disposition (§3.5).
 
@@ -64,7 +66,7 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 - **SubmissionValidityEvent** — the per-response validity timeline for §3.3, including the separate
   student-visible reason channel.
 - **BonusPeriod** — a **course-scoped** long-exam bucket. Fields: → Course, name, required valid
-  count, start/end dates, default flag, archived flag. A WeeklyCycle carries → BonusPeriod plus an
+  count, start/end dates, default flag, archived flag. A FormInstance carries → BonusPeriod plus an
   assignment source (`auto`/`staff_override`) so an override is never overwritten.
 - **PromptAnalysisNote** — a staff-authored summary/theme note on one prompt (identified by the
   question's stable key so it survives template re-snapshots). No AI involvement.
@@ -97,14 +99,17 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 ## 2. Key relationships (text ERD)
 
 ```
-Course 1─* ClassSection 1─* WeeklyCycle 1─* FormResponse 1─* QuestionAnswer
-Course 1─* CourseStaff *─1 User
 Course 1─* FormTemplate 1─* TemplateVersion
+Course 1─* RecurrenceSchedule *─* ClassSection   (audience, via FormScheduleSections)
+Course 1─* FormInstance      *─* ClassSection   (audience, via FormInstanceSections)
+FormInstance 1─* FormResponse *─1 ClassSection   (attribution)
+FormInstance 1─* FormResponse 1─* QuestionAnswer
+Course 1─* ClassSection
+Course 1─* CourseStaff *─1 User
 Course 1─* Lesson/Topic
 Course 1─* BacklogQuestion *─* ClassSection   (via SectionBacklogVisibility)
 ClassSection 1─* SectionStaff *─1 User
 ClassSection 1─* Enrollment *─1 StudentRecord
-ClassSection 1─* RecurrenceSchedule
 ClassSection 1─* PublicAnswer
 FormResponse 1─* StudentSubmissionItem 1─* PrivateResponse
 StudentSubmissionItem *─* PublicAnswer   (via SourceLink; many sources per answer = merge)
@@ -119,21 +124,25 @@ ImportBatch 1─* StudentRecord | BacklogQuestion | Enrollment
 
 Notation: transitions as `From → To (actor / condition)`. "Student-visible" lists what the student sees, if anything.
 
-### 3.1 Weekly cycle state
+### 3.1 Form-instance state
 
 States: `Draft`, `Scheduled`, `Open`, `Closed`, `Archived`, `Skipped`.
 
 | From | To | Actor / trigger |
 |------|-----|-----------------|
-| Draft | Scheduled | staff schedules; or generated from recurrence |
-| Scheduled | Open | scheduler at open-at (idempotent; reconciled if scheduler was down — see [weekly-form-workflow.md](weekly-form-workflow.md)) |
-| Draft/Scheduled | Skipped | staff skips this occurrence |
-| Open | Closed | scheduler at deadline; or staff closes early |
-| Closed | Open | staff reopens (audited; grace/reopen policy is [Open D5](open-decisions.md)) |
+| (none) | Draft | staff create an instance to open by hand (`manual` delivery) |
+| (none) | Scheduled | generated from a delivery configuration |
+| Draft | Scheduled | staff schedule it |
+| Draft/Scheduled | Open | scheduler at open-at, **or** staff open it (`manual` delivery is never opened by the scheduler) — idempotent; reconciled if the scheduler was down (see [weekly-form-workflow.md](weekly-form-workflow.md)) |
+| Draft/Scheduled | Skipped | staff skip this occurrence |
+| Skipped | Scheduled | staff restore it — safe because a skipped instance has never opened and holds no response |
+| Open | Closed | scheduler at deadline; or staff close early (which locks the responses and moves the deadline, audited) |
+| Closed | Open | staff reopen (audited; hard-deadline policy [D5](open-decisions.md)) |
 | Closed | Archived | staff or end-of-term archive |
 
 - Invalid: `Skipped → Open`; `Archived → *` (except un-archive if later supported). Students may submit only while `Open` and before deadline.
-- Student-visible: whether the current cycle is open and its deadline. Not `Draft`/`Skipped` internals.
+- Student-visible: whether a form is open and its deadline, plus its title and optional focus. Never the audience, another section, a count, or `Draft`/`Skipped` internals.
+- Lifecycle transitions on a SHARED instance require the capability on **every** audience section: opening, closing, skipping, reopening and re-windowing affect all of them at once. Read models use the looser "any audience section" rule and filter their rows instead ([FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §4](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md)).
 
 ### 3.1a Response lifecycle
 
@@ -275,7 +284,9 @@ States: `Unmatched`, `Candidate`, `Ambiguous`, `Confirmed`, `Rejected`, `Correct
 - A `FormResponse` cannot be `Invalid` and still contribute to participation counts.
 - A `PublicAnswer` cannot be `Published` with zero `SourceLink`s **unless** it is a staff-curated/legacy entry with no source by design (see [legacy-question-import.md](legacy-question-import.md)).
 - A `StudentSubmissionItem` disposition `Merged` requires at least one `SourceLink` to the merged `PublicAnswer`.
-- A `WeeklyCycle` cannot accept a `FormResponse` unless it is `Open` and before its deadline.
+- A `FormInstance` cannot accept a `FormResponse` unless it is `Open` and before its deadline.
+- A `FormInstance` must have at least one audience section. Enforced by the three services that create instances and asserted by integration tests — a `CHECK` cannot span tables.
+- A `FormResponse`'s attribution section must be one of its instance's audience sections.
 
 ## 4. Audit events
 
@@ -284,7 +295,7 @@ States: `Unmatched`, `Candidate`, `Ambiguous`, `Confirmed`, `Rejected`, `Correct
 Audited actions **[Confirmed]** include: course creation; class creation; class-list import
 (including preview edits); student-account matching, manual correction, and **unlinking**; roster
 **claim** submission/confirmation/rejection; staff-permission changes; template creation/edits;
-recurrence-config changes; per-occurrence window overrides; weekly-cycle generation; **draft save,
+form delivery configuration and **audience** changes; per-occurrence window overrides; per-occurrence question customization, rewording, and reset; per-occurrence focus changes; form-instance generation; **draft save,
 submission, edit, lock, and unlock**; every validity transition; bonus-period creation/edit and
 cycle-to-period assignment; private responses **and student follow-ups**; comment moderation and
 discussion locks; public-question rewording; **submit-for-approval, approval, and rejection**;

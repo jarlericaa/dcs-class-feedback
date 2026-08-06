@@ -1,5 +1,13 @@
 # Journey — Student Weekly Submit
 
+> **Partly superseded, 2026-08-06.** The course is now the primary workspace and
+> the form is the work object; a section provides audience and access. The setup
+> and submission steps below still describe the right *decisions*, but the routes
+> and the per-section framing have changed — see
+> [FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md) §7
+> for the current route map. A student now opens a **form** (`/forms/[id]`), and a
+> teacher configures delivery once on the form rather than once per section.
+
 **Status:** **[Recommended]** flow redesign. Audit of the implemented flow plus
 proposed changes. No scope change: every proposal is a change to an existing MVP
 surface, nothing from [mvp-scope.md](mvp-scope.md) §2/§3 is promoted.

@@ -24,12 +24,12 @@ import {
   submissionValidity,
   validityAction,
 } from "./enums";
-import { formQuestions, weeklyCycles } from "./forms";
+import { formInstances, formQuestions } from "./forms";
 import { studentRecords, users } from "./identity";
-import { lessonsTopics } from "./catalog";
+import { classSections, lessonsTopics } from "./catalog";
 
 /**
- * One student's weekly form. THREE independent state dimensions
+ * One student's completed form instance. THREE independent state dimensions
  * (domain-model.md §3.1a/§3.2/§3.3):
  *
  * - `lifecycle` — draft / submitted / locked
@@ -37,9 +37,9 @@ import { lessonsTopics } from "./catalog";
  * - `validity`  — valid / flagged / invalid
  *
  * The single row IS the draft, the submission, and the locked version in turn:
- * there is never a second row for a (cycle, student) pair, which is what makes
- * "one response per cycle" and "editing cannot mint a second credit" structural
- * rather than something the service has to remember.
+ * there is never a second row for an (instance, student) pair, which is what
+ * makes "one response per form instance" and "editing cannot mint a second
+ * credit" structural rather than something the service has to remember.
  *
  * Participation is DERIVED from these rows — there is no participation table.
  */
@@ -49,10 +49,24 @@ export const formResponses = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     cycleId: uuid("cycle_id")
       .notNull()
-      .references(() => weeklyCycles.id),
+      .references(() => formInstances.id),
     studentRecordId: uuid("student_record_id")
       .notNull()
       .references(() => studentRecords.id),
+    /**
+     * The audience section this response is attributed to — resolved server-side
+     * on the first save from the student's active enrolments among the
+     * instance's audience, and never re-derived.
+     *
+     * Deliberately NOT part of the uniqueness key below: a student enrolled in
+     * two targeted sections must not be able to produce two responses to the
+     * same instance. This column is what makes per-section review filtering,
+     * participation, publication scoping, and student history exact without
+     * reintroducing a per-section copy of the form.
+     */
+    sectionId: uuid("section_id")
+      .notNull()
+      .references(() => classSections.id),
     lifecycle: responseLifecycle("lifecycle").notNull().default("submitted"),
     /**
      * FIRST submission only, and never rewritten. This is the participation
@@ -88,7 +102,8 @@ export const formResponses = pgTable(
       .defaultNow(),
   },
   (t) => [
-    // THE one-response-per-student-per-cycle rule (weekly-form-workflow.md §4).
+    // THE one-response-per-student-per-instance rule (weekly-form-workflow.md
+    // §4). The section is not in this key on purpose — see sectionId above.
     uniqueIndex("one_response_per_cycle_student").on(
       t.cycleId,
       t.studentRecordId,
@@ -113,6 +128,8 @@ export const formResponses = pgTable(
     index("form_responses_student_idx").on(t.studentRecordId),
     index("form_responses_cycle_idx").on(t.cycleId),
     index("form_responses_cycle_lifecycle_idx").on(t.cycleId, t.lifecycle),
+    index("form_responses_section_idx").on(t.sectionId),
+    index("form_responses_section_cycle_idx").on(t.sectionId, t.cycleId),
     index("form_responses_validity_idx").on(t.validity),
   ],
 );

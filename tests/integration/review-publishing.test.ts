@@ -5,22 +5,22 @@ import {
   addSectionStaff,
   makeCourse,
   makeEnrolledStudent,
+  makeSchedule,
   makeSection,
   makeUser,
 } from "./fixtures";
 import {
+  formInstances,
   formQuestions,
   publicAnswers,
   sourceLinks,
   studentSubmissionItems,
-  weeklyCycles,
 } from "@/db/schema";
 import { createTemplate } from "@/modules/forms/templates";
 import {
   generateCyclesForSchedule,
   openDueCycles,
 } from "@/modules/forms/cycles";
-import { recurrenceSchedules } from "@/db/schema";
 import { submitResponse } from "@/modules/forms/submission";
 import {
   createPrivateResponse,
@@ -57,26 +57,18 @@ async function fullSetup() {
       },
     ],
   });
-  const [schedule] = await db
-    .insert(recurrenceSchedules)
-    .values({
-      sectionId: section.id,
-      openDayOfWeek: 1,
-      openTime: "08:00:00",
-      deadlineDayOfWeek: 5,
-      deadlineTime: "17:00:00",
-      startDate: "2026-01-05",
-      occurrenceCount: 4,
-      templateId: template.id,
-      timezone: "Asia/Manila",
-    })
-    .returning();
-  await generateCyclesForSchedule(schedule!, new Date("2026-01-06T00:00:00Z"));
+  const schedule = await makeSchedule({
+    courseId: course.id,
+    sectionIds: [section.id],
+    templateId: template.id,
+    occurrenceCount: 1,
+  });
+  await generateCyclesForSchedule(schedule, new Date("2026-01-06T00:00:00Z"));
   await openDueCycles(new Date("2026-01-05T01:00:00Z"));
-  const cycle = (await db.query.weeklyCycles.findFirst({
+  const cycle = (await db.query.formInstances.findFirst({
     where: and(
-      eq(weeklyCycles.scheduleId, schedule!.id),
-      eq(weeklyCycles.state, "open"),
+      eq(formInstances.scheduleId, schedule.id),
+      eq(formInstances.state, "open"),
     ),
   }))!;
   const questions = await db.query.formQuestions.findMany({

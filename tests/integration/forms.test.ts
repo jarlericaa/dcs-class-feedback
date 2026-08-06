@@ -4,10 +4,11 @@ import { db, truncateAll } from "./helpers";
 import {
   makeCourse,
   makeEnrolledStudent,
+  makeSchedule,
   makeSection,
   makeUser,
 } from "./fixtures";
-import { formQuestions, recurrenceSchedules, weeklyCycles } from "@/db/schema";
+import { formInstances, formQuestions } from "@/db/schema";
 import {
   createTemplate,
   createTemplateVersion,
@@ -45,21 +46,14 @@ async function setupSectionWithSchedule() {
       },
     ],
   });
-  const [schedule] = await db
-    .insert(recurrenceSchedules)
-    .values({
-      sectionId: section.id,
-      openDayOfWeek: 1,
-      openTime: "08:00:00",
-      deadlineDayOfWeek: 5,
-      deadlineTime: "17:00:00",
-      startDate: "2026-01-05",
-      occurrenceCount: 4,
-      templateId: template.id,
-      timezone: TZ,
-    })
-    .returning();
-  return { teacher, course, section, template, schedule: schedule! };
+  const schedule = await makeSchedule({
+    courseId: course.id,
+    sectionIds: [section.id],
+    templateId: template.id,
+    occurrenceCount: 4,
+    timezone: TZ,
+  });
+  return { teacher, course, section, template, schedule };
 }
 
 describe("weekly cycles + template snapshots", () => {
@@ -75,8 +69,8 @@ describe("weekly cycles + template snapshots", () => {
     const second = await generateCyclesForSchedule(schedule, now);
     expect(second).toBe(0);
 
-    const cycles = await db.query.weeklyCycles.findMany({
-      where: eq(weeklyCycles.scheduleId, schedule.id),
+    const cycles = await db.query.formInstances.findMany({
+      where: eq(formInstances.scheduleId, schedule.id),
     });
     const indexes = cycles.map((c) => c.cycleIndex).sort();
     expect(new Set(indexes).size).toBe(indexes.length);
@@ -86,8 +80,8 @@ describe("weekly cycles + template snapshots", () => {
     const { teacher, template, schedule } = await setupSectionWithSchedule();
     // Horizon covers only week 1 — cycle 2 must not exist before the edit.
     await generateCyclesForSchedule(schedule, new Date("2025-12-23T00:00:00Z"));
-    const cycle = (await db.query.weeklyCycles.findFirst({
-      where: eq(weeklyCycles.scheduleId, schedule.id),
+    const cycle = (await db.query.formInstances.findFirst({
+      where: eq(formInstances.scheduleId, schedule.id),
     }))!;
     const before = await db.query.formQuestions.findMany({
       where: eq(formQuestions.cycleId, cycle.id),
@@ -112,10 +106,10 @@ describe("weekly cycles + template snapshots", () => {
 
     // But a newly generated cycle uses the new version.
     await generateCyclesForSchedule(schedule, new Date("2026-01-13T00:00:00Z"));
-    const cycle2 = (await db.query.weeklyCycles.findFirst({
+    const cycle2 = (await db.query.formInstances.findFirst({
       where: and(
-        eq(weeklyCycles.scheduleId, schedule.id),
-        eq(weeklyCycles.cycleIndex, 2),
+        eq(formInstances.scheduleId, schedule.id),
+        eq(formInstances.cycleIndex, 2),
       ),
     }))!;
     const q2 = await db.query.formQuestions.findMany({
@@ -148,7 +142,7 @@ describe("weekly cycles + template snapshots", () => {
     const result = await reconcile(new Date("2026-01-12T02:00:00Z"));
     expect(result.cyclesGenerated).toBeGreaterThanOrEqual(2);
     // week 1 opened AND closed; week 2 open (Mon 10:00 Manila)
-    const cycles = await db.query.weeklyCycles.findMany();
+    const cycles = await db.query.formInstances.findMany();
     const byIndex = new Map(cycles.map((c) => [c.cycleIndex, c.state]));
     expect(byIndex.get(1)).toBe("closed");
     expect(byIndex.get(2)).toBe("open");
@@ -167,10 +161,10 @@ describe("submission rules", () => {
       new Date("2026-01-06T00:00:00Z"),
     );
     await openDueCycles(new Date("2026-01-05T01:00:00Z"));
-    const cycle = (await db.query.weeklyCycles.findFirst({
+    const cycle = (await db.query.formInstances.findFirst({
       where: and(
-        eq(weeklyCycles.scheduleId, fixtures.schedule.id),
-        eq(weeklyCycles.state, "open"),
+        eq(formInstances.scheduleId, fixtures.schedule.id),
+        eq(formInstances.state, "open"),
       ),
     }))!;
     const questions = await db.query.formQuestions.findMany({

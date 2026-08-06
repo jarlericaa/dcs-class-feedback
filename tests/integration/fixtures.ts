@@ -7,6 +7,10 @@ import {
   courses,
   courseStaff,
   enrollments,
+  formInstanceSections,
+  formInstances,
+  formScheduleSections,
+  recurrenceSchedules,
   sectionStaff,
   studentRecords,
   users,
@@ -129,4 +133,105 @@ export async function makeEnrolledStudent(
   await confirmMatchDirect(user.id, record.id, confirmedByUserId);
   await enroll(sectionId, record.id);
   return { user, record };
+}
+
+/**
+ * A delivery configuration with an explicit audience.
+ *
+ * Fixtures write the audience row themselves rather than going through
+ * `configureDelivery`, because most suites want a schedule without also
+ * exercising its authorization path. The audience is still explicit — that is
+ * the whole point of the model — so a fixture cannot accidentally create an
+ * instance nobody can reach.
+ */
+export async function makeSchedule(opts: {
+  courseId: string;
+  sectionIds: string[];
+  templateId: string;
+  deliveryMode?: "one_time" | "weekly" | "custom_recurring" | "manual";
+  audienceMode?: "all_sections" | "selected_sections";
+  intervalWeeks?: number;
+  openDayOfWeek?: number;
+  openTime?: string;
+  deadlineDayOfWeek?: number;
+  deadlineTime?: string;
+  startDate?: string;
+  endDate?: string | null;
+  occurrenceCount?: number | null;
+  firstOpenAt?: Date | null;
+  firstDeadlineAt?: Date | null;
+  timezone?: string;
+}) {
+  const mode = opts.deliveryMode ?? "weekly";
+  const recurring = mode === "weekly" || mode === "custom_recurring";
+  const [schedule] = await db
+    .insert(recurrenceSchedules)
+    .values({
+      courseId: opts.courseId,
+      sectionId: null,
+      deliveryMode: mode,
+      audienceMode: opts.audienceMode ?? "selected_sections",
+      intervalWeeks: opts.intervalWeeks ?? 1,
+      openDayOfWeek: recurring ? (opts.openDayOfWeek ?? 1) : null,
+      openTime: recurring ? (opts.openTime ?? "08:00:00") : null,
+      deadlineDayOfWeek: recurring ? (opts.deadlineDayOfWeek ?? 5) : null,
+      deadlineTime: recurring ? (opts.deadlineTime ?? "17:00:00") : null,
+      startDate: recurring ? (opts.startDate ?? "2026-01-05") : null,
+      endDate: recurring ? (opts.endDate ?? null) : null,
+      occurrenceCount: recurring ? (opts.occurrenceCount ?? null) : null,
+      firstOpenAt: opts.firstOpenAt ?? null,
+      firstDeadlineAt: opts.firstDeadlineAt ?? null,
+      templateId: opts.templateId,
+      timezone: opts.timezone ?? "Asia/Manila",
+    })
+    .returning();
+  if (opts.sectionIds.length > 0) {
+    await db.insert(formScheduleSections).values(
+      opts.sectionIds.map((sectionId) => ({
+        scheduleId: schedule!.id,
+        sectionId,
+      })),
+    );
+  }
+  return schedule!;
+}
+
+/**
+ * One form instance with an explicit audience, for suites that need an open form
+ * without a schedule behind it.
+ */
+export async function makeInstance(opts: {
+  courseId: string;
+  sectionIds: string[];
+  openAt: Date;
+  deadlineAt: Date;
+  state?: "draft" | "scheduled" | "open" | "closed" | "archived" | "skipped";
+  deliveryMode?: "one_time" | "weekly" | "custom_recurring" | "manual";
+  cycleIndex?: number;
+  templateVersionId?: string | null;
+  title?: string | null;
+  focusLabel?: string | null;
+}) {
+  const [instance] = await db
+    .insert(formInstances)
+    .values({
+      courseId: opts.courseId,
+      sectionId: null,
+      deliveryMode: opts.deliveryMode ?? "weekly",
+      cycleIndex: opts.cycleIndex ?? 1,
+      openAt: opts.openAt,
+      deadlineAt: opts.deadlineAt,
+      state: opts.state ?? "open",
+      templateVersionId: opts.templateVersionId ?? null,
+      title: opts.title ?? null,
+      focusLabel: opts.focusLabel ?? null,
+    })
+    .returning();
+  await db.insert(formInstanceSections).values(
+    opts.sectionIds.map((sectionId) => ({
+      instanceId: instance!.id,
+      sectionId,
+    })),
+  );
+  return instance!;
 }

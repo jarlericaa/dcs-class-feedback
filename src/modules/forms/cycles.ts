@@ -1,18 +1,27 @@
 import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import {
+  formInstanceSections,
+  formInstances,
   formQuestions,
   formResponses,
   recurrenceSchedules,
-  weeklyCycles,
+  templateVersions,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import { AuthzError } from "@/modules/authz";
 import {
   lockResponsesForCycle,
   unlockResponsesForCycle,
 } from "./response-lock";
 import { enqueueCycleOpened } from "@/modules/email/outbox";
-import { requireSectionStaff } from "@/modules/authz";
+import {
+  getInstanceAudience,
+  getScheduleAudience,
+  requireInstanceStaff,
+  resolveAudienceSections,
+  setInstanceAudience,
+} from "./audience";
 import { getLatestTemplateVersion } from "./templates";
 import {
   addDays,
@@ -23,24 +32,36 @@ import {
 } from "./timezone";
 
 /**
- * Weekly-cycle generation and open/close (weekly-form-workflow.md §2).
+ * Form-instance generation and open/close.
  * Everything here is idempotent:
- * - generation is guarded by the unique (scheduleId, cycleIndex) index and
- *   is safe to re-run any number of times;
+ * - generation is guarded by the unique (scheduleId, sequence) index and is safe
+ *   to re-run any number of times;
  * - open/close are state-guarded transitions; re-running never double-fires.
  * The reconciliation poller (modules/scheduling) is the backstop when the
  * scheduler was down at open/deadline moments.
+ *
+ * `manual` delivery is deliberately absent from generation: those instances are
+ * created and opened by a person (see modules/forms/instances.ts).
  */
 
-export interface CycleWindow {
-  cycleIndex: number;
+export interface InstanceWindow {
+  sequenceNumber: number;
   openAt: Date;
   deadlineAt: Date;
 }
 
+/** @deprecated name kept for existing callers; same shape. */
+export type CycleWindow = InstanceWindow & { cycleIndex: number };
+
 type Schedule = typeof recurrenceSchedules.$inferSelect;
 
-/** Pure occurrence math: windows whose openAt ≤ horizon. */
+/**
+ * Pure occurrence math: windows whose openAt ≤ horizon.
+ *
+ * Handles the recurring modes. `intervalWeeks` is the only difference between
+ * `weekly` (1) and `custom_recurring` (≥2) — the smallest honest generalization
+ * of the controls that already existed.
+ */
 export function computeCycleWindows(
   schedule: Pick<
     Schedule,
@@ -52,12 +73,22 @@ export function computeCycleWindows(
     | "endDate"
     | "occurrenceCount"
     | "timezone"
-  >,
+  > & { intervalWeeks?: number },
   horizon: Date,
 ): CycleWindow[] {
+  if (
+    schedule.openDayOfWeek === null ||
+    schedule.openTime === null ||
+    schedule.deadlineDayOfWeek === null ||
+    schedule.deadlineTime === null ||
+    schedule.startDate === null
+  ) {
+    return [];
+  }
   const start = parseDate(schedule.startDate);
   const open = parseTime(schedule.openTime);
   const deadline = parseTime(schedule.deadlineTime);
+  const step = Math.max(1, schedule.intervalWeeks ?? 1) * 7;
 
   // First open date: first day ≥ startDate whose weekday matches.
   const startDow = dayOfWeek(start.y, start.mo, start.d);
@@ -98,6 +129,7 @@ export function computeCycleWindows(
     if (openAt.getTime() > horizon.getTime()) break;
     const dl = addDays(openDate.y, openDate.mo, openDate.d, deadlineOffset);
     windows.push({
+      sequenceNumber: index,
       cycleIndex: index,
       openAt,
       deadlineAt: zonedTimeToUtc(
@@ -110,20 +142,125 @@ export function computeCycleWindows(
         schedule.timezone,
       ),
     });
-    openDate = addDays(openDate.y, openDate.mo, openDate.d, 7);
+    openDate = addDays(openDate.y, openDate.mo, openDate.d, step);
   }
   return windows;
 }
 
-/** Days ahead of `now` for which cycles are materialized. */
+/** Days ahead of `now` for which instances are materialized. */
 const GENERATION_HORIZON_DAYS = 14;
 
+/** The windows a schedule should have materialized by `horizon`, per mode. */
+function windowsFor(schedule: Schedule, horizon: Date): CycleWindow[] {
+  switch (schedule.deliveryMode) {
+    case "manual":
+      // Nothing automatic: a person creates and opens each one.
+      return [];
+    case "one_time":
+      if (!schedule.firstOpenAt || !schedule.firstDeadlineAt) return [];
+      if (schedule.firstOpenAt.getTime() > horizon.getTime()) return [];
+      return [
+        {
+          sequenceNumber: 1,
+          cycleIndex: 1,
+          openAt: schedule.firstOpenAt,
+          deadlineAt: schedule.firstDeadlineAt,
+        },
+      ];
+    case "weekly":
+    case "custom_recurring":
+      return computeCycleWindows(schedule, horizon);
+  }
+}
+
 /**
- * Materialize upcoming cycles for one schedule, snapshotting the template's
- * LATEST version's questions into each newly-created cycle. Idempotent:
- * existing (scheduleId, cycleIndex) rows are skipped via onConflictDoNothing.
+ * Copy the source version's questions into a new instance's own snapshot.
+ *
+ * `stableKey` carries identity into the snapshot so exports and analytics can
+ * follow a question across occurrences; `origin: "inherited"` records that this
+ * copy has not been touched for this occurrence, which is what the per-occurrence
+ * editor reads.
  */
-export async function generateCyclesForSchedule(
+async function snapshotQuestions(
+  tx: DbOrTx,
+  instanceId: string,
+  questions: (typeof formQuestions.$inferSelect)[],
+) {
+  if (questions.length === 0) return;
+  await tx.insert(formQuestions).values(
+    questions.map((q) => ({
+      cycleId: instanceId,
+      prompt: q.prompt,
+      description: q.description,
+      type: q.type,
+      options: q.options,
+      scale: q.scale,
+      validation: q.validation,
+      required: q.required,
+      displayOrder: q.displayOrder,
+      category: q.category,
+      topicId: q.topicId,
+      origin: "inherited" as const,
+      stableKey: q.stableKey,
+    })),
+  );
+}
+
+/**
+ * Which of these instances belong to the given form definition?
+ *
+ * An instance names its form through its snapshotted version, or — for one with
+ * no version yet — through the schedule that produced it. Both routes are checked
+ * so the overlap guard cannot be defeated by a form with no questions.
+ */
+async function filterToTemplate(
+  tx: DbOrTx,
+  instances: (typeof formInstances.$inferSelect)[],
+  templateId: string,
+) {
+  const versionIds = [
+    ...new Set(
+      instances.map((c) => c.templateVersionId).filter((v): v is string => !!v),
+    ),
+  ];
+  const scheduleIds = [
+    ...new Set(
+      instances.map((c) => c.scheduleId).filter((v): v is string => !!v),
+    ),
+  ];
+  const versions = versionIds.length
+    ? await tx.query.templateVersions.findMany({
+        where: inArray(templateVersions.id, versionIds),
+      })
+    : [];
+  const schedules = scheduleIds.length
+    ? await tx.query.recurrenceSchedules.findMany({
+        where: inArray(recurrenceSchedules.id, scheduleIds),
+      })
+    : [];
+  const versionTemplate = new Map(versions.map((v) => [v.id, v.templateId]));
+  const scheduleTemplate = new Map(schedules.map((s) => [s.id, s.templateId]));
+  return instances.filter((c) => {
+    const fromVersion = c.templateVersionId
+      ? versionTemplate.get(c.templateVersionId)
+      : undefined;
+    const fromSchedule = c.scheduleId
+      ? scheduleTemplate.get(c.scheduleId)
+      : undefined;
+    return (fromVersion ?? fromSchedule) === templateId;
+  });
+}
+
+/**
+ * Materialize upcoming instances for one delivery configuration, snapshotting
+ * the form's LATEST version into each newly-created instance and copying the
+ * schedule's audience onto it.
+ *
+ * Idempotent: existing (scheduleId, sequence) rows are skipped via
+ * onConflictDoNothing, and an overlapping window in the same course with an
+ * intersecting audience is skipped explicitly.
+ */
+export async function generateInstancesForSchedule(
   schedule: Schedule,
   now: Date,
 ): Promise<number> {
@@ -131,33 +268,66 @@ export async function generateCyclesForSchedule(
   const horizon = new Date(
     now.getTime() + GENERATION_HORIZON_DAYS * 24 * 3600 * 1000,
   );
-  const windows = computeCycleWindows(schedule, horizon);
-  let created = 0;
+  const windows = windowsFor(schedule, horizon);
+  if (windows.length === 0) return 0;
 
+  // `all_sections` re-resolves, so a section added mid-term starts receiving the
+  // form; `selected_sections` uses the fixed list recorded when it was saved.
+  const audience =
+    schedule.audienceMode === "all_sections"
+      ? await resolveAudienceSections(db, schedule.courseId, {
+          mode: "all_sections",
+        }).catch(() => [])
+      : await getScheduleAudience(db, schedule.id);
+  if (audience.length === 0) return 0;
+
+  let created = 0;
   for (const w of windows) {
     await db.transaction(async (tx) => {
-      // The (scheduleId, cycleIndex) unique index makes re-running THIS
-      // schedule idempotent, but it cannot see cycles belonging to a previous,
-      // now-retired schedule for the same section. Reconfiguring a schedule
-      // creates a new row whose indices restart at 1, so without this check a
-      // replacement would generate a second cycle covering a week that already
-      // exists — letting one student submit twice for the same week and
-      // producing duplicate participation columns.
-      const overlapping = await tx.query.weeklyCycles.findFirst({
+      /**
+       * The (scheduleId, sequence) unique index makes re-running THIS schedule
+       * idempotent, but it cannot see an instance belonging to a previous,
+       * now-retired schedule for the same form. Reconfiguring creates a new row
+       * whose sequence restarts at 1, so without this check a replacement would
+       * generate a second instance covering a window that already exists —
+       * letting one student answer the same form twice for one occurrence.
+       *
+       * Scoped to THIS FORM, not to the course: two different forms of a course
+       * may legitimately open at the same moment (a weekly check-in and a
+       * one-time LE form both opening Monday 08:00 is ordinary), and a
+       * course-wide guard would silently swallow the second one.
+       */
+      const sameWindow = await tx.query.formInstances.findMany({
         where: and(
-          eq(weeklyCycles.sectionId, schedule.sectionId),
-          eq(weeklyCycles.openAt, w.openAt),
+          eq(formInstances.courseId, schedule.courseId),
+          eq(formInstances.openAt, w.openAt),
         ),
       });
-      if (overlapping) return; // that week is already materialized
+      const sameForm = sameWindow.length
+        ? await filterToTemplate(tx, sameWindow, schedule.templateId)
+        : [];
+      if (sameForm.length > 0) {
+        const overlapping = await tx.query.formInstanceSections.findMany({
+          where: and(
+            inArray(
+              formInstanceSections.instanceId,
+              sameForm.map((c) => c.id),
+            ),
+            inArray(formInstanceSections.sectionId, audience),
+          ),
+        });
+        if (overlapping.length > 0) return; // that window is already materialized
+      }
 
       const snapshot = await getLatestTemplateVersion(tx, schedule.templateId);
-      const [cycle] = await tx
-        .insert(weeklyCycles)
+      const [instance] = await tx
+        .insert(formInstances)
         .values({
-          sectionId: schedule.sectionId,
+          courseId: schedule.courseId,
+          sectionId: null,
           scheduleId: schedule.id,
-          cycleIndex: w.cycleIndex,
+          deliveryMode: schedule.deliveryMode,
+          cycleIndex: w.sequenceNumber,
           openAt: w.openAt,
           deadlineAt: w.deadlineAt,
           templateVersionId: snapshot?.version.id ?? null,
@@ -165,38 +335,25 @@ export async function generateCyclesForSchedule(
         })
         .onConflictDoNothing()
         .returning();
-      if (!cycle) return; // already generated — idempotent no-op
+      if (!instance) return; // already generated — idempotent no-op
 
-      if (snapshot && snapshot.questions.length > 0) {
-        await tx.insert(formQuestions).values(
-          snapshot.questions.map((q) => ({
-            cycleId: cycle.id,
-            prompt: q.prompt,
-            description: q.description,
-            type: q.type,
-            options: q.options,
-            scale: q.scale,
-            validation: q.validation,
-            required: q.required,
-            displayOrder: q.displayOrder,
-            category: q.category,
-            topicId: q.topicId,
-            stableKey: q.stableKey, // identity carries into the snapshot
-          })),
-        );
-      }
+      await setInstanceAudience(tx, instance.id, audience);
+      await snapshotQuestions(tx, instance.id, snapshot?.questions ?? []);
       await writeAudit(tx, {
         actorUserId: null,
         action: "cycle.generated",
         entityType: "weekly_cycle",
-        entityId: cycle.id,
+        entityId: instance.id,
         after: {
-          sectionId: schedule.sectionId,
-          cycleIndex: w.cycleIndex,
+          courseId: schedule.courseId,
+          sectionIds: audience,
+          deliveryMode: schedule.deliveryMode,
+          sequenceNumber: w.sequenceNumber,
           openAt: w.openAt.toISOString(),
           deadlineAt: w.deadlineAt.toISOString(),
           templateVersionId: snapshot?.version.id ?? null,
         },
+        courseId: schedule.courseId,
       });
       created += 1;
     });
@@ -204,147 +361,183 @@ export async function generateCyclesForSchedule(
   return created;
 }
 
+/** @deprecated Renamed to generateInstancesForSchedule; same behaviour. */
+export const generateCyclesForSchedule = generateInstancesForSchedule;
+
 /** Consider an open/close more than this late (ms) worth flagging in audit. */
 const LATE_THRESHOLD_MS = 5 * 60 * 1000;
 
-/** scheduled → open for every cycle past its openAt. State-guarded. */
+/**
+ * scheduled → open for every instance past its openAt. State-guarded.
+ *
+ * `manual` instances are excluded: they sit in `draft` until a person opens them,
+ * and a manual instance that a person *did* schedule is theirs to open too.
+ */
 export async function openDueCycles(now: Date): Promise<number> {
-  const due = await db.query.weeklyCycles.findMany({
-    where: and(eq(weeklyCycles.state, "scheduled"), lte(weeklyCycles.openAt, now)),
-    orderBy: asc(weeklyCycles.openAt),
+  const due = await db.query.formInstances.findMany({
+    where: and(
+      eq(formInstances.state, "scheduled"),
+      lte(formInstances.openAt, now),
+    ),
+    orderBy: asc(formInstances.openAt),
   });
   let opened = 0;
-  for (const cycle of due) {
+  for (const instance of due) {
+    if (instance.deliveryMode === "manual") continue;
     await db.transaction(async (tx) => {
       const result = await tx
-        .update(weeklyCycles)
+        .update(formInstances)
         .set({ state: "open", updatedAt: new Date() })
         .where(
-          and(eq(weeklyCycles.id, cycle.id), eq(weeklyCycles.state, "scheduled")),
+          and(
+            eq(formInstances.id, instance.id),
+            eq(formInstances.state, "scheduled"),
+          ),
         )
         .returning();
       if (result.length === 0) return; // raced — someone else opened it
-      const late = now.getTime() - cycle.openAt.getTime() > LATE_THRESHOLD_MS;
+      const late = now.getTime() - instance.openAt.getTime() > LATE_THRESHOLD_MS;
       await writeAudit(tx, {
         actorUserId: null,
         action: "cycle.opened",
         entityType: "weekly_cycle",
-        entityId: cycle.id,
+        entityId: instance.id,
         metadata: late ? { late: true } : undefined,
-        sectionId: cycle.sectionId,
+        courseId: instance.courseId,
+        sectionId: instance.sectionId,
       });
       // Queued in the SAME transaction as the state change: a rolled-back open
       // can never leave mail queued, and a committed one always queues it. The
       // unique idempotency key makes a re-run a no-op.
-      await enqueueCycleOpened(tx, cycle.id, now);
+      await enqueueCycleOpened(tx, instance.id, now);
       opened += 1;
     });
   }
   return opened;
 }
 
-/** open → closed for every cycle past its deadline. State-guarded. */
+/** open → closed for every instance past its deadline. State-guarded. */
 export async function closeDueCycles(now: Date): Promise<number> {
-  const due = await db.query.weeklyCycles.findMany({
-    where: and(eq(weeklyCycles.state, "open"), lte(weeklyCycles.deadlineAt, now)),
+  const due = await db.query.formInstances.findMany({
+    where: and(
+      eq(formInstances.state, "open"),
+      lte(formInstances.deadlineAt, now),
+    ),
   });
   let closed = 0;
-  for (const cycle of due) {
+  for (const instance of due) {
     await db.transaction(async (tx) => {
       // Exclusive row lock first: a concurrent submit takes FOR SHARE on this
       // same row, so a submission either commits before the close or observes
       // the closed state. Without this there is a window in which a response is
-      // accepted into a cycle that is being closed.
+      // accepted into an instance that is being closed.
       await tx
-        .select({ id: weeklyCycles.id })
-        .from(weeklyCycles)
-        .where(eq(weeklyCycles.id, cycle.id))
+        .select({ id: formInstances.id })
+        .from(formInstances)
+        .where(eq(formInstances.id, instance.id))
         .for("update")
         .limit(1);
       const result = await tx
-        .update(weeklyCycles)
+        .update(formInstances)
         .set({ state: "closed", updatedAt: new Date() })
-        .where(and(eq(weeklyCycles.id, cycle.id), eq(weeklyCycles.state, "open")))
+        .where(
+          and(eq(formInstances.id, instance.id), eq(formInstances.state, "open")),
+        )
         .returning();
       if (result.length === 0) return;
       const late =
-        now.getTime() - cycle.deadlineAt.getTime() > LATE_THRESHOLD_MS;
+        now.getTime() - instance.deadlineAt.getTime() > LATE_THRESHOLD_MS;
       await writeAudit(tx, {
         actorUserId: null,
         action: "cycle.closed",
         entityType: "weekly_cycle",
-        entityId: cycle.id,
+        entityId: instance.id,
         metadata: late ? { late: true } : undefined,
-        sectionId: cycle.sectionId,
+        courseId: instance.courseId,
+        sectionId: instance.sectionId,
       });
       // "At the deadline the latest submitted version becomes locked" — done in
       // the same transaction, so the two facts can never disagree.
-      await lockResponsesForCycle(tx, cycle.id, now, cycle.sectionId);
+      await lockResponsesForCycle(
+        tx,
+        instance.id,
+        now,
+        instance.sectionId ?? undefined,
+      );
       closed += 1;
     });
   }
   return closed;
 }
 
-/** Staff reopens a closed cycle (audited; grace policy D5 = hard deadline + audited reopen, provisional). */
-export async function reopenCycle(actorUserId: string, cycleId: string) {
-  const cycle = await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
-  });
-  if (!cycle) throw new Error("Cycle not found");
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "manageWeeklyCycles");
-  if (cycle.state !== "closed") {
-    throw new Error(`Cannot reopen a cycle in state ${cycle.state}`);
+/**
+ * Staff reopens a closed instance (audited; D5 = hard deadline + audited reopen).
+ *
+ * Requires `manageWeeklyCycles` on at least one audience section — and reopening
+ * necessarily affects the whole audience, so it additionally requires the
+ * permission on EVERY audience section. A staff member who runs only Section A
+ * cannot reopen a course-wide form for Section B.
+ */
+export async function reopenCycle(actorUserId: string, instanceId: string) {
+  const { instance } = await requireFullAudienceStaff(
+    actorUserId,
+    instanceId,
+    "manageWeeklyCycles",
+  );
+  if (instance.state !== "closed") {
+    throw new Error(`Cannot reopen a form in state ${instance.state}`);
   }
   await db.transaction(async (tx) => {
     await tx
-      .update(weeklyCycles)
+      .update(formInstances)
       .set({ state: "open", updatedAt: new Date() })
-      .where(eq(weeklyCycles.id, cycleId));
+      .where(eq(formInstances.id, instanceId));
     await writeAudit(tx, {
       actorUserId,
       action: "cycle.reopened",
       entityType: "weekly_cycle",
-      entityId: cycleId,
+      entityId: instanceId,
       before: { state: "closed" },
       after: { state: "open" },
-      sectionId: cycle.sectionId,
+      courseId: instance.courseId,
+      sectionId: instance.sectionId,
     });
     // Reopening is the ONLY route to a post-deadline edit (open-decisions.md D5).
     // Unlocking here is what makes the reopen meaningful, and each unlock is
     // recorded per response.
     await unlockResponsesForCycle(
       tx,
-      cycleId,
+      instanceId,
       actorUserId,
       new Date(),
-      cycle.sectionId,
+      instance.sectionId ?? undefined,
     );
   });
 }
 
 /** Staff skips a draft/scheduled occurrence. */
-export async function skipCycle(actorUserId: string, cycleId: string) {
-  const cycle = await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
-  });
-  if (!cycle) throw new Error("Cycle not found");
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "manageWeeklyCycles");
-  if (cycle.state !== "draft" && cycle.state !== "scheduled") {
-    throw new Error(`Cannot skip a cycle in state ${cycle.state}`);
+export async function skipCycle(actorUserId: string, instanceId: string) {
+  const { instance } = await requireFullAudienceStaff(
+    actorUserId,
+    instanceId,
+    "manageWeeklyCycles",
+  );
+  if (instance.state !== "draft" && instance.state !== "scheduled") {
+    throw new Error(`Cannot skip a form in state ${instance.state}`);
   }
   await db.transaction(async (tx) => {
     await tx
-      .update(weeklyCycles)
+      .update(formInstances)
       .set({ state: "skipped", updatedAt: new Date() })
-      .where(eq(weeklyCycles.id, cycleId));
+      .where(eq(formInstances.id, instanceId));
     await writeAudit(tx, {
       actorUserId,
       action: "cycle.skipped",
       entityType: "weekly_cycle",
-      entityId: cycleId,
-      before: { state: cycle.state },
+      entityId: instanceId,
+      before: { state: instance.state },
       after: { state: "skipped" },
+      courseId: instance.courseId,
     });
   });
 }
@@ -352,45 +545,36 @@ export async function skipCycle(actorUserId: string, cycleId: string) {
 /**
  * Undo a skip: a skipped occurrence goes back to `scheduled`.
  *
- * `skipCycle` only accepts `draft` or `scheduled`, so a skipped cycle has never
- * opened and cannot hold a submission. Restoring it therefore discards nothing
- * and revives no response — the reconciliation poller simply picks it up again
- * on its normal schedule.
- *
- * This exists because without it a single click permanently removed a week from
- * a section with no way back, and nothing in the domain rules says a skip is
- * final (see docs/UI-REVIEW-MATCHES-PRECISION.md). Deadlines stay hard and
- * every transition stays audited.
+ * `skipCycle` only accepts `draft` or `scheduled`, so a skipped instance has
+ * never opened and cannot hold a submission. Restoring it therefore discards
+ * nothing and revives no response — the reconciliation poller simply picks it up
+ * again on its normal schedule.
  */
 export async function restoreSkippedCycle(
   actorUserId: string,
-  cycleId: string,
+  instanceId: string,
 ) {
-  const cycle = await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
-  });
-  if (!cycle) throw new Error("Cycle not found");
-  await requireSectionStaff(
-    db,
+  const { instance } = await requireFullAudienceStaff(
     actorUserId,
-    cycle.sectionId,
+    instanceId,
     "manageWeeklyCycles",
   );
-  if (cycle.state !== "skipped") {
-    throw new Error(`Cannot restore a cycle in state ${cycle.state}`);
+  if (instance.state !== "skipped") {
+    throw new Error(`Cannot restore a form in state ${instance.state}`);
   }
   await db.transaction(async (tx) => {
     await tx
-      .update(weeklyCycles)
+      .update(formInstances)
       .set({ state: "scheduled", updatedAt: new Date() })
-      .where(eq(weeklyCycles.id, cycleId));
+      .where(eq(formInstances.id, instanceId));
     await writeAudit(tx, {
       actorUserId,
       action: "cycle.restored",
       entityType: "weekly_cycle",
-      entityId: cycleId,
-      before: { state: cycle.state },
+      entityId: instanceId,
+      before: { state: instance.state },
       after: { state: "scheduled" },
+      courseId: instance.courseId,
     });
   });
 }
@@ -399,32 +583,32 @@ export async function restoreSkippedCycle(
  * Override one occurrence's open/deadline window (project-specs.md §6.2 step 4:
  * "Staff can pause, skip, or override a scheduled release").
  *
- * Refused once the occurrence has a real submission: moving the window under a
- * student who already answered would change the rules after the fact. Skipping
- * or reopening remain the tools for that case.
+ * Refused once the occurrence has a real submission ANYWHERE in its audience:
+ * moving the window under a student who already answered would change the rules
+ * after the fact. Skipping or reopening remain the tools for that case.
  */
 export async function overrideCycleWindow(
   actorUserId: string,
-  cycleId: string,
+  instanceId: string,
   input: { openAt: Date; deadlineAt: Date },
 ) {
-  const cycle = await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
-  });
-  if (!cycle) throw new Error("Cycle not found");
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "manageWeeklyCycles");
+  const { instance } = await requireFullAudienceStaff(
+    actorUserId,
+    instanceId,
+    "manageWeeklyCycles",
+  );
   if (input.openAt.getTime() >= input.deadlineAt.getTime()) {
     throw new Error("The deadline must be after the open time.");
   }
-  if (await cycleHasSubmissions(db, cycleId)) {
+  if (await cycleHasSubmissions(db, instanceId)) {
     throw new Error(
-      "This week already has a submission, so its window is locked. Skip or reopen it instead.",
+      "This form already has a submission, so its window is locked. Skip or reopen it instead.",
     );
   }
   const now = new Date();
   return db.transaction(async (tx) => {
     const [updated] = await tx
-      .update(weeklyCycles)
+      .update(formInstances)
       .set({
         openAt: input.openAt,
         deadlineAt: input.deadlineAt,
@@ -432,41 +616,70 @@ export async function overrideCycleWindow(
         windowOverriddenAt: now,
         updatedAt: now,
       })
-      .where(eq(weeklyCycles.id, cycleId))
+      .where(eq(formInstances.id, instanceId))
       .returning();
     await writeAudit(tx, {
       actorUserId,
       action: "cycle.window_overridden",
       entityType: "weekly_cycle",
-      entityId: cycleId,
+      entityId: instanceId,
       before: {
-        openAt: cycle.openAt.toISOString(),
-        deadlineAt: cycle.deadlineAt.toISOString(),
+        openAt: instance.openAt.toISOString(),
+        deadlineAt: instance.deadlineAt.toISOString(),
       },
       after: {
         openAt: input.openAt.toISOString(),
         deadlineAt: input.deadlineAt.toISOString(),
       },
-      sectionId: cycle.sectionId,
+      courseId: instance.courseId,
+      sectionId: instance.sectionId,
     });
     return updated!;
   });
 }
 
 /**
- * Edit-lock check (D4): structural cycle edits are locked once one real
- * submission exists.
+ * Instance-lifecycle authorization: the permission on EVERY audience section.
+ *
+ * Opening, closing, skipping, reopening, and re-windowing an instance affect all
+ * of its sections at once, so partial standing is not enough. Read models use
+ * the looser `authorizedAudienceSections` and filter their rows instead.
+ */
+export async function requireFullAudienceStaff(
+  actorUserId: string,
+  instanceId: string,
+  permission: "manageWeeklyCycles" | "manageTemplates",
+) {
+  const { instance, sectionIds } = await requireInstanceStaff(
+    db,
+    actorUserId,
+    instanceId,
+    permission,
+  );
+  const audience = await getInstanceAudience(db, instanceId);
+  const missing = audience.filter((id) => !sectionIds.includes(id));
+  if (missing.length > 0) {
+    throw new AuthzError(
+      "This form is shared with a section you do not have permission to manage.",
+    );
+  }
+  return { instance, sectionIds: audience };
+}
+
+/**
+ * Edit-lock check (D4): structural edits are locked once one real submission
+ * exists anywhere in the instance's audience.
  *
  * A DRAFT does not lock anything — it is not a submission, and a single student
- * opening the form would otherwise freeze the week for staff.
+ * opening the form would otherwise freeze the occurrence for staff.
  */
 export async function cycleHasSubmissions(
   dbx: DbOrTx,
-  cycleId: string,
+  instanceId: string,
 ): Promise<boolean> {
   const one = await dbx.query.formResponses.findFirst({
     where: and(
-      eq(formResponses.cycleId, cycleId),
+      eq(formResponses.cycleId, instanceId),
       inArray(formResponses.lifecycle, ["submitted", "locked"]),
     ),
   });

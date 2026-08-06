@@ -1,18 +1,15 @@
+import Link from "next/link";
 import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 import { loadStaffSection } from "@/lib/staff-section";
-import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionNav } from "@/components/layout/nav";
 import {
   AccessDenied,
   Alert,
-  Stamp,
   Breadcrumbs,
-  CycleStateBadge,
-  EmptyState,
   MetaList,
 } from "@/components/ui";
 
@@ -26,7 +23,6 @@ import { IconChevron } from "@/components/ui/icons";
 import { Dialog } from "@/components/ui/dialog";
 import { EditStaffPermissions } from "@/components/staff/staff-permissions";
 import { TermFields } from "@/components/ui/term-fields";
-import { termParts } from "@/lib/term";
 import {
   assignSectionStaff,
   CatalogError,
@@ -34,20 +30,7 @@ import {
   removeSectionStaff,
   updateSection,
 } from "@/modules/catalog";
-import {
-  configureRecurrence,
-  DAY_NAMES,
-  deactivateSchedule,
-  getActiveSchedule,
-  listCyclesForSection,
-  ScheduleError,
-} from "@/modules/forms/schedules";
-import { listTemplatesForSection } from "@/modules/forms/templates";
-import {
-  reopenCycle,
-  restoreSkippedCycle,
-  skipCycle,
-} from "@/modules/forms/cycles";
+import { ScheduleError } from "@/modules/forms/schedules";
 import {
   AuthzError,
   SECTION_PERMISSION_LABELS,
@@ -83,18 +66,10 @@ export default async function SetupPage({
       </AppShell>
     );
   }
-  const { user, access, section, course, can } = ctx;
+  const { user, access, section, course } = ctx;
   const isOwner = access.staff!.isCourseOwner;
-  const canManageCycles = can("manageWeeklyCycles");
 
   const staff = await listSectionStaff(user.id, sectionId);
-  const active = canManageCycles ? await getActiveSchedule(sectionId) : null;
-  const cycles = canManageCycles
-    ? await listCyclesForSection(user.id, sectionId)
-    : [];
-  const templates = canManageCycles
-    ? await listTemplatesForSection(user.id, sectionId, course.id)
-    : [];
 
   // --- server actions ------------------------------------------------------
   // NB: everything a "use server" closure captures is serialized, so these
@@ -152,77 +127,8 @@ export default async function SetupPage({
     redirect(backTo(sectionId, "Staff member removed from this section."));
   }
 
-  async function saveSchedule(formData: FormData) {
-    "use server";
-    const uid = await currentUserId();
-    if (!uid) redirect("/signin");
-    let generated = 0;
-    try {
-      const result = await configureRecurrence(uid, sectionId, {
-        templateId: String(formData.get("templateId") ?? ""),
-        openDayOfWeek: String(formData.get("openDayOfWeek") ?? "1"),
-        openTime: String(formData.get("openTime") ?? ""),
-        deadlineDayOfWeek: String(formData.get("deadlineDayOfWeek") ?? "0"),
-        deadlineTime: String(formData.get("deadlineTime") ?? ""),
-        startDate: String(formData.get("startDate") ?? ""),
-        occurrenceCount:
-          String(formData.get("occurrenceCount") ?? "") || undefined,
-        endDate: String(formData.get("endDate") ?? "") || undefined,
-      });
-      generated = result.cyclesGenerated;
-    } catch (err) {
-      redirect(backTo(sectionId, describe(err), "error"));
-    }
-    revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(
-      backTo(
-        sectionId,
-        `Schedule saved. ${generated} upcoming week${generated === 1 ? "" : "s"} generated.`,
-      ),
-    );
-  }
 
-  async function stopSchedule() {
-    "use server";
-    const uid = await currentUserId();
-    if (!uid) redirect("/signin");
-    try {
-      await deactivateSchedule(uid, sectionId);
-    } catch (err) {
-      redirect(backTo(sectionId, describe(err), "error"));
-    }
-    revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(
-      backTo(sectionId, "Schedule stopped. Existing weeks are unchanged."),
-    );
-  }
 
-  async function cycleAction(formData: FormData) {
-    "use server";
-    const uid = await currentUserId();
-    if (!uid) redirect("/signin");
-    const cycleId = String(formData.get("cycleId"));
-    const intent = String(formData.get("intent"));
-    // Each transition confirms what it did, so an action never appears to have
-    // silently vanished after the redirect.
-    let done = "Week updated.";
-    try {
-      if (intent === "reopen") {
-        await reopenCycle(uid, cycleId);
-        done = "Week reopened. It is accepting responses again.";
-      } else if (intent === "restore") {
-        await restoreSkippedCycle(uid, cycleId);
-        done = "Week restored. It is scheduled again.";
-      } else {
-        await skipCycle(uid, cycleId);
-        done = "Week skipped. No form opens that week; you can restore it.";
-      }
-    } catch (err) {
-      redirect(backTo(sectionId, describe(err), "error"));
-    }
-    revalidatePath(`/teach/sections/${sectionId}/setup`);
-    redirect(backTo(sectionId, done));
-  }
 
   // --- render --------------------------------------------------------------
 
@@ -251,338 +157,19 @@ export default async function SetupPage({
             its weeks first, then the team, then renaming. The 14-checkbox staff
             form used to sit at the top fully expanded, pushing the schedule
             below the fold on a page nobody visits to assign a TA. */}
-        {canManageCycles ? (
-          <>
-            <section className="notice">
-              <div className="notice__head">
-                <div>
-                  <h2>Weekly schedule</h2>
-                </div>
-                {active ? (
-                  <Stamp tone="green">Active</Stamp>
-                ) : (
-                  <Stamp tone="amber">Not scheduled</Stamp>
-                )}
-              </div>
-
-              <div className="notice__body">
-                {templates.length === 0 ? (
-                  <EmptyState
-                    title="This course has no form template yet"
-                    action={{
-                      href: `/teach/courses/${course.id}/templates`,
-                      label: "Create a template",
-                    }}
-                  >
-                    A weekly schedule needs a template to snapshot into each
-                    cycle.
-                  </EmptyState>
-                ) : (
-                  /* The populated form IS the current schedule, so the info
-                     alert that used to restate all of it in prose is gone. */
-                  <form action={saveSchedule} className="stack-4">
-                    <div className="form-grid">
-                      <div className="field-row">
-                        <label htmlFor="templateId">Form template</label>
-                        <select
-                          id="templateId"
-                          className="select-field"
-                          name="templateId"
-                          defaultValue={active?.schedule.templateId ?? ""}
-                          required
-                        >
-                          <option value="">Choose a template…</option>
-                          {templates.map(({ template, questionCount }) => (
-                            <option key={template.id} value={template.id}>
-                              {template.title} ({questionCount} question
-                              {questionCount === 1 ? "" : "s"})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="startDate">First week starts</label>
-                        <input
-                          id="startDate"
-                          className="field"
-                          type="date"
-                          name="startDate"
-                          defaultValue={active?.schedule.startDate ?? ""}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="form-grid">
-                      <div className="field-row">
-                        <label htmlFor="openDayOfWeek">Opens on</label>
-                        <select
-                          id="openDayOfWeek"
-                          className="select-field"
-                          name="openDayOfWeek"
-                          defaultValue={String(
-                            active?.schedule.openDayOfWeek ?? 1,
-                          )}
-                        >
-                          {DAY_NAMES.map((day, index) => (
-                            <option key={day} value={index}>
-                              {day}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="openTime">Opens at</label>
-                        <input
-                          id="openTime"
-                          className="field"
-                          type="time"
-                          name="openTime"
-                          defaultValue={(
-                            active?.schedule.openTime ?? "08:00:00"
-                          ).slice(0, 5)}
-                          required
-                        />
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="deadlineDayOfWeek">Closes on</label>
-                        <select
-                          id="deadlineDayOfWeek"
-                          className="select-field"
-                          name="deadlineDayOfWeek"
-                          defaultValue={String(
-                            active?.schedule.deadlineDayOfWeek ?? 0,
-                          )}
-                        >
-                          {DAY_NAMES.map((day, index) => (
-                            <option key={day} value={index}>
-                              {day}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="deadlineTime">Closes at</label>
-                        <input
-                          id="deadlineTime"
-                          className="field"
-                          type="time"
-                          name="deadlineTime"
-                          defaultValue={(
-                            active?.schedule.deadlineTime ?? "23:59:00"
-                          ).slice(0, 5)}
-                          required
-                        />
-                      </div>
-                    </div>
-                    <div className="form-grid">
-                      <div className="field-row">
-                        <label htmlFor="occurrenceCount">Number of weeks</label>
-                        <input
-                          id="occurrenceCount"
-                          className="field"
-                          type="number"
-                          min={1}
-                          max={60}
-                          name="occurrenceCount"
-                          defaultValue={active?.schedule.occurrenceCount ?? ""}
-                        />
-                        <span className="helper-text">
-                          Leave blank to use an end date instead.
-                        </span>
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="endDate">Or run until</label>
-                        <input
-                          id="endDate"
-                          className="field"
-                          type="date"
-                          name="endDate"
-                          defaultValue={active?.schedule.endDate ?? ""}
-                        />
-                        <span className="helper-text">
-                          Set one of these two, not both.
-                        </span>
-                      </div>
-                    </div>
-                    <div className="row">
-                      <button className="button button--primary" type="submit">
-                        {active ? "Replace schedule" : "Save schedule"}
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-
-              {active && (
-                <div className="notice__foot">
-                  <form action={stopSchedule} className="inline-form">
-                    <button
-                      className="button button--danger button--small"
-                      type="submit"
-                    >
-                      Stop generating new weeks
-                    </button>
-                  </form>
-                </div>
-              )}
-            </section>
-
-            <section className="notice">
-              <div className="notice__head">
-                <div>
-                  <h2>Weekly cycles</h2>
-                </div>
-              </div>
-              {cycles.length === 0 ? (
-                <div className="notice__body">
-                  <EmptyState title="No weeks generated yet">
-                    Save a weekly schedule above and the coming weeks are
-                    generated for you, opening and closing each one on time.
-                  </EmptyState>
-                </div>
-              ) : (
-                <div className="table-scroll">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Week</th>
-                        <th scope="col">State</th>
-                        <th scope="col">Opens</th>
-                        <th scope="col">Closes</th>
-                        <th scope="col">Responses</th>
-                        <th scope="col">Questions</th>
-                        <th scope="col">
-                          <span className="visually-hidden">Actions</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cycles.map(
-                        ({
-                          cycle,
-                          submissionCount,
-                          validCount,
-                          editLocked,
-                        }) => (
-                          <tr key={cycle.id}>
-                            <th scope="row">Week {cycle.cycleIndex}</th>
-                            <td>
-                              <CycleStateBadge state={cycle.state} />
-                            </td>
-                            <td>
-                              {formatDateTime(cycle.openAt, section.timezone)}
-                            </td>
-                            <td>
-                              {formatDateTime(
-                                cycle.deadlineAt,
-                                section.timezone,
-                              )}
-                            </td>
-                            <td>
-                              {submissionCount}
-                              {submissionCount !== validCount &&
-                                ` (${validCount} valid)`}
-                            </td>
-                            <td>{editLocked ? "Locked" : "Editable"}</td>
-                            <td>
-                              {cycle.state === "closed" && (
-                                <form
-                                  action={cycleAction}
-                                  className="inline-form"
-                                >
-                                  <input
-                                    type="hidden"
-                                    name="cycleId"
-                                    value={cycle.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="intent"
-                                    value="reopen"
-                                  />
-                                  <button
-                                    className="button button--secondary button--small"
-                                    type="submit"
-                                  >
-                                    Reopen
-                                  </button>
-                                </form>
-                              )}
-                              {(cycle.state === "scheduled" ||
-                                cycle.state === "draft") && (
-                                /* Confirmed, because it used to be one click on
-                                   a quiet text link with no way back. */
-                                <Dialog
-                                  className="button--small"
-                                  label="Skip week"
-                                  title={`Skip week ${cycle.cycleIndex}?`}
-                                  description="No form opens that week. You can restore it later; already-generated weeks are not affected."
-                                >
-                                  <form action={cycleAction}>
-                                    <input
-                                      type="hidden"
-                                      name="cycleId"
-                                      value={cycle.id}
-                                    />
-                                    <input
-                                      type="hidden"
-                                      name="intent"
-                                      value="skip"
-                                    />
-                                    <div className="row">
-                                      <button
-                                        className="button button--danger"
-                                        type="submit"
-                                      >
-                                        Skip week {cycle.cycleIndex}
-                                      </button>
-                                    </div>
-                                  </form>
-                                </Dialog>
-                              )}
-                              {cycle.state === "skipped" && (
-                                <form
-                                  action={cycleAction}
-                                  className="inline-form"
-                                >
-                                  <input
-                                    type="hidden"
-                                    name="cycleId"
-                                    value={cycle.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="intent"
-                                    value="restore"
-                                  />
-                                  <button
-                                    className="button button--secondary button--small"
-                                    type="submit"
-                                  >
-                                    Restore week
-                                  </button>
-                                </form>
-                              )}
-                            </td>
-                          </tr>
-                        ),
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-
-          </>
-        ) : (
-          <Alert
-            variant="info"
-            title="Schedule and cycles are not available to you"
-          >
-            Managing weekly cycles needs the &ldquo;manage cycles and
-            recurrence&rdquo; permission on this section.
-          </Alert>
-        )}
+        {/* Delivery is a property of the FORM now, not of the section: one
+            schedule can serve several sections, and a teacher configuring a
+            weekly form should not have to repeat it per class list. What is left
+            here is what genuinely belongs to a section — who runs it, and its own
+            details. */}
+        <Alert variant="info" title="Forms are set up on the course">
+          Which forms this section receives, when they open, and what they ask
+          are set on the form itself.{" "}
+          <Link className="link" href={`/teach/courses/${course.id}`}>
+            Open {course.code}
+          </Link>
+          .
+        </Alert>
 
         <section className="notice">
           <div className="notice__head">

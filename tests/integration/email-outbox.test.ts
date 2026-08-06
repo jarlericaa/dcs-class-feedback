@@ -4,13 +4,13 @@ import { db, truncateAll } from "./helpers";
 import {
   makeCourse,
   makeEnrolledStudent,
+  makeSchedule,
   makeSection,
   makeUser,
 } from "./fixtures";
 import {
   emailOutbox,
   formQuestions,
-  recurrenceSchedules,
 } from "@/db/schema";
 import { createTemplate } from "@/modules/forms/templates";
 import {
@@ -55,23 +55,16 @@ async function setup() {
       { prompt: "How was the pace?", type: "short_answer", required: true, displayOrder: 0 },
     ],
   });
-  const [schedule] = await db
-    .insert(recurrenceSchedules)
-    .values({
-      sectionId: section.id,
-      openDayOfWeek: 1,
-      openTime: "08:00:00",
-      deadlineDayOfWeek: 5,
-      deadlineTime: "17:00:00",
-      startDate: "2026-01-05",
-      occurrenceCount: 1,
-      templateId: template.id,
-      timezone: TZ,
-    })
-    .returning();
-  await generateCyclesForSchedule(schedule!, new Date("2026-01-05T00:00:00Z"));
+  const schedule = await makeSchedule({
+    courseId: course.id,
+    sectionIds: [section.id],
+    templateId: template.id,
+    occurrenceCount: 1,
+    timezone: TZ,
+  });
+  await generateCyclesForSchedule(schedule, new Date("2026-01-05T00:00:00Z"));
   const student = await makeEnrolledStudent(section.id, teacher.id);
-  return { teacher, course, section, schedule: schedule!, student };
+  return { teacher, course, section, schedule, student };
 }
 
 describe("email outbox", () => {
@@ -93,8 +86,11 @@ describe("email outbox", () => {
     expect(queued).toHaveLength(1);
     expect(queued[0]!.eventType).toBe("form_opened");
     expect(queued[0]!.state).toBe("pending");
-    // The link is a relative path to an authenticated page, not a magic URL.
-    expect(queued[0]!.linkPath).toBe(`/sections/${section.id}`);
+    // The link is the FORM, not the section: a form shared by several sections
+    // is one object to the student. Still a relative path to an authenticated
+    // page, not a magic URL.
+    const cycle = (await db.query.formInstances.findFirst())!;
+    expect(queued[0]!.linkPath).toBe(`/forms/${cycle.id}`);
   });
 
   it("re-opening the same cycle queues nothing new (unique idempotency key)", async () => {
@@ -109,10 +105,10 @@ describe("email outbox", () => {
     const { student, section } = await setup();
     await openDueCycles(IN_WINDOW);
     const question = (await db.query.formQuestions.findFirst({
-      where: eq(formQuestions.cycleId, (await db.query.weeklyCycles.findFirst())!.id),
+      where: eq(formQuestions.cycleId, (await db.query.formInstances.findFirst())!.id),
     }))!;
     const secret = "PLEASE-DO-NOT-LEAK-THIS-SENTENCE";
-    const cycle = (await db.query.weeklyCycles.findFirst())!;
+    const cycle = (await db.query.formInstances.findFirst())!;
     await submitResponse(
       student.user.id,
       cycle.id,
@@ -230,7 +226,7 @@ describe("email outbox", () => {
     await setup();
     await openDueCycles(IN_WINDOW);
     await db.delete(emailOutbox);
-    const cycle = (await db.query.weeklyCycles.findFirst())!;
+    const cycle = (await db.query.formInstances.findFirst())!;
     // Two hours before the deadline: inside the 24h window.
     const near = new Date(cycle.deadlineAt.getTime() - 3 * 60 * 60 * 1000);
     expect(await queueDeadlineReminders(near)).toBe(1);
@@ -243,7 +239,7 @@ describe("email outbox", () => {
   it("tells a student their submission stopped counting, and that it counts again", async () => {
     const { teacher, student } = await setup();
     await openDueCycles(IN_WINDOW);
-    const cycle = (await db.query.weeklyCycles.findFirst())!;
+    const cycle = (await db.query.formInstances.findFirst())!;
     const question = (await db.query.formQuestions.findFirst({
       where: eq(formQuestions.cycleId, cycle.id),
     }))!;
@@ -275,7 +271,7 @@ describe("email outbox", () => {
     const ta = await makeUser({});
     await addSectionStaff(section.id, ta.id, "ta", { flagValidity: true });
     await openDueCycles(IN_WINDOW);
-    const cycle = (await db.query.weeklyCycles.findFirst())!;
+    const cycle = (await db.query.formInstances.findFirst())!;
     const question = (await db.query.formQuestions.findFirst({
       where: eq(formQuestions.cycleId, cycle.id),
     }))!;

@@ -14,13 +14,14 @@ import {
   sourceLinks,
   studentSubmissionItems,
   users,
-  weeklyCycles,
+  formInstances,
 } from "@/db/schema";
 import { env } from "@/env";
 import { writeAudit } from "@/modules/audit";
 import { requireInstructor } from "@/modules/authz";
 import { buildPage, parsePageParams } from "@/lib/pagination";
 import { formatDeadline } from "@/lib/datetime";
+import { getInstanceAudience } from "@/modules/forms/audience";
 import { buildEmail, type EmailEvent, type TemplateContext } from "./templates";
 import { getEmailProvider } from "./index";
 
@@ -140,38 +141,49 @@ async function activeStudentUsers(dbx: DbOrTx, sectionId: string) {
   return rows;
 }
 
-/** "A form opened" — one message per enrolled student, once per cycle. */
+/**
+ * "A form opened" — one message per enrolled student, once per instance.
+ *
+ * Fans out over the instance's AUDIENCE, so a course-wide form reaches every
+ * targeted section. The idempotency key is keyed on (instance, user), not on the
+ * section, so a student in two targeted sections still gets exactly one message —
+ * the same rule as their single response.
+ */
 export async function enqueueCycleOpened(
   dbx: DbOrTx,
   cycleId: string,
   at: Date = new Date(),
 ) {
-  const cycle = await dbx.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
+  const cycle = await dbx.query.formInstances.findFirst({
+    where: eq(formInstances.id, cycleId),
   });
   if (!cycle) return 0;
-  const scope = await sectionScope(dbx, cycle.sectionId);
-  if (!scope) return 0;
-  const recipients = await activeStudentUsers(dbx, cycle.sectionId);
+  const audience = await getInstanceAudience(dbx, cycleId);
   let queued = 0;
-  for (const recipient of recipients) {
-    const inserted = await enqueueEmail(dbx, {
-      availableAt: at,
-      eventType: "form_opened",
-      idempotencyKey: key(["form_opened", "cycle", cycleId, recipient.userId]),
-      recipientUserId: recipient.userId,
-      sectionId: scope.sectionId,
-      courseId: scope.courseId,
-      context: {
-        courseCode: scope.courseCode,
-        sectionTitle: scope.sectionTitle,
-        recipientName: recipient.displayName,
-        weekNumber: cycle.cycleIndex,
-        deadlineText: formatDeadline(cycle.deadlineAt, scope.timezone),
-        linkPath: `/sections/${cycle.sectionId}`,
-      },
-    });
-    if (inserted) queued += 1;
+  for (const sectionId of audience) {
+    const scope = await sectionScope(dbx, sectionId);
+    if (!scope) continue;
+    const recipients = await activeStudentUsers(dbx, sectionId);
+    for (const recipient of recipients) {
+      const inserted = await enqueueEmail(dbx, {
+        availableAt: at,
+        eventType: "form_opened",
+        idempotencyKey: key(["form_opened", "cycle", cycleId, recipient.userId]),
+        recipientUserId: recipient.userId,
+        sectionId: scope.sectionId,
+        courseId: scope.courseId,
+        context: {
+          courseCode: scope.courseCode,
+          sectionTitle: scope.sectionTitle,
+          recipientName: recipient.displayName,
+          weekNumber: cycle.cycleIndex,
+          deadlineText: formatDeadline(cycle.deadlineAt, scope.timezone),
+          // The instance, not the section: the student's object is the form.
+          linkPath: `/forms/${cycleId}`,
+        },
+      });
+      if (inserted) queued += 1;
+    }
   }
   return queued;
 }
@@ -186,41 +198,44 @@ export async function enqueueDeadlineReminders(
   offsetLabel: string,
   at: Date = new Date(),
 ) {
-  const cycle = await dbx.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, cycleId),
+  const cycle = await dbx.query.formInstances.findFirst({
+    where: eq(formInstances.id, cycleId),
   });
   if (!cycle) return 0;
-  const scope = await sectionScope(dbx, cycle.sectionId);
-  if (!scope) return 0;
-  const recipients = await activeStudentUsers(dbx, cycle.sectionId);
+  const audience = await getInstanceAudience(dbx, cycleId);
   // Students who already submitted still get the reminder: they may edit until
   // the deadline, and being told the window is closing is the point.
   let queued = 0;
-  for (const recipient of recipients) {
-    const inserted = await enqueueEmail(dbx, {
-      availableAt: at,
-      eventType: "deadline_reminder",
-      idempotencyKey: key([
-        "deadline_reminder",
-        "cycle",
-        cycleId,
-        recipient.userId,
-        offsetLabel,
-      ]),
-      recipientUserId: recipient.userId,
-      sectionId: scope.sectionId,
-      courseId: scope.courseId,
-      context: {
-        courseCode: scope.courseCode,
-        sectionTitle: scope.sectionTitle,
-        recipientName: recipient.displayName,
-        weekNumber: cycle.cycleIndex,
-        deadlineText: formatDeadline(cycle.deadlineAt, scope.timezone),
-        offsetLabel,
-        linkPath: `/sections/${cycle.sectionId}`,
-      },
-    });
-    if (inserted) queued += 1;
+  for (const sectionId of audience) {
+    const scope = await sectionScope(dbx, sectionId);
+    if (!scope) continue;
+    const recipients = await activeStudentUsers(dbx, sectionId);
+    for (const recipient of recipients) {
+      const inserted = await enqueueEmail(dbx, {
+        availableAt: at,
+        eventType: "deadline_reminder",
+        idempotencyKey: key([
+          "deadline_reminder",
+          "cycle",
+          cycleId,
+          recipient.userId,
+          offsetLabel,
+        ]),
+        recipientUserId: recipient.userId,
+        sectionId: scope.sectionId,
+        courseId: scope.courseId,
+        context: {
+          courseCode: scope.courseCode,
+          sectionTitle: scope.sectionTitle,
+          recipientName: recipient.displayName,
+          weekNumber: cycle.cycleIndex,
+          deadlineText: formatDeadline(cycle.deadlineAt, scope.timezone),
+          offsetLabel,
+          linkPath: `/forms/${cycleId}`,
+        },
+      });
+      if (inserted) queued += 1;
+    }
   }
   return queued;
 }
@@ -234,6 +249,9 @@ export async function enqueuePrivateAnswer(
     .select({
       studentRecordId: formResponses.studentRecordId,
       cycleId: formResponses.cycleId,
+      // The asker's OWN section, not the instance's audience: a private reply is
+      // theirs alone, and this is the label they see in the subject line.
+      sectionId: formResponses.sectionId,
     })
     .from(studentSubmissionItems)
     .innerJoin(
@@ -244,11 +262,7 @@ export async function enqueuePrivateAnswer(
     .limit(1);
   const row = rows[0];
   if (!row) return;
-  const cycle = await dbx.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, row.cycleId),
-  });
-  if (!cycle) return;
-  const scope = await sectionScope(dbx, cycle.sectionId);
+  const scope = await sectionScope(dbx, row.sectionId);
   if (!scope) return;
   const match = await dbx.query.accountMatches.findFirst({
     where: and(
@@ -276,7 +290,7 @@ export async function enqueuePrivateAnswer(
       courseCode: scope.courseCode,
       sectionTitle: scope.sectionTitle,
       recipientName: recipient.displayName,
-      linkPath: `/sections/${cycle.sectionId}/threads/${input.itemId}`,
+      linkPath: `/sections/${row.sectionId}/threads/${input.itemId}`,
     },
   });
 }
@@ -356,11 +370,13 @@ export async function enqueueValidityChanged(
     where: eq(formResponses.id, responseId),
   });
   if (!response) return;
-  const cycle = await dbx.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, response.cycleId),
+  const cycle = await dbx.query.formInstances.findFirst({
+    where: eq(formInstances.id, response.cycleId),
   });
   if (!cycle) return;
-  const scope = await sectionScope(dbx, cycle.sectionId);
+  // The student's OWN section: a shared form has several, and this message is
+  // about their submission alone.
+  const scope = await sectionScope(dbx, response.sectionId);
   if (!scope) return;
   const match = await dbx.query.accountMatches.findFirst({
     where: and(
@@ -394,7 +410,7 @@ export async function enqueueValidityChanged(
       sectionTitle: scope.sectionTitle,
       recipientName: recipient.displayName,
       weekNumber: cycle.cycleIndex,
-      linkPath: `/sections/${cycle.sectionId}/bonus`,
+      linkPath: `/sections/${response.sectionId}/bonus`,
     },
   });
 }
@@ -635,8 +651,8 @@ export async function processEmailOutbox(
  * offset window. Idempotent by construction: the offset label is in the key.
  */
 export async function queueDeadlineReminders(now: Date = new Date()) {
-  const open = await db.query.weeklyCycles.findMany({
-    where: eq(weeklyCycles.state, "open"),
+  const open = await db.query.formInstances.findMany({
+    where: eq(formInstances.state, "open"),
   });
   let queued = 0;
   for (const cycle of open) {

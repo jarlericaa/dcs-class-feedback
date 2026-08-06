@@ -7,6 +7,7 @@ import {
   enroll,
   makeCourse,
   makeEnrolledStudent,
+  makeInstance,
   makeSection,
   makeStudentRecord,
   makeUser,
@@ -15,7 +16,6 @@ import {
   accountMatches,
   formResponses,
   studentSubmissionItems,
-  weeklyCycles,
 } from "@/db/schema";
 import { AuthzError, requireSectionQaAccess } from "@/modules/authz";
 import { rejectMatch } from "@/modules/identity/matching";
@@ -55,24 +55,21 @@ async function makeSectionWithSubmission() {
   const section = await makeSection(course.id);
   await addSectionStaff(section.id, teacher.id, "teacher");
   const now = Date.now();
-  const [cycle] = await db
-    .insert(weeklyCycles)
-    .values({
-      sectionId: section.id,
-      cycleIndex: 1,
-      openAt: new Date(now - 3600_000),
-      deadlineAt: new Date(now + 3600_000),
-      state: "open",
-    })
-    .returning();
+  const cycle = await makeInstance({
+    courseId: course.id,
+    sectionIds: [section.id],
+    openAt: new Date(now - 3600_000),
+    deadlineAt: new Date(now + 3600_000),
+  });
   const { user, record } = await makeEnrolledStudent(section.id, teacher.id);
   const [response] = await db
     .insert(formResponses)
     .values({
-        cycleId: cycle!.id,
-        studentRecordId: record.id,
-        submittedAt: new Date(),
-      })
+      cycleId: cycle.id,
+      studentRecordId: record.id,
+      sectionId: section.id,
+      submittedAt: new Date(),
+    })
     .returning();
   const [item] = await db
     .insert(studentSubmissionItems)
@@ -87,7 +84,7 @@ async function makeSectionWithSubmission() {
     teacher,
     course,
     section,
-    cycle: cycle!,
+    cycle,
     user,
     record,
     response: response!,
@@ -279,10 +276,6 @@ describe("submission shape errors reach the student as field errors", () => {
 
   it("returns a SubmissionError for over-long student text, not a ZodError", async () => {
     const { user, cycle } = await makeSectionWithSubmission();
-    const other = await makeEnrolledStudent(cycle.sectionId, user.id).catch(
-      () => null,
-    );
-    void other;
 
     const err = await submitResponse(user.id, cycle.id, {
       answers: [],
@@ -406,22 +399,19 @@ describe("CSV export neutralizes spreadsheet formulas", () => {
     const section = await makeSection(course.id);
     await addSectionStaff(section.id, teacher.id, "teacher");
     const now = Date.now();
-    const [cycle] = await db
-      .insert(weeklyCycles)
-      .values({
-        sectionId: section.id,
-        cycleIndex: 1,
-        openAt: new Date(now - 3600_000),
-        deadlineAt: new Date(now + 3600_000),
-        state: "open",
-      })
-      .returning();
+    const cycle = await makeInstance({
+      courseId: course.id,
+      sectionIds: [section.id],
+      openAt: new Date(now - 3600_000),
+      deadlineAt: new Date(now + 3600_000),
+    });
     const { record } = await makeEnrolledStudent(section.id, teacher.id);
     const [response] = await db
       .insert(formResponses)
       .values({
-        cycleId: cycle!.id,
+        cycleId: cycle.id,
         studentRecordId: record.id,
+        sectionId: section.id,
         submittedAt: new Date(),
       })
       .returning();

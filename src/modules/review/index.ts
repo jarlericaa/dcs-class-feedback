@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  classSections,
+  formInstances,
   formQuestions,
   formResponses,
   privateResponses,
@@ -9,18 +11,35 @@ import {
   sourceLinks,
   studentRecords,
   studentSubmissionItems,
-  weeklyCycles,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
-import { requireSectionStaff } from "@/modules/authz";
+import { requireCourseStaff, requireSectionStaff } from "@/modules/authz";
+import {
+  filterAuthorizedSections,
+  getAudiencesForInstances,
+  instanceIdsForSection,
+} from "@/modules/forms/audience";
+import { hasSequence, instanceLabel } from "@/modules/forms/instances";
 
 /**
  * Teacher review services (AGENTS.md §6.3, domain-model.md §3.2–3.5).
  * Review state, validity, and disposition are independent dimensions.
  * Everything staff-changing here is audited; nothing here is ever surfaced
  * to students directly (student projections live in publishing/history).
+ *
+ * The review inbox is COURSE/FORM-oriented: a form shared by several sections is
+ * one queue with a section filter, not one queue per section — that separation is
+ * not something students experience. What keeps that safe is that every read is
+ * scoped to `formResponses.sectionId IN (the actor's authorized sections)`, so a
+ * shared form never widens what a section-scoped staff member can see.
  */
 
+/**
+ * The section a submission item belongs to: the section its author answered
+ * through, taken from the response. NOT the instance's audience — a shared
+ * instance has several, and only the asker's own one may authorize an action on
+ * their words.
+ */
 async function getItemWithSection(itemId: string) {
   const item = await db.query.studentSubmissionItems.findFirst({
     where: eq(studentSubmissionItems.id, itemId),
@@ -29,16 +48,13 @@ async function getItemWithSection(itemId: string) {
   const response = (await db.query.formResponses.findFirst({
     where: eq(formResponses.id, item.responseId),
   }))!;
-  const cycle = (await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, response.cycleId),
-  }))!;
-  return { item, response, sectionId: cycle.sectionId };
+  return { item, response, sectionId: response.sectionId };
 }
 
 export { getItemWithSection };
 
 /**
- * Submissions for a section (optionally one cycle), for the review dashboard.
+ * Submissions for a section (optionally one instance), for the review dashboard.
  * Identity is masked unless the actor holds viewStudentIdentities (teachers
  * and co-teachers always do; TAs only via the flag).
  */
@@ -55,20 +71,18 @@ export async function listSubmissionsForSection(
     canSeeIdentities = false;
   }
 
-  const cycles = await db.query.weeklyCycles.findMany({
-    where: opts.cycleId
-      ? and(eq(weeklyCycles.sectionId, sectionId), eq(weeklyCycles.id, opts.cycleId))
-      : eq(weeklyCycles.sectionId, sectionId),
-    orderBy: asc(weeklyCycles.cycleIndex),
-  });
-  if (cycles.length === 0) return [];
+  const instanceIds = await instanceIdsForSection(db, sectionId);
+  const scoped = opts.cycleId
+    ? instanceIds.filter((id) => id === opts.cycleId)
+    : instanceIds;
+  if (scoped.length === 0) return [];
   const responses = await db.query.formResponses.findMany({
     // A draft is not a submission: it must not appear in any staff read model.
+    // Scoped by the response's own section, so a shared instance yields only
+    // this section's rows.
     where: and(
-      inArray(
-        formResponses.cycleId,
-        cycles.map((c) => c.id),
-      ),
+      inArray(formResponses.cycleId, scoped),
+      eq(formResponses.sectionId, sectionId),
       inArray(formResponses.lifecycle, ["submitted", "locked"]),
     ),
   });
@@ -109,47 +123,159 @@ export async function listSubmissionsForSection(
 
 export type ReviewFilter = "all" | "needs_review" | "answered" | "invalid";
 
+export interface ReviewScope {
+  /** every instance in scope, newest window first */
+  instanceIds: string[];
+  /** the sections whose responses this actor may read */
+  sectionIds: string[];
+  canSeeIdentities: boolean;
+}
+
+/**
+ * Resolve which instances and which sections a review read may touch.
+ *
+ * This is the single place the shared-audience privacy rule lives: `sectionIds`
+ * is the intersection of the requested scope with the sections the actor actually
+ * holds `reviewResponses` on, and every query downstream filters
+ * `formResponses.sectionId` by it.
+ */
+async function resolveReviewScope(
+  actorUserId: string,
+  target: { courseId: string } | { sectionId: string },
+  opts: { sectionId?: string; instanceId?: string } = {},
+): Promise<ReviewScope> {
+  let sectionIds: string[];
+  if ("sectionId" in target) {
+    await requireSectionStaff(db, actorUserId, target.sectionId, "reviewResponses", {
+      allowArchived: true,
+    });
+    sectionIds = [target.sectionId];
+  } else {
+    await requireCourseStaff(db, actorUserId, target.courseId, {
+      allowArchived: true,
+    });
+    const sections = await db.query.classSections.findMany({
+      where: eq(classSections.courseId, target.courseId),
+      orderBy: [asc(classSections.title), asc(classSections.id)],
+    });
+    sectionIds = await filterAuthorizedSections(
+      db,
+      actorUserId,
+      sections.map((s) => s.id),
+      "reviewResponses",
+    );
+  }
+  // A requested section filter narrows, and can never widen: an unauthorized id
+  // simply drops out.
+  if (opts.sectionId) {
+    sectionIds = sectionIds.filter((id) => id === opts.sectionId);
+  }
+
+  // Identities are all-or-nothing per read: without the flag on EVERY section in
+  // scope, the queue is rendered without identity rather than partially masked,
+  // which would let a reader infer which rows came from which section.
+  let canSeeIdentities = sectionIds.length > 0;
+  for (const sectionId of sectionIds) {
+    try {
+      await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", {
+        allowArchived: true,
+      });
+    } catch {
+      canSeeIdentities = false;
+      break;
+    }
+  }
+
+  const instanceIdSet = new Set<string>();
+  for (const sectionId of sectionIds) {
+    for (const id of await instanceIdsForSection(db, sectionId)) {
+      instanceIdSet.add(id);
+    }
+  }
+  let instanceIds = [...instanceIdSet];
+  if (opts.instanceId) {
+    instanceIds = instanceIds.filter((id) => id === opts.instanceId);
+  }
+  return { instanceIds, sectionIds, canSeeIdentities };
+}
+
 /**
  * Fully-joined review queue for the staff inbox: response + (masked) student
- * identity + cycle + items with their private replies and public answers.
+ * identity + form occurrence + items with their private replies and public
+ * answers.
  *
  * Identity is included ONLY when the actor holds `view_student_identities`;
  * otherwise the student fields are null, not merely hidden in the UI. This is
  * a staff read model and must never be rendered on a student route.
+ */
+export async function getCourseReviewQueue(
+  actorUserId: string,
+  courseId: string,
+  opts: {
+    instanceId?: string;
+    sectionId?: string;
+    filter?: ReviewFilter;
+  } = {},
+) {
+  return reviewQueue(
+    actorUserId,
+    await resolveReviewScope(actorUserId, { courseId }, opts),
+    opts.filter,
+  );
+}
+
+/**
+ * @deprecated The section-scoped inbox. Kept because existing links and nav point
+ * at it; it is now a section FILTER over the same implementation, which is the
+ * whole point — a shared form must not have one inbox per section.
  */
 export async function getReviewQueue(
   actorUserId: string,
   sectionId: string,
   opts: { cycleId?: string; filter?: ReviewFilter } = {},
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses", { allowArchived: true });
-  let canSeeIdentities = true;
-  try {
-    await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", { allowArchived: true });
-  } catch {
-    canSeeIdentities = false;
-  }
+  return reviewQueue(
+    actorUserId,
+    await resolveReviewScope(
+      actorUserId,
+      { sectionId },
+      { instanceId: opts.cycleId },
+    ),
+    opts.filter,
+  );
+}
 
-  const cycles = await db.query.weeklyCycles.findMany({
-    where: eq(weeklyCycles.sectionId, sectionId),
-    orderBy: desc(weeklyCycles.cycleIndex),
-  });
-  const cycleById = new Map(cycles.map((c) => [c.id, c]));
-  const scopedCycleIds = opts.cycleId
-    ? cycles.filter((c) => c.id === opts.cycleId).map((c) => c.id)
-    : cycles.map((c) => c.id);
-
-  const responses = scopedCycleIds.length
-    ? await db.query.formResponses.findMany({
-        where: and(
-          inArray(formResponses.cycleId, scopedCycleIds),
-          inArray(formResponses.lifecycle, ["submitted", "locked"]),
-        ),
-        // submittedAt is nullable now (a draft has none), and drafts are excluded
-        // above, but coalesce keeps the ordering total either way.
-        orderBy: desc(sql`coalesce(${formResponses.submittedAt}, ${formResponses.createdAt})`),
+async function reviewQueue(
+  actorUserId: string,
+  scope: ReviewScope,
+  filterOpt?: ReviewFilter,
+) {
+  const { instanceIds, sectionIds, canSeeIdentities } = scope;
+  const cycles = instanceIds.length
+    ? await db.query.formInstances.findMany({
+        where: inArray(formInstances.id, instanceIds),
+        orderBy: [desc(formInstances.openAt), desc(formInstances.cycleIndex)],
       })
     : [];
+  const cycleById = new Map(cycles.map((c) => [c.id, c]));
+  const scopedCycleIds = cycles.map((c) => c.id);
+
+  const responses =
+    scopedCycleIds.length > 0 && sectionIds.length > 0
+      ? await db.query.formResponses.findMany({
+          where: and(
+            inArray(formResponses.cycleId, scopedCycleIds),
+            // The privacy rule, in one clause.
+            inArray(formResponses.sectionId, sectionIds),
+            inArray(formResponses.lifecycle, ["submitted", "locked"]),
+          ),
+          // submittedAt is nullable now (a draft has none), and drafts are
+          // excluded above, but coalesce keeps the ordering total either way.
+          orderBy: desc(
+            sql`coalesce(${formResponses.submittedAt}, ${formResponses.createdAt})`,
+          ),
+        })
+      : [];
 
   const items = responses.length
     ? await db.query.studentSubmissionItems.findMany({
@@ -221,10 +347,12 @@ export async function getReviewQueue(
         i.privateResponses.length > 0 ||
         i.publicAnswers.some((a) => a.state === "published"),
     );
+    const instance = cycleById.get(response.cycleId) ?? null;
     return {
       response: {
         id: response.id,
         cycleId: response.cycleId,
+        sectionId: response.sectionId,
         submittedAt: response.submittedAt,
         state: response.state,
         validity: response.validity,
@@ -234,7 +362,12 @@ export async function getReviewQueue(
       student: record
         ? { fullName: record.fullName, studentNumber: record.studentNumber }
         : null,
-      cycleIndex: cycleById.get(response.cycleId)?.cycleIndex ?? null,
+      cycleIndex: instance?.cycleIndex ?? null,
+      /** "Week 4", "This form", or the occurrence's own title — never "cycle". */
+      instanceLabel: instance ? instanceLabel(instance) : null,
+      /** null when the delivery mode has no sequence, so the UI can omit it */
+      sequenceLabel:
+        instance && hasSequence(instance) ? instanceLabel(instance) : null,
       items: responseItems,
       answered,
     };
@@ -250,7 +383,7 @@ export async function getReviewQueue(
     withoutItems: rows.filter((r) => r.items.length === 0).length,
   };
 
-  const filter = opts.filter ?? "all";
+  const filter = filterOpt ?? "all";
   const filtered = rows.filter((row) => {
     switch (filter) {
       case "needs_review":
@@ -264,7 +397,33 @@ export async function getReviewQueue(
     }
   });
 
-  return { rows: filtered, counts, cycles, canSeeIdentities };
+  // Sections and per-instance audiences, so the inbox can offer a section filter
+  // and label a shared occurrence honestly ("All sections" vs one of them).
+  const sections = sectionIds.length
+    ? await db.query.classSections.findMany({
+        where: inArray(classSections.id, sectionIds),
+        orderBy: asc(classSections.title),
+      })
+    : [];
+  const audiences = await getAudiencesForInstances(db, scopedCycleIds);
+
+  return {
+    rows: filtered,
+    counts,
+    cycles,
+    /** occurrences with a human label, for the form/occurrence filter */
+    instances: cycles.map((instance) => ({
+      instance,
+      label: instanceLabel(instance),
+      /** how many of THIS actor's sections receive it */
+      audienceSize: (audiences.get(instance.id) ?? []).filter((id) =>
+        sectionIds.includes(id),
+      ).length,
+    })),
+    /** the actor's own sections, for the section filter */
+    sections,
+    canSeeIdentities,
+  };
 }
 
 /**
@@ -279,16 +438,24 @@ export async function getSubmissionDetail(
     where: eq(formResponses.id, responseId),
   });
   if (!response) throw new Error("Response not found");
-  const cycle = (await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, response.cycleId),
+  const cycle = (await db.query.formInstances.findFirst({
+    where: eq(formInstances.id, response.cycleId),
   }))!;
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "reviewResponses", { allowArchived: true });
+  // Authorized on the RESPONSE's section. With a shared form the instance has
+  // several, and standing on one of the others must not open this submission.
+  await requireSectionStaff(
+    db,
+    actorUserId,
+    response.sectionId,
+    "reviewResponses",
+    { allowArchived: true },
+  );
   let canSeeIdentities = true;
   try {
     await requireSectionStaff(
       db,
       actorUserId,
-      cycle.sectionId,
+      response.sectionId,
       "viewStudentIdentities",
       { allowArchived: true },
     );
@@ -317,6 +484,7 @@ export async function getSubmissionDetail(
     response: {
       id: response.id,
       cycleId: response.cycleId,
+      sectionId: response.sectionId,
       submittedAt: response.submittedAt,
       state: response.state,
       validity: response.validity,
@@ -325,6 +493,9 @@ export async function getSubmissionDetail(
       studentRecordId: canSeeIdentities ? response.studentRecordId : null,
     },
     cycle,
+    instance: cycle,
+    instanceLabel: instanceLabel(cycle),
+    sequenceLabel: hasSequence(cycle) ? instanceLabel(cycle) : null,
     student: record
       ? { fullName: record.fullName, studentNumber: record.studentNumber }
       : null,
@@ -358,10 +529,12 @@ export async function setResponseReviewState(
     where: eq(formResponses.id, responseId),
   });
   if (!response) throw new Error("Response not found");
-  const cycle = (await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, response.cycleId),
-  }))!;
-  await requireSectionStaff(db, actorUserId, cycle.sectionId, "reviewResponses");
+  await requireSectionStaff(
+    db,
+    actorUserId,
+    response.sectionId,
+    "reviewResponses",
+  );
   await db.transaction(async (tx) => {
     await tx
       .update(formResponses)

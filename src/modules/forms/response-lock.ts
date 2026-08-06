@@ -130,7 +130,7 @@ export async function lockDueResponses(now: Date = new Date()): Promise<number> 
   let total = 0;
   for (const cycle of due) {
     total += await db.transaction((tx) =>
-      lockResponsesForCycle(tx, cycle.id, now, cycle.sectionId),
+      lockResponsesForCycle(tx, cycle.id, now, cycle.sectionId ?? undefined),
     );
   }
   return total;

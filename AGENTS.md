@@ -28,11 +28,13 @@ Full goals and background: [docs/product-requirements.md](docs/product-requireme
 
 | Concept | Meaning |
 |---|---|
-| **Course** | A reusable academic course; owns templates, lessons/topics, the question backlog, and multiple sections. |
-| **Class Section** | A specific offering of a course; owns its own students, staff, schedule, cycles, responses, participation, and public Q&A archive. |
-| **Weekly feedback cycle** | One weekly instance of a section's feedback form. |
-| **Recurring weekly form schedule** | Per-section config that auto-generates and auto-opens cycles (schedule-driven — **not** AI-generated content). |
-| **Teacher-created form questions** | Structured questions (Google Forms-style types) snapshotted into each cycle. |
+| **Course** | The primary workspace, identified by its **course code** (`CS 33`). Owns forms, lessons/topics, the question backlog, bonus periods, and its class sections. |
+| **Class Section** | A class list of a course: the access/audience context. Owns its students, staff and TA permissions, account matching, participation exports, and public Q&A archive. It is **not** the primary object in the form workflow. |
+| **Form definition** | A reusable form belonging to a course: title, optional purpose, and immutable versions of its questions. `weekly` is **not** part of its identity. |
+| **Form audience** | The explicit set of sections that receive a form — all sections of the course, several, or one. Auditable rows, never inferred. |
+| **Form instance** | The questionnaire students actually answer: its own audience, window, state, and question snapshot. One per delivery occurrence. |
+| **Delivery mode** | `One time` · `Every week` · `Custom schedule` · `Open manually`. Schedule-driven — **not** AI-generated content. |
+| **Teacher-created form questions** | Structured questions (Google Forms-style types) snapshotted into each form instance, and editable **for one occurrence only**. |
 | **Student-originated question/feedback section** | Always-present part of every form where a student submits their own question / feedback / concern / clarification / suggestion. |
 | **Private teacher responses** | Reply visible only to the asking student and authorized staff. |
 | **Public anonymous Q&A archive** | Per-section searchable archive of published questions + answers, with the asker anonymous. |
@@ -87,10 +89,11 @@ Full role definitions, the TA permission catalog, and the permission→action ma
 
 ## 4. Key concepts (rules that shape everything)
 
-- **Three academic levels:** Course → Class Section → Weekly Cycle. Templates, backlog, lessons/topics, and (future) course materials live at the **course** level; students, staff, schedules, cycles, responses, participation, and the public archive live at the **section** level.
-- **Schedule-driven cycles.** A per-section recurring schedule (frequency, open day/time, deadline, start, end/occurrences, template) generates cycles that **auto-open** on time. Generation and open/close are **idempotent** with a **reconciliation poller** backstop.
-- **One submission per student per section per cycle**, enforced by a uniqueness constraint. A student may save a draft and **edit that same response until the deadline**; at the deadline the latest submitted version locks. No late submission, no late edit. An edit never mints a second participation credit.
-- **Templates snapshot on apply.** Applying a template copies its questions into the cycle; later template edits create new versions and never mutate already-generated cycles.
+- **The course owns forms; the section is who receives them.** Forms, backlog, lessons/topics, bonus periods, and (future) course materials live at the **course** level; students, staff, account matching, participation exports, and the public archive live at the **section** level. A form's **audience** is an explicit set of sections. See [docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md).
+- **Four delivery modes, of which weekly is one.** A delivery configuration (mode, audience, window controls, source form version) generates instances that **auto-open** on time — except `Open manually`, which only a person opens. Generation and open/close are **idempotent** with a **reconciliation poller** backstop.
+- **One submission per student per form instance**, enforced by a uniqueness constraint on `(instance, student record)`. The section a response is attributed to is recorded separately and is deliberately **not** in that key, so a student in two targeted sections cannot produce two responses. A student may save a draft and **edit that same response until the deadline**; at the deadline the latest submitted version locks. No late submission, no late edit. An edit never mints a second participation credit.
+- **Forms snapshot on generate.** Generating an instance copies the form's questions into it; later edits to the form create a new version and never mutate an already-generated instance. **One occurrence's questions can be varied on their own** — the base form and every other occurrence are untouched.
+- **A shared form never widens visibility.** Staff see only the audience sections they hold the permission on; a published answer goes to the **asker's own** section only.
 - **Original student wording is immutable.** Teachers may reword the *public* version; the original is never overwritten.
 - **Public answers are anonymous** to other students but stay **internally source-linked** to the original submission(s), including when multiple submissions are **merged** into one answer.
 - **Participation is derived**, not a mutable counter: a student participated in a cycle iff a submitted (non-draft) response exists for that `(cycle, student)` whose validity is not `Invalid`. Credit rolls up into **course-scoped bonus periods**, one credit per cycle at most.
@@ -161,7 +164,7 @@ sequenceDiagram
   Note over App,Teacher: No silent verification under uncertainty. Corrections allowed post-confirmation, audited.
 ```
 
-### 6.2 Weekly cycle generation and submission
+### 6.2 Form-instance generation and submission
 
 ```mermaid
 sequenceDiagram
@@ -170,14 +173,14 @@ sequenceDiagram
   participant App
   actor Student
 
-  Sched->>App: generate cycles from recurrence (idempotent; snapshot template version)
-  Sched->>App: at open-at → cycle OPEN (reconciled if scheduler was down)
-  Student->>App: open current form
+  Sched->>App: generate instances from the delivery configuration<br/>(idempotent; copy audience; snapshot form version)
+  Sched->>App: at open-at → instance OPEN (reconciled if scheduler was down)
+  Student->>App: open the form (reached through its audience, not a section)
   Student->>App: answer teacher questions + optional student-originated item
   App->>App: server-side validation (required questions)
-  App->>App: create FormResponse — unique (cycle, student); state Submitted; validity Valid
-  App-->>Student: "Submitted" (no edits allowed; no late submission)
-  Sched->>App: at deadline → cycle CLOSED
+  App->>App: create FormResponse — unique (instance, student), attribution section resolved;<br/>state Submitted; validity Valid
+  App-->>Student: "Submitted" (editable until the deadline; no late submission)
+  Sched->>App: at deadline → instance CLOSED, responses locked
 ```
 
 ### 6.3 Teacher review + private/public response
@@ -253,7 +256,7 @@ Details: [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md), [docs/pub
 
 | Dimension | States |
 |---|---|
-| **Weekly cycle** | Draft · Scheduled · Open · Closed · Archived · Skipped |
+| **Form instance** | Draft · Scheduled · Open · Closed · Archived · Skipped |
 | **Response lifecycle** | Draft · Submitted · Locked |
 | **Form response review** | Submitted · Under review · Reviewed · Archived |
 | **Participation validity** | Valid · Flagged · Invalid |
@@ -286,10 +289,13 @@ erDiagram
   USER ||--o{ SECTION_STAFF : ""
   CLASS_SECTION ||--o{ ENROLLMENT : ""
   STUDENT_RECORD ||--o{ ENROLLMENT : ""
-  CLASS_SECTION ||--o{ RECURRENCE_SCHEDULE : ""
-  CLASS_SECTION ||--o{ WEEKLY_CYCLE : ""
-  WEEKLY_CYCLE ||--o{ FORM_QUESTION : "snapshot"
-  WEEKLY_CYCLE ||--o{ FORM_RESPONSE : ""
+  COURSE ||--o{ RECURRENCE_SCHEDULE : ""
+  RECURRENCE_SCHEDULE }o--o{ CLASS_SECTION : "audience"
+  COURSE ||--o{ FORM_INSTANCE : ""
+  FORM_INSTANCE }o--o{ CLASS_SECTION : "audience"
+  FORM_INSTANCE ||--o{ FORM_QUESTION : "snapshot"
+  FORM_INSTANCE ||--o{ FORM_RESPONSE : ""
+  CLASS_SECTION ||--o{ FORM_RESPONSE : "attribution"
   STUDENT_RECORD ||--o{ FORM_RESPONSE : ""
   FORM_RESPONSE ||--o{ QUESTION_ANSWER : ""
   FORM_QUESTION ||--o{ QUESTION_ANSWER : ""
@@ -303,7 +309,7 @@ erDiagram
   IMPORT_BATCH ||--o{ BACKLOG_QUESTION : "legacy import"
 ```
 
-Core entities: **User · StudentRecord · AccountMatch · Course · CourseStaff · ClassSection · SectionStaff · Enrollment · RecurrenceSchedule · WeeklyCycle · FormTemplate · TemplateVersion · FormQuestion · FormResponse · QuestionAnswer · StudentSubmissionItem · PrivateResponse · PublicAnswer · SourceLink · BacklogQuestion · ImportBatch · Lesson/Topic · AuditEvent.**
+Core entities: **User · StudentRecord · AccountMatch · Course · CourseStaff · ClassSection · SectionStaff · Enrollment · RecurrenceSchedule (delivery configuration) · FormScheduleSections + FormInstanceSections (audiences) · FormInstance · FormTemplate (form definition) · TemplateVersion · FormQuestion · FormResponse · QuestionAnswer · StudentSubmissionItem · PrivateResponse · PublicAnswer · SourceLink · BacklogQuestion · ImportBatch · Lesson/Topic · AuditEvent.**
 
 `CourseMaterial` is reserved for the future (post-MVP) — the model stays compatible via course-level ownership and topic tags, but material management is not built in MVP. Participation is **derived** from valid `FormResponse`s, not a stored entity.
 
@@ -337,7 +343,8 @@ Read the first three, then by area. Each concept has a single owning document; o
 2. [docs/mvp-scope.md](docs/mvp-scope.md) — MVP / post-MVP / out-of-scope boundary.
 3. [docs/domain-model.md](docs/domain-model.md) — entities, relationships, **all state models**, audit shape.
 4. [docs/roles-and-permissions.md](docs/roles-and-permissions.md) — roles, authorization model, TA permission catalog.
-5. [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md) — recurrence, cycle generation/auto-open, form/question schema, templates, submission.
+5. [docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md) — **course-level forms, audiences, delivery modes, per-occurrence customization.**
+6. [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md) — form/question schema, question types, validation, submission flow.
 6. [docs/participation-rules.md](docs/participation-rules.md) — validity, derivation, CSV exports.
 7. [docs/account-matching.md](docs/account-matching.md) — SSO, name matching, roster import.
 8. [docs/public-qa-and-source-linking.md](docs/public-qa-and-source-linking.md) — private/public responses, rewording, source links, anonymity, scheduling, archive, student history.

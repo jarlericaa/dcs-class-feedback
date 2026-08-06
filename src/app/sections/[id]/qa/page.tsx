@@ -72,7 +72,7 @@ export default async function QaArchivePage({
     (entry) => !sp.category || entry.category === sp.category,
   );
 
-  const { section, course } = await getSectionWithCourse(sectionId);
+  const { section } = await getSectionWithCourse(sectionId);
   const access = await authz.getSectionAccess(user.id, sectionId);
   const { staffSections, studentSections } = await listSectionsForUser(user.id);
 

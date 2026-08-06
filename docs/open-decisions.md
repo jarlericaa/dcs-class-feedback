@@ -31,6 +31,16 @@
 > | D16 | What does a linked asker see after an entry is unpublished? | **Nothing** — it leaves their history too. The private thread and their immutable original question survive. |
 > | D17 | Are all exports Instructor-only, per `project-specs.md` §11? | **Partially — a knowing deviation.** The three pre-existing participation CSVs keep honouring the `export_participation` TA flag (removing a shipped capability was judged worse than the deviation). Every **new** export — bonus records, XLSX, PDF summaries, backlog status — is Instructor-only. Recorded in [roles-and-permissions.md](roles-and-permissions.md). |
 
+> ### New decisions recorded 2026-08-06 (course-level forms and audiences)
+>
+> Model, rationale and migration: [FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md).
+>
+> | # | Question | Decision |
+> |---|---|---|
+> | D18 | Is a form owned by a section or by a course? | **By the course.** A form definition belongs to a Course; an explicit **audience** (`form_instance_sections`) says which sections receive each instance. Sections remain the access/roster/permission context and are no longer the primary object in the form workflow. |
+> | D19 | Can one form instance target several sections? | **Yes**, and it is the ordinary case. One instance, one window, one question snapshot, one review queue. Response uniqueness stays `(instance, student_record)` — the attribution section is recorded separately and is deliberately NOT in that key, so a student in two targeted sections still has exactly one response. |
+> | D20 | May a published answer reach several sections at once? | **No — the existing section-scoped rule stands.** A publication goes to the **asker's own** section only, enforced in `draftPublicAnswer` and covered by a test. Sharing a form does not widen an archive; cross-section reuse continues to go through the course backlog (D8). Allowing an explicit multi-section publish would be a privacy-surface change and needs owner approval before it is built. |
+
 ---
 
 ## D1. What does "Fable" mean? (gates the stack)
@@ -143,6 +153,22 @@
 - **Trade-offs:** both keep the monolith simple; differences are ops preference and cost.
 - **Recommended choice:** Defer; either works. Decide near implementation.
 - **Wait for owner approval?** No (low-stakes, revisit later).
+
+## D21. Physical rename of `weekly_cycles` → `form_instances`
+
+- **Question:** Should the table now called `weekly_cycles` be renamed to match the domain concept it holds?
+- **Options:** (a) rename now (`ALTER TABLE … RENAME TO`, plus column renames); (b) keep the physical name and rename only in the domain layer.
+- **Trade-offs:** (a) removes the last trace of weekly-only naming, but drizzle-kit's rename detection is interactive, so the migration and its snapshot must be hand-authored against fifteen dependent foreign keys; (b) costs nothing a user can see — the Drizzle export is `formInstances`, `cycleIndex` is presented as a sequence number, and no UI string says "cycle".
+- **Current working choice:** (b). Recorded as a deliberate deferral in [FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md#61-physical-names), available at any time.
+- **Wait for owner approval?** No — internal naming only.
+
+## D22. Per-section windows for one shared form
+
+- **Question:** Should a form shared by several sections be able to open or close at different times per section?
+- **Options:** (a) one window per instance (today): a course needing different deadlines gives each timezone or schedule its own form with a selected-sections audience; (b) per-section window overrides on a shared instance.
+- **Trade-offs:** (a) keeps "the deadline" a single unambiguous moment, which every participation, locking and reminder rule depends on; (b) is more flexible and multiplies the edge cases in locking and in the reminder scheduler. Sections in different timezones are refused outright today rather than silently resolved.
+- **Current working choice:** (a).
+- **Wait for owner approval?** **Yes if** a real offering needs staggered deadlines across sections of one course.
 
 ## D13. Data retention / end-of-semester
 

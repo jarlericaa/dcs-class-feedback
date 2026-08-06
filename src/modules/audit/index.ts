@@ -21,9 +21,9 @@ import {
   studentSubmissionItems,
   submissionValidityEvents,
   users,
-  weeklyCycles,
 } from "@/db/schema";
 import { requireNonTaSectionStaff } from "@/modules/authz";
+import { instanceIdsForSection } from "@/modules/forms/audience";
 import { buildPage, parsePageParams } from "@/lib/pagination";
 
 /**
@@ -51,6 +51,13 @@ export type AuditAction =
   | "template.created"
   | "template.version_created"
   | "recurrence.configured"
+  // --- course-level forms, audiences, per-occurrence customization ---
+  | "form.delivery_configured"
+  | "form.audience_set"
+  | "cycle.questions_customized"
+  | "cycle.questions_reworded"
+  | "cycle.questions_restored"
+  | "cycle.focus_changed"
   | "cycle.generated"
   | "cycle.opened"
   | "cycle.closed"
@@ -215,15 +222,15 @@ export async function listSectionAuditEvents(
   await requireNonTaSectionStaff(db, actorUserId, sectionId, { allowArchived: true });
   const params = parsePageParams(opts, 50);
 
-  const cycles = await db.query.weeklyCycles.findMany({
-    where: eq(weeklyCycles.sectionId, sectionId),
+  // Instances are collected through the AUDIENCE table, so a form shared with
+  // this section is in scope for its staff even though the instance itself is
+  // course-level and carries no section column.
+  const cycleIds = await instanceIdsForSection(db, sectionId);
+  // Responses are this section's own, so a shared instance never drags another
+  // section's response ids — and therefore its audit rows — into this history.
+  const responses = await db.query.formResponses.findMany({
+    where: eq(formResponses.sectionId, sectionId),
   });
-  const cycleIds = cycles.map((c) => c.id);
-  const responses = cycleIds.length
-    ? await db.query.formResponses.findMany({
-        where: inArray(formResponses.cycleId, cycleIds),
-      })
-    : [];
   const responseIds = responses.map((r) => r.id);
   const items = responseIds.length
     ? await db.query.studentSubmissionItems.findMany({

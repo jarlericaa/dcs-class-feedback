@@ -4,7 +4,6 @@ import {
   formResponses,
   submissionValidityEvents,
   users,
-  weeklyCycles,
 } from "@/db/schema";
 import { writeAudit, type AuditAction } from "@/modules/audit";
 import {
@@ -107,10 +106,9 @@ async function loadResponseSection(responseId: string) {
     where: eq(formResponses.id, responseId),
   });
   if (!response) throw new ValidityError("Response not found");
-  const cycle = (await db.query.weeklyCycles.findFirst({
-    where: eq(weeklyCycles.id, response.cycleId),
-  }))!;
-  return { response, sectionId: cycle.sectionId };
+  // The RESPONSE's own section, not the instance's: a shared form has several,
+  // and a validity decision belongs to the section the student answered through.
+  return { response, sectionId: response.sectionId };
 }
 
 /** The actor's standing, snapshotted onto the event row. */
@@ -364,17 +362,13 @@ export async function getOwnValidity(
   const record = await requireEnrolledStudent(db, userId, sectionId, {
     allowArchived: true,
   });
-  const cycles = await db.query.weeklyCycles.findMany({
-    where: eq(weeklyCycles.sectionId, sectionId),
-  });
-  if (cycles.length === 0) return new Map();
+  // Responses carry their own section, so this needs no instance join — and a
+  // shared form's responses from OTHER sections cannot appear here even by
+  // accident.
   const rows = await db.query.formResponses.findMany({
     where: and(
       eq(formResponses.studentRecordId, record.id),
-      inArray(
-        formResponses.cycleId,
-        cycles.map((c) => c.id),
-      ),
+      eq(formResponses.sectionId, sectionId),
       inArray(formResponses.lifecycle, ["submitted", "locked"]),
     ),
   });

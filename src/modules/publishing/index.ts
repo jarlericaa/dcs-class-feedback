@@ -1,6 +1,7 @@
 import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  formInstances,
   formQuestions,
   formResponses,
   privateResponses,
@@ -8,7 +9,6 @@ import {
   questionAnswers,
   sourceLinks,
   studentSubmissionItems,
-  weeklyCycles,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import {
@@ -18,6 +18,7 @@ import {
   requireSectionQaAccess,
   requireSectionStaff,
 } from "@/modules/authz";
+import { hasSequence, instanceLabel } from "@/modules/forms/instances";
 import { getItemWithSection } from "@/modules/review";
 import { normalizePublicQuestionText } from "./dedupe";
 
@@ -57,7 +58,16 @@ export async function draftPublicAnswer(
   }
   await requireSectionStaff(db, actorUserId, input.sectionId, "draftPublicAnswers");
 
-  // Merge scope: every source item must belong to THIS section.
+  /**
+   * Merge scope: every source item must belong to THIS section — where "belong"
+   * means the ASKER answered through it (`formResponses.sectionId`), not that the
+   * form instance happened to be shared with it.
+   *
+   * This is what keeps a shared form from widening a publication. Sharing one
+   * questionnaire across CS 33's sections must not make Section A's published
+   * answer visible to Section B; cross-section reuse still goes through the
+   * course backlog (D8, ADR-0002).
+   */
   const items: (typeof studentSubmissionItems.$inferSelect)[] = [];
   for (const itemId of input.itemIds) {
     const { item, sectionId } = await getItemWithSection(itemId);
@@ -570,17 +580,20 @@ export async function getStudentHistory(userId: string, sectionId: string) {
   const record = await requireEnrolledStudent(db, userId, sectionId, {
     allowArchived: true,
   });
-  const cycles = await db.query.weeklyCycles.findMany({
-    where: eq(weeklyCycles.sectionId, sectionId),
-  });
-  if (cycles.length === 0) return [];
+  // Keyed on the response's own section, so a student in two sections of the
+  // same course sees each submission once, under the section they answered
+  // through — and never another section's history.
   const responses = await db.query.formResponses.findMany({
     where: and(
-      inArray(
-        formResponses.cycleId,
-        cycles.map((c) => c.id),
-      ),
+      eq(formResponses.sectionId, sectionId),
       eq(formResponses.studentRecordId, record.id),
+    ),
+  });
+  if (responses.length === 0) return [];
+  const cycles = await db.query.formInstances.findMany({
+    where: inArray(
+      formInstances.id,
+      responses.map((r) => r.cycleId),
     ),
   });
   const cycleById = new Map(cycles.map((c) => [c.id, c]));
@@ -644,9 +657,15 @@ export async function getStudentHistory(userId: string, sectionId: string) {
       });
     }
 
+    const instance = cycleById.get(response.cycleId) ?? null;
     history.push({
       responseId: response.id,
-      cycleIndex: cycleById.get(response.cycleId)?.cycleIndex ?? null,
+      cycleIndex: instance?.cycleIndex ?? null,
+      /** what the student was told this form was called */
+      formLabel: instance ? instanceLabel(instance) : null,
+      sequenceLabel:
+        instance && hasSequence(instance) ? instanceLabel(instance) : null,
+      openAt: instance?.openAt ?? null,
       submittedAt: response.submittedAt,
       status: "submitted" as const, // neutral; review/validity never exposed
       answers: answers.map((a) => ({
@@ -657,7 +676,11 @@ export async function getStudentHistory(userId: string, sectionId: string) {
       items: itemViews,
     });
   }
+  // Chronological by window: a course may now run several forms at once, so the
+  // sequence number alone is no longer a total order.
   return history.sort(
-    (a, b) => (a.cycleIndex ?? 0) - (b.cycleIndex ?? 0),
+    (a, b) =>
+      (a.openAt?.getTime() ?? 0) - (b.openAt?.getTime() ?? 0) ||
+      (a.cycleIndex ?? 0) - (b.cycleIndex ?? 0),
   );
 }

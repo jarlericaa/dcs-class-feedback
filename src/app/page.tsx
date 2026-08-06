@@ -4,7 +4,6 @@ import { db } from "@/db";
 import { accountMatches } from "@/db/schema";
 
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
-import { termParts } from "@/lib/term";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
 import {
@@ -16,10 +15,10 @@ import {
   StripLabel,
 } from "@/components/ui";
 import { IconForward } from "@/components/ui/icons";
-import { listSectionsForUser } from "@/modules/catalog";
+import { listCoursesForUser, listSectionsForUser } from "@/modules/catalog";
 import { generateMatchCandidates } from "@/modules/identity/matching";
-import { getOpenCycleForStudent } from "@/modules/forms/submission";
-import { getReviewQueue } from "@/modules/review";
+import { listOpenInstancesForStudent } from "@/modules/forms/submission";
+import { listCourseForms } from "@/modules/forms/instances";
 import { requireUser, toShellUser } from "@/lib/session";
 import { currentUserId } from "@/auth";
 import { EntryScreen } from "@/components/marketing/entry-screen";
@@ -27,44 +26,66 @@ import { EntryScreen } from "@/components/marketing/entry-screen";
 /**
  * Role-aware home: the board a person sees when they walk up to it.
  *
- * Each class is one posted notice carrying the only three things that decide
- * what happens next — which class, what state this week is in, and when it
- * closes. Every number is real; there are no decorative counters, and a
- * student card never carries staff metrics.
+ * For a student, one notice per FORM they can act on — the course code, what the
+ * form is, and when it closes. A form shared by two of their sections appears
+ * ONCE, because it is one thing they fill in once; the section is not named at all
+ * unless it changes what they must do.
+ *
+ * For staff, one notice per COURSE, carrying its open forms and what needs
+ * answering. Every number is real; there are no decorative counters, and a student
+ * card never carries staff metrics.
  */
 
-type StudentCardState =
-  | { kind: "open"; deadlineAt: Date; cycleIndex: number }
-  | { kind: "submitted"; deadlineAt: Date; cycleIndex: number }
-  | { kind: "none" };
-
-async function studentSectionState(
-  userId: string,
-  sectionId: string,
-): Promise<StudentCardState> {
-  try {
-    const current = await getOpenCycleForStudent(userId, sectionId);
-    if (!current) return { kind: "none" };
-    return {
-      kind: current.alreadySubmitted ? "submitted" : "open",
-      deadlineAt: current.cycle.deadlineAt,
-      cycleIndex: current.cycle.cycleIndex,
-    };
-  } catch {
-    // Not authorized for this section any more — show the neutral state
-    // rather than leaking why.
-    return { kind: "none" };
-  }
+interface StudentFormCard {
+  instanceId: string;
+  courseCode: string;
+  formTitle: string;
+  sequenceLabel: string | null;
+  focusLabel: string | null;
+  deadlineAt: Date;
+  timezone: string;
+  submitted: boolean;
 }
 
-async function staffSectionAttention(userId: string, sectionId: string) {
-  try {
-    const { counts } = await getReviewQueue(userId, sectionId);
-    return counts;
-  } catch {
-    // No review permission on this section: show no counters at all.
-    return null;
+/**
+ * Every form this student can act on, across every section they are in, with each
+ * form appearing exactly once.
+ *
+ * The dedup key is the instance: two memberships in the same course's sections
+ * cannot produce two cards, for the same reason they cannot produce two responses.
+ */
+async function studentFormCards(
+  userId: string,
+  sections: { id: string; courseId: string; timezone: string }[],
+  courseById: Map<string, { code: string }>,
+): Promise<StudentFormCard[]> {
+  const byInstance = new Map<string, StudentFormCard>();
+  for (const section of sections) {
+    let open: Awaited<ReturnType<typeof listOpenInstancesForStudent>>;
+    try {
+      open = await listOpenInstancesForStudent(userId, section.id);
+    } catch {
+      // Not authorized for this section any more — show nothing for it rather
+      // than leaking why.
+      continue;
+    }
+    for (const entry of open) {
+      if (byInstance.has(entry.instance.id)) continue;
+      byInstance.set(entry.instance.id, {
+        instanceId: entry.instance.id,
+        courseCode: courseById.get(section.courseId)?.code ?? "Course",
+        formTitle: entry.formTitle,
+        sequenceLabel: entry.sequenceLabel,
+        focusLabel: entry.focusLabel,
+        deadlineAt: entry.instance.deadlineAt,
+        timezone: section.timezone,
+        submitted: entry.alreadySubmitted,
+      });
+    }
   }
+  return [...byInstance.values()].sort(
+    (a, b) => a.deadlineAt.getTime() - b.deadlineAt.getTime(),
+  );
 }
 
 export default async function HomePage() {
@@ -86,23 +107,36 @@ export default async function HomePage() {
   const { staffSections, studentSections, matchStatus, courseById } =
     await listSectionsForUser(user.id);
 
-  const studentCards = await Promise.all(
-    studentSections.map(async (section) => ({
-      section,
-      course: courseById.get(section.courseId) ?? null,
-      state: await studentSectionState(user.id, section.id),
-    })),
+  const studentCards = await studentFormCards(
+    user.id,
+    studentSections,
+    courseById,
   );
+  // Staff work per COURSE. A section is who can reach a form, so it is not what
+  // the board is made of.
+  const teaching = await listCoursesForUser(user.id);
   const staffCards = await Promise.all(
-    staffSections.map(async (section) => ({
-      section,
-      course: courseById.get(section.courseId) ?? null,
-      counts: await staffSectionAttention(user.id, section.id),
-    })),
+    teaching.map(async (entry) => {
+      const forms = await listCourseForms(user.id, entry.course.id).catch(
+        () => [],
+      );
+      return {
+        course: entry.course,
+        sectionCount: entry.sections.length,
+        formCount: forms.length,
+        openCount: forms.filter((f) => f.openInstance).length,
+        needsReview: forms.reduce((sum, f) => sum + f.needsReviewCount, 0),
+        responseCount: forms.reduce((sum, f) => sum + f.responseCount, 0),
+      };
+    }),
   );
 
-  const open = studentCards.filter((c) => c.state.kind === "open");
-  const hasNothing = staffCards.length === 0 && studentCards.length === 0;
+  const open = studentCards.filter((c) => !c.submitted);
+  const hasNothing =
+    staffCards.length === 0 &&
+    studentCards.length === 0 &&
+    studentSections.length === 0 &&
+    staffSections.length === 0;
   const isStaffView = staffCards.length > 0;
   // A batten divides one region from the next, so it earns its place only when
   // there IS a next one. With a single region the page title already names it.
@@ -122,7 +156,7 @@ export default async function HomePage() {
       title="Overview"
       description={
         open.length > 0
-          ? `${open.length} weekly form${open.length === 1 ? " is" : "s are"} open right now.`
+          ? `${open.length} form${open.length === 1 ? "" : "s"} waiting for you.`
           : undefined
       }
       roomy={!isStaffView}
@@ -143,63 +177,50 @@ export default async function HomePage() {
                 id="your-classes"
                 count={countIf(studentCards.length)}
               >
-                Your classes
+                Your forms
               </StripLabel>
             )}
             <div className="stack-4">
-              {studentCards.map(({ section, course, state }) => (
+              {studentCards.map((card) => (
                 <Link
                   className="notice section-notice"
-                  key={section.id}
-                  href={`/sections/${section.id}`}
+                  key={card.instanceId}
+                  href={`/forms/${card.instanceId}`}
                 >
                   <div className="notice__body">
                     <div className="spread">
                       <div style={{ minWidth: 0 }}>
-                        <MetaList
-                          items={[course?.code, ...termParts(section.term)]}
-                        />
+                        {/* The course code is the identity, and the form is what
+                            this card is about. The section is absent: the action
+                            and the form are the same in every section it went
+                            to, so naming one would imply a choice to make. */}
+                        <MetaList items={[card.courseCode]} />
                         <h3 className="panel-title" style={{ marginTop: 4 }}>
-                          {section.title}
+                          {card.formTitle}
                         </h3>
                       </div>
-                      {state.kind === "open" && (
-                        <Stamp tone="amber">Not submitted</Stamp>
-                      )}
-                      {state.kind === "submitted" && (
+                      {card.submitted ? (
                         <Stamp tone="green">Submitted</Stamp>
-                      )}
-                      {state.kind === "none" && (
-                        <Stamp tone="neutral">No form open</Stamp>
+                      ) : (
+                        <Stamp tone="amber">Not submitted</Stamp>
                       )}
                     </div>
                     <div className="section-notice__foot">
-                      {/* The week, the deadline, and how long is left were one
-                          dot-chained sentence that stated the deadline twice in
-                          two formats. Separate facts now, and the remaining
-                          time only while it is short enough to act on. */}
-                      {state.kind === "none" ? (
-                        <span className="meta">No form is open right now</span>
-                      ) : (
-                        <MetaList
-                          items={[
-                            `Week ${state.cycleIndex}`,
-                            `Closes ${formatDeadline(
-                              state.deadlineAt,
-                              section.timezone,
-                            )}`,
-                            state.kind === "open"
-                              ? timeRemaining(state.deadlineAt)
-                              : null,
-                          ]}
-                        />
-                      )}
+                      {/* Separate facts, and the remaining time only while it is
+                          short enough to act on. */}
+                      <MetaList
+                        items={[
+                          card.sequenceLabel,
+                          card.focusLabel,
+                          `Closes ${formatDeadline(
+                            card.deadlineAt,
+                            card.timezone,
+                          )}`,
+                          card.submitted ? null : timeRemaining(card.deadlineAt),
+                        ]}
+                      />
                       <span className="section-notice__action">
-                        {state.kind === "open"
-                          ? "Fill in the form"
-                          : state.kind === "submitted"
-                            ? "See my submissions"
-                            : "Open this class"}
+                        {card.submitted ? "Review my answers" : "Fill in form"}
                         <IconForward size={15} />
                       </span>
                     </div>
@@ -214,44 +235,80 @@ export default async function HomePage() {
           <section aria-labelledby={showStrips ? "teaching" : undefined}>
             {showStrips && (
               <StripLabel id="teaching" count={countIf(staffCards.length)}>
-                Sections you teach
+                Courses you teach
               </StripLabel>
             )}
             <div className="stack-4">
-              {staffCards.map(({ section, course, counts }) => (
+              {staffCards.map((card) => (
+                <Link
+                  className="notice section-notice"
+                  key={card.course.id}
+                  href={`/teach/courses/${card.course.id}`}
+                >
+                  <div className="notice__body">
+                    <div className="spread">
+                      <div style={{ minWidth: 0 }}>
+                        {/* The code IS the heading. The title reads underneath
+                            it as what the code stands for. */}
+                        <h3 className="panel-title">{card.course.code}</h3>
+                        <MetaList items={[card.course.title]} />
+                      </div>
+                      {card.course.archivedAt && (
+                        <Stamp tone="neutral">Archived</Stamp>
+                      )}
+                    </div>
+                    <div className="section-notice__foot">
+                      {card.formCount === 0 ? (
+                        <span className="meta">No forms yet</span>
+                      ) : (
+                        <ReviewStatusLine
+                          total={card.responseCount}
+                          needsReview={card.needsReview}
+                        />
+                      )}
+                      <span className="section-notice__action">
+                        {card.needsReview > 0 ? "Review responses" : "Open forms"}
+                        <IconForward size={15} />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Enrolled, but nothing open. Not an empty page — the archive and
+            their own history are still there, and saying so beats a blank. */}
+        {studentCards.length === 0 && studentSections.length > 0 && (
+          <section>
+            {showStrips && <StripLabel>Your classes</StripLabel>}
+            <div className="stack-4">
+              {studentSections.map((section) => (
                 <Link
                   className="notice section-notice"
                   key={section.id}
-                  href={`/teach/sections/${section.id}/review`}
+                  href={`/sections/${section.id}`}
                 >
                   <div className="notice__body">
                     <div className="spread">
                       <div style={{ minWidth: 0 }}>
                         <MetaList
-                          items={[course?.code, ...termParts(section.term)]}
+                          items={[courseById.get(section.courseId)?.code]}
                         />
                         <h3 className="panel-title" style={{ marginTop: 4 }}>
-                          {section.title}
+                          {courseById.get(section.courseId)?.title ??
+                            section.title}
                         </h3>
                       </div>
-                      {/* ONE status treatment. The line in the footer says what
-                          this section needs, so a stamp repeating it would be a
-                          second copy of the same fact. The only stamp left is
-                          the one carrying DIFFERENT information: that this
-                          account cannot see the queue at all. */}
-                      {!counts && <Stamp tone="neutral">Staff access</Stamp>}
+                      <Stamp tone="neutral">Nothing open</Stamp>
                     </div>
                     <div className="section-notice__foot">
-                      {counts ? (
-                        <ReviewStatusLine
-                          total={counts.total}
-                          needsReview={counts.needsReview}
-                        />
-                      ) : (
-                        <span className="meta">Open the section workspace</span>
-                      )}
+                      <span className="meta">
+                        No form is open for this class right now
+                      </span>
                       <span className="section-notice__action">
-                        Review inbox
+                        Open this class
                         <IconForward size={15} />
                       </span>
                     </div>
@@ -273,12 +330,12 @@ export default async function HomePage() {
         {hasNothing &&
           (user.isTeacher ? (
             <EmptyState
-              title="No class sections yet"
+              title="No courses yet"
               action={{ href: "/teach/courses?new=1", label: "New course" }}
               primary
             >
-              A course holds the class sections students join, and each section
-              runs its own weekly form.
+              A course owns its forms. A form goes to one class list, several, or
+              all of them.
             </EmptyState>
           ) : matchStatus === "confirmed" ? (
             <EmptyState title="You are not in any class sections yet">
