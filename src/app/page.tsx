@@ -1,13 +1,9 @@
 import Link from "next/link";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { accountMatches } from "@/db/schema";
 
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { homeNav } from "@/components/layout/nav";
 import {
-  Alert,
   EmptyState,
   MetaList,
   ReviewStatusLine,
@@ -16,7 +12,6 @@ import {
 } from "@/components/ui";
 import { IconForward } from "@/components/ui/icons";
 import { listCoursesForUser, listSectionsForUser } from "@/modules/catalog";
-import { generateMatchCandidates } from "@/modules/identity/matching";
 import { listOpenInstancesForStudent } from "@/modules/forms/submission";
 import { listCourseForms } from "@/modules/forms/instances";
 import { requireUser, toShellUser } from "@/lib/session";
@@ -95,16 +90,9 @@ export default async function HomePage() {
 
   const user = await requireUser();
 
-  // First visit by a non-staff account with no match rows yet: run the
-  // candidate pipeline so the teacher sees them as pending. Never confirms.
-  if (!user.isTeacher && !user.isPlatformAdmin) {
-    const existing = await db.query.accountMatches.findFirst({
-      where: eq(accountMatches.userId, user.id),
-    });
-    if (!existing) await generateMatchCandidates(user.id);
-  }
-
-  const { staffSections, studentSections, matchStatus, courseById } =
+  // Nothing to set up on first visit: a student's classes follow from their UP
+  // email being on a class list, resolved live on every read.
+  const { staffSections, studentSections, courseById } =
     await listSectionsForUser(user.id);
 
   const studentCards = await studentFormCards(
@@ -162,14 +150,6 @@ export default async function HomePage() {
       roomy={!isStaffView}
     >
       <div className="stack-6">
-        {matchStatus === "pending" && studentCards.length > 0 && (
-          <Alert variant="info" title="Your account is still being confirmed">
-            A teacher has to match your sign-in to the class list before your
-            submissions count towards participation. You can still fill in the
-            form.
-          </Alert>
-        )}
-
         {studentCards.length > 0 && (
           <section aria-labelledby={showStrips ? "your-classes" : undefined}>
             {showStrips && (
@@ -323,10 +303,11 @@ export default async function HomePage() {
             button already permanently in the rail. Removed — the rail is the
             navigation, and repeating it costs a region for nothing. */}
 
-        {/* Nothing here yet. One empty state, carrying the one action that
-            actually moves this person forward — which differs by why the page
-            is empty. A teacher with no courses creates one; an unconfirmed
-            student claims their place; a confirmed student can only wait. */}
+        {/* Nothing here yet. A teacher with no courses creates one. A student
+            has nothing to do at all: their classes follow from their UP email
+            being on a class list, so the only useful thing to say is who can
+            fix it. Deliberately says nothing about whether any other address or
+            student number exists. */}
         {hasNothing &&
           (user.isTeacher ? (
             <EmptyState
@@ -337,26 +318,10 @@ export default async function HomePage() {
               A course owns its forms. A form goes to one class list, several, or
               all of them.
             </EmptyState>
-          ) : matchStatus === "confirmed" ? (
-            <EmptyState title="You are not in any class sections yet">
-              Once a teacher adds you to a section, its weekly form appears
-              here.
-            </EmptyState>
           ) : (
-            <EmptyState
-              title={
-                matchStatus === "pending"
-                  ? "Your account is waiting to be confirmed"
-                  : "We could not match you to a class list"
-              }
-              action={{ href: "/claim", label: "Enter my student number" }}
-              primary
-            >
-              {/* Privacy, not onboarding: a student needs to know the link is
-                  confirmed by a person, because that is what stops someone
-                  else being matched to their name. */}
-              Class lists carry no email address, so your teacher confirms every
-              link by hand. Nothing is confirmed automatically.
+            <EmptyState title="No classes yet">
+              No classes are associated with this UP email yet. Ask your teacher
+              to check that your UP email is included in the class list.
             </EmptyState>
           ))}
       </div>

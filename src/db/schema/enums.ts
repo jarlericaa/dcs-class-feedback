@@ -1,21 +1,5 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 
-// --- identity ---
-export const accountMatchState = pgEnum("account_match_state", [
-  "unmatched",
-  "candidate",
-  "ambiguous",
-  "confirmed",
-  "rejected",
-  "correction_pending",
-]);
-
-export const accountMatchMethod = pgEnum("account_match_method", [
-  "auto_pipeline",
-  "teacher",
-  "manual_correction",
-]);
-
 // --- catalog ---
 export const sectionStaffRole = pgEnum("section_staff_role", [
   "teacher",
@@ -37,30 +21,6 @@ export const crsEnrollmentStatus = pgEnum("crs_enrollment_status", [
   "enrolled",
   "not_enrolled",
   "unknown",
-]);
-
-/** Lifecycle of a student's attempt to claim a roster entry. */
-export const rosterClaimState = pgEnum("roster_claim_state", [
-  "pending",
-  "auto_confirmed",
-  "confirmed",
-  "rejected",
-  "superseded",
-]);
-
-/**
- * Why a claim landed where it did. Recorded for STAFF ONLY — the student always
- * receives the same response, so the claim page cannot be used to discover
- * whether a student number exists or who it belongs to.
- */
-export const rosterClaimReason = pgEnum("roster_claim_reason", [
-  "no_roster_match",
-  "name_mismatch",
-  "name_ambiguous",
-  "already_claimed",
-  "user_already_confirmed",
-  "policy_confirm_all",
-  "exact_name_match",
 ]);
 
 export const lessonTopicKind = pgEnum("lesson_topic_kind", [

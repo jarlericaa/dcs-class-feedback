@@ -5,13 +5,19 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { env } from "@/env";
+import { isAllowedEmailDomain, normalizeEmail } from "@/modules/identity/email";
 
 /**
- * Auth foundation (account-matching.md §1):
+ * Auth foundation (docs/student-identity.md §1):
  * - Google SSO restricted to authorized university domains (ALLOWED_EMAIL_DOMAINS).
- * - Signing in creates/updates a User row. A User is NOT a student until an
- *   AccountMatch is confirmed by a teacher.
+ * - Signing in creates/updates a User row, keyed by the NORMALIZED email. Nothing
+ *   else has to happen: whether that user is a student is answered later, by
+ *   looking their email up against the teacher-uploaded class lists.
  * - JWT sessions (no adapter tables); the JWT carries our users.id.
+ *
+ * The email is normalized here, at the only place an address enters the system,
+ * so every later comparison is a plain equality against an already-normalized
+ * value on both sides.
  *
  * Dev login: a local-development-only credentials provider for when Google
  * OAuth credentials are unavailable. It is NOT registered unless
@@ -19,18 +25,12 @@ import { env } from "@/env";
  * It signs in an EXISTING user by email only; it never creates users.
  */
 
-function emailDomainAllowed(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const domain = email.split("@")[1]?.toLowerCase();
-  if (!domain) return false;
-  return env.allowedEmailDomains.includes(domain);
-}
-
 async function upsertGoogleUser(profile: {
   sub: string;
   email: string;
   name: string;
 }): Promise<string> {
+  const email = normalizeEmail(profile.email);
   const existing = await db.query.users.findFirst({
     where: eq(users.googleSub, profile.sub),
   });
@@ -39,7 +39,7 @@ async function upsertGoogleUser(profile: {
       .update(users)
       .set({
         displayName: profile.name,
-        email: profile.email,
+        email,
         updatedAt: new Date(),
       })
       .where(eq(users.id, existing.id));
@@ -48,7 +48,7 @@ async function upsertGoogleUser(profile: {
   // Same email may exist from a pre-provisioned account (e.g. seed/admin
   // grant before first login) — attach the Google subject to it.
   const byEmail = await db.query.users.findFirst({
-    where: eq(users.email, profile.email),
+    where: eq(users.email, email),
   });
   if (byEmail) {
     await db
@@ -65,7 +65,7 @@ async function upsertGoogleUser(profile: {
     .insert(users)
     .values({
       googleSub: profile.sub,
-      email: profile.email,
+      email,
       displayName: profile.name,
     })
     .returning();
@@ -98,7 +98,7 @@ if (env.devAuthEnabled) {
         if (process.env.NODE_ENV === "production" || !env.devAuthEnabled) {
           return null;
         }
-        const email = String(credentials?.email ?? "").toLowerCase();
+        const email = normalizeEmail(String(credentials?.email ?? ""));
         if (!email) return null;
         const user = await db.query.users.findFirst({
           where: eq(users.email, email),
@@ -117,8 +117,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ account, profile, user }) {
       if (account?.provider === "google") {
-        if (!emailDomainAllowed(profile?.email)) return false;
-        return true;
+        return isAllowedEmailDomain(normalizeEmail(profile?.email));
       }
       if (account?.provider === "dev-login") {
         return env.devAuthEnabled && !!user;

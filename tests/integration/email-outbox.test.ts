@@ -63,7 +63,7 @@ async function setup() {
     timezone: TZ,
   });
   await generateCyclesForSchedule(schedule, new Date("2026-01-05T00:00:00Z"));
-  const student = await makeEnrolledStudent(section.id, teacher.id);
+  const student = await makeEnrolledStudent(section.id);
   return { teacher, course, section, schedule, student };
 }
 
@@ -187,10 +187,10 @@ describe("email outbox", () => {
   });
 
   it("two concurrent workers take disjoint batches and never double-send", async () => {
-    const { section, teacher } = await setup();
+    const { section } = await setup();
     // Several recipients so there is something to split.
     for (let i = 0; i < 4; i++) {
-      await makeEnrolledStudent(section.id, teacher.id);
+      await makeEnrolledStudent(section.id);
     }
     await openDueCycles(IN_WINDOW);
     const total = (await db.query.emailOutbox.findMany()).length;

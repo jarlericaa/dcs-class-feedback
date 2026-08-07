@@ -9,7 +9,7 @@ import {
 } from "@/db/schema";
 import {
   AuthzError,
-  getConfirmedStudentRecord,
+  getStudentRecordForUser,
   requireActiveUser,
   requireSectionStaff,
   requireWritableCourse,
@@ -162,9 +162,9 @@ export async function instanceIdsForSection(
 /**
  * Student access to a form instance.
  *
- * Admits a user holding a confirmed AccountMatch and an ACTIVE enrolment in at
- * least one audience section, and returns the bound student record together with
- * the section the response is attributed to.
+ * Admits a user whose normalized UP email is on a class list AND who holds an
+ * ACTIVE enrolment in at least one audience section, and returns the resolved
+ * student record together with the section the response is attributed to.
  *
  * Attribution is deterministic — the audience is ordered by (section title, id),
  * so a student in two targeted sections always resolves to the same one. It is
@@ -187,8 +187,8 @@ export async function requireAudienceStudent(
   enrolledSectionCount: number;
 }> {
   await requireActiveUser(dbx, userId);
-  const record = await getConfirmedStudentRecord(dbx, userId);
-  if (!record) throw new AuthzError("No verified student identity");
+  const record = await getStudentRecordForUser(dbx, userId);
+  if (!record) throw new AuthzError("No student record for this email");
 
   const audience = await getInstanceAudience(dbx, instanceId);
   if (audience.length === 0) throw new AuthzError("No access to this form");

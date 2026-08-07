@@ -2,7 +2,6 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
-  accountMatches,
   classSections,
   courses,
   courseStaff,
@@ -13,7 +12,7 @@ import {
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import {
-  getConfirmedStudentRecord,
+  getStudentRecordForUser,
   requireCourseOwner,
   requireCourseStaff,
   requirePlatformAdmin,
@@ -82,8 +81,8 @@ export async function listSectionsForUser(userId: string) {
       })
     : [];
 
-  // Student view: active enrollments of the confirmed student record.
-  const record = await getConfirmedStudentRecord(db, userId);
+  // Student view: active enrollments of the record this user's email resolves to.
+  const record = await getStudentRecordForUser(db, userId);
   let studentSections: (typeof classSections.$inferSelect)[] = [];
   if (record) {
     const active = await db.query.enrollments.findMany({
@@ -103,18 +102,6 @@ export async function listSectionsForUser(userId: string) {
       : [];
   }
 
-  // Match status for the "pending verification" notice.
-  const matchRows = await db.query.accountMatches.findMany({
-    where: eq(accountMatches.userId, userId),
-  });
-  const matchStatus = record
-    ? ("confirmed" as const)
-    : matchRows.length === 0
-      ? ("none" as const)
-      : matchRows.some((m) => m.state === "candidate" || m.state === "ambiguous")
-        ? ("pending" as const)
-        : ("unmatched" as const);
-
   const referencedCourseIds = [
     ...new Set([
       ...staffSections.map((s) => s.courseId),
@@ -130,7 +117,13 @@ export async function listSectionsForUser(userId: string) {
     ).map((c) => [c.id, c]),
   );
 
-  return { staffSections, studentSections, matchStatus, courseById };
+  return {
+    staffSections,
+    studentSections,
+    /** true once this user's UP email appears on some class list */
+    isRostered: !!record,
+    courseById,
+  };
 }
 
 /** Courses this user owns or staffs, with their sections. Staff-only data. */
@@ -192,7 +185,14 @@ export async function listSectionStaff(actorUserId: string, sectionId: string) {
   return rows.map((row) => ({ staff: row, user: byId.get(row.userId) ?? null }));
 }
 
-/** Enrolled roster of a section. Identity-bearing → staff-only. */
+/**
+ * Enrolled roster of a section. Identity-bearing → staff-only.
+ *
+ * `signedIn` reports whether an active account exists for the imported email —
+ * that is, whether this student has ever logged in. It is NOT a link decision:
+ * access follows from the email being on the list, and nothing here can grant or
+ * withhold it.
+ */
 export async function listSectionRoster(actorUserId: string, sectionId: string) {
   await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", { allowArchived: true });
   const rows = await db.query.enrollments.findMany({
@@ -206,17 +206,14 @@ export async function listSectionRoster(actorUserId: string, sectionId: string) 
     ),
   });
   const byId = new Map(records.map((r) => [r.id, r]));
-  const confirmed = await db.query.accountMatches.findMany({
-    where: and(
-      inArray(
-        accountMatches.studentRecordId,
-        rows.map((r) => r.studentRecordId),
-      ),
-      eq(accountMatches.state, "confirmed"),
-    ),
-  });
-  const linkedRecordIds = new Set(
-    confirmed.map((m) => m.studentRecordId).filter((v): v is string => !!v),
+  const emails = records
+    .map((r) => r.rosterEmail)
+    .filter((v): v is string => !!v);
+  const accounts = emails.length
+    ? await db.query.users.findMany({ where: inArray(users.email, emails) })
+    : [];
+  const activeAccountEmails = new Set(
+    accounts.filter((u) => u.active).map((u) => u.email),
   );
   return rows
     .flatMap((row) => {
@@ -226,7 +223,9 @@ export async function listSectionRoster(actorUserId: string, sectionId: string) 
             {
               enrollment: row,
               record,
-              accountLinked: linkedRecordIds.has(record.id),
+              signedIn:
+                !!record.rosterEmail &&
+                activeAccountEmails.has(record.rosterEmail),
             },
           ]
         : [];

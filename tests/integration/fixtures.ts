@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { sealStudentNumber } from "@/modules/crypto/student-number";
+import { normalizeEmail } from "@/modules/identity/email";
 import { db, uniq } from "./helpers";
 import {
-  accountMatches,
   classSections,
   courses,
   courseStaff,
@@ -67,11 +68,16 @@ export async function addSectionStaff(
   return row!;
 }
 
+/**
+ * A roster row. `rosterEmail` is the access key, so it defaults to a unique
+ * address: a fixture must never accidentally give two records the same identity.
+ * Pass one explicitly to link a record to a specific account.
+ */
 export async function makeStudentRecord(
   fullName = "Juan Dela Cruz",
   studentNumber = uniq("2026"),
+  rosterEmail: string | null = `${uniq("student")}@up.edu.ph`,
 ) {
-  const normalized = fullName.toLowerCase();
   // Sealed exactly as the real import path does, so hash lookups and the
   // decrypt-for-export path behave identically in tests.
   const id = randomUUID();
@@ -85,8 +91,7 @@ export async function makeStudentRecord(
       studentNumberLast4: sealed.last4,
       encKeyVersion: sealed.encKeyVersion,
       fullName,
-      normalizedFullName: normalized,
-      normalizedTokens: normalized.split(/\s+/).sort().join(" "),
+      rosterEmail,
     })
     .returning();
   return row!;
@@ -104,35 +109,37 @@ export async function enroll(
   return row!;
 }
 
-export async function confirmMatchDirect(
-  userId: string,
-  studentRecordId: string,
-  confirmedByUserId: string,
-) {
+/**
+ * Put this account's email on this roster row — the only way a user becomes a
+ * student. There is no link row and no confirmation: writing the email IS the
+ * grant, exactly as a roster import does it.
+ */
+export async function linkRosterEmail(userId: string, studentRecordId: string) {
+  const user = (await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  }))!;
   const [row] = await db
-    .insert(accountMatches)
-    .values({
-      userId,
-      studentRecordId,
-      state: "confirmed",
-      method: "teacher",
-      confirmedByUserId,
-      confirmedAt: new Date(),
-    })
+    .update(studentRecords)
+    .set({ rosterEmail: normalizeEmail(user.email) })
+    .where(eq(studentRecords.id, studentRecordId))
     .returning();
   return row!;
 }
 
-/** Full student wired to a section: user + record + confirmed match + enrollment. */
-export async function makeEnrolledStudent(
-  sectionId: string,
-  confirmedByUserId: string,
-) {
+/** Full student wired to a section: user + record sharing an email + enrollment. */
+export async function makeEnrolledStudent(sectionId: string) {
   const user = await makeUser({ displayName: "Student User" });
-  const record = await makeStudentRecord();
-  await confirmMatchDirect(user.id, record.id, confirmedByUserId);
+  const record = await makeStudentRecord(
+    "Juan Dela Cruz",
+    uniq("2026"),
+    normalizeEmail(`${uniq("student")}@up.edu.ph`),
+  );
+  await db
+    .update(users)
+    .set({ email: record.rosterEmail! })
+    .where(eq(users.id, user.id));
   await enroll(sectionId, record.id);
-  return { user, record };
+  return { user: { ...user, email: record.rosterEmail! }, record };
 }
 
 /**

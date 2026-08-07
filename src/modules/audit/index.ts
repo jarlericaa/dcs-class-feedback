@@ -1,7 +1,6 @@
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import {
-  accountMatches,
   auditEvents,
   emailOutbox,
   enrollments,
@@ -43,11 +42,6 @@ export type AuditAction =
   | "staff.permissions_changed"
   | "roster.imported"
   | "student_record.name_corrected"
-  | "match.candidates_generated"
-  | "match.confirmed"
-  | "match.rejected"
-  | "match.correction_started"
-  | "match.corrected"
   | "template.created"
   | "template.version_created"
   | "recurrence.configured"
@@ -85,17 +79,17 @@ export type AuditAction =
   | "backlog.made_visible_to_section"
   | "legacy.imported"
   | "participation.exported"
-  // --- roster import + claiming (Epic A) ---
+  // --- roster import + email identity (Epic A, docs/student-identity.md) ---
   | "roster.parsed"
   | "roster.preview_edited"
+  | "roster.row_added"
+  | "roster.row_deactivated"
+  | "roster.row_rejected"
+  /** a student record's UP email was set or changed — this IS the access grant */
+  | "roster.email_linked"
   | "student_record.fields_updated"
   | "student_number.backfilled"
   | "student_number.revealed"
-  | "claim.submitted"
-  | "claim.auto_confirmed"
-  | "claim.confirmed"
-  | "claim.rejected"
-  | "match.unlinked"
   // --- submissions (Epic B) ---
   | "response.draft_saved"
   | "response.edited"
@@ -267,11 +261,7 @@ export async function listSectionAuditEvents(
     where: eq(enrollments.sectionId, sectionId),
   });
   const recordIds = enrolled.map((e) => e.studentRecordId);
-  const matches = recordIds.length
-    ? await db.query.accountMatches.findMany({
-        where: inArray(accountMatches.studentRecordId, recordIds),
-      })
-    : [];
+  const enrollmentIds = enrolled.map((e) => e.id);
 
   // Entities added after the audit table gained a section column still need the
   // fan-out, because a row written before that column existed carries no scope.
@@ -321,7 +311,7 @@ export async function listSectionAuditEvents(
     ...schedules.map((s) => s.id),
     ...batches.map((b) => b.id),
     ...recordIds,
-    ...matches.map((m) => m.id),
+    ...enrollmentIds,
     ...validityEvents.map((e) => e.id),
     ...revisions.map((r) => r.id),
     ...notes.map((n) => n.id),

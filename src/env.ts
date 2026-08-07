@@ -34,14 +34,6 @@ const envSchema = z.object({
   STUDENT_NUMBER_ENC_KEY_PREVIOUS: z.string().optional(),
   STUDENT_NUMBER_HASH_KEY: z.string().optional(),
 
-  /**
-   * Roster-claim auto-confirm policy (open-decisions.md D2).
-   * Default OFF = teacher-confirm-all. Turning it on is a configuration change.
-   */
-  ROSTER_CLAIM_AUTO_CONFIRM: z.string().optional(),
-  ROSTER_CLAIM_AUTO_CONFIRM_MIN_SCORE: z.coerce.number().min(0).max(1).optional(),
-  ROSTER_CLAIM_MAX_PER_HOUR: z.coerce.number().int().min(1).default(5),
-
   /** Absolute base URL used to build authenticated links inside emails. */
   APP_BASE_URL: z.string().url().default("http://localhost:3000"),
 
@@ -109,7 +101,12 @@ export const env = {
   ...parsed,
   STUDENT_NUMBER_ENC_KEY: parsed.STUDENT_NUMBER_ENC_KEY ?? DEV_ENC_KEY,
   STUDENT_NUMBER_HASH_KEY: parsed.STUDENT_NUMBER_HASH_KEY ?? DEV_HASH_KEY,
-  /** Allowed Google account domains, lowercased. Empty list = reject all sign-ins. */
+  /**
+   * Allowed university email domains, lowercased. Empty list = reject all
+   * sign-ins. This is also the list a class-list email must be on before it can
+   * be imported, because an address that can never sign in can never be a
+   * student (docs/student-identity.md).
+   */
   allowedEmailDomains: parsed.ALLOWED_EMAIL_DOMAINS.split(",")
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean),
@@ -122,10 +119,6 @@ export const env = {
   /** Whether the shipped student-number keys are the non-secret dev defaults. */
   usingDevCryptoKeys:
     !parsed.STUDENT_NUMBER_ENC_KEY || !parsed.STUDENT_NUMBER_HASH_KEY,
-  /** Roster-claim auto-confirm: OFF unless explicitly enabled (D2). */
-  rosterClaimAutoConfirm: parsed.ROSTER_CLAIM_AUTO_CONFIRM === "true",
-  rosterClaimAutoConfirmMinScore:
-    parsed.ROSTER_CLAIM_AUTO_CONFIRM_MIN_SCORE ?? 0.85,
   smtpSecure: parsed.SMTP_SECURE === "true",
   /** Reminder offsets in minutes before the deadline, descending. */
   emailReminderOffsets: parseOffsets(parsed.EMAIL_REMINDER_OFFSETS),

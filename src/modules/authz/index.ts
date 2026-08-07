@@ -1,7 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import {
-  accountMatches,
   classSections,
   courses,
   courseStaff,
@@ -12,6 +11,7 @@ import {
   studentSubmissionItems,
   users,
 } from "@/db/schema";
+import { normalizeEmail } from "@/modules/identity/email";
 
 /**
  * Deny-by-default, resource-scoped authorization
@@ -22,7 +22,8 @@ import {
  * - Platform admin is separate from teaching; it grants no content access.
  * - Teachers act only on courses/sections where they are staff (Risk R5).
  * - TA capabilities are per-section flags (the permission catalog).
- * - Students act only where a confirmed AccountMatch + active Enrollment exists.
+ * - Students act only where their normalized UP email is on a class list AND an
+ *   active Enrollment exists (docs/student-identity.md).
  */
 
 export class AuthzError extends Error {
@@ -381,9 +382,9 @@ export async function requireCourseInstructor(
 }
 
 /**
- * Student access to a section: requires a CONFIRMED AccountMatch binding this
- * user to a StudentRecord with an ACTIVE Enrollment in the section.
- * Returns the bound student record.
+ * Student access to a section: requires this user's normalized email to be on a
+ * class list AND that student record to hold an ACTIVE Enrollment in the section.
+ * Returns the resolved student record.
  */
 export async function requireEnrolledStudent(
   dbx: DbOrTx,
@@ -392,8 +393,8 @@ export async function requireEnrolledStudent(
   opts?: AuthzOptions,
 ) {
   await requireActiveUser(dbx, userId);
-  const record = await getConfirmedStudentRecord(dbx, userId);
-  if (!record) throw new AuthzError("No verified student identity");
+  const record = await getStudentRecordForUser(dbx, userId);
+  if (!record) throw new AuthzError("No student record for this email");
   const enrollment = await dbx.query.enrollments.findFirst({
     where: and(
       eq(enrollments.sectionId, sectionId),
@@ -413,16 +414,16 @@ export async function requireEnrolledStudent(
  * The student who wrote a submission item — the only student who may read its
  * private thread or add a follow-up to it (project-specs.md §6.7).
  *
- * Resolved through the confirmed AccountMatch, so unlinking an account
- * immediately revokes thread access without touching any data.
+ * Resolved through the roster email, so removing an address from every class
+ * list revokes thread access without touching any data.
  */
 export async function requireItemAsker(
   dbx: DbOrTx,
   userId: string,
   itemId: string,
 ) {
-  const record = await getConfirmedStudentRecord(dbx, userId);
-  if (!record) throw new AuthzError("No verified student identity");
+  const record = await getStudentRecordForUser(dbx, userId);
+  if (!record) throw new AuthzError("No student record for this email");
   const rows = await dbx
     .select({
       itemId: studentSubmissionItems.id,
@@ -451,18 +452,27 @@ export async function requireItemAsker(
   return { studentRecordId: record.id, sectionId: row.sectionId };
 }
 
-/** The StudentRecord bound to this user via a confirmed match, or null. */
-export async function getConfirmedStudentRecord(dbx: DbOrTx, userId: string) {
-  const match = await dbx.query.accountMatches.findFirst({
-    where: and(
-      eq(accountMatches.userId, userId),
-      eq(accountMatches.state, "confirmed"),
-    ),
-  });
-  if (!match?.studentRecordId) return null;
+/**
+ * The StudentRecord for this user, resolved by exact normalized-email equality
+ * against the teacher-uploaded class lists, or null.
+ *
+ * This is the single resolution point for student identity in the whole system.
+ * It reads live, so a roster imported after the account already existed grants
+ * access on the next request — no second login, no linking row.
+ */
+export async function getStudentRecordForUser(dbx: DbOrTx, userId: string) {
+  const user = await dbx.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user) return null;
+  return getStudentRecordByEmail(dbx, user.email);
+}
+
+/** Same lookup, by address. Both sides are normalized before comparing. */
+export async function getStudentRecordByEmail(dbx: DbOrTx, email: string) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
   return (
     (await dbx.query.studentRecords.findFirst({
-      where: eq(studentRecords.id, match.studentRecordId),
+      where: eq(studentRecords.rosterEmail, normalized),
     })) ?? null
   );
 }
@@ -594,7 +604,7 @@ export interface SectionAccess {
     isInstructor: boolean;
     permissions: EffectivePermissions;
   } | null;
-  /** the confirmed student record with an active enrolment here, if any */
+  /** the email-resolved student record with an active enrolment here, if any */
   studentRecordId: string | null;
   /**
    * PRESENTATION ONLY — lets the UI grey out controls on an archived course.
@@ -671,7 +681,7 @@ export async function getSectionAccess(
     };
   }
 
-  const record = await getConfirmedStudentRecord(dbx, userId);
+  const record = await getStudentRecordForUser(dbx, userId);
   let studentRecordId: string | null = null;
   if (record) {
     const enrollment = await dbx.query.enrollments.findFirst({
@@ -726,6 +736,6 @@ export const authz = {
   ) => requireSectionQaAccess(db, userId, sectionId, opts),
   requireWritableCourse: (courseId: string) =>
     requireWritableCourse(db, courseId),
-  getConfirmedStudentRecord: (userId: string) =>
-    getConfirmedStudentRecord(db, userId),
+  getStudentRecordForUser: (userId: string) =>
+    getStudentRecordForUser(db, userId),
 };

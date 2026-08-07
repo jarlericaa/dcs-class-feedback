@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import {
-  accountMatches,
   classSections,
   courses,
   emailOutbox,
@@ -12,6 +11,7 @@ import {
   publicAnswers,
   sectionStaff,
   sourceLinks,
+  studentRecords,
   studentSubmissionItems,
   users,
   formInstances,
@@ -114,23 +114,26 @@ async function sectionScope(dbx: DbOrTx, sectionId: string) {
   };
 }
 
-/** Users with a confirmed identity and an active enrollment in the section. */
+/**
+ * Users actively enrolled in the section who have an account.
+ *
+ * The join IS the identity rule: users.email = student_records.roster_email,
+ * both normalized on write. A rostered student who has never signed in has no
+ * user row and therefore no address to write to — correct, not a gap.
+ */
 async function activeStudentUsers(dbx: DbOrTx, sectionId: string) {
-  const rows = await dbx
+  return dbx
     .select({
-      userId: accountMatches.userId,
+      userId: users.id,
       displayName: users.displayName,
       studentRecordId: enrollments.studentRecordId,
     })
     .from(enrollments)
     .innerJoin(
-      accountMatches,
-      and(
-        eq(accountMatches.studentRecordId, enrollments.studentRecordId),
-        eq(accountMatches.state, "confirmed"),
-      ),
+      studentRecords,
+      eq(studentRecords.id, enrollments.studentRecordId),
     )
-    .innerJoin(users, eq(users.id, accountMatches.userId))
+    .innerJoin(users, eq(users.email, studentRecords.rosterEmail))
     .where(
       and(
         eq(enrollments.sectionId, sectionId),
@@ -138,7 +141,18 @@ async function activeStudentUsers(dbx: DbOrTx, sectionId: string) {
         eq(users.active, true),
       ),
     );
-  return rows;
+}
+
+/** The active account for one student record, or null. Same rule as above. */
+async function accountForStudentRecord(dbx: DbOrTx, studentRecordId: string) {
+  const record = await dbx.query.studentRecords.findFirst({
+    where: eq(studentRecords.id, studentRecordId),
+  });
+  if (!record?.rosterEmail) return null;
+  const user = await dbx.query.users.findFirst({
+    where: eq(users.email, record.rosterEmail),
+  });
+  return user?.active ? user : null;
 }
 
 /**
@@ -264,26 +278,17 @@ export async function enqueuePrivateAnswer(
   if (!row) return;
   const scope = await sectionScope(dbx, row.sectionId);
   if (!scope) return;
-  const match = await dbx.query.accountMatches.findFirst({
-    where: and(
-      eq(accountMatches.studentRecordId, row.studentRecordId),
-      eq(accountMatches.state, "confirmed"),
-    ),
-  });
-  if (!match) return;
-  const recipient = await dbx.query.users.findFirst({
-    where: eq(users.id, match.userId),
-  });
-  if (!recipient?.active) return;
+  const recipient = await accountForStudentRecord(dbx, row.studentRecordId);
+  if (!recipient) return;
   await enqueueEmail(dbx, {
     eventType: "private_answer_received",
     idempotencyKey: key([
       "private_answer_received",
       "message",
       input.messageId,
-      match.userId,
+      recipient.id,
     ]),
-    recipientUserId: match.userId,
+    recipientUserId: recipient.id,
     sectionId: scope.sectionId,
     courseId: scope.courseId,
     context: {
@@ -326,26 +331,17 @@ export async function enqueuePublicAnswerLinked(
     .where(inArray(studentSubmissionItems.id, itemIds));
   let queued = 0;
   for (const asker of askers) {
-    const match = await dbx.query.accountMatches.findFirst({
-      where: and(
-        eq(accountMatches.studentRecordId, asker.studentRecordId),
-        eq(accountMatches.state, "confirmed"),
-      ),
-    });
-    if (!match) continue;
-    const recipient = await dbx.query.users.findFirst({
-      where: eq(users.id, match.userId),
-    });
-    if (!recipient?.active) continue;
+    const recipient = await accountForStudentRecord(dbx, asker.studentRecordId);
+    if (!recipient) continue;
     await enqueueEmail(dbx, {
       eventType: "public_answer_linked",
       idempotencyKey: key([
         "public_answer_linked",
         "answer",
         publicAnswerId,
-        match.userId,
+        recipient.id,
       ]),
-      recipientUserId: match.userId,
+      recipientUserId: recipient.id,
       sectionId: scope.sectionId,
       courseId: scope.courseId,
       context: {
@@ -378,17 +374,8 @@ export async function enqueueValidityChanged(
   // about their submission alone.
   const scope = await sectionScope(dbx, response.sectionId);
   if (!scope) return;
-  const match = await dbx.query.accountMatches.findFirst({
-    where: and(
-      eq(accountMatches.studentRecordId, response.studentRecordId),
-      eq(accountMatches.state, "confirmed"),
-    ),
-  });
-  if (!match) return;
-  const recipient = await dbx.query.users.findFirst({
-    where: eq(users.id, match.userId),
-  });
-  if (!recipient?.active) return;
+  const recipient = await accountForStudentRecord(dbx, response.studentRecordId);
+  if (!recipient) return;
   const eventType: EmailEvent =
     validity === "invalid" ? "submission_invalidated" : "submission_restored";
   await enqueueEmail(dbx, {
@@ -397,12 +384,12 @@ export async function enqueueValidityChanged(
       eventType,
       "response",
       responseId,
-      match.userId,
+      recipient.id,
       // Validity can legitimately flip more than once, so the transition count
       // is part of the key: each real decision gets its own message.
       String(response.validityUpdatedAt?.getTime() ?? 0),
     ]),
-    recipientUserId: match.userId,
+    recipientUserId: recipient.id,
     sectionId: scope.sectionId,
     courseId: scope.courseId,
     context: {

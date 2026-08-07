@@ -101,19 +101,19 @@ describe("authorization (deny-by-default, resource-scoped)", () => {
     ).resolves.toBeTruthy();
   });
 
-  it("student access requires confirmed match AND active enrollment", async () => {
+  it("student access requires a rostered email AND an active enrollment", async () => {
     const owner = await makeUser({ isTeacher: true });
     const course = await makeCourse(owner.id);
     const section = await makeSection(course.id);
 
-    // user with no match at all
+    // an account whose email is on no class list at all
     const stranger = await makeUser();
     await expect(
       requireEnrolledStudent(db, stranger.id, section.id),
     ).rejects.toBeInstanceOf(AuthzError);
 
-    // enrolled + confirmed passes
-    const { user } = await makeEnrolledStudent(section.id, owner.id);
+    // rostered + enrolled passes
+    const { user } = await makeEnrolledStudent(section.id);
     await expect(
       requireEnrolledStudent(db, user.id, section.id),
     ).resolves.toBeTruthy();
@@ -131,8 +131,8 @@ describe("authorization (deny-by-default, resource-scoped)", () => {
     const section = await makeSection(course.id);
     const user = await makeUser();
     const record = await makeStudentRecord();
-    const { confirmMatchDirect } = await import("./fixtures");
-    await confirmMatchDirect(user.id, record.id, owner.id);
+    const { linkRosterEmail } = await import("./fixtures");
+    await linkRosterEmail(user.id, record.id);
     await enroll(section.id, record.id, "deactivated");
 
     await expect(
@@ -144,7 +144,7 @@ describe("authorization (deny-by-default, resource-scoped)", () => {
     const owner = await makeUser({ isTeacher: true });
     const course = await makeCourse(owner.id);
     const section = await makeSection(course.id);
-    const { user: student } = await makeEnrolledStudent(section.id, owner.id);
+    const { user: student } = await makeEnrolledStudent(section.id);
     const outsider = await makeUser();
 
     await expect(
