@@ -72,8 +72,8 @@ describe("derived participation + exports", () => {
 
   it("derives participation from valid submissions; invalidation removes credit; one max per cycle", async () => {
     const { teacher, section, cycle1, cycle2, q1, q2 } = await setupTwoWeeks();
-    const alice = await makeEnrolledStudent(section.id, teacher.id);
-    const bob = await makeEnrolledStudent(section.id, teacher.id);
+    const alice = await makeEnrolledStudent(section.id);
+    const bob = await makeEnrolledStudent(section.id);
 
     const week1 = new Date("2026-01-06T04:00:00Z");
     const week2 = new Date("2026-01-13T04:00:00Z");
@@ -129,7 +129,7 @@ describe("derived participation + exports", () => {
 
   it("legacy imports never affect participation", async () => {
     const { teacher, course, section } = await setupTwoWeeks();
-    await makeEnrolledStudent(section.id, teacher.id);
+    await makeEnrolledStudent(section.id);
     await importLegacyEntries(
       teacher.id,
       course.id,
@@ -142,7 +142,7 @@ describe("derived participation + exports", () => {
 
   it("weekly matrix CSV has one column per cycle and audits the export", async () => {
     const { teacher, section, cycle1, q1 } = await setupTwoWeeks();
-    const alice = await makeEnrolledStudent(section.id, teacher.id);
+    const alice = await makeEnrolledStudent(section.id);
     await submitResponse(
       alice.user.id,
       cycle1.id,
@@ -172,7 +172,7 @@ describe("derived participation + exports", () => {
 
   it("participant list deduplicates and respects the cycle range", async () => {
     const { teacher, section, cycle1, cycle2, q1, q2 } = await setupTwoWeeks();
-    const alice = await makeEnrolledStudent(section.id, teacher.id);
+    const alice = await makeEnrolledStudent(section.id);
     await submitResponse(
       alice.user.id,
       cycle1.id,
@@ -196,8 +196,8 @@ describe("derived participation + exports", () => {
   });
 
   it("exports are staff-only (students and unflagged TAs denied)", async () => {
-    const { teacher, section } = await setupTwoWeeks();
-    const alice = await makeEnrolledStudent(section.id, teacher.id);
+    const { section } = await setupTwoWeeks();
+    const alice = await makeEnrolledStudent(section.id);
     await expect(
       weeklyMatrixCsv(alice.user.id, section.id),
     ).rejects.toBeInstanceOf(AuthzError);

@@ -12,8 +12,8 @@
 # Override the base URL when the dev server picked a different port:
 #   BASE=http://localhost:3002 bash scripts/verify/http-matrix.sh
 #
-# The three "unconfirmed student" assertions only hold before a teacher has
-# confirmed that student's account match.
+# The seeded student's UP email is on the seeded class list, so they have access
+# from their first sign-in — there is no claim or confirmation step to wait for.
 set -u
 BASE="${BASE:-http://localhost:3000}"
 DIR="$(mktemp -d)"
@@ -79,7 +79,7 @@ for path in "/teach/courses" "/teach/courses/$COURSE" \
             "/teach/courses/$COURSE/responses" "/teach/courses/$COURSE/sections" \
             "/teach/courses/$COURSE/forms/new" "/teach/courses/$COURSE/forms/$FORM" \
             "/teach/sections/$SECTION/setup" \
-            "/teach/sections/$SECTION/matches" "/teach/sections/$SECTION/import" \
+            "/teach/sections/$SECTION/roster" "/teach/sections/$SECTION/import" \
             "/teach/sections/$SECTION/participation" "/teach/sections/$SECTION/publications" \
             "/teach/sections/$SECTION/backlog" "/teach/sections/$SECTION/audit" \
             "/sections/$SECTION/qa"; do
@@ -121,18 +121,18 @@ else
   check "an occurrence was found to edit" 1
 fi
 
-matches=$(get "$TJAR" "/teach/sections/$SECTION/matches")
-check "matches page lists the pending student account" \
-  "$(grep -q 'Juan Dela Cruz' <<<"$matches" && echo 0 || echo 1)"
-# The confirm control only exists while something is pending. Whichever state the
-# seeded database is in, the page must be honest about it — and it must never
-# offer an automatic route.
-if grep -qE 'Confirm this is the same person' <<<"$matches"; then
-  check "a pending match is confirmed by an explicit human act" 0
-else
-  check "with nothing pending, the matches page says so rather than implying it acted" \
-    "$(grep -qE 'Confirmed|No students imported yet|Linked' <<<"$matches" && echo 0 || echo 1)"
-fi
+roster=$(get "$TJAR" "/teach/sections/$SECTION/roster")
+check "class list shows the imported students" \
+  "$(grep -q 'Juan Dela Cruz' <<<"$roster" && echo 0 || echo 1)"
+check "class list shows the UP email that grants access" \
+  "$(grep -q 'student@up.edu.ph' <<<"$roster" && echo 0 || echo 1)"
+# The whole point of the identity change: this page reports, it does not decide.
+check "class list offers no confirm/reject/unlink control" \
+  "$(grep -qvE 'Confirm match|Not this student|This is them|Unlink|Account match' <<<"$roster" && echo 0 || echo 1)"
+check "class list never shows a name-similarity score" \
+  "$(grep -qv 'name similarity' <<<"$roster" && echo 0 || echo 1)"
+check "the removed account-matches URL is gone" \
+  "$([ "$(code "$TJAR" "/teach/sections/$SECTION/matches")" = "404" ] && echo 0 || echo 1)"
 setup=$(get "$TJAR" "/teach/sections/$SECTION/setup")
 check "setup exposes the TA permission catalog" \
   "$(grep -q 'Export participation CSVs' <<<"$setup" && echo 0 || echo 1)"
@@ -152,32 +152,27 @@ check "participation CSV has the student-number header" \
 echo "== student =="
 SJAR="$DIR/student.jar"; login student@up.edu.ph "$SJAR"
 shome=$(get "$SJAR" /)
-# Whether this student has been confirmed yet depends on the state of the seeded
-# database, so both outcomes are accepted — but each must be the RIGHT one.
-if grep -q 'waiting to be confirmed\|could not match you' <<<"$shome"; then
-  echo "  (student is unconfirmed)"
-  check "unconfirmed student sees the pending-confirmation state" 0
-  check "unconfirmed student cannot open a class section" \
-    "$(get "$SJAR" "/sections/$SECTION" | grep -q 'do not have access' && echo 0 || echo 1)"
-  check "unconfirmed student cannot open the Q&A archive" \
-    "$(get "$SJAR" "/sections/$SECTION/qa" | grep -q 'do not have access' && echo 0 || echo 1)"
-else
-  echo "  (student is confirmed)"
-  # The board is made of FORMS, and it names the course code, never the section.
-  check "confirmed student sees forms, not sections" \
-    "$(grep -qE 'Fill in form|Review my answers|Nothing open|not in any class' <<<"$shome" && echo 0 || echo 1)"
-  check "confirmed student can open their class section" \
-    "$([ "$(code "$SJAR" "/sections/$SECTION")" != "500" ] && echo 0 || echo 1)"
-  check "confirmed student can open the Q&A archive" \
-    "$([ "$(code "$SJAR" "/sections/$SECTION/qa")" = "200" ] && echo 0 || echo 1)"
-  FORMLINK=$(grep -oE '/forms/[0-9a-f-]{36}' <<<"$shome" | head -1)
-  if [ -n "$FORMLINK" ]; then
-    sform=$(get "$SJAR" "$FORMLINK")
-    check "the student form names the course code" \
-      "$(grep -qE '<h1|panel-title' <<<"$sform" && echo 0 || echo 1)"
-    check "the student form never exposes staff-only review state" \
-      "$(grep -qvE 'Marked invalid|needs review|Identity hidden' <<<"$sform" && echo 0 || echo 1)"
-  fi
+# The seeded roster carries student@up.edu.ph, so this is unconditional now:
+# access follows from the email being on the class list, with nothing to claim.
+check "rostered student sees forms, not sections" \
+  "$(grep -qE 'Fill in form|Review my answers|Nothing open' <<<"$shome" && echo 0 || echo 1)"
+check "rostered student sees no claim or confirmation state" \
+  "$(grep -qvE 'waiting to be confirmed|could not match you|Claim your place|student number' <<<"$shome" && echo 0 || echo 1)"
+check "student navigation carries no claim control" \
+  "$(grep -qv 'href="/claim"' <<<"$shome" && echo 0 || echo 1)"
+check "/claim no longer serves a claim form" \
+  "$(curl -s -b "$SJAR" -L "$BASE/claim" | grep -qv 'Claim your place' && echo 0 || echo 1)"
+check "rostered student can open their class section" \
+  "$([ "$(code "$SJAR" "/sections/$SECTION")" != "500" ] && echo 0 || echo 1)"
+check "rostered student can open the Q&A archive" \
+  "$([ "$(code "$SJAR" "/sections/$SECTION/qa")" = "200" ] && echo 0 || echo 1)"
+FORMLINK=$(grep -oE '/forms/[0-9a-f-]{36}' <<<"$shome" | head -1)
+if [ -n "$FORMLINK" ]; then
+  sform=$(get "$SJAR" "$FORMLINK")
+  check "the student form names the course code" \
+    "$(grep -qE '<h1|panel-title' <<<"$sform" && echo 0 || echo 1)"
+  check "the student form never exposes staff-only review state" \
+    "$(grep -qvE 'Marked invalid|needs review|Identity hidden' <<<"$sform" && echo 0 || echo 1)"
 fi
 check "student cannot open the staff response inbox" \
   "$(get "$SJAR" "/teach/courses/$COURSE/responses" | grep -q 'do not have access' && echo 0 || echo 1)"
@@ -191,6 +186,10 @@ check "student cannot open platform admin" \
   "$(get "$SJAR" /admin | grep -q 'do not have access' && echo 0 || echo 1)"
 check "student cannot open course management" \
   "$(get "$SJAR" /teach/courses | grep -q 'do not have access' && echo 0 || echo 1)"
+check "student cannot read the class list or any roster identity" \
+  "$(get "$SJAR" "/teach/sections/$SECTION/roster" | grep -q 'do not have access' && echo 0 || echo 1)"
+check "student is never shown another student's UP email" \
+  "$(grep -qv 'maria.santos@up.edu.ph' <<<"$shome" && echo 0 || echo 1)"
 
 echo
 echo "passed=$pass failed=$fail"

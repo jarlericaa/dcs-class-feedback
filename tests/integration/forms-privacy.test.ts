@@ -85,8 +85,8 @@ describe("shared-form privacy", () => {
   });
 
   it("the student projection carries no audience, no other section, and no counts", async () => {
-    const { teacher, sectionA, instance } = await sharedForm();
-    const student = await makeEnrolledStudent(sectionA.id, teacher.id);
+    const { sectionA, instance } = await sharedForm();
+    const student = await makeEnrolledStudent(sectionA.id);
     const state = (await getStudentFormStateForInstance(
       student.user.id,
       instance.id,
@@ -110,7 +110,7 @@ describe("shared-form privacy", () => {
     const otherTeacher = await makeUser({ isTeacher: true });
     const otherCourse = await makeCourse(otherTeacher.id);
     const otherSection = await makeSection(otherCourse.id);
-    const outsider = await makeEnrolledStudent(otherSection.id, otherTeacher.id);
+    const outsider = await makeEnrolledStudent(otherSection.id);
 
     await expect(
       getStudentFormStateForInstance(outsider.user.id, instance.id, IN_WINDOW),
@@ -126,8 +126,8 @@ describe("shared-form privacy", () => {
   });
 
   it("a deactivated enrolment loses access even while the form is open", async () => {
-    const { teacher, sectionA, instance, question } = await sharedForm();
-    const student = await makeEnrolledStudent(sectionA.id, teacher.id);
+    const { sectionA, instance, question } = await sharedForm();
+    const student = await makeEnrolledStudent(sectionA.id);
     await db
       .update((await import("@/db/schema")).enrollments)
       .set({ status: "deactivated" })
@@ -148,10 +148,10 @@ describe("shared-form privacy", () => {
   });
 
   it("one student's history and own-validity view never reach into the other section", async () => {
-    const { teacher, sectionA, sectionB, instance, question } =
+    const { sectionA, sectionB, instance, question } =
       await sharedForm();
-    const a = await makeEnrolledStudent(sectionA.id, teacher.id);
-    const b = await makeEnrolledStudent(sectionB.id, teacher.id);
+    const a = await makeEnrolledStudent(sectionA.id);
+    const b = await makeEnrolledStudent(sectionB.id);
     await submitResponse(
       a.user.id,
       instance.id,
@@ -203,13 +203,13 @@ describe("shared-form privacy", () => {
   });
 
   it("a form appears once for a student enrolled in two of its sections", async () => {
-    const { teacher, sectionA, sectionB } = await sharedForm();
-    const { confirmMatchDirect, enroll, makeStudentRecord } = await import(
+    const { sectionA, sectionB } = await sharedForm();
+    const { linkRosterEmail, enroll, makeStudentRecord } = await import(
       "./fixtures"
     );
     const user = await makeUser({ displayName: "Double Enrolled" });
     const record = await makeStudentRecord("Double Enrolled");
-    await confirmMatchDirect(user.id, record.id, teacher.id);
+    await linkRosterEmail(user.id, record.id);
     await enroll(sectionA.id, record.id);
     await enroll(sectionB.id, record.id);
 

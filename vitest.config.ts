@@ -17,6 +17,7 @@ export default defineConfig({
         test: {
           name: "unit",
           include: ["tests/unit/**/*.test.ts"],
+          setupFiles: ["tests/setup-domains.ts"],
         },
       },
       {
@@ -24,7 +25,10 @@ export default defineConfig({
         test: {
           name: "integration",
           include: ["tests/integration/**/*.test.ts"],
-          setupFiles: ["tests/integration/setup-env.ts"],
+          setupFiles: [
+            "tests/setup-domains.ts",
+            "tests/integration/setup-env.ts",
+          ],
           // Integration tests share one Postgres database; run serially.
           maxConcurrency: 1,
           pool: "forks",

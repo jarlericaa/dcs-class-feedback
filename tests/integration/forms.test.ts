@@ -170,10 +170,7 @@ describe("submission rules", () => {
     const questions = await db.query.formQuestions.findMany({
       where: eq(formQuestions.cycleId, cycle.id),
     });
-    const student = await makeEnrolledStudent(
-      fixtures.section.id,
-      fixtures.teacher.id,
-    );
+    const student = await makeEnrolledStudent(fixtures.section.id);
     return { ...fixtures, cycle, questions, student };
   }
 

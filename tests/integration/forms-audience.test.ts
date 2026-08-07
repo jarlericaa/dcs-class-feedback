@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db, truncateAll } from "./helpers";
 import {
   addSectionStaff,
-  confirmMatchDirect,
+  linkRosterEmail,
   enroll,
   makeCourse,
   makeEnrolledStudent,
@@ -154,7 +154,7 @@ describe("form audiences", () => {
     expect(audience.map((a) => a.sectionId)).toEqual([sections[0]!.id]);
 
     // A student of the untargeted section cannot reach it.
-    const outsider = await makeEnrolledStudent(sections[1]!.id, teacher.id);
+    const outsider = await makeEnrolledStudent(sections[1]!.id);
     await expect(
       submitResponse(
         outsider.user.id,
@@ -175,8 +175,8 @@ describe("form audiences", () => {
       template.id,
     );
 
-    const a = await makeEnrolledStudent(sections[0]!.id, teacher.id);
-    const b = await makeEnrolledStudent(sections[1]!.id, teacher.id);
+    const a = await makeEnrolledStudent(sections[0]!.id);
+    const b = await makeEnrolledStudent(sections[1]!.id);
     await submitResponse(
       a.user.id,
       instance.id,
@@ -215,8 +215,8 @@ describe("form audiences", () => {
       { mode: "all_sections" },
       template.id,
     );
-    const a = await makeEnrolledStudent(sections[0]!.id, teacher.id);
-    const b = await makeEnrolledStudent(sections[1]!.id, teacher.id);
+    const a = await makeEnrolledStudent(sections[0]!.id);
+    const b = await makeEnrolledStudent(sections[1]!.id);
     await submitResponse(
       a.user.id,
       instance.id,
@@ -252,8 +252,8 @@ describe("form audiences", () => {
       { mode: "all_sections" },
       template.id,
     );
-    const a = await makeEnrolledStudent(sections[0]!.id, teacher.id);
-    const b = await makeEnrolledStudent(sections[1]!.id, teacher.id);
+    const a = await makeEnrolledStudent(sections[0]!.id);
+    const b = await makeEnrolledStudent(sections[1]!.id);
     await submitResponse(
       a.user.id,
       instance.id,
@@ -300,7 +300,7 @@ describe("form audiences", () => {
     // ONE student record, enrolled in BOTH targeted sections.
     const user = await makeUser({ displayName: "Double Enrolled" });
     const record = await makeStudentRecord("Double Enrolled");
-    await confirmMatchDirect(user.id, record.id, teacher.id);
+    await linkRosterEmail(user.id, record.id);
     await enroll(sections[0]!.id, record.id);
     await enroll(sections[1]!.id, record.id);
 
@@ -346,8 +346,8 @@ describe("form audiences", () => {
       { mode: "all_sections" },
       template.id,
     );
-    const a = await makeEnrolledStudent(sections[0]!.id, teacher.id);
-    const b = await makeEnrolledStudent(sections[1]!.id, teacher.id);
+    const a = await makeEnrolledStudent(sections[0]!.id);
+    const b = await makeEnrolledStudent(sections[1]!.id);
     const asked = await submitResponse(
       a.user.id,
       instance.id,

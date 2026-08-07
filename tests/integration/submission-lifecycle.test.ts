@@ -86,7 +86,7 @@ async function openCycle(
   const question = (await db.query.formQuestions.findFirst({
     where: eq(formQuestions.cycleId, cycle.id),
   }))!;
-  const student = await makeEnrolledStudent(section.id, teacher.id);
+  const student = await makeEnrolledStudent(section.id);
   return { teacher, course, section, cycle, question, student };
 }
 

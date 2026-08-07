@@ -211,7 +211,7 @@ describe("delivery modes", () => {
     expect(stillDraft.state).toBe("draft");
 
     // A student cannot submit to it while it is a draft.
-    const student = await makeEnrolledStudent(section.id, teacher.id);
+    const student = await makeEnrolledStudent(section.id);
     const question = (await db.query.formQuestions.findFirst({
       where: eq(formQuestions.cycleId, instance.id),
     }))!;
@@ -326,7 +326,7 @@ describe("delivery modes", () => {
     // A schedule shaped like a pre-migration one: weekly, one section, no course
     // audience beyond it. This is the regression guard for the compatibility
     // promise in docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §6.2.
-    const { teacher, course, section, template } = await workspace();
+    const { course, section, template } = await workspace();
     const schedule = await makeSchedule({
       courseId: course.id,
       sectionIds: [section.id],
@@ -347,7 +347,7 @@ describe("delivery modes", () => {
     expect(byIndex.get(1)!.state).toBe("closed");
     expect(byIndex.get(2)!.state).toBe("open");
 
-    const student = await makeEnrolledStudent(section.id, teacher.id);
+    const student = await makeEnrolledStudent(section.id);
     const open = byIndex.get(2)!;
     const question = (await db.query.formQuestions.findFirst({
       where: eq(formQuestions.cycleId, open.id),

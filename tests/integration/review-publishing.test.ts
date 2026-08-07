@@ -84,7 +84,7 @@ async function submitWithItem(
   questionId: string,
   text: string,
 ) {
-  const student = await makeEnrolledStudent(sectionId, teacherId);
+  const student = await makeEnrolledStudent(sectionId);
   const result = await submitResponse(
     student.user.id,
     cycleId,
@@ -287,7 +287,7 @@ describe("review + publishing + source links", () => {
       question.id,
       "private question",
     );
-    const other = await makeEnrolledStudent(section.id, teacher.id);
+    const other = await makeEnrolledStudent(section.id);
 
     await createPrivateResponse(
       teacher.id,

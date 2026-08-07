@@ -231,7 +231,7 @@ describe("recurrence scheduling", () => {
     expect(before[0]!.submissionCount).toBe(0);
     expect(before[0]!.editLocked).toBe(false);
 
-    const { user } = await makeEnrolledStudent(section.id, teacher.id);
+    const { user } = await makeEnrolledStudent(section.id);
     await submitResponse(user.id, cycle.id, { answers: [] });
 
     const after = await listCyclesForSection(teacher.id, section.id);
@@ -268,7 +268,7 @@ async function makeSubmittedItem() {
     openAt: new Date(now.getTime() - 3600_000),
     deadlineAt: new Date(now.getTime() + 3600_000),
   });
-  const { user, record } = await makeEnrolledStudent(section.id, teacher.id);
+  const { user, record } = await makeEnrolledStudent(section.id);
   const [response] = await db
     .insert(formResponses)
     .values({

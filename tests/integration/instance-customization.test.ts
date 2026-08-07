@@ -216,7 +216,7 @@ describe("per-occurrence question customization", () => {
       },
     ]);
 
-    const student = await makeEnrolledStudent(section.id, teacher.id);
+    const student = await makeEnrolledStudent(section.id);
     // Open week 4 so the student can actually read it.
     await db
       .update(formInstances)
@@ -240,7 +240,7 @@ describe("per-occurrence question customization", () => {
       .set({ state: "open" })
       .where(eq(formInstances.id, week4.id));
     const questions = await questionsOf(week4.id);
-    const student = await makeEnrolledStudent(section.id, teacher.id);
+    const student = await makeEnrolledStudent(section.id);
     const at = new Date(week4.openAt.getTime() + 3600_000);
     const saved = await submitResponse(
       student.user.id,
@@ -279,7 +279,7 @@ describe("per-occurrence question customization", () => {
       .set({ state: "open" })
       .where(eq(formInstances.id, week4.id));
     const questions = await questionsOf(week4.id);
-    const student = await makeEnrolledStudent(section.id, teacher.id);
+    const student = await makeEnrolledStudent(section.id);
     await submitResponse(
       student.user.id,
       week4.id,
@@ -370,7 +370,7 @@ describe("per-occurrence question customization", () => {
       .update(formInstances)
       .set({ state: "open" })
       .where(eq(formInstances.id, week4.id));
-    const student = await makeEnrolledStudent(section.id, teacher.id);
+    const student = await makeEnrolledStudent(section.id);
     await submitResponse(
       student.user.id,
       week4.id,
@@ -398,7 +398,7 @@ describe("per-occurrence question customization", () => {
       .set({ state: "open" })
       .where(eq(formInstances.id, week4.id));
     const questions = await questionsOf(week4.id);
-    const student = await makeEnrolledStudent(section.id, teacher.id);
+    const student = await makeEnrolledStudent(section.id);
     await submitResponse(
       student.user.id,
       week4.id,

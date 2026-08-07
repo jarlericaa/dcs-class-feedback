@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, truncateAll } from "./helpers";
 import {
   addSectionStaff,
-  confirmMatchDirect,
+  linkRosterEmail,
   enroll,
   makeCourse,
   makeEnrolledStudent,
@@ -13,12 +13,15 @@ import {
   makeUser,
 } from "./fixtures";
 import {
-  accountMatches,
   formResponses,
+  studentRecords,
   studentSubmissionItems,
 } from "@/db/schema";
-import { AuthzError, requireSectionQaAccess } from "@/modules/authz";
-import { rejectMatch } from "@/modules/identity/matching";
+import {
+  AuthzError,
+  requireEnrolledStudent,
+  requireSectionQaAccess,
+} from "@/modules/authz";
 import { getSubmissionDetail } from "@/modules/review";
 import { listSectionStaff, updateSection } from "@/modules/catalog";
 import { listSectionAuditEvents } from "@/modules/audit";
@@ -61,7 +64,7 @@ async function makeSectionWithSubmission() {
     openAt: new Date(now - 3600_000),
     deadlineAt: new Date(now + 3600_000),
   });
-  const { user, record } = await makeEnrolledStudent(section.id, teacher.id);
+  const { user, record } = await makeEnrolledStudent(section.id);
   const [response] = await db
     .insert(formResponses)
     .values({
@@ -92,12 +95,17 @@ async function makeSectionWithSubmission() {
   };
 }
 
-describe("rejectMatch cannot revoke a confirmed identity", () => {
+/**
+ * Replaces the old "rejectMatch cannot revoke a confirmed identity" finding.
+ * There is no reject action any more — the equivalent risk is that a stale
+ * account keeps access after the roster moved on.
+ */
+describe("removing an email from the roster revokes access", () => {
   beforeEach(async () => {
     await truncateAll();
   });
 
-  it("refuses to reject a confirmed match", async () => {
+  it("a record whose roster email is cleared no longer resolves to its account", async () => {
     const teacher = await makeUser({ isTeacher: true });
     const course = await makeCourse(teacher.id);
     const section = await makeSection(course.id);
@@ -105,40 +113,23 @@ describe("rejectMatch cannot revoke a confirmed identity", () => {
     const student = await makeUser();
     const record = await makeStudentRecord("Confirmed Student");
     await enroll(section.id, record.id);
-    const match = await confirmMatchDirect(student.id, record.id, teacher.id);
+    await linkRosterEmail(student.id, record.id);
 
-    await expect(rejectMatch(teacher.id, match.id)).rejects.toThrow(
-      /Cannot reject a match in state confirmed/,
-    );
+    await expect(
+      requireEnrolledStudent(db, student.id, section.id),
+    ).resolves.toBeTruthy();
 
-    const after = await db.query.accountMatches.findFirst({
-      where: eq(accountMatches.id, match.id),
-    });
-    expect(after!.state).toBe("confirmed");
-  });
+    await db
+      .update(studentRecords)
+      .set({ rosterEmail: null })
+      .where(eq(studentRecords.id, record.id));
 
-  it("still rejects a candidate", async () => {
-    const teacher = await makeUser({ isTeacher: true });
-    const course = await makeCourse(teacher.id);
-    const section = await makeSection(course.id);
-    await addSectionStaff(section.id, teacher.id, "teacher");
-    const student = await makeUser();
-    const record = await makeStudentRecord("Candidate Student");
-    await enroll(section.id, record.id);
-    const [match] = await db
-      .insert(accountMatches)
-      .values({
-        userId: student.id,
-        studentRecordId: record.id,
-        state: "candidate",
-      })
-      .returning();
-
-    await rejectMatch(teacher.id, match!.id);
-    const after = await db.query.accountMatches.findFirst({
-      where: eq(accountMatches.id, match!.id),
-    });
-    expect(after!.state).toBe("rejected");
+    await expect(
+      requireEnrolledStudent(db, student.id, section.id),
+    ).rejects.toBeInstanceOf(AuthzError);
+    // Nothing was deleted: the enrolment and the record still stand.
+    expect(await db.query.enrollments.findMany()).toHaveLength(1);
+    expect(await db.query.studentRecords.findMany()).toHaveLength(1);
   });
 });
 
@@ -405,7 +396,7 @@ describe("CSV export neutralizes spreadsheet formulas", () => {
       openAt: new Date(now - 3600_000),
       deadlineAt: new Date(now + 3600_000),
     });
-    const { record } = await makeEnrolledStudent(section.id, teacher.id);
+    const { record } = await makeEnrolledStudent(section.id);
     const [response] = await db
       .insert(formResponses)
       .values({
