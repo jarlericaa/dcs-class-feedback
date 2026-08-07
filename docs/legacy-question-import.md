@@ -2,7 +2,7 @@
 
 > **Status:** Product rule specification; implementation is partial and tracked
 > in [CURRENT_STATE.md](CURRENT_STATE.md).
-> This document **owns** the import of historical questions and its privacy defaults. Backlog behavior: [question-backlog.md](question-backlog.md). Roster CSV import is separate — see [account-matching.md](account-matching.md#9-class-list-csv-import).
+> This document **owns** the import of historical questions and its privacy defaults. Backlog behavior: [question-backlog.md](question-backlog.md). Roster CSV import is separate — see [student-identity.md](student-identity.md#7-class-list-import-confirmed-project-specsmd-61).
 > Label key as in [product-requirements.md](product-requirements.md).
 
 ## 1. Purpose **[Confirmed]**
@@ -99,4 +99,4 @@ When a legacy question is later published, source-link and anonymity rules from 
 
 ## 9. Related documents
 
-[question-backlog.md](question-backlog.md) · [domain-model.md](domain-model.md) · [account-matching.md](account-matching.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [participation-rules.md](participation-rules.md) · [mvp-scope.md](mvp-scope.md)
+[question-backlog.md](question-backlog.md) · [domain-model.md](domain-model.md) · [student-identity.md](student-identity.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [participation-rules.md](participation-rules.md) · [mvp-scope.md](mvp-scope.md)

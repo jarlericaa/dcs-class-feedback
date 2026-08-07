@@ -36,7 +36,7 @@ Student-visible state projections are defined in [domain-model.md](domain-model.
 
 ### 2.2 Teacher **[Confirmed]**
 
-A teacher is the administrator of the courses/sections they own or are assigned to. They **may:** create/manage courses and sections; import class lists; confirm student-account matches; correct mappings; assign teaching staff; configure TA permissions; create recurring schedules; create/manage templates; author form questions; configure required/optional questions; review responses; view student identities; correct submission types/categories; mark responses valid/invalid; send private responses; draft public answers; reword public question text; publish immediately; schedule publication; merge similar questions; import/record legacy questions; manage the course-level backlog; choose which backlog questions become visible to a section; export participation records; manage course materials (post-MVP capability); view audit history.
+A teacher is the administrator of the courses/sections they own or are assigned to. They **may:** create/manage courses and sections; import class lists (the imported UP email is what gives each student access); assign teaching staff; configure TA permissions; create recurring schedules; create/manage templates; author form questions; configure required/optional questions; review responses; view student identities; correct submission types/categories; mark responses valid/invalid; send private responses; draft public answers; reword public question text; publish immediately; schedule publication; merge similar questions; import/record legacy questions; manage the course-level backlog; choose which backlog questions become visible to a section; export participation records; manage course materials (post-MVP capability); view audit history.
 
 > Note: "manage course materials" is listed by the owner under teacher capabilities, but course-material **management** is a post-MVP feature — see [mvp-scope.md](mvp-scope.md). The capability is reserved, not built in MVP.
 
@@ -106,7 +106,7 @@ Only selected accounts. **May manage:** platform-wide settings; user-access issu
 | Create/manage course | — | Y | — | — |
 | Create/manage section | — | Y | — | — |
 | Import class list | — | Y | C (`manage_backlog_imports` is separate) | — |
-| Confirm/correct account match | — | Y | C (`view_student_identities`) | assist |
+| Read the class list and its UP-email link status | — | Y | C (`view_student_identities`) | assist |
 | Assign staff / set TA permissions | — | Y (owner) | — | — |
 | Configure recurrence/cycles | — | Y | C (`manage_weekly_cycles`) | — |
 | Manage templates | — | Y | C (`manage_templates`) | — |
@@ -166,4 +166,4 @@ Hiding a button is never the enforcement mechanism.
 
 ## 6. Related documents
 
-[domain-model.md](domain-model.md) · [account-matching.md](account-matching.md) · [participation-rules.md](participation-rules.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-proposal.md](architecture-proposal.md) · [open-decisions.md](open-decisions.md)
+[domain-model.md](domain-model.md) · [student-identity.md](student-identity.md) · [participation-rules.md](participation-rules.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-proposal.md](architecture-proposal.md) · [open-decisions.md](open-decisions.md)

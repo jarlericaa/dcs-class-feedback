@@ -34,7 +34,7 @@ Read these files in this order:
 16. docs/weekly-form-workflow.md
 17. docs/public-qa-and-source-linking.md
 18. docs/participation-rules.md
-19. docs/account-matching.md
+19. docs/student-identity.md
 20. docs/domain-model.md
 21. docs/SECURITY.md
 22. docs/TESTING.md
@@ -67,7 +67,7 @@ The current gaps include course/section setup, teacher onboarding and admin mana
 - A student can submit at most once per section per weekly cycle.
 - Submitted responses are immutable. A public answer is a separately stored, staff-editable rewording.
 - Participation is derived from valid submissions, not from UI state.
-- Roster account matching is teacher-confirmed and audited for every match.
+- Student access is exact normalized UP-email matching against the imported class list; every roster import and email linkage change is audited. There is no claiming or match-confirmation step.
 - All authorization is enforced server-side. Hiding navigation is not authorization.
 - Local development login must be impossible in production.
 - Every important mutation must have an audit event with actor, action, timestamp, entity, and meaningful before/after information.
@@ -114,7 +114,7 @@ Make these journeys actually usable with seeded/local data:
 6. A teacher/staff member sees the correct section workspace.
 7. Staff can review a submission, change validity where permitted, write a private response, draft a public rewording, complete an anonymity check, and publish a safe answer.
 8. The original asker can see the appropriate student-facing answered state without seeing internal staff data.
-9. Staff can safely import/reconcile a roster and resolve account matches when those routes are in scope.
+9. Staff can safely import/reconcile a roster, and refused rows are surfaced before commit, when those routes are in scope.
 10. Participation is derived from valid submissions and any displayed staff metrics use authorized data.
 
 Do not invent a second API or move domain logic into client components to make a screen convenient. Add loading, empty, error, success, closed-cycle, unauthorized, and no-results states wherever a user can encounter them.

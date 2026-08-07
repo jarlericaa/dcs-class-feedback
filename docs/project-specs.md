@@ -42,7 +42,7 @@ Instructors can:
 - Create and archive courses.
 - Add other instructors and Student Assistants.
 - Import and review a class roster.
-- Resolve uncertain roster-account matches.
+- Correct a class-list row whose UP email was wrong or missing.
 - Create templates, schedules, forms, and bonus periods.
 - View all student identities and responses.
 - Review and invalidate submissions directly.
@@ -180,20 +180,32 @@ Staff may edit the displayed question for grammar, wording, clarity, and context
 2. The Instructor uploads a CRS-style XLSX class list.
 3. The system detects course metadata and student columns.
 4. A confirmation screen lets the Instructor edit course details and review roster warnings.
-5. The importer stores student number, family name, first name, lived name, preferred pronoun, program, enrollment status, and enlistment date.
+5. The importer stores student number, **UP email**, family name, first name, lived name, preferred pronoun, program, enrollment status, and enlistment date.
 6. `Sex Assigned at Birth` is ignored because it is unnecessary for this product.
 7. All rows are imported, but statuses not considered enrolled by the spreadsheet legend are flagged for review.
 8. Student numbers are stored as identifiers/text, not numeric values.
 
-The provided sample does not contain email addresses. Account claiming therefore works as follows:
+The class list carries the student's **UP email**, and that email is what grants
+access. Student access therefore works as follows **[Confirmed 2026-08-07]**:
 
-1. The student signs in with a school Google account.
-2. The student enters their student number.
-3. The system compares the Google-account name with the unclaimed roster entry.
-4. A unique high-confidence match links automatically.
-5. Mismatches, ambiguous names, duplicate claims, or already-claimed entries require staff review.
-6. A roster entry cannot be linked to two accounts.
-7. Linking and unlinking are audit logged.
+1. The Instructor's class list carries student number, full name, and UP email.
+2. The importer normalizes each email (trim + lowercase) and stores it on the
+   student record. Importing the address **is** the grant — there is no claiming
+   step and nothing for staff to confirm.
+3. A row whose email is missing, malformed, on a domain outside
+   `ALLOWED_EMAIL_DOMAINS`, duplicated within the file, already held by a
+   different student record, or belonging to a student enrolled only in another
+   section is **refused**, and the rest of the file still imports.
+4. The student signs in with that UP Google account.
+5. The system normalizes the authenticated email and resolves the student record
+   by **exact equality** against the stored roster email.
+6. Their active enrollments determine which classes they can open.
+7. A full name is a label only, and is never used to authenticate or to resolve
+   identity. Two records can never share one email (database constraint).
+8. Roster imports, row additions, deactivations, refusals, and every
+   email-to-student linkage change are audit logged.
+
+See [student-identity.md](student-identity.md).
 
 ### 6.2 Template scheduling and form release
 
@@ -343,16 +355,20 @@ As an Instructor, I want to upload the existing class-list XLSX so that I do not
 - Unneeded sensitive fields are not persisted.
 - Non-enrolled statuses and malformed/duplicate student numbers are flagged.
 
-#### A4. Student roster claim
+#### A4. Deterministic UP-email access
 
-As a student, I want to link my school account to my roster entry so that my submissions and bonus credit are recorded correctly.
+As a student, I want my classes to appear as soon as I sign in with my UP email so that nothing has to be claimed or confirmed.
 
 **Acceptance criteria**
 
-- Only an unclaimed roster record may be linked.
-- High-confidence unique matches may auto-link.
-- Ambiguous or conflicting claims require staff review.
-- All claim decisions are audit logged.
+- A signed-in account resolves to the student record whose class-list UP email equals its normalized email, exactly.
+- Access follows automatically, in both directions: a student who signs in before their roster is imported gains access on the next request, without logging in again.
+- A student whose email is on no class list is told only that, and is shown no roster data.
+- A name is never used to resolve identity, and two records can never share one email.
+- Class-list rows with a missing, malformed, off-domain, duplicated, or already-taken email are refused, not guessed at.
+- Every roster import, row addition, row deactivation, refused row, and email linkage change is audit logged.
+
+See [student-identity.md](student-identity.md).
 
 ### Epic B — Templates and scheduled forms
 
@@ -549,8 +565,8 @@ Potential later capabilities include answer drafting, teacher-style adaptation, 
 | PlatformRole | Identifies users permitted to act as Instructors |
 | Course | Semester-specific course space |
 | CourseMembership | User's Instructor, Student Assistant, or Student role |
-| RosterEntry | Imported student identity and enrollment metadata |
-| AccountClaim | Links a Google account to a roster entry with review state |
+| RosterEntry | Imported student identity (student number, name, **normalized UP email**) and enrollment metadata |
+| *(no linking entity)* | A user IS the student whose `roster_email` equals their normalized email — resolved live, so there is nothing to store or reconcile |
 | FeedbackTemplate | Reusable form definition |
 | RecurrenceSchedule | Automatic form-release configuration |
 | FormInstance | Immutable released snapshot with deadline |
@@ -600,7 +616,7 @@ A simple UI may hide intermediate states while retaining them internally for col
 - Every read and write is authorized by course membership and role on the server.
 - Student identities never appear in the student-facing public Q&A payload.
 - Original questions and public rewordings are stored separately.
-- Bonus validity, publication, roster claims, role changes, and exports are audit logged.
+- Bonus validity, publication, roster imports and email linkage, role changes, and exports are audit logged.
 - Rich content is sanitized to prevent script injection.
 - Student numbers are encrypted or otherwise protected at rest according to deployment capabilities.
 - Export endpoints are Instructor-only and generate short-lived files.
@@ -627,7 +643,7 @@ A simple UI may hide intermediate states while retaining them internally for col
 - Google authentication
 - Role and course authorization
 - Instructor course creation
-- CRS roster parser and account claiming
+- CRS roster parser and UP-email student access
 - Audit-event foundation
 
 ### Phase 1 — Feedback collection

@@ -28,7 +28,7 @@ baseline.
 
 | Module | Responsibility | Key docs |
 |--------|----------------|----------|
-| **identity & matching** | SSO, users, roster, name matching, enrollment | [account-matching.md](account-matching.md) |
+| **identity** | SSO, users, roster, email-based student resolution, enrollment | [student-identity.md](student-identity.md) |
 | **catalog** | courses, sections, staff, permissions, lessons/topics | [roles-and-permissions.md](roles-and-permissions.md) |
 | **forms** | templates, recurrence, cycles, questions, responses | [weekly-form-workflow.md](weekly-form-workflow.md) |
 | **review & publishing** | dashboard, private/public responses, rewording, merge, scheduling, archive | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) |
@@ -51,7 +51,7 @@ TypeScript end-to-end:
 | Validation | **Zod** | Shared client/server schemas; server-side validation is authoritative. |
 | Dev environment | **Docker Compose** | App + Postgres locally; reproducible. |
 | Migrations | Drizzle migrations **[Implemented]** | Versioned schema under `drizzle/`. |
-| Testing | **Vitest** (unit/integration) + **Playwright** (e2e) | Covers the name-matching pipeline, authz, scheduling idempotency, exports. |
+| Testing | **Vitest** (unit/integration) + **Playwright** (e2e) | Covers email normalization and roster import rules, authz, scheduling idempotency, exports. |
 
 > **ORM note:** Drizzle is the single primary recommendation. **Prisma is the main alternative** — see §3.1. Do not leave this unresolved in code: if the owner prefers Prisma, that is [Open D11](open-decisions.md).
 
@@ -111,7 +111,7 @@ Implements the deny-by-default, resource-scoped model in [roles-and-permissions.
 
 ## 7. CSV import/export **[Recommended]**
 
-- **Import** (roster + legacy): validate → map columns → detect duplicates → preview → per-row errors → summary → audited `ImportBatch`; never silently overwrite ([account-matching.md](account-matching.md#9-class-list-csv-import), [legacy-question-import.md](legacy-question-import.md)).
+- **Import** (roster + legacy): validate → map columns → detect duplicates → preview → per-row errors → summary → audited `ImportBatch`; never silently overwrite ([student-identity.md](student-identity.md#7-class-list-import-confirmed-project-specsmd-61), [legacy-question-import.md](legacy-question-import.md)).
 - **Export** (participation): the three reports in [participation-rules.md](participation-rules.md#4-participation-csv-exports); identity-bearing, staff-only, access audited; emit stable ids alongside labels.
 
 ## 8. Dev environment & deployment **[Recommended]**
@@ -121,7 +121,7 @@ Implements the deny-by-default, resource-scoped model in [roles-and-permissions.
 
 ## 9. Testing strategy **[Recommended]**
 
-Priority coverage: the name-matching pipeline (deterministic, unit-tested with adversarial name cases); authorization (resource-scoping and student-visibility); scheduling idempotency + reconciliation; participation derivation and export correctness (labels + stable ids); the one-submission-per-cycle constraint.
+Priority coverage: email normalization and the class-list import rules (deterministic, unit-tested; identical names must never cross-resolve); authorization (resource-scoping and student-visibility); scheduling idempotency + reconciliation; participation derivation and export correctness (labels + stable ids); the one-submission-per-cycle constraint.
 
 ## 10. Open decisions affecting architecture
 

@@ -856,10 +856,18 @@ These arrived on `main` while the redesign was in flight and were brought onto
 the system as part of the merge. They follow every rule above; the notes are the
 decisions specific to them.
 
-- **`/claim`** — a student types their student number to be linked to the class
-  list. A student surface, so it takes the roomy rhythm. The reply is identical
-  whether or not the number matched, and the page says so: a uniform answer is
-  the privacy mechanism, and hiding that fact would make it read as a bug.
+- **`/teach/sections/[id]/roster`** — the class list a teacher imported: name,
+  UP email, last four of the student number, dropped state, and whether that
+  address has signed in yet. It carries **no** approve/reject/confirm control,
+  because there is no decision to take — importing the email is the access grant.
+  A reporting surface, so it takes the staff rhythm and the same search/filter
+  pattern as the review inbox.
+
+  *(`/claim`, where a student typed their student number to be linked to the
+  class list, was removed on 2026-08-07 along with the whole name-matching
+  workflow. The route survives only as a redirect. Its uniform-reply privacy
+  mechanism is gone with it: there is no longer anything to disclose, because a
+  student never asks the system about their identity — the teacher supplies it.)*
 - **Rich text** (`.rich-text`) — the sanitized markdown/KaTeX output of the one
   safe renderer. Authored text, so it sits in the document register; its own
   tables and code step back to the sans and mono faces. Long code and display

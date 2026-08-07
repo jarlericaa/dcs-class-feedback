@@ -120,7 +120,7 @@ silently move an existing response between sections.
 |---|---|
 | The form definition and its versions | Enrollments and rosters |
 | The instance, its window, its state, its question snapshot | Staff membership and the TA permission catalog |
-| Response counts on the teacher's form list and the review inbox | Account matching and roster claims |
+| Response counts on the teacher's form list and the review inbox | Class-list import and email-based student access |
 | The review inbox itself (one inbox per form, filterable by section) | The public Q&A archive (`public_answers.section_id`) |
 | Bonus periods (already course-scoped, [D14](open-decisions.md)) | Participation exports (per section) |
 | The question backlog and lessons/topics (already course-scoped) | Private replies (scoped by the asker's own response) |
@@ -206,7 +206,7 @@ re-checked by the existing `require*` helpers. Hiding a control is never the
 enforcement point.
 
 - **Student → instance.** `requireAudienceStudent(instanceId)` admits a user only
-  if they hold a confirmed `AccountMatch` **and** an active `Enrollment` in at
+  if their normalized UP email is on a class list **and** they hold an active `Enrollment` in at
   least one audience section of that instance. It returns the bound
   `StudentRecord` and the resolved attribution section. A student outside the
   audience is refused with the same message as a missing instance.

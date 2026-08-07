@@ -13,9 +13,9 @@ Product/architecture documentation lives in [docs/](docs/) and
 
 TypeScript · Next.js (App Router) · PostgreSQL · Drizzle ORM · Auth.js
 (Google) · Zod · Docker Compose · Vitest. Modular monolith — modules under
-[src/modules/](src/modules/) match the documented domains (identity &
-matching, catalog, forms, review, publishing, backlog & import, participation
-& export, audit, scheduling).
+[src/modules/](src/modules/) match the documented domains (identity, catalog,
+forms, review, publishing, backlog & import, participation & export, audit,
+scheduling).
 
 ## Local setup
 
@@ -61,8 +61,9 @@ production** — the provider is not registered when `NODE_ENV=production`
 regardless of environment variables. Do not deploy with it in mind.
 
 Seeded users: `teacher@up.edu.ph` (teacher), `sa@up.edu.ph` (SA with limited flags),
-`admin@up.edu.ph` (platform admin), `student@up.edu.ph` (unverified student named
-Juan Dela Cruz — confirm on the teacher's Matches page).
+`admin@up.edu.ph` (platform admin), `student@up.edu.ph` (student — the seeded class
+list carries this address for `2026-0001, Juan Dela Cruz`, so signing in shows the
+seeded section immediately, with nothing to claim or confirm).
 
 ## Scripts
 
@@ -94,7 +95,6 @@ answers (failures flag the answer, staff retry). Run it via
 Marked **provisional** pending owner sign-off (see
 [docs/open-decisions.md](docs/open-decisions.md)):
 
-- **D2** teacher-confirm-all account matching (docs' recommended default; no auto-confirm path exists).
 - **D3** platform admin grants the Teacher role (`users.isTeacher`); teachers self-serve courses/sections.
 - **D4** structural edit-lock after first submission (helper `cycleHasSubmissions`; full edit UI not built yet).
 - **D5** hard deadline, no grace; staff reopen is audited.

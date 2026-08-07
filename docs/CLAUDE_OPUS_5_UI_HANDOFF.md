@@ -1,5 +1,19 @@
 # Claude Opus 5 UI Implementation Handoff
 
+> ## ⚠ HISTORICAL — describes the removed account-matching flow
+>
+> This document is a **dated, point-in-time record**, not a specification to
+> build from. It was written while student identity worked by matching Google
+> display names against roster names, with a `/claim` page and teacher
+> confirmation of suggested matches.
+>
+> **That whole workflow was removed on 2026-08-07.** Student access is now exact
+> normalized UP-email matching against the teacher-uploaded class list. Anything
+> below about account matches, match candidates, claiming, or confirming a
+> student is history — **do not rebuild it.** The current rule is
+> [student-identity.md](student-identity.md).
+
+
 This is the handoff checklist for having Claude Code implement the Class
 Feedback UI. Use Claude as the implementation agent; this repository is the
 source of truth.
@@ -47,7 +61,7 @@ Give Claude these files or make them available in the checkout:
 13. docs/weekly-form-workflow.md
 14. docs/public-qa-and-source-linking.md
 15. docs/participation-rules.md
-16. docs/account-matching.md
+16. docs/student-identity.md
 17. docs/SPEC-RECONCILIATION.md
 18. docs/open-decisions.md
 
@@ -131,7 +145,7 @@ or manually inspect at least:
 7. Q&A no-results/empty state phone;
 8. teacher review queue/detail desktop;
 9. teacher public-answer anonymity warning;
-10. pending account-match review;
+10. the section class list and its UP-email link status;
 11. roster-import preview with errors and deactivation warning;
 12. mobile shell/navigation.
 

@@ -29,7 +29,7 @@ Full goals and background: [docs/product-requirements.md](docs/product-requireme
 | Concept | Meaning |
 |---|---|
 | **Course** | The primary workspace, identified by its **course code** (`CS 33`). Owns forms, lessons/topics, the question backlog, bonus periods, and its class sections. |
-| **Class Section** | A class list of a course: the access/audience context. Owns its students, staff and TA permissions, account matching, participation exports, and public Q&A archive. It is **not** the primary object in the form workflow. |
+| **Class Section** | A class list of a course: the access/audience context. Owns its students (identified by their UP email), staff and TA permissions, participation exports, and public Q&A archive. It is **not** the primary object in the form workflow. |
 | **Form definition** | A reusable form belonging to a course: title, optional purpose, and immutable versions of its questions. `weekly` is **not** part of its identity. |
 | **Form audience** | The explicit set of sections that receive a form — all sections of the course, several, or one. Auditable rows, never inferred. |
 | **Form instance** | The questionnaire students actually answer: its own audience, window, state, and question snapshot. One per delivery occurrence. |
@@ -79,7 +79,7 @@ flowchart LR
 | Actor | What they do |
 |---|---|
 | **Student** | Signs in with an authorized university Google account; completes the weekly form per section; answers teacher questions; submits their own question/feedback; views their history, private replies, and whether their question was publicly answered; searches the class's anonymous Q&A archive. Cannot see other students' identities, validity decisions, drafts, notes, audit, or (MVP) participation totals. |
-| **Teacher** | Administers the courses/sections they own. Manages courses, sections, rosters, staff, TA permissions, schedules, templates, and questions; confirms/corrects account matches; reviews responses; marks validity; sends private responses; drafts/rewords/publishes/schedules public answers; merges questions; manages the backlog and legacy imports; exports participation; views audit history. |
+| **Teacher** | Administers the courses/sections they own. Manages courses, sections, rosters, staff, TA permissions, schedules, templates, and questions; reviews responses; marks validity; sends private responses; drafts/rewords/publishes/schedules public answers; merges questions; manages the backlog and legacy imports; exports participation; views audit history. |
 | **Teaching Assistant / Co-Teacher** | Holds a **per-section, configurable** subset of teacher capabilities (view identities, review, respond, draft/reword/publish/schedule, mark validity, export, manage cycles/templates/backlog). The class owner controls these flags. |
 | **Platform Administrator** | Selected accounts only. Platform-wide settings, user-access issues, account/system troubleshooting, platform-level audit access. Gains **no** automatic content access to arbitrary courses/sections. |
 
@@ -89,7 +89,7 @@ Full role definitions, the TA permission catalog, and the permission→action ma
 
 ## 4. Key concepts (rules that shape everything)
 
-- **The course owns forms; the section is who receives them.** Forms, backlog, lessons/topics, bonus periods, and (future) course materials live at the **course** level; students, staff, account matching, participation exports, and the public archive live at the **section** level. A form's **audience** is an explicit set of sections. See [docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md).
+- **The course owns forms; the section is who receives them.** Forms, backlog, lessons/topics, bonus periods, and (future) course materials live at the **course** level; students, staff, participation exports, and the public archive live at the **section** level. A form's **audience** is an explicit set of sections. See [docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md).
 - **Four delivery modes, of which weekly is one.** A delivery configuration (mode, audience, window controls, source form version) generates instances that **auto-open** on time — except `Open manually`, which only a person opens. Generation and open/close are **idempotent** with a **reconciliation poller** backstop.
 - **One submission per student per form instance**, enforced by a uniqueness constraint on `(instance, student record)`. The section a response is attributed to is recorded separately and is deliberately **not** in that key, so a student in two targeted sections cannot produce two responses. A student may save a draft and **edit that same response until the deadline**; at the deadline the latest submitted version locks. No late submission, no late edit. An edit never mints a second participation credit.
 - **Forms snapshot on generate.** Generating an instance copies the form's questions into it; later edits to the form create a new version and never mutate an already-generated instance. **One occurrence's questions can be varied on their own** — the base form and every other occurrence are untouched.
@@ -135,33 +135,35 @@ The concrete TypeScript stack (Next.js + Drizzle + Auth.js + pg-boss + Zod) is a
 
 These diagrams convey the **product**, not an implementation contract.
 
-### 6.1 Student account matching after Google SSO
+### 6.1 Student access after Google SSO
 
-The highest-risk flow: the roster CSV has only student number + full name (no email), so matching relies on name comparison. See [docs/account-matching.md](docs/account-matching.md).
+**[Confirmed 2026-08-07]** The class list carries the student's **UP email**, and that email —
+normalized and compared with exact equality — is the only thing that makes an account a student.
+No name similarity, no student-number claim, no manual confirmation. See
+[docs/student-identity.md](docs/student-identity.md).
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor Student
-  participant App
-  participant Google as Google SSO
   actor Teacher
+  participant App
+  actor Student
+  participant Google as Google SSO
 
+  Teacher->>App: import class list (student number, full name, UP email)
+  App->>App: normalize + validate each email; refuse missing/malformed/off-domain/duplicate/taken rows
+  App->>App: store roster_email on the StudentRecord (unique) - THIS is the access grant
   Student->>App: sign in
   App->>Google: OIDC (university account)
-  Google-->>App: identity + display name
-  App->>App: create User (not yet a student)
-  App->>App: normalize name, compare vs roster
-  alt exactly one strong match
-    App->>Teacher: surface as Candidate (teacher-confirm-all recommended)
-  else multiple similar names
-    App->>Teacher: Ambiguous — teacher must pick
-  else no match
-    App->>Teacher: Unmatched / pending verification
+  Google-->>App: identity
+  App->>App: normalize email, create/update User
+  App->>App: roster_email = user email? then active enrollments, then sections
+  alt on a class list
+    App-->>Student: their forms, immediately
+  else on no class list
+    App-->>Student: "No classes are associated with this UP email yet."
   end
-  Teacher->>App: confirm / correct match
-  App->>App: bind User to StudentRecord (student number = permanent identity)
-  Note over App,Teacher: No silent verification under uncertainty. Corrections allowed post-confirmation, audited.
+  Note over App,Student: Order does not matter - a roster imported after the account already existed grants access on the next request, with no second login.
 ```
 
 ### 6.2 Form-instance generation and submission
@@ -266,7 +268,6 @@ Details: [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md), [docs/pub
 | **Backlog confirmation** | Recommended · Confirmed · Rejected · Removal recommended · Removed |
 | **Comment moderation** | Pending · Approved · Rejected · Removed |
 | **Backlog question** | Imported · Needs review · Answerable · Drafting · Scheduled · Published · Archived · Not suitable |
-| **Account match** | Unmatched · Candidate · Ambiguous · Confirmed · Rejected · Correction-pending |
 
 ---
 
@@ -276,8 +277,7 @@ Conceptual entities only — **no SQL, no migrations.** Full field lists and rel
 
 ```mermaid
 erDiagram
-  USER ||--o| ACCOUNT_MATCH : "matched via"
-  ACCOUNT_MATCH }o--|| STUDENT_RECORD : "binds to"
+  USER ||--o| STUDENT_RECORD : "resolved by normalized email"
   USER ||--o{ COURSE_STAFF : ""
   COURSE ||--o{ COURSE_STAFF : ""
   COURSE ||--o{ CLASS_SECTION : ""
@@ -309,7 +309,7 @@ erDiagram
   IMPORT_BATCH ||--o{ BACKLOG_QUESTION : "legacy import"
 ```
 
-Core entities: **User · StudentRecord · AccountMatch · Course · CourseStaff · ClassSection · SectionStaff · Enrollment · RecurrenceSchedule (delivery configuration) · FormScheduleSections + FormInstanceSections (audiences) · FormInstance · FormTemplate (form definition) · TemplateVersion · FormQuestion · FormResponse · QuestionAnswer · StudentSubmissionItem · PrivateResponse · PublicAnswer · SourceLink · BacklogQuestion · ImportBatch · Lesson/Topic · AuditEvent.**
+Core entities: **User · StudentRecord · Course · CourseStaff · ClassSection · SectionStaff · Enrollment · RecurrenceSchedule (delivery configuration) · FormScheduleSections + FormInstanceSections (audiences) · FormInstance · FormTemplate (form definition) · TemplateVersion · FormQuestion · FormResponse · QuestionAnswer · StudentSubmissionItem · PrivateResponse · PublicAnswer · SourceLink · BacklogQuestion · ImportBatch · Lesson/Topic · AuditEvent.**
 
 `CourseMaterial` is reserved for the future (post-MVP) — the model stays compatible via course-level ownership and topic tags, but material management is not built in MVP. Participation is **derived** from valid `FormResponse`s, not a stored entity.
 
@@ -323,7 +323,7 @@ These are invariants. Treat them as hard constraints when implementation eventua
 - **Public Q&A is anonymous to students** — the asker is never revealed or safely implied.
 - **Original student wording is never overwritten** — rewording produces public text alongside the immutable original.
 - **Public reworded questions stay internally source-linked** to their originating submission(s) so the asker sees "Answered" without exposing identity to others.
-- **Name-based account matching is risky and must not silently verify uncertain matches** — matching yields candidates only; teacher confirmation is required for ambiguity (teacher-confirm-all recommended for MVP).
+- **Student identity is the UP email, and only the UP email** — exact equality after trim + lowercase, unique across student records, enforced in the database. A full name is a label and is never an identity key. An email that is missing, malformed, off an allowed domain, duplicated in one file, or already held by another record blocks its class-list row rather than being guessed at.
 - **Small-class anonymity failure is a real risk** — a single asker or a highly specific/personal question can remain identifiable; rewording must strip identifying context and the publish UI warns before publishing such questions.
 - **Identity-bearing exports are staff-only** and access is audited. Exports added after 2026-08-03 are Instructor-only (see [docs/roles-and-permissions.md](docs/roles-and-permissions.md) and decision D17).
 - **Authorization is deny-by-default and resource-scoped** — teachers get no access to unrelated courses/sections/students. An **archived** course is read-only, enforced inside the authorization helpers rather than by hiding controls.
@@ -346,7 +346,7 @@ Read the first three, then by area. Each concept has a single owning document; o
 5. [docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md) — **course-level forms, audiences, delivery modes, per-occurrence customization.**
 6. [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md) — form/question schema, question types, validation, submission flow.
 6. [docs/participation-rules.md](docs/participation-rules.md) — validity, derivation, CSV exports.
-7. [docs/account-matching.md](docs/account-matching.md) — SSO, name matching, roster import.
+7. [docs/student-identity.md](docs/student-identity.md) — SSO, UP-email student access, roster import.
 8. [docs/public-qa-and-source-linking.md](docs/public-qa-and-source-linking.md) — private/public responses, rewording, source links, anonymity, scheduling, archive, student history.
 9. [docs/question-backlog.md](docs/question-backlog.md) — course-level backlog.
 10. [docs/legacy-question-import.md](docs/legacy-question-import.md) — legacy import, anonymous-by-default.
@@ -361,7 +361,6 @@ Read the first three, then by area. Each concept has a single owning document; o
 The stack and several product rules are unresolved. The full list (question · options · trade-offs · recommendation · wait-for-approval) is in [docs/open-decisions.md](docs/open-decisions.md). The load-bearing ones:
 
 - **D1 — "Fable" meaning.** Claude Fable tooling vs an F#/Fable implementation stack. **Gates the entire stack.** TypeScript is presented as the current recommendation only.
-- **D2 — account-match auto-confirm policy.** Teacher-confirm-all (recommended) vs exact-unique auto-confirm. Highest-risk flow.
 - **D6 — unpublish support** (post-MVP; `Unpublished` state reserved only).
 - **D7 — timezone** (institution-wide value needed).
 - Others: teacher-role granting, edit-lock after first submission, grace/reopen, merge scope, join-code extra factor, deactivated-student access, ORM choice, deployment target, data retention.

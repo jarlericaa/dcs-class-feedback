@@ -213,9 +213,9 @@ documents:
     status: current
     maintainer: product_and_technical_owner
     update_trigger: decision_resolution
-  - path: docs/account-matching.md
+  - path: docs/student-identity.md
     audience: product_and_engineering
-    authority: identity_and_matching_rules
+    authority: student_identity_and_class_list_import
     status: current_with_open_items
     maintainer: product_and_technical_owner
     update_trigger: identity_or_roster_policy_change

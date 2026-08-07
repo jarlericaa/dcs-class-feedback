@@ -1,5 +1,19 @@
 # Final QA Remediation Report
 
+> ## ⚠ HISTORICAL — describes the removed account-matching flow
+>
+> This document is a **dated, point-in-time record**, not a specification to
+> build from. It was written while student identity worked by matching Google
+> display names against roster names, with a `/claim` page and teacher
+> confirmation of suggested matches.
+>
+> **That whole workflow was removed on 2026-08-07.** Student access is now exact
+> normalized UP-email matching against the teacher-uploaded class list. Anything
+> below about account matches, match candidates, claiming, or confirming a
+> student is history — **do not rebuild it.** The current rule is
+> [student-identity.md](../student-identity.md).
+
+
 **Date:** 2026-08-03<br>
 **Scope:** Teacher and student MVP website QA, fixes, and verification<br>
 **Initial observations:** [Initial QA Report](initial-qa-report.md)

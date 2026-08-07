@@ -59,7 +59,7 @@ Documents use these labels:
 | [weekly-form-workflow.md](weekly-form-workflow.md) | Recurrence, cycles, questions, templates, and submissions |
 | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) | Private/public response behavior, anonymity, source links, and archive |
 | [participation-rules.md](participation-rules.md) | Validity, participation derivation, and CSV exports |
-| [account-matching.md](account-matching.md) | SSO, name matching, roster import, and identity safety |
+| [student-identity.md](student-identity.md) | SSO, exact UP-email student access, roster import, and identity safety |
 | [question-backlog.md](question-backlog.md) | Course-level backlog lifecycle |
 | [legacy-question-import.md](legacy-question-import.md) | Historical import and provenance |
 | [domain-model.md](domain-model.md) | Entities, relationships, state dimensions, and audit events |

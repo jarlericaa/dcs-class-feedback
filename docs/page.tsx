@@ -1,3 +1,15 @@
+/**
+ * ⚠ HISTORICAL DESIGN DRAFT — NOT APPLICATION CODE, DO NOT COPY.
+ *
+ * A point-in-time UI reference from an earlier handoff. It is excluded from
+ * typecheck and the bundle (see tsconfig "exclude"), and it no longer compiles:
+ * it imports `accountMatches` and `generateMatchCandidates`, which were DELETED
+ * on 2026-08-07 along with the whole name-matching / roster-claim workflow.
+ *
+ * Student access is now exact normalized UP-email matching against the
+ * teacher-uploaded class list. The live implementation is under src/; the rule
+ * is docs/student-identity.md. Do not rebuild anything below.
+ */
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";

@@ -89,7 +89,7 @@ decision.
 **Evidence.** `staffSectionNav` produces two groups
 ([nav.ts:41-128](../src/components/layout/nav.ts#L41-L128)):
 
-- **Section**: Review inbox · Publication queue · Class Q&A · Account matches ·
+- **Section**: Review inbox · Publication queue · Class Q&A · Class list ·
   Roster import · Participation · Question backlog
 - **Manage**: Section setup · Audit history
 
@@ -97,7 +97,7 @@ Three structural problems:
 
 1. **A brand-new section opens on Review inbox** — necessarily empty, since there
    is no roster, schedule, or cycle.
-2. **Account matches precedes Roster import**, inverting the actual dependency.
+2. **Class list precedes Roster import**, inverting the actual dependency.
    You import, *then* you match. The nav teaches the reverse.
 3. **Question backlog sits in the section group**, but the backlog is
    **course-level** — [../PRODUCT.md](../PRODUCT.md) terminology is explicit:
@@ -123,7 +123,7 @@ readiness-ordering was trying to do:
 | Group | Items | Why |
 |---|---|---|
 | **This week** | Review inbox · Publication queue · Class Q&A | The weekly triage pass. Matches Principle 5 — the rhythm is the product. |
-| **Class list** | Roster import → Account matches | Dependency order, and a label a cold-start teacher recognises as the thing they need. |
+| **Class list** | Roster import → Class list | Dependency order, and a label a cold-start teacher recognises as the thing they need. |
 | **Manage** | Section setup · Participation · Question backlog\* · Audit history | Periodic and configuration work, not weekly. |
 
 \* Question backlog moves to a course-level destination when that route exists;
@@ -276,7 +276,7 @@ Overview  (/)                                    role-aware, the only true home
 │   │     └── Class Q&A            → /sections/[id]/qa  (student-facing page)
 │   ├── Class list
 │   │     ├── Roster import        ← dependency order (F1)
-│   │     └── Account matches
+│   │     └── Class list
 │   └── Manage
 │         ├── Section setup
 │         ├── Participation

@@ -13,9 +13,10 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 
 ### Identity & people
 
-- **User** — an authenticated Google identity. Fields: Google subject id, university email, display name (mutable), platform role flags, active flag. A User is *not* a student until matched.
-- **StudentRecord** — a roster row for a student in a section context. Fields: student number (permanent internal identity, **[Assumption A2]**), full name (as imported), normalized-name fields, → ImportBatch that created it. Student number is the stable key across name changes.
-- **AccountMatch** — links a User to a StudentRecord. Fields: → User, → StudentRecord, match state (see §3.8), match method (auto/teacher/manual-correction), confidence signals, confirmed-by → User (staff), timestamps. Correctable after verification. See [account-matching.md](account-matching.md).
+- **User** — an authenticated Google identity. Fields: Google subject id, **normalized** university email (unique), display name (mutable, and never used for identity), platform role flags, active flag. A User is a student exactly when their email is on a class list.
+- **StudentRecord** — a roster row for a student, reusable across every section and course that imports the same person. Fields: student number (permanent internal identity, **[Assumption A2]**), **normalized roster email (unique — the access key)**, full name (as imported, a label only), → ImportBatch that created it. Student number is the stable key across name and email changes.
+
+  There is **no linking entity.** `User → StudentRecord` is resolved live by `user.email = studentRecord.rosterEmail`, so a roster imported after the account existed grants access with no second login and nothing to reconcile. See [student-identity.md](student-identity.md).
 
 ### Academic structure
 
@@ -52,15 +53,10 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 
 - **BacklogQuestion** — a course-level question awaiting possible public answering. Fields: → Course, text, → optional category/topic, state (§3.7), source provenance (current-copied / legacy-import), → optional source StudentSubmissionItem (only if intentionally linked), identity-preservation flag, → ImportBatch (if imported). Belongs to the **course**, not a section. See [question-backlog.md](question-backlog.md).
 - **SectionBacklogVisibility** — records that a BacklogQuestion has been made visible/publishable to a specific ClassSection. Fields: → BacklogQuestion, → ClassSection, made-visible-by. Explicit and per-section; no automatic public exposure.
-- **ImportBatch** — a roster or legacy import event. Fields: kind (roster/legacy), source description, → Course or → ClassSection, importer → User, row counts/summary, timestamp. See [account-matching.md](account-matching.md) and [legacy-question-import.md](legacy-question-import.md).
+- **ImportBatch** — a roster or legacy import event. Fields: kind (roster/legacy), source description, → Course or → ClassSection, importer → User, row counts/summary, timestamp. See [student-identity.md](student-identity.md) and [legacy-question-import.md](legacy-question-import.md).
 
 ### Added 2026-08-03 for the full `project-specs.md` scope
 
-- **RosterClaim** — a student's attempt to claim a roster entry by typing their student number.
-  Fields: → User, sealed typed number + keyed lookup hash + last 4, → matched StudentRecord,
-  → resulting AccountMatch, Google display name at claim time, name score, state, reason, resolver,
-  timestamps. The typed number is never stored in plaintext, and the response given to the student
-  is identical whether the number is unknown, already claimed, or ambiguous.
 - **FormResponseRevision** — the content trail for §3.1a. Fields: → FormResponse, revision number,
   action, actor (null = system lock), before/after snapshots, timestamp.
 - **SubmissionValidityEvent** — the per-response validity timeline for §3.3, including the separate
@@ -114,7 +110,7 @@ ClassSection 1─* PublicAnswer
 FormResponse 1─* StudentSubmissionItem 1─* PrivateResponse
 StudentSubmissionItem *─* PublicAnswer   (via SourceLink; many sources per answer = merge)
 BacklogQuestion *─* PublicAnswer          (via SourceLink)
-User 1─* AccountMatch *─1 StudentRecord
+User 1─1 StudentRecord   (resolved by normalized email; no join row)
 ImportBatch 1─* StudentRecord | BacklogQuestion | Enrollment
 ```
 
@@ -269,15 +265,18 @@ States: `Imported`, `Needs review`, `Answerable`, `Drafting`, `Scheduled`, `Publ
 
 - Backlog questions never auto-appear in any public archive; publishing to a section is explicit (SectionBacklogVisibility + a PublicAnswer). See [question-backlog.md](question-backlog.md).
 
-### 3.8 Account-match state
+### 3.8 Student identity — deliberately not a state model
 
-States: `Unmatched`, `Candidate`, `Ambiguous`, `Confirmed`, `Rejected`, `Correction-pending`.
+**[Confirmed 2026-08-07]** Student identity has **no states**. The former account-match dimension
+(`Unmatched` · `Candidate` · `Ambiguous` · `Confirmed` · `Rejected` · `Correction-pending`) was
+removed with the name-matching workflow that produced it.
 
-- `Unmatched` (SSO account, no roster candidate) → held as pending verification, visible to teacher.
-- `Candidate` (one plausible match) / `Ambiguous` (multiple similar names) → require teacher confirmation; no silent verification. **[Confirmed / Recommended policy: teacher-confirm-all]**
-- `Confirmed` → the User is bound to the StudentRecord (student number is now the identity).
-- `Correction-pending` → a previously-confirmed match is being re-verified after a teacher-initiated correction (audited).
-- Full flow and threat model in [account-matching.md](account-matching.md).
+There is one question — *does an account's normalized email equal a class list's roster email?* —
+and it is answered on every read. Nothing is pending, nothing is proposed, nothing needs
+confirming, and there is no stored value that can drift out of step with the class list. Access
+begins when a teacher imports the address and ends when they remove it.
+
+Full rule, import validation, and migration behaviour in [student-identity.md](student-identity.md).
 
 ### 3.9 Invalid combinations (illustrative)
 
@@ -293,8 +292,8 @@ States: `Unmatched`, `Candidate`, `Ambiguous`, `Confirmed`, `Rejected`, `Correct
 **[Confirmed]** Every important action produces an **AuditEvent** recording: **actor** (→ User), **action** (typed), **timestamp**, **affected entity** (type + id), and **important before/after values**. Audit records are staff/admin-visible only; never student-visible (R6).
 
 Audited actions **[Confirmed]** include: course creation; class creation; class-list import
-(including preview edits); student-account matching, manual correction, and **unlinking**; roster
-**claim** submission/confirmation/rejection; staff-permission changes; template creation/edits;
+(including preview edits); roster row additions, deactivations, refusals, and
+**email linkage changes**; staff-permission changes; template creation/edits;
 form delivery configuration and **audience** changes; per-occurrence window overrides; per-occurrence question customization, rewording, and reset; per-occurrence focus changes; form-instance generation; **draft save,
 submission, edit, lock, and unlock**; every validity transition; bonus-period creation/edit and
 cycle-to-period assignment; private responses **and student follow-ups**; comment moderation and
@@ -312,4 +311,4 @@ Audit implementation approach (append-only, before/after capture) is discussed i
 
 ## 5. Related documents
 
-[product-requirements.md](product-requirements.md) · [roles-and-permissions.md](roles-and-permissions.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [participation-rules.md](participation-rules.md) · [account-matching.md](account-matching.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [question-backlog.md](question-backlog.md) · [legacy-question-import.md](legacy-question-import.md) · [open-decisions.md](open-decisions.md) · [architecture-proposal.md](architecture-proposal.md)
+[product-requirements.md](product-requirements.md) · [roles-and-permissions.md](roles-and-permissions.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [participation-rules.md](participation-rules.md) · [student-identity.md](student-identity.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [question-backlog.md](question-backlog.md) · [legacy-question-import.md](legacy-question-import.md) · [open-decisions.md](open-decisions.md) · [architecture-proposal.md](architecture-proposal.md)

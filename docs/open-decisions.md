@@ -13,7 +13,7 @@
 > | # | Resolution |
 > |---|---|
 > | D1 | **Closed — TypeScript baseline.** "Fable" referred to Claude tooling. The Next.js + Drizzle + Auth.js stack is the approved implementation. |
-> | D2 | **Closed — teacher-confirm-all is the default,** with auto-confirm implemented behind the `ROSTER_CLAIM_AUTO_CONFIRM` configuration flag (default **off**) so the policy can be switched later without a code change. |
+> | D2 | **Superseded and REMOVED 2026-08-07** — see the block below. Name matching no longer exists, so neither does the question. |
 > | D4 | **Closed — (a).** Structural edits lock once a cycle has a non-draft response; per-occurrence open/deadline overrides are allowed and audited. |
 > | D5 | **Closed — (a) hard deadline, no grace.** `reopenCycle` remains the audited teacher escape hatch and now also unlocks locked responses (`manage_weekly_cycles`). |
 > | D6 | **Closed — unpublish is APPROVED and implemented.** Unpublishing is audited and reversible via restore. An unpublished entry leaves the class archive *and* the linked asker's history. |
@@ -41,6 +41,15 @@
 > | D19 | Can one form instance target several sections? | **Yes**, and it is the ordinary case. One instance, one window, one question snapshot, one review queue. Response uniqueness stays `(instance, student_record)` — the attribution section is recorded separately and is deliberately NOT in that key, so a student in two targeted sections still has exactly one response. |
 > | D20 | May a published answer reach several sections at once? | **No — the existing section-scoped rule stands.** A publication goes to the **asker's own** section only, enforced in `draftPublicAnswer` and covered by a test. Sharing a form does not widen an archive; cross-section reuse continues to go through the course backlog (D8). Allowing an explicit multi-section publish would be a privacy-surface change and needs owner approval before it is built. |
 
+
+> ### Decision recorded 2026-08-07 (student identity)
+>
+> Rule, import validation and migration behaviour: [student-identity.md](student-identity.md).
+>
+> | # | Question | Decision |
+> |---|---|---|
+> | D23 | How does an authenticated account become a student? | **Exact normalized UP email matching against teacher-uploaded class lists.** The class list carries student number, full name, and UP email. A signed-in user is the student record whose `roster_email` equals their trimmed, lowercased email — nothing else. Name similarity, roster claims, claim throttling, and teacher confirm/reject/unlink of matches are **removed** (D2, D9). A roster email is unique across all records, enforced in the database, so two students can never resolve to one another. Class-list rows with a missing, malformed, off-domain, duplicated, or already-taken email are **refused** at import rather than guessed at. |
+
 ---
 
 ## D1. What does "Fable" mean? (gates the stack)
@@ -55,16 +64,20 @@
 - **Wait for owner approval?** **Only if F#/Fable is intended.** Otherwise this
   decision can be closed as “TypeScript baseline.”
 
-## D2. Account-match auto-confirm policy (highest-risk)
+## D2. Account-match auto-confirm policy — **REMOVED, not deferred**
 
-- **Question:** For MVP, auto-confirm exact-unique name matches, or require teacher confirmation for **all** matches?
-- **Options:** (a) teacher-confirm-all; (b) exact-unique auto-confirm + teacher-confirm for ambiguous/none, with audit + teacher notification.
-- **Trade-offs:** (a) safest against impersonation (Risk R1), more teacher effort; (b) less effort, small residual impersonation risk from editable display names.
-- **Recommended choice:** (a) **teacher-confirm-all** for MVP. See [account-matching.md](account-matching.md#4-recommended-mvp-matching-policy).
-- **Status: CLOSED 2026-08-03.** (a) is the shipped default. (b) exists in the service behind
-  `ROSTER_CLAIM_AUTO_CONFIRM` (default `false`) with a configurable minimum name score, so
-  enabling it later is a configuration change, not a rewrite. Every claim decision is audited
-  either way.
+- **Original question:** auto-confirm exact-unique name matches, or require teacher confirmation
+  for all of them?
+- **Status: REMOVED 2026-08-07, owner-approved.** The question was about how much to trust a
+  similarity score between a Google display name and a roster name. **There is no name matching**,
+  so there is nothing to tune and nothing to confirm.
+- **Replaced by [Confirmed]:** *student access is determined by exact normalized UP email matching
+  against teacher-uploaded class lists.* The class list now carries the UP email, so identity comes
+  from the teacher rather than from a guess about two strings.
+- Name similarity, roster claims, claim throttling, teacher confirm/reject/unlink, and the
+  `ROSTER_CLAIM_*` configuration are **deleted**, not disabled. Migration behaviour for existing
+  data: [student-identity.md §10](student-identity.md#10-what-was-removed-and-what-happened-to-the-data).
+- **Wait for owner approval?** No — resolved.
 
 ## D3. Who grants the Teacher role?
 
@@ -120,20 +133,20 @@
 - **Recommended choice:** (a) within a section, across cycles; cross-section handled via the course backlog. See [public-qa-and-source-linking.md](public-qa-and-source-linking.md#5-merging-multiple-submissions).
 - **Wait for owner approval?** Recommended yes.
 
-## D9. Section join code / verification token as extra matching factor
+## D9. Section join code / verification token as extra matching factor — **REMOVED**
 
-- **Question:** Add a teacher-provided join code/token students enter at first login, beyond name?
-- **Options:** (a) no extra factor (name + teacher confirm only); (b) add join code as optional extra factor.
-- **Trade-offs:** (a) simpler; (b) materially reduces impersonation risk (Risk R1) at some UX cost.
-- **Recommended choice:** Document as an option; **not** an approved requirement. Consider adopting alongside D2.
-- **Wait for owner approval?** **Yes.**
+- **Original question:** add a teacher-provided join code as a second factor beyond the name?
+- **Status: REMOVED 2026-08-07.** It was proposed *because* an editable display name was weak
+  evidence of identity (Risk R1). With the UP email supplied by the teacher from an authoritative
+  class list, there is no weak first factor to shore up.
+- **Wait for owner approval?** No — resolved with D2.
 
 ## D10. Deactivated-student access after roster re-import
 
 - **Question:** When a student is dropped from a re-imported roster, what access remains?
 - **Options:** (a) deactivate enrollment, keep read-only history; (b) deactivate and revoke access; (c) keep active.
 - **Trade-offs:** (a) preserves data + student's own history; (b) cleaner cutoff; (c) wrong (they left).
-- **Recommended choice:** (a) — never delete data (matches "no silent overwrite"). See [account-matching.md](account-matching.md#92-safety-rules).
+- **Recommended choice:** (a) — never delete data (matches "no silent overwrite"). See [student-identity.md](student-identity.md#74-safety-rules).
 - **Wait for owner approval?** **Yes.**
 
 ## D11. ORM: Drizzle vs Prisma
@@ -182,4 +195,4 @@
 
 ## Related documents
 
-[product-requirements.md](product-requirements.md) · [account-matching.md](account-matching.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-proposal.md](architecture-proposal.md) · [mvp-scope.md](mvp-scope.md)
+[product-requirements.md](product-requirements.md) · [student-identity.md](student-identity.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-proposal.md](architecture-proposal.md) · [mvp-scope.md](mvp-scope.md)

@@ -50,7 +50,7 @@ flowchart LR
 
 1. Create or select a course and class section.
 2. Import and reconcile the roster.
-3. Confirm account matches and configure section staff.
+3. Check the class list linked every student's UP email, and configure section staff.
 4. Create a reusable template and recurring weekly schedule.
 5. Review incoming submissions in an inbox.
 6. Mark validity, send private replies, or draft/reword/publish public answers.

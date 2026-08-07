@@ -132,7 +132,7 @@ npm test
 npm run build
 ```
 
-For changes touching PostgreSQL, authz, scheduling, roster matching, or
+For changes touching PostgreSQL, authz, scheduling, roster import, or
 student-visible data, also run the relevant integration tests and update the
 documentation listed in [DOCUMENT_MANIFEST.yaml](DOCUMENT_MANIFEST.yaml).
 
@@ -161,10 +161,12 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ### Nothing appears on the dashboard after signing in
 
-An account only sees sections it is enrolled in or staffs, and a student
-account stays empty until a teacher confirms its roster match on
-`/teach/sections/[id]/matches`. This is the intended teacher-confirm-all
-behaviour, not a bug — see [account-matching.md](account-matching.md).
+An account only sees sections it is enrolled in or staffs. A student account is
+empty when its **UP email is on no class list** — access is exact normalized
+email matching, with no claiming step. Check the address on
+`/teach/sections/[id]/roster`, or re-import the class list with it corrected;
+the student gains access on their next request, without signing in again. See
+[student-identity.md](student-identity.md).
 
 ### The weekly form says no cycle is open
 

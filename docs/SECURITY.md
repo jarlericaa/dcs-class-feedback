@@ -6,7 +6,7 @@ detail.
 
 ## Threats that shape the design
 
-1. **Wrong account match:** a name-based match can bind a university account to
+1. **Wrong roster email:** an incorrect address in an imported class list binds a university account to
    the wrong roster record.
 2. **Cross-section access:** a teacher, TA, or student may try to access a
    resource through a guessed URL or stale link.
@@ -21,17 +21,24 @@ detail.
 
 ## Hard invariants
 
-- Account matching produces candidates; teacher confirmation is required under
-  the current MVP policy.
-- **Teacher-confirm-all is the approved default** ([open-decisions.md](open-decisions.md)
-  D2, closed 2026-08-03). `ROSTER_CLAIM_AUTO_CONFIRM` (default `false`) is a
-  **privacy/security policy switch, not an ordinary operational tuning option**:
-  it decides whether a university account may bind to a roster record with no
-  human review. Enabling it requires **explicit owner approval equivalent to
-  reopening or revising D2**, and it must **not** be enabled casually during
-  troubleshooting or incident response. The same applies to loosening
-  `ROSTER_CLAIM_AUTO_CONFIRM_MIN_SCORE`.
-- Student access requires a confirmed match plus active enrollment.
+- **Student access is exact normalized UP-email matching** against the
+  teacher-uploaded class list, plus an active enrollment. Trim and lowercase on
+  both sides, then equality — nothing else. Names are never an identity key.
+  See [student-identity.md](student-identity.md).
+- **`ALLOWED_EMAIL_DOMAINS` is a privacy/security control, not operational
+  tuning.** It gates sign-in *and* which class-list addresses may be imported.
+  Widening it lets accounts outside the university become students, so it
+  requires owner approval and must **not** be changed casually during
+  troubleshooting or incident response. An empty value rejects everything, which
+  is the correct failure direction.
+- **A section's roster authority is never global identity authority.** Import is
+  section-scoped, but `roster_email` is global, so a row that would change the
+  address of a student enrolled only in some other section is refused rather
+  than applied. Correcting such a student is an authorized identity correction by
+  staff who actually hold them, not a side effect of uploading a file.
+- **A refused row is not an absent student.** Deactivation is keyed on the
+  student numbers a file mentions, never on the rows that imported cleanly, so a
+  bad email cell can never silently drop somebody from a class.
 - Section staff access is resource-scoped; TA permissions are explicit.
 - Platform-admin status does not automatically grant course content access.
 - Public Q&A is only for enrolled students and authorized staff in that section.
@@ -50,8 +57,10 @@ detail.
       allowed-domain restrictions.
 - [ ] `DEV_AUTH_ENABLED` cannot enable a provider in production.
 - [ ] `AUTH_SECRET` and scheduler secrets are production-grade and not committed.
-- [ ] `ROSTER_CLAIM_AUTO_CONFIRM` is `false`, unless the owner has approved a
-      revision of D2 in writing (see the invariant above).
+- [ ] `ALLOWED_EMAIL_DOMAINS` lists exactly the university domains that may sign
+      in and be imported — no wildcards, no consumer providers.
+- [ ] Class lists were imported from an authoritative registrar export; spot-check
+      that refused rows were fixed rather than worked around.
 - [ ] No `.env`, seeded credentials, or real student data is in the repository,
       screenshots, fixtures, or documentation.
 - [ ] Every student/staff route and server action performs server-side authz.
@@ -66,7 +75,7 @@ detail.
 
 ## Related specifications
 
-- [account-matching.md](account-matching.md)
+- [student-identity.md](student-identity.md)
 - [roles-and-permissions.md](roles-and-permissions.md)
 - [public-qa-and-source-linking.md](public-qa-and-source-linking.md)
 - [participation-rules.md](participation-rules.md)

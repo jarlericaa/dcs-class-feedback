@@ -31,7 +31,7 @@ usable workflow and can be verified end to end.
 | Route | Primary job |
 |---|---|
 | `/teach/sections/[id]/review` | Review incoming submissions and respond |
-| `/teach/sections/[id]/matches` | Resolve roster/account matches |
+| `/teach/sections/[id]/roster` | Read the class list and its UP-email link status |
 | `/teach/sections/[id]/import` | Import and reconcile a roster |
 | `/teach/sections/[id]/setup` | **Planned:** section details, staff, schedule, and templates |
 | `/teach/sections/[id]/backlog` | **Planned:** triage and publish course questions |

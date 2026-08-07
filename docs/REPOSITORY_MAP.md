@@ -48,7 +48,7 @@ second architecture document; durable runtime decisions belong in
 | src/db/ | Database client and Drizzle schema |
 | src/db/schema/ | Tables, enums, indexes, and relations by domain |
 | src/modules/authz/ | Resource-scoped, deny-by-default authorization |
-| src/modules/identity/ | Account matching, roster identity, and name normalization |
+| src/modules/identity/ | Email normalization and the domain allow-list — the rule that resolves an account to a student |
 | src/modules/catalog/ | Courses, sections, staff, enrollments, and catalog data |
 | src/modules/forms/ | Templates, questions, cycles, recurrence schedules, validation, and submissions |
 | src/modules/review/ | Staff review and validity-state mutations |

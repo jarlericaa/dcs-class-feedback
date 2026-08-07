@@ -41,7 +41,7 @@ prerequisite for the web-app UI.
 
 | Module | Responsibility | Main paths |
 |---|---|---|
-| Auth and identity | Sign-in, users, account matching, name normalization | `src/auth.ts`, `src/modules/identity/`, `src/db/schema/identity.ts` |
+| Auth and identity | Sign-in, users, email normalization, roster-email resolution | `src/auth.ts`, `src/modules/identity/`, `src/db/schema/identity.ts` |
 | Authorization | Deny-by-default, resource-scoped checks | `src/modules/authz/` |
 | Catalog | Courses, sections, staff, enrollments, topics | `src/modules/catalog/`, `src/db/schema/catalog.ts` |
 | Forms | Templates, questions, cycles, submissions, validation | `src/modules/forms/`, `src/db/schema/forms.ts` |
@@ -65,7 +65,7 @@ services. Business rules should not be duplicated in React components.
 | `/sections/[id]/history` | Student submission history |
 | `/sections/[id]/qa` | Section-scoped Q&A archive |
 | `/teach/sections/[id]/review` | Staff review, validity, private/public response actions |
-| `/teach/sections/[id]/matches` | Staff account-match review |
+| `/teach/sections/[id]/roster` | Staff class list: imported students and UP-email link status (no approve/reject) |
 | `/teach/sections/[id]/import` | Staff roster import preview/confirmation |
 | `/api/auth/[...nextauth]` | Auth.js callback route |
 | `/api/internal/scheduler/tick` | Secret-protected scheduler tick |
@@ -87,7 +87,7 @@ services. Business rules should not be duplicated in React components.
 ## Security boundaries
 
 - Google domain restrictions are configuration-driven.
-- Student access requires a confirmed account match and active enrollment.
+- Student access requires the account's normalized UP email to be on a class list, plus an active enrollment.
 - Staff access requires course/section membership and, for TAs, an explicit
   permission flag.
 - Platform-admin status does not grant automatic content access.

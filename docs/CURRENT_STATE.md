@@ -28,7 +28,7 @@ and open items are in
 | A1 | Google SSO, domain allowlist | **complete** |
 | A2 | Courses, sections, co-instructors, TA permission catalog | **complete** |
 | A3 | CRS **XLSX** roster import, CSV fallback, editable preview, per-row warnings, ignored/denied columns | **complete** |
-| A4 | Student roster claim (student-facing), unlink | **complete** — `/claim`, throttled, non-disclosing; staff review, confirm-to-a-different-record, reject, and audited unlink on the matches page |
+| A4 | Deterministic UP-email student access | **complete** — a signed-in account resolves to the class-list row whose UP email equals its normalized email; no claim page, no confirmation step. Roster claims and account matching were **removed** 2026-08-07 ([student-identity.md](student-identity.md)) |
 | A5 | Student numbers encrypted at rest + keyed lookup hash | **complete** — including an idempotent, self-verifying backfill script (`npm run db:backfill:student-numbers`) |
 | B1 | Template builder, question types, required/optional | **complete** |
 | B2 | Sanitized Markdown / code / links / https images / KaTeX, one shared renderer | **complete** |
@@ -58,7 +58,7 @@ and open items are in
 |---|---|
 | `/signin` | Google OAuth when configured; dev-login outside production |
 | `/` | Role-aware dashboard with per-section cycle state and staff attention counts |
-| `/claim` | **Student roster claim**: enter a student number; the reply is identical whether or not it matched, so the page cannot be used to look up a classmate |
+| `/claim` | **Removed** — redirects to `/`. Access follows from the UP email on the class list; there is nothing to claim |
 | `/sections/[id]` | Weekly form: **save draft → submit → edit until the deadline**, repeatable questions, distinct general comment, read-only once locked, sanitized rich prompts with KaTeX |
 | `/sections/[id]/history` | Student's own submissions, private replies, published-answer status |
 | `/sections/[id]/qa` | Section-scoped Q&A archive with search and category filter |
@@ -67,7 +67,7 @@ and open items are in
 | `/teach/courses/[id]/templates` | Template authoring, rich content help, student-question and general-comment configuration; saving creates a new immutable version |
 | `/teach/sections/[id]/review` | Queue + detail inbox, filters, **three-state validity with the flag-vs-finalize split and a validity timeline**, private reply, public draft/publish |
 | `/teach/sections/[id]/setup` | Section details, teaching team + TA permissions, weekly schedule, cycle management |
-| `/teach/sections/[id]/matches` | Teacher-confirm-all match review, **student claim requests with both names side by side**, **audited unlink**, and the class list (last-4 numbers only) |
+| `/teach/sections/[id]/roster` | **Class list**: imported students with their UP email, last-4 student number, dropped state, and whether that address has signed in. Paginated and searchable. No approve/reject/confirm/unlink controls — an import is the only thing that changes it |
 | `/teach/sections/[id]/import` | **XLSX upload or pasted CSV → editable preview → confirm** |
 | `/teach/sections/[id]/participation` | Derived participation matrix (last-4 student numbers on screen) |
 | `/teach/sections/[id]/participation/export` | Three participation CSVs, `no-store`, audited |

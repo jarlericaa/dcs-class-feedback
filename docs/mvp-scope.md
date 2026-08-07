@@ -36,10 +36,10 @@
 
 | Feature | Owning doc / acceptance note |
 |--------|------------------------------|
-| Google SSO restricted to authorized university accounts | [account-matching.md](account-matching.md) |
-| Name-based account matching **with teacher confirmation** | [account-matching.md](account-matching.md). MVP policy recommendation: teacher-confirm-all (auto-confirm is [Open D2](open-decisions.md)). |
+| Google SSO restricted to authorized university accounts | [student-identity.md](student-identity.md) |
+| **Exact normalized UP-email matching** against the teacher-uploaded class list | [student-identity.md](student-identity.md). Confirmed 2026-08-07; replaced name matching, roster claims, and teacher confirmation outright. |
 | Courses and class sections | [domain-model.md](domain-model.md), [roles-and-permissions.md](roles-and-permissions.md) |
-| CSV class-list import | [account-matching.md](account-matching.md) — validation, mapping, duplicate detection, preview, row errors, summary, safe re-import, audit. |
+| CSV class-list import | [student-identity.md](student-identity.md) — validation, mapping, duplicate detection, preview, row errors, summary, safe re-import, audit. |
 | Student, Teacher, TA, Platform-Admin roles | [roles-and-permissions.md](roles-and-permissions.md) |
 | Configurable TA permissions (per section) | [roles-and-permissions.md](roles-and-permissions.md) |
 | Recurring weekly form schedules | [weekly-form-workflow.md](weekly-form-workflow.md) |

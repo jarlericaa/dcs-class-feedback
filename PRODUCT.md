@@ -92,14 +92,20 @@ destroyed by rewording or merging**.
 - **Single institution timezone**, `Asia/Manila` via `INSTITUTION_TIMEZONE`.
   Owner-confirmed value; single-timezone-for-MVP is **[Assumption A3]** /
   **[Open D7]**.
-- **Enrollment arrives as a registrar CSV export whose format is fixed and cannot
-  be changed.** The import must bend to the file. It carries student number + full
-  name only — no email — which is precisely why identity matching is a hard
-  problem here. **[Confirmed]**
-- **Identity is resolved by name matching plus teacher confirmation.** Google
-  display names are user-editable, so matching produces candidates only and a
-  human confirms. Teacher-confirm-all is **[Recommended]** for MVP; no
-  auto-confirm path exists. **[Open D2]**
+- **Enrollment arrives as a registrar export whose format is largely fixed.** The
+  import must bend to the file: CRS-style XLSX, with pasted CSV as a fallback.
+  **[Confirmed]**
+- **Identity is the UP email on that class list.** The list carries student
+  number, full name, and UP email; a signed-in account is the student whose
+  stored roster email equals their normalized email, exactly. There is no
+  claiming step and no teacher confirmation. A full name is a label and is never
+  an identity key. **[Confirmed 2026-08-07]** — this replaced name matching
+  outright; see [docs/student-identity.md](docs/student-identity.md).
+- **A teacher who mistypes an email gives the wrong person a class.** The risk did
+  not disappear with name matching, it moved into the import — where the file is
+  checked before commit, bad rows are refused rather than guessed at, and every
+  linkage change is audited. That makes the import preview a security surface,
+  not a convenience. **[Confirmed]**
 - **Class sizes can be small.** In a small section a single asker, or a
   sufficiently specific question, stays identifiable after "anonymization." This
   is a design-level obligation, not just a policy one: staff need to be warned at
@@ -111,8 +117,8 @@ destroyed by rewording or merging**.
 ## Capabilities and Constraints
 
 **Confirmed MVP surface** (full boundary in [docs/mvp-scope.md](docs/mvp-scope.md)):
-Google SSO limited to approved university domains; name-based matching with
-teacher confirmation; courses and sections; CSV roster import with validation,
+Google SSO limited to approved university domains; exact normalized UP-email
+student access; courses and sections; roster import with validation,
 column mapping, duplicate detection, preview, row-level errors, summary, safe
 re-import, and audit; four roles with per-section TA flags; recurring schedules and
 auto-opening weekly cycles; reusable templates that snapshot on apply; common
@@ -178,7 +184,7 @@ management UI, Playwright e2e coverage.
 
 - **Real:** an extensive owner-reviewed specification set in [docs/](docs/) —
   product requirements, MVP boundary, domain model, roles and TA permission
-  catalog, weekly-form workflow, participation rules, account matching, public-QA
+  catalog, weekly-form workflow, participation rules, student identity, public-QA
   and source-linking rules, question backlog, legacy import, security register,
   and an open-decisions register. A working implementation foundation under
   `src/`. An idempotent demo seed (`npm run db:seed`) with a course, section,

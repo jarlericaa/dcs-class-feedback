@@ -13,10 +13,17 @@ proposed changes. No scope change: nothing from [mvp-scope.md](mvp-scope.md)
 §2/§3 is promoted. No new entity is proposed — the readiness model in §5 is
 derived from data that already exists.
 **Owns:** the journey a teacher takes from an empty account to a section that can
-safely receive students — course, section, roster, matches, schedule, template —
-and the out-of-band moment where they tell students to sign in.
+safely receive students — course, section, roster, schedule, template — and the
+out-of-band moment where they tell students to sign in.
+
+> **Updated 2026-08-07.** Readiness was originally four items; "matches settled"
+> was one of them. Account matching was removed, so it is now **three**: importing
+> the class list with each student's UP email IS the access grant, and there is
+> nothing left to confirm afterwards. See
+> [student-identity.md](student-identity.md).
+
 **Routes audited:** `/teach/courses`, `/teach/sections/[id]/setup`,
-`/teach/sections/[id]/import`, `/teach/sections/[id]/matches`,
+`/teach/sections/[id]/import`, `/teach/sections/[id]/roster`,
 `/teach/courses/[id]/templates` —
 [courses/page.tsx](../src/app/teach/courses/page.tsx),
 [setup/page.tsx](../src/app/teach/sections/[id]/setup/page.tsx),
@@ -35,7 +42,7 @@ journey's ordering failure is what causes that one's P0 ·
 A teacher who has never used this product has to get from an empty account to a
 section that can safely receive students. That takes six steps across five
 routes: create a course, create a section, import the registrar roster, confirm
-account matches, create a template, set a recurring schedule.
+check the class list linked every UP email, create a template, set a recurring schedule.
 
 **The headline is not that these screens are bad. Most of them are good.** The
 roster importer is the best-built screen in the product. The finding is that
@@ -93,7 +100,7 @@ column.
         ▼
    Section nav opens on:  Review inbox   ← empty. no students, no cycles.       ⚠ F3
      Section:  Review inbox · Publication queue · Class Q&A ·
-               Account matches · Roster import · Participation · Backlog
+               Class list · Roster import · Participation · Backlog
      Manage:   Section setup · Audit history
                 └─ setup is 8th, in a separate group
 
@@ -190,13 +197,13 @@ the registrar file arrives; the failure is silence, not permission.
 ### F3 · P1 · Navigation is ordered for steady state, so cold start lands at the operational end
 
 **Evidence.** `staffSectionNav` builds, in order: Review inbox, Publication
-queue, Class Q&A, Account matches, Roster import, Participation, Question
+queue, Class Q&A, Class list, Roster import, Participation, Question
 backlog; then a separate **Manage** group with Section setup and Audit history
 ([nav.ts:41-125](../src/components/layout/nav.ts#L41-L125)).
 
 For a brand-new section the first destination is **Review inbox** — necessarily
 empty, since there are no students, no schedule, and no cycles. Roster import is
-fifth. Section setup is eighth, in a different group. Also **Account matches
+fifth. Section setup is eighth, in a different group. Also **Class list
 precedes Roster import**, inverting the actual dependency: you import, then you
 match.
 
@@ -230,7 +237,7 @@ opening every section and inspecting four separate areas.
 **Evidence.** Well-built, with title, body, and action:
 
 - no template on the setup page ([setup/page.tsx:384-394](../src/app/teach/sections/[id]/setup/page.tsx#L384-L394))
-- no roster on the matches page ([matches/page.tsx:285-296](../src/app/teach/sections/[id]/matches/page.tsx#L285-L296))
+- no roster on the class-list page ([roster/page.tsx](../src/app/teach/sections/[id]/roster/page.tsx))
 
 Bare title only, on the same journey:
 
@@ -280,11 +287,11 @@ finding in each of three journeys.
 ## 5. Proposed flow
 
 The core proposal is **one derived value**, `sectionReadiness`, computed from data
-that already exists — roster count, template existence, active schedule,
-pending-match count. No new entity, no migration.
+that already exists — roster count, template existence, active schedule. No new
+entity, no migration.
 
 ```
-Readiness  =  roster? · template? · schedule? · matches settled?
+Readiness  =  roster? · template? · schedule?
 
 /teach/courses
    ├─ empty account → empty state WITH action → create-course form            [F5]
@@ -329,12 +336,13 @@ At the moment of risk — schedule saved while roster is empty:                 
 
 - `Not ready · no class list` — roster empty
 - `Not ready · no schedule` — roster present, no active schedule
-- `31 students · 4 waiting to be confirmed` — pending matches outstanding
+- `31 students · 2 rows not imported` — the class list has refused rows, so those
+  students have no access until the file is corrected
 - `Ready · 31 students · opens Mondays`
 
-The first two are the states that matter; the pending-match variant reuses
-[JOURNEY-STUDENT-FIRSTRUN.md](JOURNEY-STUDENT-FIRSTRUN.md) F3's count so the two
-journeys report the same number in the same words.
+The first two are the states that matter. The refused-rows variant is the only
+remaining way a student can be stuck, and unlike the old pending-match count it
+is entirely in the teacher's hands to clear.
 
 ### F1 — the notice at the moment of risk
 
@@ -354,13 +362,13 @@ only thing that lets a teacher reason about the case the copy did not anticipate
 
 Empty:
 
-> **No class list imported yet.** Students cannot be matched or submit until the
-> registrar list is imported. [Import the class list]
+> **No class list imported yet.** Students have no access until the registrar
+> list — with each student's UP email — is imported. [Import the class list]
 
 Populated:
 
-> **31 students** from *Registrar class list, 2 August*. [Re-import] · [Account
-> matches]
+> **31 students** from *Registrar class list, 2 August*. [Re-import] · [Class
+> list]
 
 Echoing the provenance string the importer already collects — it was captured for
 a reason, and this is the reason.
@@ -394,8 +402,9 @@ nothing and costs them their typing.
   the way.
 - Percentage-complete framing on readiness. **Artificial Incompleteness** (Cat 4)
   — a completion bar invites clearing the bar rather than understanding what is
-  missing, and one of the four items (matches) is not fully in the teacher's
-  control.
+  missing. (This objection was originally sharper still, because one of the four
+  items — matches — was not in the teacher's control at all. All three remaining
+  items are.)
 
 ---
 
@@ -469,9 +478,9 @@ acquisition event.
    unresolved — a teacher who cannot get the role never reaches step one, and that
    path is not designed at all. Out of scope here because it is a policy decision
    first.
-3. **Do the four readiness items match what teachers actually consider "ready"?**
-   Roster, template, schedule, matches is a code-derived list. A teacher might
-   reasonably also want the first cycle previewed. Activity #3 answers it.
+3. **Do the three readiness items match what teachers actually consider "ready"?**
+   Roster, template, schedule is a code-derived list. A teacher might reasonably
+   also want the first cycle previewed. Activity #3 answers it.
 4. **[Open D10]** dropped-student re-import behaviour affects roster status
    messaging once a term is under way; F2's populated copy assumes a first import.
 
@@ -500,7 +509,7 @@ acquisition event.
 [JOURNEY-STUDENT-SUBMIT.md](JOURNEY-STUDENT-SUBMIT.md) ·
 [JOURNEY-TEACHER-PUBLISH.md](JOURNEY-TEACHER-PUBLISH.md) ·
 [PILOT-STRATEGY.md](PILOT-STRATEGY.md) · [INTENT-CONTEXT.md](INTENT-CONTEXT.md) ·
-[account-matching.md](account-matching.md) ·
+[student-identity.md](student-identity.md) ·
 [weekly-form-workflow.md](weekly-form-workflow.md) ·
 [roles-and-permissions.md](roles-and-permissions.md) ·
 [open-decisions.md](open-decisions.md)

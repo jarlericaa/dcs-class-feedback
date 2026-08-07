@@ -1,172 +1,203 @@
-# Account Matching & Class-List Import
+# Student Identity & Class-List Import
 
-> **Status:** Product/security specification with an implemented foundation.
+> **Status:** Product/security specification, implemented.
 > Current route and service coverage is tracked in
 > [CURRENT_STATE.md](CURRENT_STATE.md).
-> This document **owns** authentication/enrollment, the name-matching design, and the class-list CSV import flow. This is the **highest-risk area** of the system (Risk R1). Match states are in [domain-model.md](domain-model.md#38-account-match-state).
+> This document **owns** authentication, how an authenticated account becomes a student, and the class-list import flow.
 > Label key as in [product-requirements.md](product-requirements.md).
+>
+> **Renamed from `account-matching.md` (2026-08-07).** Name-based account matching, the student roster-claim flow, and teacher confirmation of suggested matches were **removed**, not disabled. See [§10 What was removed](#10-what-was-removed-and-what-happened-to-the-data).
+
+## 0. The rule **[Confirmed — owner-approved 2026-08-07]**
+
+> **Student access is determined by exact normalized UP email matching against teacher-uploaded class lists.**
+
+Nothing else grants a student access. Not a name, not a similarity score, not a student number typed into a form, not a teacher pressing Confirm.
+
+```
+authenticated user email
+  → normalize (trim + lowercase)
+  → student_records.roster_email          (exact equality, unique)
+  → active enrollments
+  → sections
+```
 
 ## 1. Authentication **[Confirmed]**
 
-- Google SSO restricted to authorized university accounts.
-- Signing in creates/updates a `User` (Google subject, university email, display name). A `User` is **not** a student until an `AccountMatch` is `Confirmed`.
+- Google SSO restricted to the domains in `ALLOWED_EMAIL_DOMAINS`.
+- Signing in creates or updates a `User` (Google subject, university email, display name) and **nothing else**. There is no linking row to create and no state to reconcile.
+- The email is normalized **once, at the boundary** (`src/auth.ts`), so every later comparison is a plain equality with both sides already normalized.
 
-## 2. The core problem
+Whether that user is a student is not a stored fact — it is answered on every read by looking the email up against the class lists (`getStudentRecordForUser`, `src/modules/authz`).
 
-**[Confirmed]** The roster CSV contains only **student number** and **full name** — **no university email**. So the system cannot join Google accounts to roster rows on email. It must attempt to map an authenticated Google account to a roster `StudentRecord` using the Google **display name** vs the roster **full name**.
+## 2. Normalization **[Confirmed]**
 
-**[Confirmed]** This name-based matching is a known security and data-quality risk.
+Trim surrounding whitespace, lowercase. That is the entire transformation, on both sides, always.
 
-## 3. Threat model & why matching must be conservative (Risk R1)
+Deliberately **not** done: stripping dots, removing `+tags`, or any other canonicalization that maps two distinct mailboxes onto one. Collapsing addresses would hand one student another's classes, which is exactly the failure the old name matching was prone to.
 
-- Google **display names are user-editable** and may be nicknames, abbreviations, or deliberately set to impersonate.
-- Two or more students may share identical or very similar names.
-- A matching-only scheme with silent auto-enrollment would let any university account claim a roster identity by matching a name.
+The database enforces it too: `roster_email_normalized` is a `CHECK` constraint, so an unnormalized value cannot be stored even by a code path that forgets.
 
-**Consequences if identity is wrong:** a student sees another student's private responses and submission history; participation is credited to the wrong person; anonymity assumptions break. Therefore matching must **never** silently verify under uncertainty.
+## 3. Uniqueness **[Confirmed]**
 
-## 4. Recommended MVP matching policy **[Recommended — safest default]**
+`student_records_roster_email_unique` is a partial unique index on `roster_email`. Two student records can never carry the same address, so a lookup returns at most one record and "who is this?" has exactly one answer. The constraint lives in the database, not only in service logic.
 
-1. **SSO creates an account only.** Login never enrolls anyone by itself.
-2. **Matching produces candidates only.** The name pipeline (§5) proposes zero or more `StudentRecord` candidates with a confidence signal; it never finalizes.
-3. **No silent verification under any uncertainty.**
-4. **Teacher confirmation is required for ambiguous matches** — **[Confirmed]** when two students have identical or very similar names, require manual teacher confirmation.
-5. **Shipped policy: teacher-confirm-all** — a teacher confirms every match before a student is
-   bound, even exact-unique matches. Safest; higher teacher effort.
-6. **Auto-confirm is implemented but disabled.** High-confidence unique matches can be
-   auto-confirmed, gated by the `ROSTER_CLAIM_AUTO_CONFIRM` configuration flag (default **off**)
-   and a configurable minimum name score (default: the strong-match threshold). Enabling it later
-   is a configuration change, not a code change. **[D2 — closed](open-decisions.md).**
-7. **Optional extra factor (open):** a section join code / teacher-provided verification token the student enters at first login, as a second factor beyond name. **[Open D9](open-decisions.md)** — not an approved requirement; documented as an option.
+`roster_email` is nullable only for rows imported before the column existed. A record with no email matches nobody and grants nothing.
 
-After confirmation, the **student number is the permanent internal identity** ([Assumption A2]); later display-name changes do not unlink the match.
+## 4. Why this is safer than what it replaced
 
-## 4A. Student-initiated roster claim **[Confirmed — project-specs.md §6.1]**
+The old scheme compared Google **display names** — user-editable, frequently nicknames, and shared between people — against roster names, then asked a teacher to adjudicate. That put a human in the loop for every student and still turned on a judgement call about two similar strings.
 
-The CRS class list carries no email address, so the student initiates the link:
+The teacher now supplies the identity directly, in the class list, in a field the university already controls. There is no uncertain case to adjudicate because there is no similarity: an address either is on the list or is not.
 
-1. The student signs in with a school Google account. Sign-in grants no course access.
-2. The student enters **their student number** on the claim page.
-3. The system compares the Google account display name against that single unclaimed roster entry
-   using the pipeline in §5.
-4. Under the default policy the claim is recorded as pending and surfaced to staff. With
-   auto-confirm enabled, a unique high-confidence match links immediately.
-5. Mismatches, ambiguous names, duplicate claims, already-claimed entries, and unknown numbers all
-   go to staff review.
-6. A roster entry can never be linked to two accounts — enforced by a partial unique index, not
-   only by service logic.
+**What is still true:** a teacher who imports the wrong email gives the wrong person access. That risk did not go away — it moved into the import, where it is visible, checkable before commit, and audited. §7 is how the importer defends it.
 
-**Non-disclosure rule.** Every outcome that is not an immediate auto-confirm returns the **same**
-response to the student. An unknown number, a number belonging to someone else, a mismatched name,
-and an ambiguous name are indistinguishable, so the claim page cannot be used to enumerate student
-numbers or discover another student's name. The precise reason is recorded for staff only.
+## 5. What a student sees **[Confirmed]**
 
-Claim attempts are rate-limited per account, and a new claim supersedes the account's pending one.
+- **On a class list:** their forms, immediately, on first sign-in. No claim page, no waiting state, no "pending confirmation" banner.
+- **Not on any class list:** *"No classes are associated with this UP email yet. Ask your teacher to check that your UP email is included in the class list."*
 
-## 4B. Unlinking **[Confirmed]**
+The empty state says nothing about whether another address or student number exists, whether the email nearly matched something, or whose it might be. A signed-in stranger learns only about their own address.
 
-Staff may **unlink** a confirmed match, with a required reason. Unlinking releases the roster
-record and the account so either can be re-linked, revokes the student's section access
-immediately, and **deletes nothing**: responses stay attached to the roster record, so a
-re-link restores the student's own history intact. Unlinking is audited with before/after bindings.
+## 6. Student numbers at rest **[Confirmed — project-specs.md §11]**
 
-## 4C. Student numbers at rest **[Confirmed — project-specs.md §11]**
+Unchanged by this work. A student number is stored as AES-256-GCM ciphertext (bound to its own row so a ciphertext cannot be moved between records) plus a keyed HMAC-SHA256 lookup hash that carries the uniqueness constraint and serves every lookup, plus the last four characters in clear for staff list views. Normalization strips punctuation and case but **preserves leading zeroes**. Full plaintext is revealed only behind `view_student_identities`, and producing a file that contains it is audited.
 
-A student number is stored as AES-256-GCM ciphertext (bound to its own row so a ciphertext cannot
-be moved between records) plus a keyed HMAC-SHA256 lookup hash that carries the uniqueness
-constraint and serves every lookup, plus the last four characters in clear for staff list views.
-Normalization strips punctuation and case but **preserves leading zeroes**. Full plaintext is
-revealed only behind `view_student_identities`, and producing a file that contains it is audited.
-Key configuration, rotation, and the backfill procedure are in [SECURITY.md](SECURITY.md) and
-[DEPLOYMENT.md](DEPLOYMENT.md).
+The student number remains the **permanent internal identity** ([Assumption A2]) and the re-import key. The email is the *access* key. They are different jobs: a student's address can be corrected without minting a new record, and a record survives an address change with its submissions intact.
 
-## 5. Name-normalization pipeline **[Recommended]**
+Key configuration, rotation, and the backfill procedure: [SECURITY.md](SECURITY.md), [DEPLOYMENT.md](DEPLOYMENT.md).
 
-The design must support (**[Confirmed]** capabilities), implemented as a normalization + comparison pipeline:
+## 7. Class-list import **[Confirmed — project-specs.md §6.1]**
 
-1. **Normalize** both names: trim, collapse whitespace, case-fold, strip/fold diacritics, remove punctuation, expand or standardize common separators.
-2. **Handle name-order variants:** surname-first vs given-name-first; compare against both orderings.
-3. **Handle middle names & initials:** match when one side has a middle name and the other an initial or nothing; treat initials as prefixes.
-4. **Similarity scoring:** exact-normalized match; token-set match (order-independent); fuzzy distance for near-duplicates and typos.
-5. **Classify outcome** into a match state (§6).
+Teachers upload the official **CRS-style XLSX** class list. Pasted **CSV** remains supported as a fallback. Required columns: **student number**, a **name**, and a **UP email**.
 
-- **[Recommended]** The pipeline is deterministic and testable in isolation, with thresholds tuned conservatively toward "ask a teacher" rather than "auto-confirm."
+Recognized email headers: `email`, `e-mail`, `email address`, `upmail`, `up mail`, `up email`, `up_mail`, `university email`, `school email`, `student email`, `institutional email`. A file with no email column is refused outright, naming what to add — importing a list without addresses would create records nobody can reach.
 
-## 6. Match outcomes → states
+### 7.1 Fields the importer stores
 
-Outcomes map to `AccountMatch` states ([domain-model.md](domain-model.md#38-account-match-state)):
+Student number, **UP email**, family name, first name, lived/preferred name, preferred pronoun, program, enrollment status (both the verbatim spreadsheet value and a normalized status), and enlistment date.
 
-| Outcome | State | Handling |
-|---------|-------|----------|
-| Exactly one strong match | `Candidate` | Teacher confirms (teacher-confirm-all); or auto-confirm if [Open D2] approved. |
-| Multiple similar/identical names | `Ambiguous` | **[Confirmed]** manual teacher confirmation required; teacher picks the correct record. |
-| No plausible match | `Unmatched` | Held as **pending verification**, visible to the teacher for manual resolution; student has no section access until resolved. |
-| Teacher-corrected an existing match | `Correction-pending` → `Confirmed` | See §7. |
-| Rejected by teacher | `Rejected` | No binding; student cannot access as that record. |
+**`Sex Assigned at Birth` is never persisted.** It is on an explicit column denylist and is not mapped into a row at all, so it cannot reach the database; the preview reports it among the ignored columns.
 
-- **[Recommended]** "Detecting identical or very similar names," "multiple possible matches," and "no match" are all first-class outcomes surfaced to the teacher, never silently resolved. This satisfies "preventing silent enrollment under uncertain matches" **[Confirmed]**.
+Student numbers are identifiers, not numbers. An `.xlsx` numeric cell has already lost any leading zero at the file level, so the importer prefers the cell's formatted text, and where it can only see a bare number it **flags the row for correction rather than zero-padding silently**.
 
-## 7. Correction after verification **[Confirmed]**
+### 7.2 Import flow
 
-- Teachers may correct a student-account mapping **after it has already been verified** (e.g. a wrong person was confirmed).
-- **[Recommended]** Correction moves the match to `Correction-pending`, requires the teacher to select/confirm the correct `StudentRecord`, then returns to `Confirmed`. The prior and new bindings are captured in the audit log.
+1. **File validation** — extension, size cap, ZIP signature, required columns present (including the email column).
+2. **Column mapping** — CRS header synonyms are recognized; unmapped and denied columns are reported.
+3. **Course-metadata detection** — code, title, section, term, units, instructor, shown for confirmation.
+4. **Row validation** — see §7.3.
+5. **Editable preview before confirmation** — staff correct rows in place, **including the email**, and see exactly what will be created, enrolled, reactivated, renamed, linked, deactivated, or refused. Edited rows are re-validated as untrusted input at commit time and re-resolved against live data inside the commit transaction.
+6. **Row-level errors** — per-row problems surfaced, never a whole-file failure.
+7. **Import summary** — created / enrolled / reactivated / names updated / **emails linked** / **blocked** / deactivated / unchanged / warned / edited / errored.
+8. **Safe re-import** — re-importing an unchanged list is a no-op; nothing is created, relinked, or dropped.
+9. **Audit logging** — an `ImportBatch` records the event; see §8.
+
+### 7.3 Email rules — blocking, not advisory
+
+Anything wrong with an email **blocks its row**. The row is not imported, the reason is audited, and the rest of the file proceeds. Guessing is never an option, because the email is the access itself.
+
+| Condition | Warning code | Outcome |
+|---|---|---|
+| Cell empty | `missing_email` | Row refused |
+| Not an email address | `invalid_email` | Row refused |
+| Domain not in `ALLOWED_EMAIL_DOMAINS` | `disallowed_email_domain` | Row refused |
+| Same address twice in one file | `duplicate_email` | Second row refused |
+| Address already held by a **different** student record | `email_belongs_to_another_record` | Row refused |
+| Student is enrolled only in **another** section and the address differs | `cross_section_email_conflict` | Row refused — see §7.5 |
+| Same address, same record (a re-import) | — | Idempotent, no change |
+
+The existing student-number and full-name validations are unchanged, and duplicate student numbers still block a row. Everything else — unrecognized enrollment status, a lost leading zero, a field differing from stored data — remains an advisory warning the teacher decides on.
+
+The two live-data checks (`email_belongs_to_another_record`, `cross_section_email_conflict`) are **re-derived inside the commit transaction** and never inherited from the preview, in either direction: a stale finding cannot block an import, and a stale absence cannot let one through.
+
+### 7.5 Section-scoped import is not global identity authority
+
+`roster_email` is global; import authority is per-section. Without a boundary, a teacher entitled to import their own class list could type any student number, supply a different address, and move that student's access in a class they have no standing on.
+
+The rule:
+
+| The student is… | …and the imported email | Outcome |
+|---|---|---|
+| already enrolled in **this** section | differs from stored | **Allowed** — this is the ordinary "fix a typo" correction, audited as `roster.email_linked` |
+| enrolled only in **another** section | matches stored exactly | **Allowed** — adds the enrolment, identity untouched. One record, several sections: the reuse the model is built for |
+| enrolled only in **another** section | differs from stored (including a stored `NULL`) | **Refused.** Changing it here would change their access everywhere |
+| in **no** section at all | anything | **Allowed** — the record is nobody else's to protect |
+
+A refused row names the conflict without naming the other student, their section, or their address. Resolving it is an authorized identity correction by staff who actually hold that student, not a side effect of uploading a file.
+
+Deliberately **not** done: falling back to a name, or minting a second student record for the same student number. Either would trade a visible refusal for a silent wrong answer.
+
+### 7.6 A refused row is not an absent student
+
+Deactivation and import success are different questions, and conflating them is how a class quietly loses somebody.
+
+An enrolment is deactivated only when the uploaded file **does not mention that student number at all**. A row that was refused still proves the teacher listed that student, so it counts as present and that student stays exactly as they were — record untouched, enrolment untouched.
+
+Two consequences worth stating:
+
+- A file whose every row was refused imported nothing, so it tells us nothing reliable about who left: it deactivates **nobody**, even students it never mentions.
+- Preview and commit compute this from the **same helper**, so the deactivation list the teacher approves is the one that runs.
+
+### 7.4 Safety rules
+
+- **[Confirmed]** Do **not** silently overwrite existing enrollment data.
+- Re-import reconciles by **student number**: new rows create `StudentRecord`/`Enrollment`; matching rows update the name and email with a visible diff in preview; rows **absent** from the new list are **deactivated, not deleted** (data preserved). Whether deactivated students keep read access is [D10 — closed](open-decisions.md): they do, for their own history.
+- Deactivation is keyed on the rows actually **imported**. A file whose every row was refused deactivates nobody — treating "all rejected" as "an empty class list" would drop a whole section over a bad email column.
+- The canonical name updates freely and is audited. It is a label, never an identity key, so there is nothing to protect it from.
 
 ## 8. Audit **[Confirmed]**
 
-Audit-log every: account-to-student match, manual match correction, and the confirming actor — with before/after bindings, actor, and timestamp ([domain-model.md](domain-model.md#audit-events)).
+| Action | When |
+|---|---|
+| `roster.imported` | An import batch was committed, with its summary |
+| `roster.row_added` | A new student record was created from a class list |
+| `roster.row_rejected` | A row was refused, with machine-readable reasons |
+| `roster.row_deactivated` | An enrolment was deactivated because the student left the list |
+| `roster.email_linked` | A record's UP email was set or changed — **this is the access grant** |
+| `student_record.name_corrected` | Canonical name changed, with before/after |
+| `student_record.fields_updated` | CRS detail fields filled in |
+| `roster.preview_edited` | Staff corrected rows in the preview, by row key and count |
+| `student_number.revealed` | Full plaintext was produced for a staff member |
 
-## 9. Class-list import **[Confirmed — project-specs.md §6.1]**
+**Never in audit metadata:** full student numbers, and no personal data beyond what the event is *about*. A rejected row records its line, row key, and reasons — not the name or the address that failed. A linkage change records the addresses, because the addresses are the change.
 
-Teachers upload the official **CRS-style XLSX** class list. Pasted **CSV** remains supported as a
-fallback. Required fields: **student number** and a name.
+Historical `claim.*` and `match.*` rows are **kept**: the log is append-only. They render with a "(historical)" label ([src/lib/audit-labels.ts](../src/lib/audit-labels.ts)).
 
-### 9.0 Fields the importer stores
+## 9. Teacher experience
 
-Student number, family name, first name, lived/preferred name, preferred pronoun, program,
-enrollment status (both the verbatim spreadsheet value and a normalized status), and enlistment
-date.
+The **Class list** page (`/teach/sections/[id]/roster`, formerly "Account matches") shows the imported students behind `view_student_identities`: name, UP email, last four of the student number, dropped state, and whether an account has signed in with that address yet.
 
-**`Sex Assigned at Birth` is never persisted.** It is on an explicit column denylist and is not
-mapped into a row at all, so it cannot reach the database; the preview reports it among the ignored
-columns.
+It has **no approve, reject, confirm, correct, or unlink control**, because there is no decision to take. The only thing that changes the list is an import. "Signed in" is reporting, not gating: a rostered student who has never logged in already has their classes waiting.
 
-Student numbers are identifiers, not numbers. An `.xlsx` numeric cell has already lost any leading
-zero at the file level, so the importer prefers the cell's formatted text, and where it can only
-see a bare number it **flags the row for correction rather than zero-padding silently**.
+The list is paginated and searchable by name, email, or the visible last four.
 
-### 9.1 Import flow
+## 10. What was removed, and what happened to the data
 
-1. **File validation** — extension, size cap, ZIP signature, required columns present.
-2. **Column mapping** — CRS header synonyms are recognized; unmapped and denied columns are reported.
-3. **Course-metadata detection** — code, title, section, term, units, instructor, shown for confirmation.
-4. **Row validation** — malformed and duplicate student numbers (with the first line each was seen
-   on), unknown and non-enrolled statuses, missing required fields, and conflicts with existing
-   records are all flagged.
-5. **Editable preview before confirmation** — staff correct rows in place and see exactly what will
-   be created, enrolled, reactivated, renamed, or deactivated. Edited rows are re-validated as
-   untrusted input at commit time and re-resolved against live data inside the commit transaction.
-6. **Row-level errors** — per-row problems surfaced, never a whole-file failure.
-7. **Import summary** — counts of created/updated/skipped/errored/warned/edited.
-8. **Safe re-import** — re-importing an updated list must not corrupt existing data.
-9. **Audit logging** — an `ImportBatch` records the event, and preview edits are audited separately.
+Removed entirely — backend, UI, data model, navigation, seed data, and tests:
 
-### 9.2 Safety rules
+`/claim` · `rosterClaims` · `accountMatches` · `generateMatchCandidates` · name normalization and similarity scoring · teacher confirm/reject/correct/unlink of matches · claim throttling · the `ROSTER_CLAIM_*` configuration · "claim your place", "waiting for confirmation", "students asking to be linked", and "waiting for your decision" messaging · `claim.*` and `match.*` audit actions.
 
-- **[Confirmed]** Do **not** silently overwrite existing enrollment data.
-- **[Recommended]** Re-import reconciles by student number: new rows create `StudentRecord`/`Enrollment`; matching rows update names only with a visible diff in preview; rows **absent** from the new list are **deactivated, not deleted** (data preserved). Whether deactivated students keep read access is [Open D10](open-decisions.md).
-- **[Recommended]** Confirmed `AccountMatch`es survive re-import because they key on student number, not name.
+`/claim` survives as a redirect to the overview so a pilot bookmark is not a dead end.
 
-## 10. Decisions affecting matching
+**Migration behaviour** ([drizzle/0004](../drizzle/0004_email_identity_add.sql), [0005](../drizzle/0005_drop_account_matching.sql)):
 
-- **D2 — closed:** teacher-confirm-all is the default; auto-confirm ships behind a configuration flag.
-- **D10 — closed:** a dropped student's enrollment is deactivated and their own history stays readable.
-- [Open D9] Section join code / verification token as an extra factor.
-- **Deferred, needs the registrar's code list:** the exact CRS enrollment-status → normalized-status
-  mapping (`project-specs.md` §14). Until it is filled in, an unlisted code is normalized to
-  `unknown` and every such row is flagged for review — safe, but noisy.
+- A **confirmed** account match becomes the student record's `roster_email`. That student keeps their enrollments, submissions, private threads, history, and participation, and needs **no second login** — their next request resolves through the new column.
+- **Candidate, ambiguous, unmatched, rejected, and correction-pending** rows are **discarded**. They were proposals, never access, and there is no honest way to turn a name-similarity guess into an identity. Those students are rostered again the next time their teacher imports a class list carrying their UP email.
+- **Roster claims** are discarded on the same reasoning; the typed numbers in them were encrypted guesses that nothing downstream read.
+- **Student records are untouched**, so nothing any student wrote is lost on either path.
+- If two accounts differ only in case, the email-normalizing `UPDATE` **fails loudly** and the migration rolls back. Which of the two is the real person is a human decision.
+
+## 11. Decisions
+
+- **The rule in §0 — [Confirmed] 2026-08-07.** Supersedes D2 entirely.
+- **D2 — removed, not closed.** "Teacher-confirm-all vs auto-confirm" was a question about name matching. There is no name matching, so the question no longer exists.
+- **D9 — removed.** A section join code was proposed as a second factor *because* names were weak evidence. The email is supplied by the teacher from an authoritative list, so there is no weak first factor to shore up.
+- **D10 — closed:** a dropped student's enrolment is deactivated and their own history stays readable.
+- **Deferred, needs the registrar's code list:** the exact CRS enrollment-status → normalized-status mapping (`project-specs.md` §14). Until it is filled in, an unlisted code is normalized to `unknown` and every such row is flagged for review — safe, but noisy.
 
 See [open-decisions.md](open-decisions.md).
 
-## 11. Related documents
+## 12. Related documents
 
 [domain-model.md](domain-model.md) · [roles-and-permissions.md](roles-and-permissions.md) · [product-requirements.md](product-requirements.md) · [legacy-question-import.md](legacy-question-import.md) · [open-decisions.md](open-decisions.md)
