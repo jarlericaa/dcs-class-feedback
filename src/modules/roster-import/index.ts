@@ -1,16 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { parse } from "csv-parse/sync";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
-import { db } from "@/db";
-import {
-  accountMatches,
-  enrollments,
-  importBatches,
-  studentRecords,
-} from "@/db/schema";
+import { and, eq, ne, notInArray } from "drizzle-orm";
+import { db, type DbOrTx } from "@/db";
+import { enrollments, importBatches, studentRecords } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import { requireSectionStaff } from "@/modules/authz";
-import { normalizeName, tokenSetKey } from "@/modules/identity/normalize";
 import {
   normalizeStudentNumber,
   sealStudentNumber,
@@ -22,11 +16,13 @@ import {
   mapHeaders,
   normalizeCrsStatus,
   parseEnlistmentDate,
+  readRosterEmail,
   type RosterField,
 } from "./crs-columns";
 import {
   editedRosterRowsSchema,
   emptyCourseMeta,
+  isBlocking,
   type ParsedRoster,
   type RosterRow,
   type RowError,
@@ -42,18 +38,22 @@ export {
 } from "./crs-columns";
 
 /**
- * Class-list import (account-matching.md §9, project-specs.md §6.1).
+ * Class-list import (docs/student-identity.md, project-specs.md §6.1).
  *
  * Flow: parse (XLSX upload, or pasted CSV as a fallback) → editable preview
  * (create/enroll/reactivate/rename/deactivate + per-row warnings) → commit in a
  * transaction with an ImportBatch, audited.
  *
+ * The imported UP email IS the student's access: importing an address is what
+ * gives that person their classes, so an email that is missing, malformed, off
+ * an allowed domain, duplicated in the file, or already held by a different
+ * student record BLOCKS its row rather than being guessed at.
+ *
  * Never silently overwrites:
  * - enrollments.rosterName always records the imported name per section;
- * - canonical studentRecords.fullName updates ONLY while the record has no
- *   confirmed AccountMatch, and each change is audited with before/after;
  * - rows absent from a re-import DEACTIVATE the enrollment (never delete);
- * - confirmed matches key on the student number and survive re-import.
+ * - a record is keyed by student number, so re-importing the same person is
+ *   idempotent and their email link survives.
  *
  * Student numbers are sealed on write and looked up by keyed hash, so no code
  * path here holds a plaintext number longer than the call that supplied it.
@@ -99,6 +99,15 @@ export function parseRosterCsv(content: string): ParsedRoster {
         'Required columns not found. Expected a "student number" column and a name column in the header row.',
     };
   }
+  if (columns.email === undefined) {
+    return {
+      ...base,
+      ignoredColumns: ignored,
+      deniedColumns: denied,
+      fileError:
+        'No UP email column found. Add a column headed "UP Mail" (or "email"): the email is what gives each student access to their classes.',
+    };
+  }
 
   const at = (row: string[], field: RosterField): string | null => {
     const index = columns[field];
@@ -110,6 +119,7 @@ export function parseRosterCsv(content: string): ParsedRoster {
   const rows: RosterRow[] = [];
   const errors: RowError[] = [];
   const seen = new Map<string, number>();
+  const seenEmails = new Map<string, number>();
   for (let i = 1; i < records.length; i++) {
     const line = i + 1;
     const rec = records[i]!;
@@ -137,6 +147,9 @@ export function parseRosterCsv(content: string): ParsedRoster {
     if (isMalformedStudentNumber(studentNumber)) {
       warnings.push({ code: "malformed_student_number" });
     }
+    const emailRaw = at(rec, "email");
+    const emailResult = readRosterEmail(emailRaw, line, seenEmails);
+    warnings.push(...emailResult.warnings);
     const dupLine = seen.get(studentNumber.toUpperCase());
     if (dupLine !== undefined) {
       // Reported as a row error too, so the existing "duplicates are surfaced"
@@ -163,6 +176,8 @@ export function parseRosterCsv(content: string): ParsedRoster {
       rowKey: `r${line}`,
       studentNumber,
       numberWasNumericCell: false,
+      emailRaw,
+      email: emailResult.email,
       familyName,
       firstName,
       middleName,
@@ -201,9 +216,25 @@ export function applyPreviewEdits(
   const result = editedRosterRowsSchema.safeParse(edited);
   if (!result.success) return parsed;
   const byKey = new Map(result.data.map((row) => [row.rowKey, row]));
+  // Emails are re-checked from scratch across the whole edited file, so fixing
+  // one address cannot leave a stale duplicate flag on another row — or clear a
+  // real one.
+  const seenEmails = new Map<string, number>();
   const rows = parsed.rows.map((row) => {
     const patch = byKey.get(row.rowKey);
-    if (!patch) return row;
+    const emailRaw = patch ? (patch.email ?? null) : row.emailRaw;
+    const emailResult = readRosterEmail(emailRaw, row.line, seenEmails);
+    if (!patch) {
+      return {
+        ...row,
+        emailRaw,
+        email: emailResult.email,
+        warnings: [
+          ...row.warnings.filter((w) => !EMAIL_WARNINGS.includes(w.code)),
+          ...emailResult.warnings,
+        ],
+      };
+    }
     const studentNumber = patch.studentNumber.trim();
     const fullName = composeFullName({
       fullName: patch.fullName,
@@ -216,8 +247,10 @@ export function applyPreviewEdits(
       ? patch.crsStatus
       : normalizeCrsStatus(crsStatusRaw);
     const changed =
-      studentNumber !== row.studentNumber || fullName !== row.fullName;
-    const warnings: RowWarning[] = [];
+      studentNumber !== row.studentNumber ||
+      fullName !== row.fullName ||
+      emailResult.email !== row.email;
+    const warnings: RowWarning[] = [...emailResult.warnings];
     if (isMalformedStudentNumber(studentNumber)) {
       warnings.push({ code: "malformed_student_number" });
     }
@@ -229,6 +262,8 @@ export function applyPreviewEdits(
     return {
       ...row,
       studentNumber,
+      emailRaw,
+      email: emailResult.email,
       fullName,
       familyName: patch.familyName ?? null,
       firstName: patch.firstName ?? null,
@@ -262,6 +297,22 @@ export function applyPreviewEdits(
   return { ...parsed, rows };
 }
 
+/** Email findings are recomputed wholesale; anything else survives an edit. */
+const EMAIL_WARNINGS: readonly RowWarning["code"][] = [
+  "missing_email",
+  "invalid_email",
+  "disallowed_email_domain",
+  "duplicate_email",
+  "email_belongs_to_another_record",
+  "cross_section_email_conflict",
+];
+
+/** Findings that come from live data, so they are re-derived, never carried. */
+const LIVE_WARNINGS: readonly RowWarning["code"][] = [
+  "email_belongs_to_another_record",
+  "cross_section_email_conflict",
+];
+
 export type PlannedAction =
   | { kind: "create"; row: RosterRow }
   | { kind: "enroll_existing"; row: RosterRow; studentRecordId: string }
@@ -273,11 +324,17 @@ export type PlannedAction =
       currentName: string;
     }
   | {
-      /** name differs but record has a confirmed match — surfaced, NOT applied */
-      kind: "name_diff_locked";
+      /** the record's UP email is being set or changed — this IS the access grant */
+      kind: "link_email";
       row: RosterRow;
       studentRecordId: string;
-      currentName: string;
+      currentEmail: string | null;
+    }
+  | {
+      /** refused: the row carries a blocking warning and is not imported */
+      kind: "blocked";
+      row: RosterRow;
+      studentRecordId?: string;
     }
   | { kind: "unchanged"; row: RosterRow; studentRecordId: string };
 
@@ -294,17 +351,143 @@ export interface ImportPreview {
   ignoredColumns: string[];
   deniedColumns: string[];
   warningCount: number;
+  /** rows that will NOT be imported because of a blocking warning */
+  blockedCount: number;
   fileError?: string;
 }
 
-async function hasConfirmedMatch(studentRecordId: string): Promise<boolean> {
-  const match = await db.query.accountMatches.findFirst({
+/**
+ * Does another student record already hold this email?
+ *
+ * "Another" is the whole point: re-importing the SAME person with the SAME
+ * address is idempotent, so a record whose id matches is not a conflict.
+ */
+async function conflictingEmailOwner(
+  dbx: DbOrTx,
+  email: string,
+  ownRecordId: string | null,
+) {
+  if (!email) return null;
+  const owner = await dbx.query.studentRecords.findFirst({
+    where: eq(studentRecords.rosterEmail, email),
+  });
+  if (!owner || owner.id === ownRecordId) return null;
+  return owner;
+}
+
+/**
+ * Row checks that only live data can answer. Shared by preview and commit so
+ * the two can never disagree about whether a row is importable — commit calls
+ * it again inside its own transaction rather than trusting what preview found.
+ *
+ * Two distinct hazards, both about the fact that `roster_email` is GLOBAL while
+ * import authority is section-scoped:
+ *
+ * 1. the address is already another student's — two records can never share one;
+ * 2. the student number is already someone else's, that someone is in a section
+ *    this import does not cover, and the file carries a different address.
+ *    Applying it would silently move a student's access in a class this teacher
+ *    has no authority over, so the row is refused instead.
+ */
+async function liveRowWarnings(
+  dbx: DbOrTx,
+  sectionId: string,
+  row: RosterRow,
+  record: typeof studentRecords.$inferSelect | undefined,
+): Promise<RowWarning[]> {
+  const warnings: RowWarning[] = [];
+
+  const owner = await conflictingEmailOwner(dbx, row.email, record?.id ?? null);
+  if (owner) {
+    warnings.push({
+      code: "email_belongs_to_another_record",
+      existingLast4: owner.studentNumberLast4,
+    });
+  }
+
+  // No stored record yet → no existing identity to overwrite, so nothing here
+  // can be a cross-section problem.
+  if (!record) return warnings;
+  if (record.rosterEmail === row.email) return warnings;
+
+  // Staff who already hold this student in THIS section may correct their
+  // details, which is the ordinary "fix a typo in the class list" case.
+  const enrolledHere = await dbx.query.enrollments.findFirst({
     where: and(
-      eq(accountMatches.studentRecordId, studentRecordId),
-      eq(accountMatches.state, "confirmed"),
+      eq(enrollments.sectionId, sectionId),
+      eq(enrollments.studentRecordId, record.id),
     ),
   });
-  return !!match;
+  if (enrolledHere) return warnings;
+
+  // Not in this section, but in some other one: the address on file belongs to
+  // a class this importer has no standing on. Deny by default. A record with no
+  // enrolment anywhere is nobody else's, so adopting it is allowed.
+  const elsewhere = await dbx.query.enrollments.findFirst({
+    where: and(
+      eq(enrollments.studentRecordId, record.id),
+      ne(enrollments.sectionId, sectionId),
+    ),
+  });
+  if (elsewhere) warnings.push({ code: "cross_section_email_conflict" });
+  return warnings;
+}
+
+/**
+ * Every student number the uploaded file MENTIONS — presence, not success.
+ *
+ * This is the set the deactivation pass complements, and the distinction is the
+ * whole point: a row refused over its email still proves the teacher listed that
+ * student, so it must never count as absent. Keying deactivation on successfully
+ * imported rows instead would silently drop a student from the class because of
+ * a typo in one cell.
+ *
+ * A number too malformed to match any record contributes a hash that matches
+ * nothing, which is harmless — nothing is ever resolved by name.
+ */
+function presentStudentNumberHashes(parsed: ParsedRoster): string[] {
+  return [
+    ...new Set(parsed.rows.map((row) => studentNumberHash(row.studentNumber))),
+  ];
+}
+
+/**
+ * Active enrollments this import would deactivate: those whose student number
+ * the file does not mention at all (D10 — deactivate, never delete).
+ *
+ * `everyRowBlocked` is the safety valve. A file that imported nothing tells us
+ * nothing reliable about who left, so it removes nobody; without this, a class
+ * list uploaded with a broken email column would empty the section.
+ */
+async function enrollmentsToDeactivate(
+  dbx: DbOrTx,
+  sectionId: string,
+  parsed: ParsedRoster,
+  everyRowBlocked: boolean,
+) {
+  if (everyRowBlocked) return [];
+  const present = presentStudentNumberHashes(parsed);
+  return dbx
+    .select({
+      enrollmentId: enrollments.id,
+      studentRecordId: enrollments.studentRecordId,
+      studentNumberLast4: studentRecords.studentNumberLast4,
+      name: studentRecords.fullName,
+    })
+    .from(enrollments)
+    .innerJoin(
+      studentRecords,
+      eq(studentRecords.id, enrollments.studentRecordId),
+    )
+    .where(
+      and(
+        eq(enrollments.sectionId, sectionId),
+        eq(enrollments.status, "active"),
+        present.length > 0
+          ? notInArray(studentRecords.studentNumberHash, present)
+          : undefined,
+      ),
+    );
 }
 
 /** Compute the import plan without changing anything. Staff-only. */
@@ -322,6 +505,7 @@ export async function previewRosterImport(
     ignoredColumns: parsed.ignoredColumns,
     deniedColumns: parsed.deniedColumns,
     warningCount: 0,
+    blockedCount: 0,
   };
   if (parsed.fileError) return { ...shell, fileError: parsed.fileError };
 
@@ -330,6 +514,16 @@ export async function previewRosterImport(
     const record = await db.query.studentRecords.findFirst({
       where: eq(studentRecords.studentNumberHash, studentNumberHash(row.studentNumber)),
     });
+    // Conflicts only live data can see. Assigned rather than pushed so previewing
+    // the same parsed roster twice cannot accumulate duplicate warnings.
+    row.warnings = [
+      ...row.warnings.filter((w) => !LIVE_WARNINGS.includes(w.code)),
+      ...(await liveRowWarnings(db, sectionId, row, record)),
+    ];
+    if (row.warnings.some(isBlocking)) {
+      actions.push({ kind: "blocked", row, studentRecordId: record?.id });
+      continue;
+    }
     if (!record) {
       actions.push({ kind: "create", row });
       continue;
@@ -341,6 +535,7 @@ export async function previewRosterImport(
       ),
     });
     const nameChanged = record.fullName !== row.fullName;
+    const emailChanged = record.rosterEmail !== row.email;
     // Surface any stored field this file would change, so "conflicting existing
     // record" is visible in the preview rather than discovered afterwards.
     for (const [field, incoming, existing] of [
@@ -360,55 +555,47 @@ export async function previewRosterImport(
       actions.push({ kind: "enroll_existing", row, studentRecordId: record.id });
     } else if (enrollment.status === "deactivated") {
       actions.push({ kind: "reactivate", row, studentRecordId: record.id });
-    } else if (!nameChanged) {
+    } else if (!nameChanged && !emailChanged) {
       actions.push({ kind: "unchanged", row, studentRecordId: record.id });
     }
+    if (emailChanged) {
+      actions.push({
+        kind: "link_email",
+        row,
+        studentRecordId: record.id,
+        currentEmail: record.rosterEmail,
+      });
+    }
     if (nameChanged) {
-      if (await hasConfirmedMatch(record.id)) {
-        actions.push({
-          kind: "name_diff_locked",
-          row,
-          studentRecordId: record.id,
-          currentName: record.fullName,
-        });
-      } else {
-        actions.push({
-          kind: "update_name",
-          row,
-          studentRecordId: record.id,
-          currentName: record.fullName,
-        });
-      }
+      actions.push({
+        kind: "update_name",
+        row,
+        studentRecordId: record.id,
+        currentName: record.fullName,
+      });
     }
   }
 
-  const hashes = parsed.rows.map((r) => studentNumberHash(r.studentNumber));
-  const active = await db
-    .select({
-      studentRecordId: enrollments.studentRecordId,
-      studentNumberLast4: studentRecords.studentNumberLast4,
-      name: studentRecords.fullName,
-    })
-    .from(enrollments)
-    .innerJoin(
-      studentRecords,
-      eq(studentRecords.id, enrollments.studentRecordId),
-    )
-    .where(
-      and(
-        eq(enrollments.sectionId, sectionId),
-        eq(enrollments.status, "active"),
-        hashes.length > 0
-          ? notInArray(studentRecords.studentNumberHash, hashes)
-          : undefined,
-      ),
-    );
+  const blockedCount = actions.filter((a) => a.kind === "blocked").length;
+  // Exactly the computation commit performs, from the same helper, so what the
+  // preview promises about deactivation is what actually happens.
+  const active = await enrollmentsToDeactivate(
+    db,
+    sectionId,
+    parsed,
+    parsed.rows.length > 0 && blockedCount === parsed.rows.length,
+  );
 
   return {
     ...shell,
     actions,
-    toDeactivate: active,
+    toDeactivate: active.map(({ studentRecordId, studentNumberLast4, name }) => ({
+      studentRecordId,
+      studentNumberLast4,
+      name,
+    })),
     warningCount: parsed.rows.reduce((sum, r) => sum + r.warnings.length, 0),
+    blockedCount,
   };
 }
 
@@ -418,7 +605,10 @@ export interface ImportSummary {
   enrolled: number;
   reactivated: number;
   namesUpdated: number;
-  nameDiffsLocked: number;
+  /** records whose UP email was set or changed — i.e. access granted or moved */
+  emailsLinked: number;
+  /** rows refused because of a blocking email or duplicate problem */
+  blocked: number;
   fieldsUpdated: number;
   deactivated: number;
   unchanged: number;
@@ -462,7 +652,8 @@ export async function commitRosterImport(
       enrolled: 0,
       reactivated: 0,
       namesUpdated: 0,
-      nameDiffsLocked: 0,
+      emailsLinked: 0,
+      blocked: 0,
       fieldsUpdated: 0,
       deactivated: 0,
       unchanged: 0,
@@ -472,11 +663,49 @@ export async function commitRosterImport(
       errored: parsed.errors.length,
     };
 
+    let blockedRows = 0;
+
     for (const row of parsed.rows) {
       const hash = studentNumberHash(row.studentNumber);
       let record = await tx.query.studentRecords.findFirst({
         where: eq(studentRecords.studentNumberHash, hash),
       });
+
+      // Re-derived inside the transaction, never trusted from the preview: the
+      // email is the access key, so a row whose address is missing, malformed,
+      // off-domain, duplicated here, owned by a different student, or attached to
+      // a student this section has no authority over is refused rather than
+      // resolved on a guess.
+      // Live findings are DISCARDED and re-derived, never inherited: a warning
+      // left on the row by an earlier preview — possibly of a different section —
+      // must not decide this import in either direction.
+      const blocking = [
+        ...new Set(
+          [
+            ...row.warnings.filter((w) => !LIVE_WARNINGS.includes(w.code)),
+            ...(await liveRowWarnings(tx, sectionId, row, record)),
+          ]
+            .filter(isBlocking)
+            .map((w) => w.code),
+        ),
+      ];
+      if (blocking.length > 0) {
+        summary.blocked += 1;
+        blockedRows += 1;
+        await writeAudit(tx, {
+          actorUserId,
+          action: "roster.row_rejected",
+          entityType: "import_batch",
+          entityId: batchId,
+          // Row position and machine-readable reasons only: no student number,
+          // no name, no address.
+          metadata: { rowKey: row.rowKey, line: row.line, reasons: blocking },
+          sectionId,
+        });
+        // Deliberately NOT recorded as absent: see enrollmentsToDeactivate.
+        continue;
+      }
+
       if (!record) {
         // The row id must exist before sealing: it is the ciphertext's AAD, which
         // is what stops a ciphertext being moved onto another student's row.
@@ -491,8 +720,7 @@ export async function commitRosterImport(
             studentNumberLast4: sealed.last4,
             encKeyVersion: sealed.encKeyVersion,
             fullName: row.fullName,
-            normalizedFullName: normalizeName(row.fullName),
-            normalizedTokens: tokenSetKey(row.fullName),
+            rosterEmail: row.email,
             familyName: row.familyName,
             firstName: row.firstName,
             livedName: row.livedName,
@@ -502,39 +730,64 @@ export async function commitRosterImport(
           })
           .returning();
         summary.created += 1;
+        summary.emailsLinked += 1;
+        await writeAudit(tx, {
+          actorUserId,
+          action: "roster.row_added",
+          entityType: "student_record",
+          entityId: id,
+          after: { fullName: row.fullName, rosterEmail: row.email },
+          metadata: { importBatchId: batchId, last4: sealed.last4 },
+          sectionId,
+        });
+        // The linkage is its own event: it is what grants access, and it must be
+        // findable without reading every import.
+        await writeAudit(tx, {
+          actorUserId,
+          action: "roster.email_linked",
+          entityType: "student_record",
+          entityId: id,
+          before: { rosterEmail: null },
+          after: { rosterEmail: row.email },
+          metadata: { importBatchId: batchId },
+          sectionId,
+        });
       } else {
-        if (record.fullName !== row.fullName) {
-          const confirmed = await tx.query.accountMatches.findFirst({
-            where: and(
-              eq(accountMatches.studentRecordId, record.id),
-              eq(accountMatches.state, "confirmed"),
-            ),
+        if (record.rosterEmail !== row.email) {
+          await tx
+            .update(studentRecords)
+            .set({ rosterEmail: row.email, updatedAt: new Date() })
+            .where(eq(studentRecords.id, record.id));
+          await writeAudit(tx, {
+            actorUserId,
+            action: "roster.email_linked",
+            entityType: "student_record",
+            entityId: record.id,
+            before: { rosterEmail: record.rosterEmail },
+            after: { rosterEmail: row.email },
+            metadata: { importBatchId: batchId },
+            sectionId,
           });
-          if (confirmed) {
-            // Never silently change the canonical name of a verified identity.
-            summary.nameDiffsLocked += 1;
-          } else {
-            await tx
-              .update(studentRecords)
-              .set({
-                fullName: row.fullName,
-                normalizedFullName: normalizeName(row.fullName),
-                normalizedTokens: tokenSetKey(row.fullName),
-                updatedAt: new Date(),
-              })
-              .where(eq(studentRecords.id, record.id));
-            await writeAudit(tx, {
-              actorUserId,
-              action: "student_record.name_corrected",
-              entityType: "student_record",
-              entityId: record.id,
-              before: { fullName: record.fullName },
-              after: { fullName: row.fullName },
-              metadata: { importBatchId: batchId },
-              sectionId,
-            });
-            summary.namesUpdated += 1;
-          }
+          summary.emailsLinked += 1;
+        }
+        if (record.fullName !== row.fullName) {
+          // The name is a label, never an identity key, so a corrected spelling
+          // is applied — and audited with what it used to be.
+          await tx
+            .update(studentRecords)
+            .set({ fullName: row.fullName, updatedAt: new Date() })
+            .where(eq(studentRecords.id, record.id));
+          await writeAudit(tx, {
+            actorUserId,
+            action: "student_record.name_corrected",
+            entityType: "student_record",
+            entityId: record.id,
+            before: { fullName: record.fullName },
+            after: { fullName: row.fullName },
+            metadata: { importBatchId: batchId },
+            sectionId,
+          });
+          summary.namesUpdated += 1;
         }
         // Fill in CRS detail fields, but never blank an existing value with an
         // empty cell from a thinner export.
@@ -609,29 +862,32 @@ export async function commitRosterImport(
       }
     }
 
-    // Absent from the new list → deactivate (data preserved; D10).
-    const hashes = parsed.rows.map((r) => studentNumberHash(r.studentNumber));
-    const absent = await tx
-      .select({ enrollmentId: enrollments.id })
-      .from(enrollments)
-      .innerJoin(
-        studentRecords,
-        eq(studentRecords.id, enrollments.studentRecordId),
-      )
-      .where(
-        and(
-          eq(enrollments.sectionId, sectionId),
-          eq(enrollments.status, "active"),
-          hashes.length > 0
-            ? notInArray(studentRecords.studentNumberHash, hashes)
-            : undefined,
-        ),
-      );
+    // Absent from the new list → deactivate (data preserved; D10). Keyed on the
+    // student numbers the file MENTIONS, not on the rows that imported cleanly:
+    // a student whose row was refused is still on the class list the teacher
+    // uploaded, and dropping them over a bad email cell would be silent and
+    // wrong. Same helper the preview used, so the two agree by construction.
+    const absent = await enrollmentsToDeactivate(
+      tx,
+      sectionId,
+      parsed,
+      parsed.rows.length > 0 && blockedRows === parsed.rows.length,
+    );
     for (const a of absent) {
       await tx
         .update(enrollments)
         .set({ status: "deactivated", updatedAt: new Date() })
         .where(eq(enrollments.id, a.enrollmentId));
+      await writeAudit(tx, {
+        actorUserId,
+        action: "roster.row_deactivated",
+        entityType: "enrollment",
+        entityId: a.enrollmentId,
+        before: { status: "active" },
+        after: { status: "deactivated" },
+        metadata: { importBatchId: batchId, studentRecordId: a.studentRecordId },
+        sectionId,
+      });
       summary.deactivated += 1;
     }
 
@@ -665,24 +921,4 @@ export async function commitRosterImport(
 
     return summary;
   });
-}
-
-/** Lookup helper shared by the claim flow and any other by-number read. */
-export async function findStudentRecordByNumber(rawStudentNumber: string) {
-  const hash = studentNumberHash(rawStudentNumber);
-  return (
-    (await db.query.studentRecords.findFirst({
-      where: eq(studentRecords.studentNumberHash, hash),
-    })) ?? null
-  );
-}
-
-/** Batch variant, keyed by lookup hash. */
-export async function findStudentRecordsByNumbers(rawNumbers: string[]) {
-  if (rawNumbers.length === 0) return new Map<string, typeof studentRecords.$inferSelect>();
-  const hashes = rawNumbers.map(studentNumberHash);
-  const rows = await db.query.studentRecords.findMany({
-    where: inArray(studentRecords.studentNumberHash, hashes),
-  });
-  return new Map(rows.map((r) => [r.studentNumberHash!, r]));
 }

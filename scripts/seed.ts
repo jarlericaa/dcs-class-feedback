@@ -111,21 +111,25 @@ async function main() {
     where: eq(enrollments.sectionId, section!.id),
   });
   if (!hasRoster) {
+    // The UP email is the access key: importing this list is the whole grant.
+    // student@up.edu.ph is deliberately Juan's address, so the dev-login student
+    // lands in this section immediately with no claiming step.
     await commitRosterImport(
       teacher.id,
       section!.id,
       parseRosterCsv(
         [
-          "student number,full name",
-          "2026-0001,Juan Dela Cruz",
-          "2026-0002,Maria Clara Santos",
-          "2026-0003,Jose Rizal Mercado",
+          "student number,full name,up mail",
+          "2026-0001,Juan Dela Cruz,student@up.edu.ph",
+          "2026-0002,Maria Clara Santos,maria.santos@up.edu.ph",
+          "2026-0003,Jose Rizal Mercado,jose.mercado@up.edu.ph",
         ].join("\n"),
       ),
       "seed roster",
     );
   }
-  // Demo student Google-less account for dev-login (matches Juan Dela Cruz).
+  // Demo student account for dev-login. Nothing links it to Juan Dela Cruz
+  // beyond the email being on the class list above — which is the point.
   await upsertUser({ email: "student@up.edu.ph", displayName: "Juan Dela Cruz" });
 
   // --- weekly form template + recurrence schedule + cycles ---
@@ -207,7 +211,7 @@ async function main() {
     admin: admin.email,
     teacher: teacher.email,
     ta: ta.email,
-    student: "student@up.edu.ph (dev-login as Juan Dela Cruz, pending teacher confirmation)",
+    student: "student@up.edu.ph (Juan Dela Cruz, 2026-0001 — rostered, no claim step)",
     course: course!.code,
     section: section!.title,
     scheduler: result,

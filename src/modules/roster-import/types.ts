@@ -12,7 +12,14 @@ export type RowWarning =
   | { code: "unknown_status"; raw: string }
   | { code: "not_enrolled_status"; raw: string }
   | { code: "missing_required"; field: string }
-  | { code: "conflicting_existing_record"; field: string; existing: string };
+  | { code: "conflicting_existing_record"; field: string; existing: string }
+  // --- email identity (docs/student-identity.md) ---
+  | { code: "missing_email" }
+  | { code: "invalid_email" }
+  | { code: "disallowed_email_domain"; domain: string }
+  | { code: "duplicate_email"; firstSeenLine: number }
+  | { code: "email_belongs_to_another_record"; existingLast4: string | null }
+  | { code: "cross_section_email_conflict" };
 
 export const WARNING_LABELS: Record<RowWarning["code"], string> = {
   numeric_student_number:
@@ -26,7 +33,36 @@ export const WARNING_LABELS: Record<RowWarning["code"], string> = {
   missing_required: "A required field is empty.",
   conflicting_existing_record:
     "This differs from what is already stored for this student.",
+  missing_email:
+    "No UP email. Without one this student cannot be given access, so the row is not imported.",
+  invalid_email: "This does not look like an email address.",
+  disallowed_email_domain:
+    "This email is not on an allowed university domain, so it can never sign in.",
+  duplicate_email: "This email appears more than once in the file.",
+  email_belongs_to_another_record:
+    "Another student record already uses this email. Two students can never share one.",
+  cross_section_email_conflict:
+    "This student number already belongs to a student in another class, with a different UP email on file. Changing it here would change their access everywhere, so this row is not imported. Import them with their existing UP email, or ask an administrator to correct their identity.",
 };
+
+/**
+ * Warnings that STOP a row being imported. Everything else is advisory and the
+ * teacher decides. Anything touching the email is blocking, because the email is
+ * the access key: guessing at it would hand one student another's classes.
+ */
+export const BLOCKING_WARNINGS: readonly RowWarning["code"][] = [
+  "missing_email",
+  "invalid_email",
+  "disallowed_email_domain",
+  "duplicate_email",
+  "email_belongs_to_another_record",
+  "cross_section_email_conflict",
+  "duplicate_student_number",
+];
+
+export function isBlocking(warning: RowWarning): boolean {
+  return BLOCKING_WARNINGS.includes(warning.code);
+}
 
 export interface RosterRow {
   line: number;
@@ -39,6 +75,10 @@ export interface RosterRow {
    * an identifier.
    */
   numberWasNumericCell: boolean;
+  /** Exactly as the file spelled it, so the preview shows what was uploaded. */
+  emailRaw: string | null;
+  /** Trimmed + lowercased. Empty when the cell was blank or unusable. */
+  email: string;
   familyName: string | null;
   firstName: string | null;
   middleName: string | null;
@@ -100,6 +140,7 @@ export const editedRosterRowSchema = z.object({
   line: z.number().int().min(0),
   rowKey: z.string().min(1).max(80),
   studentNumber: z.string().min(1).max(64),
+  email: z.string().max(254).nullish(),
   familyName: z.string().max(200).nullish(),
   firstName: z.string().max(200).nullish(),
   middleName: z.string().max(200).nullish(),

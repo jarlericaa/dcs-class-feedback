@@ -5,6 +5,7 @@ import {
   mapHeaders,
   normalizeCrsStatus,
   parseEnlistmentDate,
+  readRosterEmail,
   type RosterField,
 } from "./crs-columns";
 import {
@@ -216,6 +217,16 @@ export async function parseRosterXlsx(
         'No name column found. The sheet needs either a "Name" column or "Family Name" and "First Name" columns.',
     };
   }
+  if (columns.email === undefined) {
+    return {
+      ...base,
+      courseMeta,
+      ignoredColumns: ignored,
+      deniedColumns: denied,
+      fileError:
+        'No UP email column found. Add a column headed "UP Mail" (or "email"): the email is what gives each student access to their classes.',
+    };
+  }
 
   const at = (row: string[], field: RosterField): string | null => {
     const index = columns[field];
@@ -227,6 +238,7 @@ export async function parseRosterXlsx(
   const rows: RosterRow[] = [];
   const errors: RowError[] = [];
   const seen = new Map<string, number>();
+  const seenEmails = new Map<string, number>();
 
   for (let r = headerRowIndex + 1; r < grid.length; r++) {
     const textRow = grid[r] ?? [];
@@ -270,6 +282,9 @@ export async function parseRosterXlsx(
     } else {
       seen.set(studentNumber.toUpperCase(), line);
     }
+    const emailRaw = at(textRow, "email");
+    const emailResult = readRosterEmail(emailRaw, line, seenEmails);
+    warnings.push(...emailResult.warnings);
 
     const crsStatusRaw = at(textRow, "enrollmentStatus");
     const crsStatus = normalizeCrsStatus(crsStatusRaw);
@@ -294,6 +309,8 @@ export async function parseRosterXlsx(
       rowKey: `r${line}`,
       studentNumber,
       numberWasNumericCell: wasNumeric,
+      emailRaw,
+      email: emailResult.email,
       familyName,
       firstName,
       middleName,

@@ -1,7 +1,12 @@
+import { checkRosterEmail } from "@/modules/identity/email";
+import { emailDomain } from "@/modules/identity/email";
+import type { RowWarning } from "./types";
+
 /**
  * CRS class-list column recognition (project-specs.md §6.1).
  *
- * Pure data + pure functions: no I/O, no database, so the whole mapping is unit
+ * Pure functions and configuration only: no I/O, no database, so the whole
+ * mapping — including the email rules that decide who gets access — is unit
  * testable without a spreadsheet.
  */
 
@@ -24,6 +29,7 @@ export const DENIED_HEADERS = [
 
 export type RosterField =
   | "studentNumber"
+  | "email"
   | "fullName"
   | "familyName"
   | "firstName"
@@ -45,6 +51,21 @@ export const FIELD_HEADERS: Record<RosterField, string[]> = {
     "studentno",
     "student id",
     "number",
+  ],
+  // Listed before the name fields so a "UP Mail" column is never mistaken for
+  // one — matching is exact, but the intent should be obvious when reading it.
+  email: [
+    "email",
+    "e-mail",
+    "email address",
+    "upmail",
+    "up mail",
+    "up email",
+    "up_mail",
+    "university email",
+    "school email",
+    "student email",
+    "institutional email",
   ],
   fullName: ["full name", "full_name", "fullname", "name", "student name"],
   familyName: [
@@ -224,6 +245,48 @@ export function isMalformedStudentNumber(raw: string): boolean {
   if (/e\+?\d+$/i.test(value)) return true;
   if (/^\d+\.\d+$/.test(value)) return true;
   return false;
+}
+
+/**
+ * Validate one row's email against the file it came from.
+ *
+ * Shared by the CSV and XLSX parsers so both paths enforce the identical rule —
+ * format, allowed domain, and no duplicate inside one upload. `seen` maps a
+ * normalized address to the line that first used it and is mutated as rows are
+ * read, which is what makes the SECOND occurrence the flagged one.
+ */
+export function readRosterEmail(
+  raw: string | null,
+  line: number,
+  seen: Map<string, number>,
+): { email: string; warnings: RowWarning[] } {
+  const checked = checkRosterEmail(raw);
+  if (!checked.ok) {
+    if (checked.problem === "missing") {
+      return { email: "", warnings: [{ code: "missing_email" }] };
+    }
+    if (checked.problem === "disallowed_domain") {
+      return {
+        email: "",
+        warnings: [
+          {
+            code: "disallowed_email_domain",
+            domain: emailDomain((raw ?? "").trim().toLowerCase()),
+          },
+        ],
+      };
+    }
+    return { email: "", warnings: [{ code: "invalid_email" }] };
+  }
+  const firstSeenLine = seen.get(checked.email);
+  if (firstSeenLine !== undefined) {
+    return {
+      email: checked.email,
+      warnings: [{ code: "duplicate_email", firstSeenLine }],
+    };
+  }
+  seen.set(checked.email, line);
+  return { email: checked.email, warnings: [] };
 }
 
 /** Excel serial date or an ISO-ish string → ISO date, or null. */

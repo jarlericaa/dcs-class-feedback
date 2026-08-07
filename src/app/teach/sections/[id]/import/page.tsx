@@ -108,10 +108,14 @@ export default async function ImportPage({
         return { status: "preview", csv, fileError: preview.fileError };
       }
 
-      // One preview row per parsed row, carrying the planned action.
+      // One preview row per parsed row, carrying the planned action. `blocked`
+      // wins over every other plan for a row: it is what actually happens.
       const planByKey = new Map(
         preview.actions
           .filter((a) => a.kind !== "unchanged")
+          .sort((a, b) =>
+            a.kind === "blocked" ? 1 : b.kind === "blocked" ? -1 : 0,
+          )
           .map((a) => [a.row.rowKey, a]),
       );
       const rows: PreviewRow[] = parsed.rows.map((row) => {
@@ -120,6 +124,9 @@ export default async function ImportPage({
           rowKey: row.rowKey,
           line: row.line,
           studentNumber: row.studentNumber,
+          // What the file said, so a teacher fixes what they can see. The
+          // normalized form is derived on commit, never round-tripped.
+          email: row.emailRaw ?? row.email,
           fullName: row.fullName,
           familyName: row.familyName,
           firstName: row.firstName,
@@ -133,20 +140,30 @@ export default async function ImportPage({
           warnings: row.warnings.map((warning) => ({
             code: warning.code,
             detail:
-              warning.code === "duplicate_student_number"
+              warning.code === "duplicate_student_number" ||
+              warning.code === "duplicate_email"
                 ? `first seen on line ${warning.firstSeenLine}`
                 : warning.code === "unknown_status" ||
                     warning.code === "not_enrolled_status"
                   ? warning.raw
                   : warning.code === "conflicting_existing_record"
                     ? `${warning.field}: stored “${warning.existing}”`
-                    : undefined,
+                    : warning.code === "disallowed_email_domain"
+                      ? warning.domain
+                      : warning.code === "email_belongs_to_another_record"
+                        ? // The tail of the OTHER student's number, never their
+                          // name or email: enough to find the clash in the file,
+                          // not enough to learn who they are.
+                          warning.existingLast4
+                          ? `student number ending ${warning.existingLast4}`
+                          : undefined
+                        : undefined,
           })),
           plan: action?.kind ?? "unchanged",
           currentName:
-            action?.kind === "update_name" || action?.kind === "name_diff_locked"
-              ? action.currentName
-              : undefined,
+            action?.kind === "update_name" ? action.currentName : undefined,
+          currentEmail:
+            action?.kind === "link_email" ? action.currentEmail : undefined,
         };
       });
 
@@ -193,10 +210,11 @@ export default async function ImportPage({
         />
       }
       title="Import the class list"
+      description="The UP email on each row is what gives that student their class. Importing it is the whole grant — nothing else has to be confirmed."
     >
-      {/* The "How matching works" alert that used to lead this page repeated
-          the account matches page. The reader is here to upload a file; the
-          field's own helper text carries what is never imported. */}
+      {/* No "how matching works" explainer: there is no matching. The reader is
+          here to upload a file; the field's own helper text carries what the
+          file needs and what is never imported. */}
       <RosterImport action={run} />
     </AppShell>
   );

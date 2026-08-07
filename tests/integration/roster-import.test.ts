@@ -3,20 +3,18 @@ import { and, eq } from "drizzle-orm";
 import { studentNumberHash } from "@/modules/crypto/student-number";
 import { db, truncateAll } from "./helpers";
 import { makeCourse, makeSection, makeUser } from "./fixtures";
-import { accountMatches, enrollments, studentRecords } from "@/db/schema";
+import { auditEvents, enrollments, studentRecords } from "@/db/schema";
 import {
   commitRosterImport,
   parseRosterCsv,
   previewRosterImport,
 } from "@/modules/roster-import";
-import {
-  generateMatchCandidates,
-  confirmMatch,
-} from "@/modules/identity/matching";
 import { AuthzError } from "@/modules/authz";
 
 const CSV_V1 =
-  "student number,full name\n2026-001,Juan Dela Cruz\n2026-002,Maria Santos\n";
+  "student number,full name,up mail\n" +
+  "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+  "2026-002,Maria Santos,maria.santos@up.edu.ph\n";
 
 describe("roster CSV import", () => {
   beforeEach(async () => {
@@ -69,7 +67,7 @@ describe("roster CSV import", () => {
     );
 
     const v2 = parseRosterCsv(
-      "student number,full name\n2026-001,Juan Dela Cruz\n",
+      "student number,full name,up mail\n2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n",
     );
     const summary2 = await commitRosterImport(teacher.id, section.id, v2, "v2");
     expect(summary2.deactivated).toBe(1);
@@ -79,6 +77,11 @@ describe("roster CSV import", () => {
     });
     expect(all).toHaveLength(2); // nothing deleted
     expect(all.filter((e) => e.status === "deactivated")).toHaveLength(1);
+    // Removing someone from the class list is audited.
+    const dropped = await db.query.auditEvents.findFirst({
+      where: eq(auditEvents.action, "roster.row_deactivated"),
+    });
+    expect(dropped).toBeTruthy();
 
     const summary3 = await commitRosterImport(
       teacher.id,
@@ -89,7 +92,12 @@ describe("roster CSV import", () => {
     expect(summary3.reactivated).toBe(1);
   });
 
-  it("canonical name updates only while unmatched, and is audited", async () => {
+  /**
+   * The name is a label, not an identity key: a corrected spelling is simply
+   * applied. The old "locked once a match was confirmed" rule is gone with the
+   * matching workflow it protected.
+   */
+  it("canonical name updates freely and is audited", async () => {
     const { teacher, section } = await setup();
     await commitRosterImport(
       teacher.id,
@@ -98,9 +106,10 @@ describe("roster CSV import", () => {
       "v1",
     );
 
-    // Typo fix while NO confirmed match exists → canonical name updates.
     const fix = parseRosterCsv(
-      "student number,full name\n2026-001,Juan De La Cruz\n2026-002,Maria Santos\n",
+      "student number,full name,up mail\n" +
+        "2026-001,Juan De La Cruz,juan.delacruz@up.edu.ph\n" +
+        "2026-002,Maria Santos,maria.santos@up.edu.ph\n",
     );
     const s2 = await commitRosterImport(teacher.id, section.id, fix, "v2");
     expect(s2.namesUpdated).toBe(1);
@@ -108,44 +117,16 @@ describe("roster CSV import", () => {
       where: eq(studentRecords.studentNumberHash, studentNumberHash("2026-001")),
     }))!;
     expect(rec.fullName).toBe("Juan De La Cruz");
+    // The email — the thing that actually grants access — did not move.
+    expect(rec.rosterEmail).toBe("juan.delacruz@up.edu.ph");
 
-    // Confirm a match for 2026-001, then try renaming again → locked.
-    const student = await makeUser({ displayName: "Juan De La Cruz" });
-    await generateMatchCandidates(student.id);
-    const row = (await db.query.accountMatches.findFirst({
-      where: and(
-        eq(accountMatches.userId, student.id),
-        eq(accountMatches.state, "candidate"),
-      ),
-    }))!;
-    await confirmMatch(teacher.id, row.id);
-
-    const rename = parseRosterCsv(
-      "student number,full name\n2026-001,Different Person\n2026-002,Maria Santos\n",
-    );
-    const preview = await previewRosterImport(teacher.id, section.id, rename);
-    expect(preview.actions.some((a) => a.kind === "name_diff_locked")).toBe(
-      true,
-    );
-
-    const s3 = await commitRosterImport(teacher.id, section.id, rename, "v3");
-    expect(s3.nameDiffsLocked).toBe(1);
-    expect(s3.namesUpdated).toBe(0);
-    const recAfter = (await db.query.studentRecords.findFirst({
-      where: eq(studentRecords.studentNumberHash, studentNumberHash("2026-001")),
-    }))!;
-    expect(recAfter.fullName).toBe("Juan De La Cruz"); // unchanged
-    // rosterName snapshot still records what the file said
-    const enr = await db.query.enrollments.findFirst({
-      where: and(
-        eq(enrollments.sectionId, section.id),
-        eq(enrollments.studentRecordId, recAfter.id),
-      ),
+    const audit = await db.query.auditEvents.findFirst({
+      where: eq(auditEvents.action, "student_record.name_corrected"),
     });
-    expect(enr!.rosterName).toBe("Different Person");
+    expect(audit).toBeTruthy();
   });
 
-  it("confirmed matches survive re-import (keyed on student number)", async () => {
+  it("re-importing the same list is idempotent: no new records, no relinking", async () => {
     const { teacher, section } = await setup();
     await commitRosterImport(
       teacher.id,
@@ -153,27 +134,21 @@ describe("roster CSV import", () => {
       parseRosterCsv(CSV_V1),
       "v1",
     );
-    const student = await makeUser({ displayName: "Maria Santos" });
-    await generateMatchCandidates(student.id);
-    const row = (await db.query.accountMatches.findFirst({
-      where: eq(accountMatches.userId, student.id),
-    }))!;
-    await confirmMatch(teacher.id, row.id);
-
-    await commitRosterImport(
+    const s2 = await commitRosterImport(
       teacher.id,
       section.id,
       parseRosterCsv(CSV_V1),
       "v2",
     );
-
-    const still = await db.query.accountMatches.findFirst({
-      where: and(
-        eq(accountMatches.userId, student.id),
-        eq(accountMatches.state, "confirmed"),
-      ),
+    expect(s2).toMatchObject({
+      created: 0,
+      enrolled: 0,
+      emailsLinked: 0,
+      namesUpdated: 0,
+      blocked: 0,
+      deactivated: 0,
     });
-    expect(still).toBeTruthy();
+    expect(await db.query.studentRecords.findMany()).toHaveLength(2);
   });
 
   it("preview shows the plan without changing anything", async () => {
@@ -186,5 +161,568 @@ describe("roster CSV import", () => {
     expect(preview.actions.filter((a) => a.kind === "create")).toHaveLength(2);
     const count = await db.query.studentRecords.findMany();
     expect(count).toHaveLength(0);
+  });
+});
+
+describe("roster import: the email is the access key", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  async function setup() {
+    const teacher = await makeUser({ isTeacher: true });
+    const course = await makeCourse(teacher.id);
+    const section = await makeSection(course.id);
+    return { teacher, course, section };
+  }
+
+  it("refuses a file with no email column at all", async () => {
+    const parsed = parseRosterCsv(
+      "student number,full name\n2026-001,Juan Dela Cruz\n",
+    );
+    expect(parsed.fileError).toMatch(/UP email column/i);
+  });
+
+  it("normalizes case and surrounding whitespace before storing", async () => {
+    const { teacher, section } = await setup();
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(
+        'student number,full name,up mail\n2026-001,Juan Dela Cruz,"  Juan.DelaCruz@UP.edu.PH  "\n',
+      ),
+      "v1",
+    );
+    const rec = (await db.query.studentRecords.findFirst())!;
+    expect(rec.rosterEmail).toBe("juan.delacruz@up.edu.ph");
+  });
+
+  it("rejects two rows sharing one email, keeping the first", async () => {
+    const { teacher, section } = await setup();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,shared@up.edu.ph\n" +
+        "2026-002,Maria Santos,SHARED@up.edu.ph\n",
+    );
+    expect(
+      parsed.rows[1]!.warnings.some((w) => w.code === "duplicate_email"),
+    ).toBe(true);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v1");
+    expect(summary.blocked).toBe(1);
+    expect(summary.created).toBe(1);
+    const records = await db.query.studentRecords.findMany();
+    expect(records).toHaveLength(1);
+    expect(records[0]!.rosterEmail).toBe("shared@up.edu.ph");
+    const rejected = await db.query.auditEvents.findFirst({
+      where: eq(auditEvents.action, "roster.row_rejected"),
+    });
+    expect(rejected).toBeTruthy();
+    // The rejection reason is recorded without the address or the name.
+    expect(JSON.stringify(rejected!.metadata)).not.toContain("shared@");
+    expect(JSON.stringify(rejected!.metadata)).not.toContain("Maria");
+  });
+
+  it("rejects a missing email, a malformed one, and a disallowed domain", async () => {
+    const { teacher, section } = await setup();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,No Email,\n" +
+        "2026-002,Bad Shape,not-an-email\n" +
+        "2026-003,Wrong Domain,someone@gmail.com\n" +
+        "2026-004,Fine,fine@up.edu.ph\n",
+    );
+    const codes = parsed.rows.map((r) => r.warnings.map((w) => w.code));
+    expect(codes[0]).toContain("missing_email");
+    expect(codes[1]).toContain("invalid_email");
+    expect(codes[2]).toContain("disallowed_email_domain");
+    expect(codes[3]).toEqual([]);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v1");
+    expect(summary.blocked).toBe(3);
+    expect(summary.created).toBe(1);
+  });
+
+  it("refuses to move an email that already belongs to another student record", async () => {
+    const { teacher, section } = await setup();
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v1",
+    );
+
+    // A different student number claiming Juan's address.
+    const clash = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        "2026-002,Maria Santos,maria.santos@up.edu.ph\n" +
+        "2026-999,Impostor,juan.delacruz@up.edu.ph\n",
+    );
+    const preview = await previewRosterImport(teacher.id, section.id, clash);
+    expect(preview.actions.some((a) => a.kind === "blocked")).toBe(true);
+
+    const summary = await commitRosterImport(teacher.id, section.id, clash, "v2");
+    expect(summary.blocked).toBe(1);
+    const juan = (await db.query.studentRecords.findFirst({
+      where: eq(studentRecords.studentNumberHash, studentNumberHash("2026-001")),
+    }))!;
+    expect(juan.rosterEmail).toBe("juan.delacruz@up.edu.ph");
+    const impostor = await db.query.studentRecords.findFirst({
+      where: eq(studentRecords.studentNumberHash, studentNumberHash("2026-999")),
+    });
+    expect(impostor).toBeUndefined();
+  });
+
+  it("a file whose every row is rejected deactivates nobody", async () => {
+    const { teacher, section } = await setup();
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v1",
+    );
+    const broken = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,oops\n" +
+        "2026-002,Maria Santos,\n",
+    );
+    const summary = await commitRosterImport(teacher.id, section.id, broken, "v2");
+    expect(summary.blocked).toBe(2);
+    expect(summary.deactivated).toBe(0);
+    const active = await db.query.enrollments.findMany({
+      where: and(
+        eq(enrollments.sectionId, section.id),
+        eq(enrollments.status, "active"),
+      ),
+    });
+    expect(active).toHaveLength(2);
+  });
+
+  it("changing a student's email is audited as a linkage change", async () => {
+    const { teacher, section } = await setup();
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v1",
+    );
+    const moved = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,jdelacruz@up.edu.ph\n" +
+        "2026-002,Maria Santos,maria.santos@up.edu.ph\n",
+    );
+    const summary = await commitRosterImport(teacher.id, section.id, moved, "v2");
+    expect(summary.emailsLinked).toBe(1);
+
+    const events = await db.query.auditEvents.findMany({
+      where: eq(auditEvents.action, "roster.email_linked"),
+    });
+    const change = events.find(
+      (e) => (e.before as { rosterEmail?: string })?.rosterEmail,
+    )!;
+    expect(change.before).toMatchObject({
+      rosterEmail: "juan.delacruz@up.edu.ph",
+    });
+    expect(change.after).toMatchObject({ rosterEmail: "jdelacruz@up.edu.ph" });
+  });
+});
+
+/**
+ * Blocking a row must never be mistaken for the student having left the class.
+ *
+ * The two sets are different questions: "did this row import?" and "is this
+ * student on the uploaded list?". Deactivation answers only the second, so a
+ * typo in one email cell can never silently drop somebody from a section.
+ */
+describe("a blocked row is present, not absent", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  async function setupWithBoth() {
+    const teacher = await makeUser({ isTeacher: true });
+    const course = await makeCourse(teacher.id);
+    const section = await makeSection(course.id);
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(CSV_V1),
+      "v1",
+    );
+    const active = await db.query.enrollments.findMany({
+      where: and(
+        eq(enrollments.sectionId, section.id),
+        eq(enrollments.status, "active"),
+      ),
+    });
+    expect(active).toHaveLength(2); // Juan and Maria both start active
+    return { teacher, section };
+  }
+
+  const statusFor = async (sectionId: string, studentNumber: string) => {
+    const record = (await db.query.studentRecords.findFirst({
+      where: eq(studentRecords.studentNumberHash, studentNumberHash(studentNumber)),
+    }))!;
+    const enrollment = await db.query.enrollments.findFirst({
+      where: and(
+        eq(enrollments.sectionId, sectionId),
+        eq(enrollments.studentRecordId, record.id),
+      ),
+    });
+    return { record, status: enrollment?.status };
+  };
+
+  it("keeps a student whose email cell is malformed, and still imports the rest", async () => {
+    const { teacher, section } = await setupWithBoth();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        "2026-002,Maria Santos,not-an-email\n",
+    );
+    expect(
+      parsed.rows[1]!.warnings.map((w) => w.code),
+    ).toContain("invalid_email");
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.blocked).toBe(1);
+    // The critical assertion: Maria was on the list, so she is still in the class.
+    expect(summary.deactivated).toBe(0);
+    expect((await statusFor(section.id, "2026-002")).status).toBe("active");
+    expect((await statusFor(section.id, "2026-001")).status).toBe("active");
+  });
+
+  it("leaves the blocked student's record and enrolment completely untouched", async () => {
+    const { teacher, section } = await setupWithBoth();
+    const before = await statusFor(section.id, "2026-002");
+
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n" +
+          "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+          "2026-002,Maria RENAMED Santos,not-an-email\n",
+      ),
+      "v2",
+    );
+
+    const after = await statusFor(section.id, "2026-002");
+    expect(after.record.fullName).toBe(before.record.fullName);
+    expect(after.record.rosterEmail).toBe("maria.santos@up.edu.ph");
+    expect(after.status).toBe("active");
+  });
+
+  it("still deactivates a student who is genuinely off the list", async () => {
+    const { teacher, section } = await setupWithBoth();
+    const summary = await commitRosterImport(
+      teacher.id,
+      section.id,
+      // Maria is simply gone; Juan's row is fine.
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n",
+      ),
+      "v2",
+    );
+    expect(summary.deactivated).toBe(1);
+    expect((await statusFor(section.id, "2026-002")).status).toBe("deactivated");
+    expect((await statusFor(section.id, "2026-001")).status).toBe("active");
+  });
+
+  it("previews exactly the deactivations the commit performs", async () => {
+    const { teacher, section } = await setupWithBoth();
+    // Juan fine, Maria blocked, and a third student absent entirely.
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n" +
+          "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+          "2026-002,Maria Santos,maria.santos@up.edu.ph\n" +
+          "2026-003,Jose Mercado,jose.mercado@up.edu.ph\n",
+      ),
+      "v2",
+    );
+
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        "2026-002,Maria Santos,not-an-email\n",
+    );
+    const preview = await previewRosterImport(teacher.id, section.id, parsed);
+    // Only Jose — Maria is blocked but still listed.
+    expect(preview.toDeactivate.map((d) => d.name)).toEqual(["Jose Mercado"]);
+    expect(preview.blockedCount).toBe(1);
+
+    const summary = await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n" +
+          "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+          "2026-002,Maria Santos,not-an-email\n",
+      ),
+      "v3",
+    );
+    expect(summary.deactivated).toBe(preview.toDeactivate.length);
+    expect(summary.deactivated).toBe(1);
+    expect((await statusFor(section.id, "2026-002")).status).toBe("active");
+    expect((await statusFor(section.id, "2026-003")).status).toBe("deactivated");
+  });
+
+  it("deactivates nobody when every row in the file is blocked", async () => {
+    const { teacher, section } = await setupWithBoth();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,broken\n" +
+        "2026-002,Maria Santos,\n",
+    );
+    const preview = await previewRosterImport(teacher.id, section.id, parsed);
+    expect(preview.blockedCount).toBe(2);
+    expect(preview.toDeactivate).toEqual([]);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.blocked).toBe(2);
+    expect(summary.deactivated).toBe(0);
+    expect((await statusFor(section.id, "2026-001")).status).toBe("active");
+    expect((await statusFor(section.id, "2026-002")).status).toBe("active");
+  });
+
+  it("deactivates nobody when a fully blocked file names only strangers", async () => {
+    const { teacher, section } = await setupWithBoth();
+    // Nothing importable, and nobody currently enrolled is even mentioned. The
+    // file tells us nothing reliable, so it must not empty the section.
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n2026-999,Someone Else,broken\n",
+    );
+    const preview = await previewRosterImport(teacher.id, section.id, parsed);
+    expect(preview.toDeactivate).toEqual([]);
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.deactivated).toBe(0);
+    expect((await statusFor(section.id, "2026-001")).status).toBe("active");
+    expect((await statusFor(section.id, "2026-002")).status).toBe("active");
+  });
+});
+
+/**
+ * `student_records.roster_email` is GLOBAL, but import authority is
+ * SECTION-scoped. Without a boundary here, a teacher who can import their own
+ * class list could type any student number, supply a different address, and move
+ * that student's access in a class they have no standing on.
+ *
+ * The rule: you may change the identity of a student you actually hold. You may
+ * add a student you do not hold only by naming their existing address exactly.
+ */
+describe("section-scoped import is not global identity-edit authority", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  /** Two courses with different owners, so neither teacher staffs the other. */
+  async function twoUnrelatedSections() {
+    const teacherA = await makeUser({ isTeacher: true });
+    const teacherB = await makeUser({ isTeacher: true });
+    const courseA = await makeCourse(teacherA.id);
+    const courseB = await makeCourse(teacherB.id);
+    const sectionA = await makeSection(courseA.id);
+    const sectionB = await makeSection(courseB.id);
+    // Maria exists only in section B.
+    await commitRosterImport(
+      teacherB.id,
+      sectionB.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-002,Maria Santos,maria.santos@up.edu.ph\n",
+      ),
+      "section B roster",
+    );
+    return { teacherA, teacherB, sectionA, sectionB };
+  }
+
+  const maria = async () =>
+    (await db.query.studentRecords.findFirst({
+      where: eq(studentRecords.studentNumberHash, studentNumberHash("2026-002")),
+    }))!;
+
+  it("refuses a section-A import that would rewrite a section-B student's email", async () => {
+    const { teacherA, sectionA } = await twoUnrelatedSections();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n2026-002,Maria Santos,attacker@up.edu.ph\n",
+    );
+
+    const preview = await previewRosterImport(teacherA.id, sectionA.id, parsed);
+    expect(preview.actions.map((a) => a.kind)).toEqual(["blocked"]);
+    expect(
+      preview.actions[0]!.row.warnings.map((w) => w.code),
+    ).toContain("cross_section_email_conflict");
+
+    const summary = await commitRosterImport(teacherA.id, sectionA.id, parsed, "v1");
+    expect(summary.blocked).toBe(1);
+    expect(summary.emailsLinked).toBe(0);
+    expect(summary.enrolled).toBe(0);
+    expect(summary.created).toBe(0);
+  });
+
+  it("leaves the student record and both sections' enrollments untouched", async () => {
+    const { teacherA, sectionA, sectionB } = await twoUnrelatedSections();
+    const before = await maria();
+
+    await commitRosterImport(
+      teacherA.id,
+      sectionA.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-002,Hijacked Name,attacker@up.edu.ph\n",
+      ),
+      "v1",
+    );
+
+    const after = await maria();
+    expect(after.rosterEmail).toBe("maria.santos@up.edu.ph");
+    expect(after.fullName).toBe(before.fullName);
+    expect(after.id).toBe(before.id); // no duplicate record for the same number
+    expect(await db.query.studentRecords.findMany()).toHaveLength(1);
+
+    // Section A gained nothing; section B is unchanged.
+    expect(
+      await db.query.enrollments.findMany({
+        where: eq(enrollments.sectionId, sectionA.id),
+      }),
+    ).toHaveLength(0);
+    const inB = await db.query.enrollments.findMany({
+      where: eq(enrollments.sectionId, sectionB.id),
+    });
+    expect(inB).toHaveLength(1);
+    expect(inB[0]!.status).toBe("active");
+  });
+
+  it("still lets section A enrol that student using their existing email", async () => {
+    const { teacherA, sectionA } = await twoUnrelatedSections();
+    const summary = await commitRosterImport(
+      teacherA.id,
+      sectionA.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-002,Maria Santos,maria.santos@up.edu.ph\n",
+      ),
+      "v1",
+    );
+    expect(summary.blocked).toBe(0);
+    expect(summary.enrolled).toBe(1);
+    expect(summary.emailsLinked).toBe(0); // identity untouched — only an enrolment
+    expect((await maria()).rosterEmail).toBe("maria.santos@up.edu.ph");
+    // One record, two sections — the reuse the model is built for.
+    expect(await db.query.studentRecords.findMany()).toHaveLength(1);
+  });
+
+  it("normalizes case and whitespace before deciding, so no false conflict", async () => {
+    const { teacherA, sectionA } = await twoUnrelatedSections();
+    const summary = await commitRosterImport(
+      teacherA.id,
+      sectionA.id,
+      parseRosterCsv(
+        'student number,full name,up mail\n2026-002,Maria Santos,"  MARIA.Santos@UP.EDU.PH "\n',
+      ),
+      "v1",
+    );
+    expect(summary.blocked).toBe(0);
+    expect(summary.enrolled).toBe(1);
+    expect((await maria()).rosterEmail).toBe("maria.santos@up.edu.ph");
+  });
+
+  it("lets staff correct the email of a student already in their own section", async () => {
+    const { teacherB, sectionB } = await twoUnrelatedSections();
+    const summary = await commitRosterImport(
+      teacherB.id,
+      sectionB.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-002,Maria Santos,m.santos@up.edu.ph\n",
+      ),
+      "corrected",
+    );
+    expect(summary.blocked).toBe(0);
+    expect(summary.emailsLinked).toBe(1);
+    expect((await maria()).rosterEmail).toBe("m.santos@up.edu.ph");
+  });
+
+  it("lets a section correct a student it holds even when they are also elsewhere", async () => {
+    const { teacherA, teacherB, sectionA, sectionB } = await twoUnrelatedSections();
+    // Maria joins section A under her existing address first.
+    await commitRosterImport(
+      teacherA.id,
+      sectionA.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-002,Maria Santos,maria.santos@up.edu.ph\n",
+      ),
+      "join A",
+    );
+    // Now section A genuinely holds her, so A may correct her address.
+    const summary = await commitRosterImport(
+      teacherA.id,
+      sectionA.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-002,Maria Santos,maria.s@up.edu.ph\n",
+      ),
+      "correct in A",
+    );
+    expect(summary.blocked).toBe(0);
+    expect(summary.emailsLinked).toBe(1);
+    expect((await maria()).rosterEmail).toBe("maria.s@up.edu.ph");
+    // Section B keeps her enrolment; the identity moved for both, as it must.
+    expect(
+      await db.query.enrollments.findMany({
+        where: eq(enrollments.sectionId, sectionB.id),
+      }),
+    ).toHaveLength(1);
+    expect(teacherB.id).toBeTruthy();
+  });
+
+  it("refuses to give a section-B student an email they do not yet have", async () => {
+    const { teacherA, teacherB, sectionA, sectionB } = await twoUnrelatedSections();
+    // Simulate a record imported before the email column existed.
+    await db
+      .update(studentRecords)
+      .set({ rosterEmail: null })
+      .where(eq(studentRecords.id, (await maria()).id));
+
+    // The SAME parsed roster is deliberately reused across all three calls: a
+    // conflict found for section A must not linger on the row and block the
+    // section that legitimately holds her.
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n2026-002,Maria Santos,someone@up.edu.ph\n",
+    );
+    const preview = await previewRosterImport(teacherA.id, sectionA.id, parsed);
+    expect(preview.actions.map((a) => a.kind)).toEqual(["blocked"]);
+    const summary = await commitRosterImport(teacherA.id, sectionA.id, parsed, "v1");
+    expect(summary.blocked).toBe(1);
+    expect((await maria()).rosterEmail).toBeNull();
+
+    // Section B, which actually holds her, may assign it.
+    const ok = await commitRosterImport(teacherB.id, sectionB.id, parsed, "v1");
+    expect(ok.blocked).toBe(0);
+    expect((await maria()).rosterEmail).toBe("someone@up.edu.ph");
+  });
+
+  it("commit re-checks independently of preview", async () => {
+    const { teacherA, teacherB, sectionA, sectionB } = await twoUnrelatedSections();
+    // A preview taken while section A could legitimately enrol her...
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n2026-002,Maria Santos,maria.santos@up.edu.ph\n",
+    );
+    const preview = await previewRosterImport(teacherA.id, sectionA.id, parsed);
+    expect(preview.actions.map((a) => a.kind)).toEqual(["enroll_existing"]);
+
+    // ...goes stale when section B moves her address in the meantime.
+    await commitRosterImport(
+      teacherB.id,
+      sectionB.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n2026-002,Maria Santos,moved@up.edu.ph\n",
+      ),
+      "B moves her",
+    );
+
+    // Commit must refuse on live data, not on the stale plan it was handed.
+    const summary = await commitRosterImport(teacherA.id, sectionA.id, parsed, "v1");
+    expect(summary.blocked).toBe(1);
+    expect(summary.enrolled).toBe(0);
+    expect((await maria()).rosterEmail).toBe("moved@up.edu.ph");
   });
 });

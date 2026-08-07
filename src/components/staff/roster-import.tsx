@@ -28,12 +28,19 @@ export type WarningCode =
   | "unknown_status"
   | "not_enrolled_status"
   | "missing_required"
-  | "conflicting_existing_record";
+  | "conflicting_existing_record"
+  | "missing_email"
+  | "invalid_email"
+  | "disallowed_email_domain"
+  | "duplicate_email"
+  | "email_belongs_to_another_record"
+  | "cross_section_email_conflict";
 
 export interface PreviewRow {
   rowKey: string;
   line: number;
   studentNumber: string;
+  email: string;
   fullName: string;
   familyName?: string | null;
   firstName?: string | null;
@@ -55,11 +62,13 @@ export interface PreviewAction {
     | "enroll_existing"
     | "reactivate"
     | "update_name"
-    | "name_diff_locked"
+    | "link_email"
+    | "blocked"
     | "unchanged";
   studentNumber: string;
   fullName: string;
   currentName?: string;
+  currentEmail?: string | null;
 }
 
 export interface ImportState {
@@ -89,7 +98,8 @@ const ACTION_COPY: Record<
   enroll_existing: { label: "Enrol existing record", tone: "green" },
   reactivate: { label: "Reactivate enrolment", tone: "amber" },
   update_name: { label: "Update name", tone: "amber" },
-  name_diff_locked: { label: "Name change blocked", tone: "red" },
+  link_email: { label: "Link UP email", tone: "amber" },
+  blocked: { label: "Will not be imported", tone: "red" },
   unchanged: { label: "No change", tone: "neutral" },
 };
 
@@ -115,6 +125,18 @@ const WARNING_COPY: Record<
   conflicting_existing_record: {
     label: "Differs from stored data",
     tone: "amber",
+  },
+  missing_email: { label: "No UP email", tone: "red" },
+  invalid_email: { label: "Not an email address", tone: "red" },
+  disallowed_email_domain: { label: "Domain not allowed", tone: "red" },
+  duplicate_email: { label: "Duplicate email in this file", tone: "red" },
+  email_belongs_to_another_record: {
+    label: "Email already belongs to another student",
+    tone: "red",
+  },
+  cross_section_email_conflict: {
+    label: "Belongs to another class — email cannot be changed here",
+    tone: "red",
   },
 };
 
@@ -151,6 +173,7 @@ export function RosterImport({
       line: row.line,
       rowKey: row.rowKey,
       studentNumber: String(rowValue(row, "studentNumber")),
+      email: String(rowValue(row, "email")),
       fullName: String(rowValue(row, "fullName")),
       familyName: row.familyName ?? null,
       firstName: row.firstName ?? null,
@@ -231,7 +254,8 @@ export function RosterImport({
                 and refuses to store is its own business and is unchanged —
                 including that Sex Assigned at Birth is never imported. */}
             <span className="helper-text" id="roster-file-help">
-              Needs a header row with a student number column and a name column.
+              Needs a header row with a student number column, a name column, and
+              a UP email column (“UP Mail”, “email”, “university email”).
             </span>
           </div>
         ) : (
@@ -243,11 +267,14 @@ export function RosterImport({
               name="csv"
               rows={8}
               defaultValue={state.csv}
-              placeholder={"student number,full name\n2026-0001,Juan Dela Cruz"}
+              placeholder={
+                "student number,full name,up mail\n2026-0001,Juan Dela Cruz,juan.delacruz@up.edu.ph"
+              }
               aria-describedby="csv-help"
             />
             <span className="helper-text" id="csv-help">
-              Needs a header row with a student number column and a name column.
+              Needs a header row with a student number column, a name column, and
+              a UP email column (“UP Mail”, “email”, “university email”).
             </span>
           </div>
         )}
@@ -310,6 +337,20 @@ export function RosterImport({
               </Alert>
             )}
 
+            {/* Refused rows are stated before the table, because the confirm
+                button below will silently skip them otherwise — and a student
+                left off the list has no way to tell anyone. */}
+            {ordered.some((row) => row.plan === "blocked") && (
+              <Alert
+                variant="warning"
+                title="Some rows will not be imported"
+                >
+                {ordered.filter((row) => row.plan === "blocked").length} row(s)
+                have a UP email problem. Fix the email here, or import the
+                corrected list — these students get no access until you do.
+              </Alert>
+            )}
+
             {(state.rowErrors?.length ?? 0) > 0 && (
               <Alert variant="warning" title="Some rows will be skipped">
                 <ul>
@@ -331,6 +372,7 @@ export function RosterImport({
                   <tr>
                     <th scope="col">Line</th>
                     <th scope="col">Student number</th>
+                    <th scope="col">UP email</th>
                     <th scope="col">Name</th>
                     <th scope="col">Status</th>
                     <th scope="col">Plan</th>
@@ -366,6 +408,30 @@ export function RosterImport({
                                 w.code === "numeric_student_number" ||
                                 w.code === "malformed_student_number" ||
                                 w.code === "duplicate_student_number",
+                            )}
+                          />
+                        </td>
+                        <td>
+                          {/* The email is the access key, so it is editable
+                              here for the same reason the student number is: a
+                              typo in the file must be fixable before it becomes
+                              somebody's missing class. */}
+                          <label
+                            className="visually-hidden"
+                            htmlFor={`em-${row.rowKey}`}
+                          >
+                            UP email on line {row.line}
+                          </label>
+                          <input
+                            id={`em-${row.rowKey}`}
+                            className="field"
+                            type="email"
+                            value={String(rowValue(row, "email"))}
+                            onChange={(e) =>
+                              setEdit(row.rowKey, "email", e.target.value)
+                            }
+                            aria-invalid={row.warnings.some((w) =>
+                              w.code.includes("email"),
                             )}
                           />
                         </td>

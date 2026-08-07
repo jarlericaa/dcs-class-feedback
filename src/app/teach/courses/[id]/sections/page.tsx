@@ -27,9 +27,9 @@ import { requireUser, toShellUser } from "@/lib/session";
  * Class lists and access for one course.
  *
  * This is where sections belong: they decide who can reach a form, who counts for
- * participation, whose account matches need confirming, and who may publish into
- * which archive. None of that is the form workflow, which is why it is one
- * destination inside the course rather than the shape of every screen.
+ * participation, and who may publish into which archive. None of that is the
+ * form workflow, which is why it is one destination inside the course rather
+ * than the shape of every screen.
  */
 export default async function CourseSectionsPage({
   params,
@@ -174,8 +174,8 @@ export default async function CourseSectionsPage({
             }}
             primary
           >
-            A section is the class list students are matched against. A form goes
-            to one section, several, or all of them.
+            A section is the class list a student&rsquo;s UP email is looked up in. A
+            form goes to one section, several, or all of them.
           </EmptyState>
         ) : (
           <section className="notice">
@@ -201,15 +201,15 @@ export default async function CourseSectionsPage({
                       {!section.active && <Stamp tone="neutral">Inactive</Stamp>}
                       <Link
                         className="button button--secondary button--small"
-                        href={`/teach/sections/${section.id}/import`}
+                        href={`/teach/sections/${section.id}/roster`}
                       >
                         Class list
                       </Link>
                       <Link
                         className="button button--secondary button--small"
-                        href={`/teach/sections/${section.id}/matches`}
+                        href={`/teach/sections/${section.id}/import`}
                       >
-                        Account matches
+                        Import
                       </Link>
                       <Link
                         className="button button--secondary button--small"

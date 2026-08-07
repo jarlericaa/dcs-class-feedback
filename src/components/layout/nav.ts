@@ -117,8 +117,8 @@ export function staffSectionNav(
   if (perms.viewStudentIdentities) {
     items.push(
       {
-        href: `/teach/sections/${id}/matches`,
-        label: "Account matches",
+        href: `/teach/sections/${id}/roster`,
+        label: "Class list",
         icon: "roster",
       },
       {
