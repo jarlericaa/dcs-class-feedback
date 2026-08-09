@@ -23,21 +23,27 @@ import { IconPrivate, IconPublic } from "@/components/ui/icons";
  *   question. Indenting one under another would draw a structure that does not
  *   exist and imply somebody replied to a colleague rather than to the student.
  *
- * The audience is stated once, for the whole thread. It was previously repeated
- * on every message, which is how an anonymity promise turns into wallpaper: the
+ * Where the audience is stated, it is stated once for the whole thread — never
+ * on every message. That is how an anonymity promise turns into wallpaper: the
  * one sentence that matters most becomes the one the reader stops seeing.
  */
 export function Thread({
   audience,
   children,
 }: {
-  /** who can read this conversation, in the reader's own terms */
-  audience: ReactNode;
+  /**
+   * Who can read this conversation, in the reader's own terms — where that
+   * needs saying. A student is deciding what is safe to write and has no
+   * colleague's context for it, so their view states it. Staff already read
+   * "replied privately" on every message and the audience again in the composer
+   * they are about to type into, so theirs does not.
+   */
+  audience?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="thread">
-      <p className="thread__audience">{audience}</p>
+      {audience && <p className="thread__audience">{audience}</p>}
       <div className="thread__messages">{children}</div>
     </div>
   );

@@ -2111,7 +2111,13 @@ kbd {
 .post + .post {
   border-top: 1px solid var(--rule);
 }
-.post__body {
+/* Who, then when, then what they said — in that order at every width. */
+.post__ident {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.post__content {
   grid-column: 2;
   min-width: 0;
 }
@@ -2262,10 +2268,11 @@ kbd {
   .post {
     grid-template-columns: 34px minmax(0, 1fr);
   }
+  /* Under the name, not above it: the person is what the row is about, and a
+     date arriving first reads as a log entry rather than as somebody's week. */
   .post__stamp {
     grid-column: 2;
-    grid-row: auto;
-    order: -1;
+    grid-row: 2;
     flex-direction: row;
     align-items: baseline;
     gap: var(--s2);
@@ -2278,20 +2285,31 @@ kbd {
 
 /* --- what has already been said back -------------------------------------- */
 
-.thread {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s3);
-  margin-top: var(--s3);
-}
 /**
- * The audience, once per thread rather than once per message. It is a single
- * promise about the whole conversation, and repeating it on every line taught
- * the reader to stop seeing it.
+ * Indented past the question, not level with it.
+ *
+ * The thread's rule used to start at the same x as the quote's, so a reply read
+ * as a sibling of the question rather than as an answer to it — the indent was
+ * there but had nothing to be indented FROM. Offsetting it to where the
+ * question's own text begins is what makes the subordination legible.
  */
 .thread {
   margin-top: var(--s3);
+  /* One value, from the question's own left edge. It was split across two rules
+     while a border sat between them; with the border gone, two numbers making
+     one offset is just somewhere for them to drift apart. */
+  margin-left: var(--s5);
 }
+/**
+ * The audience of the conversation, stated once — where it is stated at all.
+ *
+ * The student's own history keeps it: they are deciding what is safe to write,
+ * and they do not have a colleague's context for it. The staff column drops it,
+ * because there every message already says "replied privately" or "answered the
+ * section", and the composer states the audience again at the moment of
+ * consequence. Three sentences of the same promise is how a promise stops being
+ * read.
+ */
 .thread__audience {
   display: flex;
   align-items: center;
@@ -2309,13 +2327,18 @@ kbd {
  * turns a group of replies into a stack of containers. DESIGN.md §5 rules out
  * that nesting for the same reason it rules out cards.
  */
+/**
+ * Indented, and nothing more.
+ *
+ * No rule down the side and none across the top. The offset says these hang off
+ * the question, and each message already carries a mark that fixes its own left
+ * edge — a line beside them was drawing a boundary the alignment had already
+ * drawn.
+ */
 .thread__messages {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
-  margin-top: var(--s2);
-  padding-left: var(--s3);
-  border-left: 1px solid var(--rule);
 }
 
 .thread__msg {
@@ -2386,87 +2409,78 @@ kbd {
   overflow-wrap: anywhere;
 }
 
-/* --- the form answers, compressed ----------------------------------------- */
+/* --- the measurements ------------------------------------------------------ */
 
-.post__answers {
-  margin-top: var(--s4);
-  padding-top: var(--s3);
-  border-top: 1px solid var(--rule);
-}
-/* Folded, it is one quiet row; open, it needs air before the first question. */
-.post__answers[open] {
-  padding-bottom: var(--s2);
-}
-/* A row that reads as a row: the whole width is the hit area, and the marker
-   turns so the state is legible without reading the label twice. */
-.post__answers-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  color: var(--ink-muted);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  list-style: none;
-}
-.post__answers-summary::-webkit-details-marker {
-  display: none;
-}
-.post__answers-summary::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
-  transition: transform 0.12s ease;
-}
-.post__answers[open] > .post__answers-summary::before {
-  transform: rotate(45deg);
-}
-.post__answers-summary:hover {
-  color: var(--ink-soft);
-}
-.post__answers-count {
-  min-width: 18px;
-  padding: 0 5px;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r-stamp);
-  color: var(--ink-muted);
-  background: var(--paper-quiet);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-.post__answers-body {
+/**
+ * What every student was asked, answered in numbers — always visible, and in
+ * the same place on every row so a reader can compare down the page instead of
+ * opening thirty disclosures and still not being able to line them up.
+ */
+.meters {
   margin-top: var(--s3);
 }
-.post__chips {
+.meters__list {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--s1) var(--s4);
+  gap: var(--s2) var(--s5);
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.post__chips li {
+.meter {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   font-size: 12px;
 }
-.post__chip-label {
+.meter__label {
   color: var(--ink-muted);
 }
-.post__chip-value {
+/**
+ * The cells, drawn from the question's OWN scale.
+ *
+ * Not decoration standing in for content (DESIGN.md §11) — the count IS the
+ * content: "2" cannot say whether it sits near the bottom of the range, and
+ * that is the only thing a reader scanning a column needs from it. Filled cells
+ * take the ink, not the accent: this is a reading, not a call to act, and it
+ * must not compete with the one control on the row that is.
+ */
+.meter__cells {
+  display: inline-flex;
+  gap: 2px;
+}
+.meter__cell {
+  width: 6px;
+  height: 12px;
+  /* Square, like every other mark in this system. DESIGN.md §5 keeps radius for
+     controls and stamps; a 6px cell is neither, and softening it would be the
+     only rounded corner on the page. */
+  border: 1px solid var(--rule-strong);
+}
+.meter__cell--on {
+  border-color: var(--ink-faint);
+  background: var(--ink-faint);
+}
+.meter__value {
   color: var(--ink);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.post__answers-body .qa-pairs {
-  margin-top: var(--s3);
+.meters__more {
+  margin-top: var(--s2);
 }
+.meters__more > summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.meters__more > summary:hover {
+  color: var(--ink-soft);
+}
+.meters__more .meters__list {
+  margin-top: var(--s2);
+}
+
 .post__validity {
   margin-top: var(--s3);
 }
@@ -3005,11 +3019,10 @@ kbd {
   flex-wrap: wrap;
   margin-bottom: var(--s3);
 }
-.thread {
-  margin-top: var(--s4);
-  padding-top: var(--s4);
-  border-top: 1px solid var(--rule);
-}
+/* NB: a `.thread` rule used to live here, left behind by markup that no longer
+   exists. Nothing rendered it, so it sat quietly until a new component took the
+   same name — and inherited a border nobody asked for. `.item` and `.event`
+   below are orphaned the same way. */
 .event {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);

@@ -27,11 +27,7 @@ import {
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 import { Dialog } from "@/components/ui/dialog";
 import { ScrollToPost } from "@/components/ui/scroll-to";
-import {
-  Thread,
-  ThreadAudience,
-  ThreadMessage,
-} from "@/components/ui/thread";
+import { Thread, ThreadMessage } from "@/components/ui/thread";
 import {
   IconNoReply,
   IconPrivate,
@@ -769,7 +765,7 @@ export default async function CourseResponsesPage({
                   )}
                 </div>
 
-                <div className="post__body">
+                <div className="post__ident">
                   <p className="post__who">{who}</p>
                   <MetaList
                     items={[
@@ -779,12 +775,15 @@ export default async function CourseResponsesPage({
                       sections.length > 1 ? (section?.title ?? null) : null,
                     ]}
                   />
+                </div>
 
-                {/* What the form asked, before what the student added to it. */}
-                <AnswerSummary
-                  answers={row.answers}
-                  open={row.items.length === 0}
-                />
+                <div className="post__content">
+
+                {/* Measurements first — they compare across the page, so they
+                    stay visible and aligned. Then anything the student wrote,
+                    in their own register, before the question they raised. */}
+                <Measurements answers={row.answers} />
+                <WrittenAnswers answers={row.answers} />
 
                 {row.items.length === 0 ? (
                   /* They answered the form and asked nothing. There is no reply
@@ -853,25 +852,7 @@ export default async function CourseResponsesPage({
                         </blockquote>
 
                         {events.length > 0 && (
-                          <Thread
-                            audience={
-                              events.some((e) => e.kind === "public") ? (
-                                <ThreadAudience scope="public">
-                                  Public answers go to everyone in{" "}
-                                  {section?.title ?? "the section"}, without{" "}
-                                  {who === "Identity hidden"
-                                    ? "the asker's"
-                                    : `${who}'s`}{" "}
-                                  name.
-                                </ThreadAudience>
-                              ) : (
-                                <ThreadAudience scope="private">
-                                  Only {who} and the teaching team can read this
-                                  thread.
-                                </ThreadAudience>
-                              )
-                            }
-                          >
+                          <Thread>
                             {events.map((event) => {
                               if (event.kind === "private") {
                                 const message = event.response;
@@ -1145,81 +1126,173 @@ export default async function CourseResponsesPage({
 }
 
 /**
- * The form answers, folded away behind one row.
+ * The form answers, split by what they actually are.
  *
- * Every student answers the same prompts, so the full set down a column of
- * thirty posts is thirty copies of the teacher's own questions — noise between
- * the things that actually need a decision. One disclosure per post keeps the
- * column reading as the students' words, and opening it costs a click.
+ * "Form answers" was one collapsed block holding two unrelated things, and it
+ * served neither. A scale or a choice is a MEASUREMENT: its value is in the
+ * comparison across students, which a per-row disclosure makes impossible —
+ * thirty doors, and the numbers still never line up. A written answer is
+ * AUTHORED PROSE, the same student writing in the same voice as the question
+ * they raised themselves; filing it as metadata was a schema distinction
+ * showing through into the reading.
  *
- * Inside, a scale, a yes/no or a choice still compresses to one readable pair,
- * so a reader who opens a few can see the class rated the pace 2/5 without
- * reading a paragraph. Written answers cannot compress and print in full.
+ * So the measurements come out and stay out, aligned down the page. The prose
+ * goes where the student's other words are. Nothing is left to hide.
  */
-function AnswerSummary({
-  answers,
-  open,
-}: {
-  open?: boolean;
-  answers: {
-    prompt: string;
-    type: string;
-    scale: unknown;
-    value: unknown;
-    freeText: string | null;
-  }[];
-}) {
-  if (answers.length === 0) return null;
-  const chips = answers
+
+/** How many meters stay visible before the rest go behind a count. */
+const MEASUREMENTS_SHOWN = 3;
+
+interface AnswerRow {
+  prompt: string;
+  type: string;
+  scale: unknown;
+  value: unknown;
+  freeText: string | null;
+}
+
+function Measurements({ answers }: { answers: AnswerRow[] }) {
+  const measured = answers
     .filter((a) => !a.freeText)
-    .map((a) => ({ label: shortPrompt(a.prompt), value: compactValue(a) }))
-    .filter((chip): chip is { label: string; value: string } => !!chip.value);
-  const written = answers.filter((a) => a.freeText);
-  if (chips.length === 0 && written.length === 0) return null;
+    .map((a) => ({
+      label: shortPrompt(a.prompt),
+      prompt: a.prompt,
+      text: compactValue(a),
+      scale: scaleOf(a),
+    }))
+    .filter((m): m is typeof m & { text: string } => !!m.text);
+  if (measured.length === 0) return null;
+
+  const shown = measured.slice(0, MEASUREMENTS_SHOWN);
+  const rest = measured.slice(MEASUREMENTS_SHOWN);
 
   return (
-    <details className="post__answers" open={open}>
-      <summary className="post__answers-summary">
-        Form answers
-        <span className="post__answers-count">{answers.length}</span>
-      </summary>
-      <div className="post__answers-body">
-        {chips.length > 0 && (
-          <ul className="post__chips">
-            {chips.map((chip, index) => (
-              <li key={index}>
-                <span className="post__chip-label">{chip.label}</span>
-                <span className="post__chip-value">{chip.value}</span>
-              </li>
+    <div className="meters">
+      <ul className="meters__list">
+        {shown.map((m, i) => (
+          <Meter key={i} {...m} />
+        ))}
+      </ul>
+      {/* A form can carry a dozen questions. The first few earn their place in
+          every row; the rest wait behind a count rather than making the header
+          taller than the answer underneath it. */}
+      {rest.length > 0 && (
+        <details className="meters__more">
+          <summary>{rest.length} more</summary>
+          <ul className="meters__list">
+            {rest.map((m, i) => (
+              <Meter key={i} {...m} />
             ))}
           </ul>
-        )}
-        {written.length > 0 && (
-          <dl className="qa-pairs">
-            {written.map((answer, index) => (
-              <div className="qa-pairs__row" key={index}>
-                <dt>{answer.prompt}</dt>
-                <dd>{answer.freeText}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-      </div>
-    </details>
+        </details>
+      )}
+    </div>
   );
 }
 
-/** A prompt short enough to sit in a scannable row without becoming a sentence. */
+/**
+ * One measurement.
+ *
+ * The cells are the point: `2` alone cannot say whether it is near the bottom
+ * of the range, and a reader scanning thirty rows should not have to divide.
+ * They are drawn from the question's own scale, never invented — a question
+ * with no scale, or one too long to cell honestly, shows its value as words.
+ *
+ * The cells are `aria-hidden`; the accessible name carries the same fact in
+ * text, because a row of filled boxes is not something to read out.
+ */
+function Meter({
+  label,
+  prompt,
+  text,
+  scale,
+}: {
+  label: string;
+  prompt: string;
+  text: string;
+  scale: { min: number; max: number; value: number } | null;
+}) {
+  return (
+    <li className="meter" title={`${prompt}: ${text}`}>
+      <span className="meter__label">{label}</span>
+      {scale && (
+        <span className="meter__cells" aria-hidden="true">
+          {Array.from({ length: scale.max - scale.min + 1 }, (_, i) => (
+            <span
+              key={i}
+              className={`meter__cell ${
+                scale.min + i <= scale.value ? "meter__cell--on" : ""
+              }`}
+            />
+          ))}
+        </span>
+      )}
+      <span className="meter__value">{text}</span>
+    </li>
+  );
+}
+
+/**
+ * The cells a value can honestly be drawn on, or null.
+ *
+ * Ten steps is the limit: past that the cells stop being countable at a glance,
+ * which is the only thing they were for, and the number on its own is clearer.
+ */
+function scaleOf(
+  answer: AnswerRow,
+): { min: number; max: number; value: number } | null {
+  const value = (answer.value ?? {}) as { scaleValue?: number };
+  const scale = answer.scale as { min?: number; max?: number } | null;
+  if (value.scaleValue === undefined) return null;
+  const min = scale?.min ?? 1;
+  const max = scale?.max;
+  if (max === undefined || max - min + 1 > 10 || max <= min) return null;
+  return { min, max, value: value.scaleValue };
+}
+
+/**
+ * A written form answer, in the same shape as a question the student raised.
+ *
+ * Because it is the same thing: a person writing prose. The only difference is
+ * what prompted it, which is exactly what the label says. It carries no stamp
+ * and no actions — there is nothing here to answer, only something to read
+ * before answering what is below it.
+ */
+function WrittenAnswers({ answers }: { answers: AnswerRow[] }) {
+  const written = answers.filter((a) => a.freeText);
+  if (written.length === 0) return null;
+  return (
+    <>
+      {written.map((answer, index) => (
+        <section className="post__item" key={index}>
+          <p className="post__itemmeta">
+            <span>{answer.prompt}</span>
+          </p>
+          <blockquote className="post__words">{answer.freeText}</blockquote>
+        </section>
+      ))}
+    </>
+  );
+}
+
+/**
+ * A prompt short enough to sit in a scannable row without becoming a sentence.
+ *
+ * Cut on a word, never through one: "How difficult was the l…" could be the lab
+ * or the lecture, and a label that cannot be told apart from its neighbour has
+ * stopped being a label. The full prompt stays in the meter's `title` either
+ * way, so nothing is actually lost — only deferred.
+ */
 function shortPrompt(prompt: string): string {
   const clean = prompt.replace(/[?:]\s*$/, "").trim();
-  return clean.length > 28 ? `${clean.slice(0, 27).trimEnd()}…` : clean;
+  if (clean.length <= 32) return clean;
+  const cut = clean.slice(0, 32);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 12 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
 /** The answer as one readable token, or null when it cannot honestly be one. */
-function compactValue(answer: {
-  scale: unknown;
-  value: unknown;
-}): string | null {
+function compactValue(answer: { scale: unknown; value: unknown }): string | null {
   const value = (answer.value ?? {}) as {
     optionLabels?: string[];
     scaleValue?: number;
@@ -1229,7 +1302,6 @@ function compactValue(answer: {
   };
   if (value.scaleValue !== undefined) {
     const max = (answer.scale as { max?: number } | null)?.max;
-    // "2/5" says what "2" cannot: whether that is the bottom of the range.
     return max ? `${value.scaleValue}/${max}` : String(value.scaleValue);
   }
   if (value.boolValue !== undefined) return value.boolValue ? "Yes" : "No";
