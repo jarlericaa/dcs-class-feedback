@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { loadStaffSection } from "@/lib/staff-section";
+import { loadStaffSection, sectionLabel } from "@/lib/staff-section";
 import { AppShell } from "@/components/layout/app-shell";
-import { staffSectionNav } from "@/components/layout/nav";
+import { staffSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
-  Breadcrumbs,
   EmptyState,
   MetaList,
   Stamp,
@@ -40,6 +40,7 @@ export default async function SectionRosterPage({
   }>;
 }) {
   const { id: sectionId } = await params;
+  const path = `/teach/sections/${sectionId}/roster`;
   const { q, state, page, pageSize } = await searchParams;
   const rosterState =
     state === "signed_in" || state === "not_signed_in" || state === "dropped"
@@ -51,7 +52,7 @@ export default async function SectionRosterPage({
       <AppShell
         user={toShellUser(ctx.user)}
         workspace="staff"
-        navGroups={[]}
+        navGroups={await primaryNavFor(ctx.user, path)}
         title="Class list"
       >
         <AccessDenied what="student identities in this section" />
@@ -99,17 +100,14 @@ export default async function SectionRosterPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/roster`)}
-      contextLabel={section.title}
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { href: "/", label: "Overview" },
-            { label: course.code },
-            { label: "Class list" },
-          ]}
-        />
-      }
+      navGroups={await primaryNavFor(user, path, {
+        /* A section is reached through its course, and the course now has its
+           own rail row — so mark that one rather than the courses index. */
+        fallbackHref: `/teach/courses/${course.id}`,
+      })}
+      tabs={staffSectionTabs(access, path)}
+      tabsLabel={sectionLabel(course.code, section.title)}
+      contextLabel={sectionLabel(course.code, section.title)}
       title="Class list"
       description="Students get access from the UP email on this list. Import the list again to add, correct, or remove someone."
       actions={

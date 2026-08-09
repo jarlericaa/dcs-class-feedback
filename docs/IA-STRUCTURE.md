@@ -44,6 +44,74 @@ conventions, and the Q&A archive's browse/search strategy.
 > comparing sections costs nothing. Sections remain independent spokes for the
 > things that genuinely are per-section (rosters, matching, publication, audit).
 
+> ## Superseded in part, 2026-08-07 — navigation split into two layers
+>
+> The banner above describes the right *structure*. What was still wrong was
+> **who owns it**: every destination in it, global and resource-scoped alike,
+> was rendered into the one left rail, and which builder ran was chosen by the
+> route. Opening a section deleted "Overview", "My courses" and "Platform admin"
+> from the primary nav; opening a course deleted "Platform admin" alone; a denied
+> page passed `navGroups={[]}` and deleted the rail *and* the mobile menu button.
+> None of that followed a permission change. It followed a URL change.
+>
+> Navigation is now two layers with one rule each.
+>
+> **PRIMARY — the left rail. Built by `primaryNav` from the ACCOUNT, never the
+> route.** Identical on every page a given person can open; a route change moves
+> the active mark and nothing else. `primaryNavFor` (`src/lib/nav-context.ts`) is
+> the single call site, so a page cannot contribute a row.
+>
+> ```
+> Workspace            Overview · Platform admin (isPlatformAdmin)
+> My courses ⌄         All courses · one row per course      → /teach/courses/[id]
+> My classes ⌄         one row per enrolled section          → /sections/[id]
+> Sections you assist ⌄  one row per section staffed WITHOUT → /teach/sections/[id]
+>                        course standing
+> ```
+>
+> The groups that list resources are disclosures, so a long course list can be
+> folded away; they render open on every load rather than remembering, because a
+> rail whose height depended on where you had been is the instability this model
+> removes. "Sections you assist" exists because a delegated assistant has no
+> course workspace to enter through. Course staff are deliberately excluded from
+> it: their courses already reach every section they own.
+>
+> **CONTEXTUAL — a second, narrower column between the rail and the page**
+> (`ws-subnav`), headed by the resource's name. Peer views of the resource on
+> screen. These are *expected* to change with the resource; that is what they
+> describe. Below 860px the same markup lays out as one horizontal scrolling band
+> above the page, because a second fixed column would leave nothing for it.
+>
+> ```
+> Course   Forms · Responses · Class lists
+> Section  [Review inbox] · Class list · Participation · Publication queue ·
+>          Question backlog · Class Q&A · Section setup · Audit history
+> Class    This week's form · My submissions · Class Q&A
+> ```
+>
+> Review appears in the SECTION column only for a reader with no course standing
+> — the queue is course-scoped (one shared form, one queue), so course staff
+> reach it from the course column. That is a role difference, not a route difference:
+> neither reader ever sees it appear or disappear as they navigate.
+>
+> **Demoted out of navigation entirely.** Roster import is an operation on the
+> class list, so it is a page-header action there — this also settles F1's
+> "Class list precedes Roster import" complaint by removing the ordering
+> question rather than answering it. Topic filters left the rail for the list
+> pane's filter menu: they narrow a list, they are not places to go. The rail's
+> `primaryAction`, `courses` and `categories` slots were deleted so route-specific
+> content cannot be injected back into it.
+>
+> **One authorization change came with this.** `resolveReviewScope` gated the
+> course queue on `requireCourseStaff`, so a section assistant holding
+> `review_responses` — the exact person the flag exists for — was refused the
+> only inbox there is. It now uses `requireCourseStaffOrSectionGrant`, the helper
+> already used for the backlog. Row scope is unchanged: `filterAuthorizedSections`
+> still reduces the queue to the reader's own sections. Covered by
+> [review-scope.test.ts](../tests/integration/review-scope.test.ts).
+>
+> Contract tests for both layers: [nav.test.ts](../tests/unit/nav.test.ts).
+
 > **This document corrects one proposal made elsewhere.**
 > [JOURNEY-TEACHER-SETUP.md](JOURNEY-TEACHER-SETUP.md) §5 proposed reordering the
 > staff nav by section readiness. **That is the wrong mechanism** — see F1. The

@@ -11,9 +11,13 @@ import {
   sourceLinks,
   studentRecords,
   studentSubmissionItems,
+  users,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
-import { requireCourseStaff, requireSectionStaff } from "@/modules/authz";
+import {
+  requireCourseStaffOrSectionGrant,
+  requireSectionStaff,
+} from "@/modules/authz";
 import {
   filterAuthorizedSections,
   getAudiencesForInstances,
@@ -151,9 +155,22 @@ async function resolveReviewScope(
     });
     sectionIds = [target.sectionId];
   } else {
-    await requireCourseStaff(db, actorUserId, target.courseId, {
-      allowArchived: true,
-    });
+    // Course staff, OR anyone holding `review_responses` on at least one
+    // section of the course. The narrower `requireCourseStaff` locked a
+    // section-scoped assistant out of the only inbox that exists — the queue is
+    // per-course because a shared form has ONE queue, so gating it on
+    // course-level standing made the advertised permission unusable.
+    //
+    // This admits nothing extra: filterAuthorizedSections below still reduces
+    // the scope to the sections this actor may actually read, so a section
+    // assistant sees exactly their own rows.
+    await requireCourseStaffOrSectionGrant(
+      db,
+      actorUserId,
+      target.courseId,
+      "reviewResponses",
+      { allowArchived: true },
+    );
     const sections = await db.query.classSections.findMany({
       where: eq(classSections.courseId, target.courseId),
       orderBy: [asc(classSections.title), asc(classSections.id)],
@@ -170,6 +187,9 @@ async function resolveReviewScope(
   if (opts.sectionId) {
     sectionIds = sectionIds.filter((id) => id === opts.sectionId);
   }
+  // NB: a requested instance narrows the ROWS, not the scope. The feed reads one
+  // week at a time but still has to offer every other week in its switcher, and
+  // narrowing here would hide them.
 
   // Identities are all-or-nothing per read: without the flag on EVERY section in
   // scope, the queue is rendered without identity rather than partially masked,
@@ -192,11 +212,7 @@ async function resolveReviewScope(
       instanceIdSet.add(id);
     }
   }
-  let instanceIds = [...instanceIdSet];
-  if (opts.instanceId) {
-    instanceIds = instanceIds.filter((id) => id === opts.instanceId);
-  }
-  return { instanceIds, sectionIds, canSeeIdentities };
+  return { instanceIds: [...instanceIdSet], sectionIds, canSeeIdentities };
 }
 
 /**
@@ -221,6 +237,7 @@ export async function getCourseReviewQueue(
     actorUserId,
     await resolveReviewScope(actorUserId, { courseId }, opts),
     opts.filter,
+    { instanceId: opts.instanceId },
   );
 }
 
@@ -242,6 +259,7 @@ export async function getReviewQueue(
       { instanceId: opts.cycleId },
     ),
     opts.filter,
+    { instanceId: opts.cycleId },
   );
 }
 
@@ -249,6 +267,7 @@ async function reviewQueue(
   actorUserId: string,
   scope: ReviewScope,
   filterOpt?: ReviewFilter,
+  opts: { instanceId?: string } = {},
 ) {
   const { instanceIds, sectionIds, canSeeIdentities } = scope;
   const cycles = instanceIds.length
@@ -260,11 +279,45 @@ async function reviewQueue(
   const cycleById = new Map(cycles.map((c) => [c.id, c]));
   const scopedCycleIds = cycles.map((c) => c.id);
 
-  const responses =
+  /**
+   * How many submissions each occurrence holds, over the WHOLE scope.
+   *
+   * Two columns, no joins: the week switcher has to say "Week 3 · 22" for every
+   * week while the feed itself loads only one, and re-reading every week's items
+   * to find that out would cost the whole term on every page view.
+   */
+  const scopedKeys =
     scopedCycleIds.length > 0 && sectionIds.length > 0
+      ? await db
+          .select({
+            id: formResponses.id,
+            cycleId: formResponses.cycleId,
+          })
+          .from(formResponses)
+          .where(
+            and(
+              inArray(formResponses.cycleId, scopedCycleIds),
+              inArray(formResponses.sectionId, sectionIds),
+              inArray(formResponses.lifecycle, ["submitted", "locked"]),
+            ),
+          )
+      : [];
+  const countByCycle = new Map<string, number>();
+  for (const key of scopedKeys) {
+    countByCycle.set(key.cycleId, (countByCycle.get(key.cycleId) ?? 0) + 1);
+  }
+
+  // The rows themselves are the requested occurrence only, when one was asked
+  // for. Everything below — items, threads, answers — is joined off these.
+  const readCycleIds = opts.instanceId
+    ? scopedCycleIds.filter((id) => id === opts.instanceId)
+    : scopedCycleIds;
+
+  const responses =
+    readCycleIds.length > 0 && sectionIds.length > 0
       ? await db.query.formResponses.findMany({
           where: and(
-            inArray(formResponses.cycleId, scopedCycleIds),
+            inArray(formResponses.cycleId, readCycleIds),
             // The privacy rule, in one clause.
             inArray(formResponses.sectionId, sectionIds),
             inArray(formResponses.lifecycle, ["submitted", "locked"]),
@@ -316,6 +369,53 @@ async function reviewQueue(
     : [];
   const answerById = new Map(answers.map((a) => [a.id, a]));
 
+  /**
+   * The form answers, in bulk.
+   *
+   * The feed shows every response in one column, so fetching a response's
+   * answers when it is opened would be one query per row. Two queries for the
+   * whole week instead, joined in memory below.
+   */
+  const formAnswers = responses.length
+    ? await db.query.questionAnswers.findMany({
+        where: inArray(
+          questionAnswers.responseId,
+          responses.map((r) => r.id),
+        ),
+      })
+    : [];
+  const cycleQuestions = readCycleIds.length
+    ? await db.query.formQuestions.findMany({
+        where: inArray(formQuestions.cycleId, readCycleIds),
+        orderBy: asc(formQuestions.displayOrder),
+      })
+    : [];
+
+  /**
+   * Who wrote each reply and each public answer.
+   *
+   * A thread is a conversation, not a broadcast: `privateMessageRole` allows a
+   * student follow-up in the same list, and staff colleagues answer each
+   * other's students. Rendering it without names would let a reader mistake a
+   * classmate's follow-up for a colleague's answer, and leaves "who already
+   * dealt with this" unanswerable in a shared course.
+   *
+   * Staff names are staff-facing only. The student's own view stays "your
+   * teaching team" — see the history page.
+   */
+  const authorIds = [
+    ...new Set([
+      ...privates.map((p) => p.authorUserId),
+      ...answers.map((a) => a.createdByUserId),
+    ]),
+  ].filter((id): id is string => !!id);
+  const authorById = new Map(
+    (authorIds.length
+      ? await db.query.users.findMany({ where: inArray(users.id, authorIds) })
+      : []
+    ).map((u) => [u.id, u.displayName]),
+  );
+
   const recordIds = [...new Set(responses.map((r) => r.studentRecordId))];
   const recordById = new Map(
     (canSeeIdentities && recordIds.length
@@ -334,12 +434,45 @@ async function reviewQueue(
       .filter((i) => i.responseId === response.id)
       .map((item) => {
         const itemLinks = links.filter((l) => l.itemId === item.id);
+        const itemPrivates = privates
+          .filter((p) => p.itemId === item.id)
+          .map((message) => ({
+            ...message,
+            /**
+             * The student's follow-up is attributed to the student, and only
+             * when this reader may see identities — the same masking the row
+             * itself gets. Never their account name: the roster name is the one
+             * staff already know them by.
+             */
+            authorName:
+              message.authorRole === "student"
+                ? (record?.fullName ?? null)
+                : (authorById.get(message.authorUserId) ?? null),
+          }));
+        const itemAnswers = itemLinks
+          .map((l) => answerById.get(l.publicAnswerId))
+          .filter((a): a is NonNullable<typeof a> => !!a)
+          .map((answer) => ({
+            ...answer,
+            authorName: answer.createdByUserId
+              ? (authorById.get(answer.createdByUserId) ?? null)
+              : null,
+          }));
         return {
           item,
-          privateResponses: privates.filter((p) => p.itemId === item.id),
-          publicAnswers: itemLinks
-            .map((l) => answerById.get(l.publicAnswerId))
-            .filter((a): a is NonNullable<typeof a> => !!a),
+          privateResponses: itemPrivates,
+          publicAnswers: itemAnswers,
+          /**
+           * Nothing more is owed on this item: it was replied to, published,
+           * or staff decided not to answer it. A general comment is settled the
+           * moment it arrives — it is never triaged.
+           */
+          settled:
+            item.kind === "general_comment" ||
+            itemPrivates.length > 0 ||
+            itemAnswers.some((a) => a.state === "published") ||
+            item.disposition === "no_response" ||
+            item.reviewState === "resolved",
         };
       });
     const answered = responseItems.some(
@@ -347,7 +480,27 @@ async function reviewQueue(
         i.privateResponses.length > 0 ||
         i.publicAnswers.some((a) => a.state === "published"),
     );
+    /** Still owed something: a real question nobody has settled. */
+    const outstanding = responseItems.some(
+      (i) => i.item.kind !== "general_comment" && !i.settled,
+    );
     const instance = cycleById.get(response.cycleId) ?? null;
+    const asked = cycleQuestions.filter((q) => q.cycleId === response.cycleId);
+    const given = formAnswers.filter((a) => a.responseId === response.id);
+    const answerRows = asked
+      .map((question) => {
+        const answer = given.find((a) => a.questionId === question.id);
+        return answer
+          ? {
+              prompt: question.prompt,
+              type: question.type,
+              scale: question.scale,
+              value: answer.value,
+              freeText: answer.freeText,
+            }
+          : null;
+      })
+      .filter((a): a is NonNullable<typeof a> => !!a);
     return {
       response: {
         id: response.id,
@@ -369,14 +522,21 @@ async function reviewQueue(
       sequenceLabel:
         instance && hasSequence(instance) ? instanceLabel(instance) : null,
       items: responseItems,
+      outstanding,
+      /** the teacher's own form questions and this student's answers to them */
+      answers: answerRows,
+      unansweredCount: asked.length - answerRows.length,
       answered,
     };
   });
 
   const counts = {
     total: rows.length,
+    // Only work somebody can actually clear. A general comment is never
+    // triaged, and a question staff have declined to answer is settled — both
+    // would otherwise put a number on the queue that no action ever removes.
     needsReview: rows.filter(
-      (r) => r.response.validity === "valid" && !r.answered && r.items.length > 0,
+      (r) => r.response.validity === "valid" && r.outstanding,
     ).length,
     answered: rows.filter((r) => r.answered).length,
     invalid: rows.filter((r) => r.response.validity === "invalid").length,
@@ -387,7 +547,7 @@ async function reviewQueue(
   const filtered = rows.filter((row) => {
     switch (filter) {
       case "needs_review":
-        return row.response.validity === "valid" && !row.answered && row.items.length > 0;
+        return row.response.validity === "valid" && row.outstanding;
       case "answered":
         return row.answered;
       case "invalid":
@@ -415,6 +575,8 @@ async function reviewQueue(
     instances: cycles.map((instance) => ({
       instance,
       label: instanceLabel(instance),
+      /** submissions in this occurrence, across the actor's sections */
+      responseCount: countByCycle.get(instance.id) ?? 0,
       /** how many of THIS actor's sections receive it */
       audienceSize: (audiences.get(instance.id) ?? []).filter((id) =>
         sectionIds.includes(id),
@@ -648,6 +810,56 @@ export async function setItemReviewState(
       entityId: itemId,
       before: { reviewState: item.reviewState },
       after: { reviewState: state },
+    });
+  });
+}
+
+/**
+ * Staff decide this item will not be answered (domain-model.md §3.5).
+ *
+ * This is a REVIEW decision, not a message. The student is never told that a
+ * decision was made: §3.5 is explicit that `No response` and `Undecided` never
+ * surface, so their view stays "Submitted". Nothing is deleted, the original
+ * wording is untouched, and the decision is audited and reversible — which is
+ * why it is offered without a confirmation step.
+ *
+ * A general comment is refused: it is never triaged, so there is no answer to
+ * decline. Deciding requires `reviewResponses`, the same standing as reading
+ * the queue, because choosing not to answer is part of working through it.
+ */
+export async function declineToAnswer(
+  actorUserId: string,
+  itemId: string,
+  opts: { undo?: boolean } = {},
+) {
+  const { item, sectionId } = await getItemWithSection(itemId);
+  await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses");
+  if (item.kind === "general_comment") {
+    throw new Error("A general comment is never triaged");
+  }
+  // Never overwrite a real outcome: an item that already carries a reply or a
+  // published answer is answered, and "no response" would misdescribe it.
+  if (
+    item.disposition !== "undecided" &&
+    item.disposition !== "no_response"
+  ) {
+    throw new Error("This question has already been answered");
+  }
+
+  const disposition = opts.undo ? "undecided" : "no_response";
+  const reviewState = opts.undo ? "new" : "resolved";
+  return db.transaction(async (tx) => {
+    await tx
+      .update(studentSubmissionItems)
+      .set({ disposition, reviewState, updatedAt: new Date() })
+      .where(eq(studentSubmissionItems.id, itemId));
+    await writeAudit(tx, {
+      actorUserId,
+      action: opts.undo ? "item.answer_declined_undone" : "item.answer_declined",
+      entityType: "student_submission_item",
+      entityId: itemId,
+      before: { disposition: item.disposition, reviewState: item.reviewState },
+      after: { disposition, reviewState },
     });
   });
 }

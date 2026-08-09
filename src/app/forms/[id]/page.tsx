@@ -8,11 +8,11 @@ import { courses } from "@/db/schema";
 
 import { formatDateTime, formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { studentSectionNav } from "@/components/layout/nav";
+import { studentSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
-  Breadcrumbs,
   MetaList,
   Notice,
   Stamp,
@@ -59,6 +59,7 @@ export default async function StudentFormPage({
   const user = await requireUser();
   const { id: instanceId } = await params;
   const { submitted } = await searchParams;
+  const path = `/forms/${instanceId}`;
 
   let current: Awaited<ReturnType<typeof getStudentFormStateForInstance>>;
   try {
@@ -69,7 +70,7 @@ export default async function StudentFormPage({
         <AppShell
           user={toShellUser(user)}
           workspace="student"
-          navGroups={[]}
+          navGroups={await primaryNavFor(user, path)}
           title="Form"
         >
           <AccessDenied what="this form" />
@@ -83,7 +84,7 @@ export default async function StudentFormPage({
       <AppShell
         user={toShellUser(user)}
         workspace="student"
-        navGroups={[]}
+        navGroups={await primaryNavFor(user, path)}
         title="Form"
       >
         <AccessDenied what="this form" />
@@ -112,17 +113,22 @@ export default async function StudentFormPage({
   const shell = {
     user: toShellUser(user),
     workspace: "student" as const,
-    navGroups: studentSectionNav(attributedSectionId, `/forms/${instanceId}`),
+    /* A form instance is reached through the reader's class, but its URL says
+       nothing about which one, so the page tells the rail. */
+    navGroups: await primaryNavFor(user, `/forms/${instanceId}`, {
+      fallbackHref: `/sections/${attributedSectionId}`,
+    }),
+    /* A form instance is what "This week's form" leads to, not a peer of it,
+       so the strip marks that tab rather than showing nothing selected. */
+    tabs: studentSectionTabs(attributedSectionId, `/forms/${instanceId}`, {
+      activeHref: `/sections/${attributedSectionId}`,
+    }),
+    tabsLabel: course.code,
     /* The course code is the identity. The section is not in the label: the
        student's action and this form are identical in every section it went to,
        so naming one would imply a difference that does not exist. */
     contextLabel: course.code,
     roomy: true,
-    breadcrumbs: (
-      <Breadcrumbs
-        items={[{ href: "/", label: "Overview" }, { label: course.code }]}
-      />
-    ),
   };
 
   /**

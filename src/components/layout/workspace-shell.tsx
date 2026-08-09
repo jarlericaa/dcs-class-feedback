@@ -2,20 +2,32 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOutAction } from "@/app/actions/session";
 import { initials } from "@/lib/datetime";
-import { IconBack, IconCheck, IconMenu, IconSearch } from "@/components/ui/icons";
+import {
+  IconBack,
+  IconChevron,
+  IconMenu,
+  IconSearch,
+} from "@/components/ui/icons";
 import { FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
-import { CategoryMark } from "@/components/ui/icons";
-import { NAV_ICONS, type NavGroup } from "./nav";
+import { SubNav } from "./sub-nav";
+import { NAV_ICONS, type NavGroup, type NavItem } from "./nav";
 
 /**
  * The workspace chrome: a white top bar with a hairline under it, a left rail
- * carrying the section's destinations, and a body that is either a two-pane
- * list/detail view or a single scrolling page.
+ * carrying the account's destinations, a contextual tab strip for the resource
+ * on screen, and a body that is either a two-pane list/detail view or a single
+ * scrolling page.
  *
- * The information architecture follows docs/CLAUDE_UI_SCREEN_SPEC.md (course
- * rail → category list → dense list → selected detail); the visual world is
- * Class Feedback's own (DESIGN.md). No third-party logo, product name, brand
- * colour or asset is reproduced.
+ * The rail takes ONE input — `navGroups`, built by `primaryNav` from the
+ * account — so it renders identically on every page that account can open. It
+ * has no slot for route-specific content on purpose: the previous version let
+ * a page inject its own topic list, section switcher and primary button, and
+ * the result was a rail that changed shape as the reader moved. Anything that
+ * belongs to the current page goes in `tabs`, the page header, or the list
+ * pane's filters.
+ *
+ * The visual world is Class Feedback's own (DESIGN.md). No third-party logo,
+ * product name, brand colour or asset is reproduced.
  *
  * Everything the rail offers is derived from the SAME effective permissions the
  * server enforces. Hiding a link is presentation, never authorization.
@@ -26,138 +38,62 @@ export interface ShellUser {
   email: string;
 }
 
-export interface RailCourse {
-  href: string;
-  label: string;
-  active?: boolean;
-  /** real count only — never a decorative number */
-  count?: number;
-}
-
-export interface RailCategory {
-  href: string;
-  label: string;
-  slug: string;
-  /** drawn silhouette; categories never carry a colour */
-  shape: "square" | "triangle" | "circle";
-  active?: boolean;
-  /** real count for the current view */
-  count?: number;
-  /** href that clears the filter when the active row is clicked */
-  clearHref?: string;
-}
-
 function Rail({
   user,
   workspaceLabel,
-  primaryAction,
-  courses,
-  categories,
   navGroups,
   footer,
-  idPrefix,
 }: {
   user: ShellUser;
   workspaceLabel?: string;
-  primaryAction?: { href: string; label: string };
-  courses?: RailCourse[];
-  categories?: RailCategory[];
   navGroups?: NavGroup[];
   footer?: ReactNode;
-  /** the rail is rendered twice (persistent + drawer); ids must stay unique */
-  idPrefix: string;
 }) {
   return (
     <>
-      {primaryAction && (
-        <Link className="ws-rail__action" href={primaryAction.href}>
-          {primaryAction.label}
-        </Link>
-      )}
-
-      {navGroups?.map((group) => (
-        <div key={group.label}>
-          <p className="ws-rail__heading">{group.label}</p>
-          {group.items.map((item) => {
-            const Glyph = NAV_ICONS[item.icon];
-            return (
-              <Link
-                key={item.href}
-                className={`ws-rail__item ${item.active ? "ws-rail__item--active" : ""}`}
-                href={item.href}
-                aria-current={item.active ? "page" : undefined}
-              >
-                <span className="ws-rail__icon">
-                  <Glyph size={16} />
-                </span>
-                <span className="ws-rail__text">{item.label}</span>
-                {item.count ? (
-                  <span className="ws-rail__count">
-                    {item.count}
-                    <span className="visually-hidden"> needing review</span>
-                  </span>
-                ) : null}
-              </Link>
-            );
-          })}
-        </div>
-      ))}
-
-      {categories && categories.length > 0 && (
-        <>
-          <p className="ws-rail__heading">Topic</p>
-          {categories.map((category) => (
+      {navGroups?.map((group) => {
+        const rows = group.items.map((item) => {
+          const Glyph = item.icon ? NAV_ICONS[item.icon] : null;
+          return (
             <Link
-              key={category.slug}
-              className={`ws-rail__item ${category.active ? "ws-rail__item--active" : ""}`}
-              href={
-                category.active
-                  ? (category.clearHref ?? category.href)
-                  : category.href
-              }
-              aria-current={category.active ? "true" : undefined}
+              key={item.href}
+              className={`ws-rail__item ${item.active ? "ws-rail__item--active" : ""}`}
+              href={item.href}
+              aria-current={item.active ? "page" : undefined}
             >
               <span className="ws-rail__icon">
-                <CategoryMark shape={category.shape} size={9} />
+                {Glyph && <Glyph size={16} />}
               </span>
-              <span className="ws-rail__text">{category.label}</span>
-              {category.count !== undefined && (
-                <span className="meta">{category.count}</span>
-              )}
-              {category.active && (
-                <>
-                  <IconCheck size={13} />
-                  <span className="visually-hidden">(filtering by this)</span>
-                </>
-              )}
-            </Link>
-          ))}
-        </>
-      )}
-
-      {courses && courses.length > 0 && (
-        <>
-          <p className="ws-rail__heading" id={`${idPrefix}-courses`}>
-            {courses.length === 1 ? "Class section" : "Class sections"}
-          </p>
-          {courses.map((course) => (
-            <Link
-              key={course.href}
-              className={`ws-rail__item ${course.active ? "ws-rail__item--active" : ""}`}
-              href={course.href}
-              aria-current={course.active ? "page" : undefined}
-            >
-              <span className="ws-rail__text">{course.label}</span>
-              {course.count ? (
+              <span className="ws-rail__text">{item.label}</span>
+              {item.count ? (
                 <span className="ws-rail__count">
-                  {course.count}
+                  {item.count}
                   <span className="visually-hidden"> needing review</span>
                 </span>
               ) : null}
             </Link>
-          ))}
-        </>
-      )}
+          );
+        });
+
+        /* Always `open`. The disclosure lets a reader fold a long course list
+           away for the session; it does not remember, because a rail whose
+           height depended on where you had been is the instability this model
+           exists to remove. */
+        return group.collapsible ? (
+          <details className="ws-rail__group" key={group.label} open>
+            <summary className="ws-rail__heading ws-rail__heading--toggle">
+              {group.label}
+              <IconChevron className="ws-rail__chevron" size={13} />
+            </summary>
+            {rows}
+          </details>
+        ) : (
+          <div key={group.label}>
+            <p className="ws-rail__heading">{group.label}</p>
+            {rows}
+          </div>
+        );
+      })}
 
       <div className="ws-rail__footer">
         {workspaceLabel && <p>{workspaceLabel}</p>}
@@ -177,10 +113,9 @@ export function WorkspaceShell({
   user,
   contextTitle,
   workspaceLabel,
-  primaryAction,
-  courses,
-  categories,
   navGroups,
+  tabs,
+  tabsLabel,
   railFooter,
   listPane,
   selection,
@@ -191,10 +126,11 @@ export function WorkspaceShell({
   contextTitle: string;
   /** "Student workspace", "Staff workspace" — stated, never inferred */
   workspaceLabel?: string;
-  primaryAction?: { href: string; label: string };
-  courses?: RailCourse[];
-  categories?: RailCategory[];
   navGroups?: NavGroup[];
+  /** peer views of the resource this page belongs to; never global destinations */
+  tabs?: NavItem[];
+  /** names the resource those views belong to, e.g. "CS 33" */
+  tabsLabel?: string;
   railFooter?: ReactNode;
   /** when present the body is a two-pane list/detail view */
   listPane?: ReactNode;
@@ -207,23 +143,20 @@ export function WorkspaceShell({
   selection?: { active: boolean; backHref: string };
   children: ReactNode;
 }) {
-  const hasRail = !!(
-    primaryAction ||
-    courses?.length ||
-    categories?.length ||
-    navGroups?.length
-  );
+  /**
+   * The rail is present whenever there is anything to put in it, which for a
+   * signed-in account is always. It is deliberately NOT conditional on the
+   * route: a page that dropped the rail also dropped the mobile menu button
+   * with it, so an unauthorized page left the reader with no way out at all.
+   */
+  const hasRail = !!navGroups?.length;
 
-  const rail = (idPrefix: string) => (
+  const rail = () => (
     <Rail
       user={user}
       workspaceLabel={workspaceLabel}
-      primaryAction={primaryAction}
-      courses={courses}
-      categories={categories}
       navGroups={navGroups}
       footer={railFooter}
-      idPrefix={idPrefix}
     />
   );
 
@@ -257,8 +190,8 @@ export function WorkspaceShell({
                 <IconMenu size={16} />
                 Menu
               </summary>
-              <nav className="ws-drawer__panel" aria-label="Workspace">
-                {rail("drawer")}
+              <nav className="ws-drawer__panel" aria-label="Primary menu">
+                {rail()}
               </nav>
             </details>
           )}
@@ -273,9 +206,14 @@ export function WorkspaceShell({
 
       <div className="ws-body">
         {hasRail && (
-          <nav className="ws-rail" aria-label="Workspace">
-            {rail("rail")}
+          <nav className="ws-rail" aria-label="Primary">
+            {rail()}
           </nav>
+        )}
+
+        {/* The resource's own views, between the workspace and the page. */}
+        {tabs && tabs.length > 0 && (
+          <SubNav items={tabs} label={tabsLabel ?? contextTitle} />
         )}
 
         {listPane}
@@ -315,6 +253,7 @@ export function ListPane({
   searchValue,
   searchPlaceholder = "Search",
   hiddenFields,
+  primaryFilter,
   filterGroups,
   /** true once a row is selected: the detail takes over on a stacked layout */
   hiddenOnMobile,
@@ -328,7 +267,14 @@ export function ListPane({
   searchValue?: string;
   searchPlaceholder?: string;
   hiddenFields?: Record<string, string | undefined>;
-  /** every narrowing dimension, in ONE popover */
+  /**
+   * The one dimension a reader changes constantly, promoted out of the popover
+   * to a control that states its current value without being opened. Everything
+   * else stays in `filterGroups`, because a second always-visible control turns
+   * the top of the list into a settings panel.
+   */
+  primaryFilter?: ReactNode;
+  /** every remaining narrowing dimension, in ONE popover */
   filterGroups?: (FilterGroup | undefined)[];
   hiddenOnMobile?: boolean;
   children: ReactNode;
@@ -342,6 +288,7 @@ export function ListPane({
       aria-label={label}
     >
       {header}
+      {primaryFilter && <div className="ws-list__primary">{primaryFilter}</div>}
       <form
         className="ws-search"
         method="get"

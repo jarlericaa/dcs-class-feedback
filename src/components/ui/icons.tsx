@@ -234,6 +234,20 @@ export const IconPublic = (p: IconProps) => (
   </Icon>
 );
 
+/**
+ * Deciding not to answer: the speech mark, struck through.
+ *
+ * The same bubble the thread uses for a reply, with a stroke across it — the
+ * decision is about a reply that will not happen, so it should read as the
+ * absence of one rather than as a different object entirely.
+ */
+export const IconNoReply = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 4.5v9.5a2 2 0 0 1-2 2h-7l-4.5 3.5V16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8" />
+    <path d="m15 3 6 6" />
+  </Icon>
+);
+
 export const IconNote = (p: IconProps) => (
   <Icon {...p}>
     <path d="M5 3h14v18H5z" />

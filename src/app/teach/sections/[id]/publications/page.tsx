@@ -1,15 +1,15 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { loadStaffSectionAny } from "@/lib/staff-section";
+import { loadStaffSectionAny, sectionLabel } from "@/lib/staff-section";
 import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { staffSectionNav } from "@/components/layout/nav";
+import { staffSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
   Stamp,
-  Breadcrumbs,
   EmptyState,
   MetaList,
 } from "@/components/ui";
@@ -41,6 +41,7 @@ export default async function PublicationsPage({
   searchParams: Promise<{ ok?: string; error?: string; warn?: string }>;
 }) {
   const { id: sectionId } = await params;
+  const path = `/teach/sections/${sectionId}/publications`;
   const { ok, error, warn } = await searchParams;
   // Reading the queue needs any publication capability, not specifically
   // draftPublicAnswers — listPublicationQueue enforces the same rule.
@@ -50,7 +51,7 @@ export default async function PublicationsPage({
       <AppShell
         user={toShellUser(ctx.user)}
         workspace="staff"
-        navGroups={[]}
+        navGroups={await primaryNavFor(ctx.user, path)}
         title="Publication queue"
       >
         <AccessDenied what="this section's public answers" />
@@ -163,20 +164,14 @@ export default async function PublicationsPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(
-        access,
-        `/teach/sections/${sectionId}/publications`,
-      )}
-      contextLabel={section.title}
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { href: "/", label: "Overview" },
-            { label: course.code },
-            { label: "Publication queue" },
-          ]}
-        />
-      }
+      navGroups={await primaryNavFor(user, path, {
+        /* A section is reached through its course, and the course now has its
+           own rail row — so mark that one rather than the courses index. */
+        fallbackHref: `/teach/courses/${course.id}`,
+      })}
+      tabs={staffSectionTabs(access, path)}
+      tabsLabel={sectionLabel(course.code, section.title)}
+      contextLabel={sectionLabel(course.code, section.title)}
       title="Publication queue"
     >
       <div className="stack-4">

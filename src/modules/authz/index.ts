@@ -602,6 +602,16 @@ export interface SectionAccess {
     isCourseOwner: boolean;
     /** true for a teacher/co-teacher/course-staff member — the "Instructor" tier */
     isInstructor: boolean;
+    /**
+     * Course-level standing (owner or courseStaff row), independent of the
+     * section role.
+     *
+     * A section teacher who is not course staff still holds every permission
+     * ON THIS SECTION, so `role` cannot answer "may this person open the
+     * course?". Navigation needs that answer to decide whether the reader has
+     * a course context to fall back on, so it is resolved once, here.
+     */
+    hasCourseStanding: boolean;
     permissions: EffectivePermissions;
   } | null;
   /** the email-resolved student record with an active enrolment here, if any */
@@ -658,6 +668,7 @@ export async function getSectionAccess(
       role: membership.role,
       isCourseOwner: isOwner,
       isInstructor: true,
+      hasCourseStanding: courseMembership,
       permissions: allPermissions(true),
     };
   } else if (membership) {
@@ -670,6 +681,7 @@ export async function getSectionAccess(
       role: courseMembership ? "course_staff" : "ta",
       isCourseOwner: isOwner,
       isInstructor: courseMembership,
+      hasCourseStanding: courseMembership,
       permissions: granted,
     };
   } else if (courseMembership) {
@@ -677,6 +689,7 @@ export async function getSectionAccess(
       role: "course_staff",
       isCourseOwner: isOwner,
       isInstructor: true,
+      hasCourseStanding: true,
       permissions: allPermissions(true),
     };
   }

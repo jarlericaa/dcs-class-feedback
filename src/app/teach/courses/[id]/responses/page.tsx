@@ -6,41 +6,45 @@ import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courses } from "@/db/schema";
-import { formatDateTime } from "@/lib/datetime";
-import { courseNav } from "@/components/layout/nav";
+import { formatDateTime, initials } from "@/lib/datetime";
+import { AppShell } from "@/components/layout/app-shell";
+import { courseTabs, staffSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
-  DayGroupHeading,
-  ListPane,
-  WorkspaceShell,
-} from "@/components/layout/workspace-shell";
-import {
-  categoryShape,
-  categoryShortLabel,
-  groupByDay,
-  QUESTION_CATEGORIES,
-  shortAgo,
-} from "@/lib/threads";
+  markReviewedThisSession,
+  readReviewedThisSession,
+  unmarkReviewedThisSession,
+} from "@/lib/reviewed-session";
+import { categoryShortLabel } from "@/lib/threads";
 import {
   AccessDenied,
   Alert,
+  EmptyState,
   MetaList,
   Stamp,
   ValidityBadge,
 } from "@/components/ui";
+import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 import { Dialog } from "@/components/ui/dialog";
+import { ScrollToPost } from "@/components/ui/scroll-to";
 import {
-  CategoryMark,
-  IconBack,
+  Thread,
+  ThreadAudience,
+  ThreadMessage,
+} from "@/components/ui/thread";
+import {
+  IconNoReply,
   IconPrivate,
   IconPublic,
+  IconSearch,
 } from "@/components/ui/icons";
 import { PublicAnswerComposer } from "@/components/staff/public-answer-composer";
 import {
   confirmFlag,
   createPrivateResponse,
+  declineToAnswer,
   flagSubmission,
   getCourseReviewQueue,
-  getSubmissionDetail,
   getValidityHistory,
   invalidateSubmission,
   rejectFlag,
@@ -61,24 +65,37 @@ import {
 } from "@/modules/publishing";
 
 /**
- * Staff review inbox for one COURSE. Queue on the left, the selected submission
- * on the right, collapsing to a single column below 860px.
+ * Staff review for ONE occurrence of a course's forms, as a single column of
+ * posts.
  *
  * Course-scoped on purpose: a form shared by several sections is ONE queue, so a
  * teacher reads its responses together — the section split is not something
- * students experience. A Section filter narrows when it is operationally useful,
- * and only appears when the reader's own sections are more than one.
+ * students experience. A Section filter narrows when it is operationally useful.
  *
- * Everything shown here comes from getCourseReviewQueue/getSubmissionDetail,
- * which mask student identity in the DATA when the actor lacks
- * view_student_identities and which scope every row to the sections the actor
- * holds `review_responses` on. Nothing on this page is student-visible: validity,
- * review state and drafts all stay inside it.
+ * One WEEK at a time, and that bound is the design. A feed's native shape is
+ * endless, which is exactly wrong for work meant to finish: a week is the
+ * product's unit of rhythm and it is also a pile a teacher can get to the bottom
+ * of. So the column is scoped to one occurrence, nothing loads on scroll, and it
+ * ends with a card that says how much of it is left.
+ *
+ * Oldest first, not newest first. Reverse-chronological — the shape a social
+ * feed would take — systematically starves whoever asked earliest, and the
+ * student who has waited longest is the one who should be reached first.
+ *
+ * Everything here comes from getCourseReviewQueue, which masks student identity
+ * in the DATA when the actor lacks view_student_identities and scopes every row
+ * to the sections the actor holds `review_responses` on. Nothing on this page is
+ * student-visible: validity, review state and drafts all stay inside it.
+ *
+ * And nothing here is social. No reactions, no view counts, no signal of how
+ * many people read a submission. These were written under an anonymity promise,
+ * often to report a problem with the teaching, and anything resembling a score
+ * would break the frame that makes students willing to write honestly.
  */
 
 const FILTERS: { key: ReviewFilter; label: string }[] = [
   { key: "all", label: "Everything" },
-  { key: "needs_review", label: "Needs review" },
+  { key: "needs_review", label: "Needs a reply" },
   { key: "answered", label: "Answered" },
   { key: "invalid", label: "Marked invalid" },
 ];
@@ -88,20 +105,6 @@ const FILTERS: { key: ReviewFilter; label: string }[] = [
  * to a student; when a decision removes credit, the student sees only the
  * separate `studentVisibleReason` a human types.
  */
-/**
- * Does this actor hold `permission` on the SELECTED submission's section?
- *
- * Module scope so the page body stays readable, and per-section because that is
- * where the permission catalog lives: a course-wide inbox must not lend standing
- * from one section to another. The services re-check every action regardless.
- */
-function canOn(
-  access: Awaited<ReturnType<typeof getSectionAccess>> | null,
-  permission: SectionPermission,
-): boolean {
-  return access?.staff?.permissions[permission] ?? false;
-}
-
 const INVALID_REASONS = [
   { value: "empty_or_meaningless", label: "Empty or meaningless" },
   { value: "spam", label: "Spam" },
@@ -110,22 +113,35 @@ const INVALID_REASONS = [
   { value: "bad_faith_credit_attempt", label: "Bad-faith credit attempt" },
 ];
 
+type QueueRow = Awaited<ReturnType<typeof getCourseReviewQueue>>["rows"][number];
+
+/**
+ * Waiting on this reader: a valid response carrying a real question nobody has
+ * settled — replied to, published, or explicitly declined.
+ *
+ * A general comment never counts. The schema says it is never triaged and can
+ * never be published, so treating one as outstanding would put a number on the
+ * queue that no action could ever clear.
+ */
+function needsReply(row: QueueRow): boolean {
+  return row.response.validity === "valid" && row.outstanding;
+}
+
 export default async function CourseResponsesPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{
-    selected?: string;
     filter?: string;
-    /** one form occurrence */
+    /** one form occurrence — the week this column is reading */
     cycle?: string;
-    /** one form definition — narrows to that form's occurrences */
-    form?: string;
     /** one class section, when the reader has more than one */
     section?: string;
     category?: string;
     q?: string;
+    /** the post an action just finished on, so the reader lands back on it */
+    at?: string;
     warn?: string;
     error?: string;
     ok?: string;
@@ -134,25 +150,35 @@ export default async function CourseResponsesPage({
   const { id: courseId } = await params;
   const sp = await searchParams;
   const user = await requireUser();
+  const path = `/teach/courses/${courseId}/responses`;
 
   const filter = (FILTERS.find((f) => f.key === sp.filter)?.key ??
     "all") as ReviewFilter;
+
   let queue;
   try {
+    /**
+     * Always read the whole occurrence and narrow in memory. The "needs a
+     * reply" view has to keep showing a post the reader has just answered
+     * (see `reviewed-session`), and a row the query has already dropped cannot
+     * be put back.
+     */
     queue = await getCourseReviewQueue(user.id, courseId, {
-      filter,
+      filter: "all",
       instanceId: sp.cycle,
       sectionId: sp.section,
     });
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
-        <WorkspaceShell
+        <AppShell
           user={toShellUser(user)}
-          contextTitle="Class Feedback"
+          workspace="staff"
+          navGroups={await primaryNavFor(user, path)}
+          title="Responses"
         >
           <AccessDenied what="this course's responses" />
-        </WorkspaceShell>
+        </AppShell>
       );
     }
     throw err;
@@ -161,101 +187,138 @@ export default async function CourseResponsesPage({
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
-  // Timezone and instructor standing come from a section the reader can see.
-  // Every instructor capability is per-section, so the controls follow the
-  // SELECTED submission's section, resolved below.
-  const timezone = sections[0]?.timezone ?? "Asia/Manila";
+
+  /**
+   * Which week the column is reading.
+   *
+   * Without an explicit choice it is the most recent occurrence anyone has
+   * actually answered — landing on next week's empty form would be technically
+   * correct and useless. `instances` arrives newest-first.
+   */
+  const currentCycleId =
+    sp.cycle ??
+    instances.find((i) => i.responseCount > 0)?.instance.id ??
+    instances[0]?.instance.id;
+  const currentCycle = instances.find((i) => i.instance.id === currentCycleId);
+
+  /**
+   * Standing is resolved per SECTION, not per course: every instructor
+   * capability is granted on a section, and a course-wide column must not lend
+   * a co-teacher of Section A the power to finalize a Section B decision. One
+   * lookup per section this reader holds, reused by every post. The services
+   * re-check each of these regardless.
+   */
+  const accessBySection = new Map(
+    await Promise.all(
+      sections.map(
+        async (section) =>
+          [section.id, await getSectionAccess(db, user.id, section.id)] as const,
+      ),
+    ),
+  );
+  const canOn = (sectionId: string, permission: SectionPermission) =>
+    accessBySection.get(sectionId)?.staff?.permissions[permission] ?? false;
+  const isInstructorOn = (sectionId: string) =>
+    accessBySection.get(sectionId)?.staff?.isInstructor ?? false;
+  const timezoneOf = (sectionId: string) =>
+    sections.find((s) => s.id === sectionId)?.timezone ?? "Asia/Manila";
+
+  const reviewedThisSession = await readReviewedThisSession();
 
   // Category and free-text narrowing happen here rather than in the service:
   // both are presentation filters over an already-authorized result set.
   const term = sp.q?.trim().toLowerCase();
-  const searchRows = rows.filter((row) => {
-    if (
-      term &&
-      !row.items.some((i) =>
-        i.item.originalText.toLowerCase().includes(term),
-      ) &&
-      !(row.student?.fullName.toLowerCase().includes(term) ?? false)
-    ) {
-      return false;
+  const matchesSearch = (row: QueueRow) =>
+    !term ||
+    row.items.some((i) => i.item.originalText.toLowerCase().includes(term)) ||
+    (row.student?.fullName.toLowerCase().includes(term) ?? false);
+  const matchesCategory = (row: QueueRow) =>
+    !sp.category || row.items.some((i) => i.item.category === sp.category);
+  const matchesFilter = (row: QueueRow) => {
+    switch (filter) {
+      case "needs_review":
+        // A post answered in this session stays in place, marked done, rather
+        // than vanishing and shifting the column under the cursor.
+        return needsReply(row) || reviewedThisSession.has(row.response.id);
+      case "answered":
+        return row.answered;
+      case "invalid":
+        return row.response.validity === "invalid";
+      default:
+        return true;
     }
-    return true;
-  });
-  const visibleRows = searchRows.filter(
-    (row) =>
-      !sp.category || row.items.some((i) => i.item.category === sp.category),
-  );
-  const categoryCounts = new Map(
-    QUESTION_CATEGORIES.map((category) => [category.slug as string, 0]),
-  );
-  for (const row of searchRows) {
-    for (const item of row.items) {
-      if (categoryCounts.has(item.item.category)) {
-        categoryCounts.set(
-          item.item.category,
-          categoryCounts.get(item.item.category)! + 1,
-        );
-      }
-    }
-  }
-  // getReviewQueue returns only `submitted` and `locked` responses, so every row
-  // here has a submittedAt; the read model's type is nullable because a draft
-  // (never in this queue) has none.
-  const submittedAt = (row: (typeof visibleRows)[number]) =>
-    row.response.submittedAt ?? new Date();
-  const groups = groupByDay(visibleRows, submittedAt, new Date(), timezone);
+  };
 
-  const selectedRow =
-    visibleRows.find((r) => r.response.id === sp.selected) ?? visibleRows[0];
-  const detail = selectedRow
-    ? await getSubmissionDetail(user.id, selectedRow.response.id)
-    : null;
-  const validityHistory = selectedRow
-    ? await getValidityHistory(user.id, selectedRow.response.id)
-    : [];
+  const submittedAt = (row: QueueRow) => row.response.submittedAt ?? new Date(0);
+  const visible = rows
+    .filter(
+      (row) => matchesSearch(row) && matchesCategory(row) && matchesFilter(row),
+    )
+    .sort((a, b) => submittedAt(a).getTime() - submittedAt(b).getTime());
+
+  const nextWaiting = visible.find(
+    (row) => needsReply(row) && !reviewedThisSession.has(row.response.id),
+  );
+  const waitingCount = visible.filter(
+    (row) => needsReply(row) && !reviewedThisSession.has(row.response.id),
+  ).length;
+
+  // Validity history only where a flag is actually pending — usually none, and
+  // reading it for every post would be one query per row for nothing.
+  const flagEvents = new Map(
+    await Promise.all(
+      visible
+        .filter((row) => row.response.validity === "flagged")
+        .map(async (row) => {
+          const history = await getValidityHistory(user.id, row.response.id);
+          return [
+            row.response.id,
+            [...history].reverse().find((event) => event.action === "flag") ??
+              null,
+          ] as const;
+        }),
+    ),
+  );
 
   /**
-   * Standing is resolved on the SELECTED submission's own section, not on the
-   * course: instructor capabilities are per-section, and a course-wide inbox must
-   * not lend a co-teacher of Section A the power to finalize a Section B
-   * decision. The services re-check every one of these regardless.
+   * Which context this page belongs to, for the reader looking at it. Course
+   * staff read it as one of the course's views; a delegated assistant has no
+   * course workspace, and for them it is a view of their own section.
    */
-  const selectedSectionId = selectedRow?.response.sectionId ?? null;
-  const selectedAccess = selectedSectionId
-    ? await getSectionAccess(db, user.id, selectedSectionId)
+  const railSectionId = sp.section ?? sections[0]?.id ?? null;
+  const railAccess = railSectionId
+    ? (accessBySection.get(railSectionId) ??
+      (await getSectionAccess(db, user.id, railSectionId)))
     : null;
-  const isInstructor = selectedAccess?.staff?.isInstructor ?? false;
-  const can = (permission: Parameters<typeof canOn>[1]) =>
-    canOn(selectedAccess, permission);
-  const selectedSection = selectedSectionId
-    ? (sections.find((s) => s.id === selectedSectionId) ?? null)
-    : null;
-  const detailTimezone = selectedSection?.timezone ?? timezone;
+  const showsCourseTabs = railAccess?.staff?.hasCourseStanding ?? true;
+  const tabs = showsCourseTabs
+    ? courseTabs(courseId, path, { needsReview: counts.needsReview })
+    : staffSectionTabs(railAccess!, path, {
+        needsReview: counts.needsReview,
+        activeHref: `/teach/sections/${railSectionId}/review`,
+      });
 
-  // The most recent flag, for the instructor's decision dialog.
-  const flagEvent = [...validityHistory]
-    .reverse()
-    .find((event) => event.action === "flag");
+  // --- server actions ------------------------------------------------------
 
-  const queryFor = (patch: Record<string, string | undefined>) => {
-    const next = new URLSearchParams();
-    const merged = {
+  /**
+   * The query string an action returns to, as a plain STRING.
+   *
+   * Everything a `use server` closure captures is serialized, so these actions
+   * may only close over plain values — a helper function defined out here is
+   * refused outright. Each action re-opens this, adds its own message, and
+   * anchors to the post it acted on, because without the anchor every reply
+   * throws the reader back to the top of a column they were halfway down.
+   */
+  const backQuery = new URLSearchParams(
+    Object.entries({
       filter,
-      cycle: sp.cycle,
-      form: sp.form,
+      cycle: currentCycleId,
       section: sp.section,
       category: sp.category,
       q: sp.q,
-      selected: sp.selected,
-      ...patch,
-    };
-    for (const [key, value] of Object.entries(merged)) {
-      if (value) next.set(key, value);
-    }
-    return `/teach/courses/${courseId}/responses?${next.toString()}`;
-  };
+    }).filter((entry): entry is [string, string] => !!entry[1]),
+  ).toString();
 
-  // --- server actions ------------------------------------------------------
 
   // A student assistant may FLAG; only an instructor may finalize or reverse a
   // validity decision. The service layer re-checks every one of these.
@@ -263,53 +326,86 @@ export default async function CourseResponsesPage({
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    await flagSubmission(uid, String(formData.get("responseId")), {
+    const responseId = String(formData.get("responseId"));
+    await flagSubmission(uid, responseId, {
       reason: String(formData.get("reason")) as "spam",
       note: String(formData.get("note") ?? "") || undefined,
     });
-    revalidatePath(`/teach/courses/${courseId}/responses`);
+    await markReviewedThisSession(responseId);
+    revalidatePath(path);
+    {
+      const back = new URLSearchParams(backQuery);
+      back.set("at", responseId);
+      redirect(`${path}?${back.toString()}`);
+    }
   }
 
   async function confirmFlagged(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    await confirmFlag(uid, String(formData.get("responseId")), {
+    const responseId = String(formData.get("responseId"));
+    await confirmFlag(uid, responseId, {
       reason: String(formData.get("reason")) as "spam",
       studentVisibleReason: String(formData.get("studentVisibleReason") ?? ""),
       note: String(formData.get("note") ?? "") || undefined,
     });
-    revalidatePath(`/teach/courses/${courseId}/responses`);
+    await markReviewedThisSession(responseId);
+    revalidatePath(path);
+    {
+      const back = new URLSearchParams(backQuery);
+      back.set("at", responseId);
+      redirect(`${path}?${back.toString()}`);
+    }
   }
 
   async function dismissFlag(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    await rejectFlag(uid, String(formData.get("responseId")), {
+    const responseId = String(formData.get("responseId"));
+    await rejectFlag(uid, responseId, {
       note: String(formData.get("note") ?? "") || undefined,
     });
-    revalidatePath(`/teach/courses/${courseId}/responses`);
+    revalidatePath(path);
+    {
+      const back = new URLSearchParams(backQuery);
+      back.set("at", responseId);
+      redirect(`${path}?${back.toString()}`);
+    }
   }
 
   async function invalidate(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    await invalidateSubmission(uid, String(formData.get("responseId")), {
+    const responseId = String(formData.get("responseId"));
+    await invalidateSubmission(uid, responseId, {
       reason: String(formData.get("reason")) as "spam",
       studentVisibleReason: String(formData.get("studentVisibleReason") ?? ""),
       note: String(formData.get("note") ?? "") || undefined,
     });
-    revalidatePath(`/teach/courses/${courseId}/responses`);
+    await markReviewedThisSession(responseId);
+    revalidatePath(path);
+    {
+      const back = new URLSearchParams(backQuery);
+      back.set("at", responseId);
+      redirect(`${path}?${back.toString()}`);
+    }
   }
 
   async function restoreValid(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
-    await restoreSubmission(uid, String(formData.get("responseId")));
-    revalidatePath(`/teach/courses/${courseId}/responses`);
+    const responseId = String(formData.get("responseId"));
+    await restoreSubmission(uid, responseId);
+    revalidatePath(path);
+    {
+      const back = new URLSearchParams(backQuery);
+      back.set("at", responseId);
+      redirect(`${path}?${back.toString()}`);
+    }
   }
 
   async function sendPrivate(formData: FormData) {
@@ -317,21 +413,55 @@ export default async function CourseResponsesPage({
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
     const body = String(formData.get("body") ?? "").trim();
-    const selected = String(formData.get("selected") ?? "");
+    const responseId = String(formData.get("responseId") ?? "");
     if (!body) {
-      redirect(
-        `/teach/courses/${courseId}/responses?selected=${selected}&error=${encodeURIComponent(
-          "A private reply cannot be empty.",
-        )}`,
-      );
+      const q = new URLSearchParams(backQuery);
+      q.set("error", "A private reply cannot be empty.");
+
+      q.set("at", responseId);
+      redirect(`${path}?${q.toString()}`);
     }
     await createPrivateResponse(uid, String(formData.get("itemId")), body);
-    revalidatePath(`/teach/courses/${courseId}/responses`);
-    redirect(
-      `/teach/courses/${courseId}/responses?selected=${selected}&ok=${encodeURIComponent(
-        "Private reply sent. Only this student and the teaching team can see it.",
-      )}`,
+    await markReviewedThisSession(responseId);
+    revalidatePath(path);
+    const sent = new URLSearchParams(backQuery);
+    sent.set(
+      "ok",
+      "Private reply sent. Only this student and the teaching team can see it.",
     );
+    sent.set("at", responseId);
+    redirect(`${path}?${sent.toString()}`);
+  }
+
+  /**
+   * Decide a question will not be answered.
+   *
+   * The student is told nothing: domain-model.md §3.5 is explicit that `No
+   * response` never surfaces, so their view stays "Submitted". Nothing is
+   * deleted, the decision is audited, and the same control reverses it — which
+   * is why it needs no confirmation step.
+   */
+  async function declineAnswer(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    const responseId = String(formData.get("responseId"));
+    const undo = formData.get("undo") === "yes";
+    await declineToAnswer(uid, String(formData.get("itemId")), { undo });
+    // Putting it back means putting it back: the "done" mark goes too, or the
+    // post stays stamped and the count never recovers.
+    if (undo) await unmarkReviewedThisSession(responseId);
+    else await markReviewedThisSession(responseId);
+    revalidatePath(path);
+    const q = new URLSearchParams(backQuery);
+    q.set(
+      "ok",
+      undo
+        ? "Back in the queue. The student was never told either way."
+        : "Marked as not being answered. The student is not told — their view still says submitted.",
+    );
+    q.set("at", responseId);
+    redirect(`${path}?${q.toString()}`);
   }
 
   async function draftOrPublish(formData: FormData) {
@@ -339,17 +469,20 @@ export default async function CourseResponsesPage({
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
     const itemId = String(formData.get("itemId"));
-    const selected = String(formData.get("selected") ?? "");
+    const responseId = String(formData.get("selected") ?? "");
     const publicQuestionText = String(
       formData.get("publicQuestion") ?? "",
     ).trim();
     const answerBody = String(formData.get("answerBody") ?? "").trim();
     const intent = String(formData.get("intent") ?? "draft");
 
-    const fail = (message: string) =>
-      redirect(
-        `/teach/courses/${courseId}/responses?selected=${selected}&error=${encodeURIComponent(message)}`,
-      );
+    const fail = (message: string) => {
+      const q = new URLSearchParams(backQuery);
+      q.set("error", message);
+
+      q.set("at", responseId);
+      redirect(`${path}?${q.toString()}`);
+    };
 
     if (!publicQuestionText)
       fail("Write the public version of the question first.");
@@ -367,11 +500,11 @@ export default async function CourseResponsesPage({
     if (intent === "publish" && !acknowledged) {
       const warnings = anonymityWarnings(publicQuestionText, 1);
       if (warnings.length > 0) {
-        redirect(
-          `/teach/courses/${courseId}/responses?selected=${selected}&warn=${encodeURIComponent(
-            warnings.join(" | "),
-          )}`,
-        );
+        const q = new URLSearchParams(backQuery);
+        q.set("warn", warnings.join(" | "));
+
+        q.set("at", responseId);
+        redirect(`${path}?${q.toString()}`);
       }
     }
 
@@ -407,237 +540,46 @@ export default async function CourseResponsesPage({
         throw err;
       }
     }
-    revalidatePath(`/teach/courses/${courseId}/responses`);
-    redirect(
-      `/teach/courses/${courseId}/responses?selected=${selected}&ok=${encodeURIComponent(
-        intent === "publish"
-          ? "Published to the asker's section without their name on it."
-          : "Saved as a draft. Finish it in the publication queue.",
-      )}`,
+    await markReviewedThisSession(responseId);
+    revalidatePath(path);
+    const done = new URLSearchParams(backQuery);
+    done.set(
+      "ok",
+      intent === "publish"
+        ? "Published to the asker's section without their name on it."
+        : "Saved as a draft. Finish it in the publication queue.",
     );
+    done.set("at", responseId);
+    redirect(`${path}?${done.toString()}`);
   }
 
   // --- render --------------------------------------------------------------
 
-  /**
-   * Which occurrence is a FILTER over this list, not a destination, so it belongs
-   * in the list pane next to the state filter. Its labels come from the read
-   * model, so a one-time form is never called "Week 1".
-   */
-  const occurrenceFilter =
-    instances.length > 0
-      ? {
-          name: "Form",
-          current: sp.cycle ?? "all",
-          options: [
-            {
-              key: "all",
-              label: "Every form",
-              href: queryFor({ cycle: undefined, selected: undefined }),
-            },
-            ...instances.map(({ instance, label }) => ({
-              key: instance.id,
-              label: `${label}${instance.state === "open" ? " · open" : ""}`,
-              href: queryFor({ cycle: instance.id, selected: undefined }),
-            })),
-          ],
-        }
-      : undefined;
-
-  /**
-   * The section filter, and the reason it is a filter rather than the shape of
-   * the page: students in Section A and Section B answer the SAME form, so the
-   * default view does not invent a separation they never experience. It appears
-   * only when this reader actually has more than one section — a control with one
-   * option is noise.
-   */
-  const sectionFilter =
-    sections.length > 1
-      ? {
-          name: "Section",
-          current: sp.section ?? "all",
-          options: [
-            {
-              key: "all",
-              label: "All sections",
-              href: queryFor({ section: undefined, selected: undefined }),
-            },
-            ...sections.map((section) => ({
-              key: section.id,
-              label: section.title,
-              href: queryFor({ section: section.id, selected: undefined }),
-            })),
-          ],
-        }
-      : undefined;
-
   return (
-    <WorkspaceShell
+    <AppShell
       user={toShellUser(user)}
-      contextTitle={course.code}
-      workspaceLabel="Staff workspace"
-      categories={[
-        {
-          slug: "all",
-          label: "All topics",
-          shape: "circle",
-          count: searchRows.reduce((count, row) => count + row.items.length, 0),
-          href: queryFor({ category: undefined, selected: undefined }),
-          active: !sp.category,
-        },
-        ...QUESTION_CATEGORIES.map((c) => ({
-          slug: c.slug,
-          label: c.label,
-          shape: c.shape,
-          count: categoryCounts.get(c.slug) ?? 0,
-          href: queryFor({ category: c.slug, selected: undefined }),
-          clearHref: queryFor({ category: undefined, selected: undefined }),
-          active: sp.category === c.slug,
-        })),
-      ]}
-      navGroups={courseNav(courseId, `/teach/courses/${courseId}/responses`, {
-        needsReview: counts.needsReview,
+      workspace="staff"
+      navGroups={await primaryNavFor(user, path, {
+        /* Reached from the section rail rather than the course rail when the
+           reader has no course standing — so that is the row to mark. */
+        fallbackHref: showsCourseTabs
+          ? `/teach/courses/${courseId}`
+          : `/teach/sections/${railSectionId}`,
       })}
-      selection={{
-        active: !!sp.selected,
-        backHref: queryFor({ selected: undefined }),
-      }}
-      listPane={
-        <ListPane
-          label="Submissions"
-          hiddenOnMobile={!!sp.selected}
-          /* The hierarchy the top bar could not carry: what this destination
-             is, which section it belongs to, and the way back out. No fake
-             path, no chevron. */
-          header={
-            <div className="pane-head">
-              <Link
-                className="pane-head__back"
-                href={`/teach/courses/${courseId}`}
-              >
-                <IconBack size={14} />
-                {course.code}
-              </Link>
-              <h1 className="pane-head__title">Responses</h1>
-              {/* The course is the context, and the section only when the
-                  reader has narrowed to one — otherwise saying "Section A" here
-                  would be a claim about the whole list that is not true. */}
-              <p className="pane-head__context">
-                {sp.section
-                  ? (sections.find((s) => s.id === sp.section)?.title ??
-                    course.code)
-                  : sections.length > 1
-                    ? "All sections"
-                    : (sections[0]?.title ?? course.code)}
-              </p>
-            </div>
-          }
-          searchAction={`/teach/courses/${courseId}/responses`}
-          searchName="q"
-          searchValue={sp.q}
-          searchPlaceholder="Student name or question"
-          hiddenFields={{
-            filter,
-            cycle: sp.cycle,
-            section: sp.section,
-            category: sp.category,
-          }}
-          filterGroups={[
-            {
-              name: "State",
-              current: filter,
-              options: FILTERS.map((f) => ({
-                key: f.key,
-                label:
-                  f.key === "all"
-                    ? `Everything (${counts.total})`
-                    : f.key === "needs_review"
-                      ? `Needs reply (${counts.needsReview})`
-                      : f.key === "answered"
-                        ? `Answered (${counts.answered})`
-                        : `Marked invalid (${counts.invalid})`,
-                href: queryFor({ filter: f.key, selected: undefined }),
-              })),
-            },
-            occurrenceFilter,
-            sectionFilter,
-          ]}
-        >
-          {visibleRows.length === 0 ? (
-            <p className="ws-list__note">
-              {counts.total === 0
-                ? "No submissions yet. They arrive as students send this week's form."
-                : "Nothing matches this filter."}
-            </p>
-          ) : (
-            groups.map((group) => (
-              <div key={group.label}>
-                <DayGroupHeading>{group.label}</DayGroupHeading>
-                {group.rows.map((row) => {
-                  const isActive = selectedRow?.response.id === row.response.id;
-                  const firstItem = row.items[0]?.item;
-                  const needsReview = !row.answered && row.items.length > 0;
-                  return (
-                    <Link
-                      key={row.response.id}
-                      className={`ws-row ${isActive ? "ws-row--active" : ""} ${
-                        needsReview ? "ws-row--unread" : ""
-                      }`}
-                      href={queryFor({ selected: row.response.id })}
-                      aria-current={isActive ? "true" : undefined}
-                    >
-                      <span className="ws-row__top">
-                        <span className="ws-row__title">
-                          {firstItem
-                            ? truncate(firstItem.originalText, 80)
-                            : "Form answers only"}
-                        </span>
-                        <span className="ws-row__flags">
-                          {row.response.validity === "invalid" && (
-                            <Stamp tone="red">Invalid</Stamp>
-                          )}
-                          {row.answered && <Stamp tone="green">Answered</Stamp>}
-                          {needsReview && <Stamp tone="amber">New</Stamp>}
-                        </span>
-                      </span>
-                      <span className="ws-row__meta">
-                        {firstItem && (
-                          <span className="category">
-                            <CategoryMark
-                              shape={categoryShape(firstItem.category)}
-                            />
-                            {categoryShortLabel(firstItem.category)}
-                          </span>
-                        )}
-                        <span>
-                          {row.student
-                            ? row.student.fullName
-                            : "Identity hidden"}
-                        </span>
-                        <span>{row.instanceLabel ?? "Form"}</span>
-                        {/* The section only when the list spans more than one:
-                            otherwise it is the same word on every row. */}
-                        {!sp.section && sections.length > 1 && (
-                          <span>
-                            {sections.find(
-                              (s) => s.id === row.response.sectionId,
-                            )?.title ?? ""}
-                          </span>
-                        )}
-                        <span>{shortAgo(submittedAt(row))}</span>
-                        {row.items.length > 1 && (
-                          <span>{row.items.length} items</span>
-                        )}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
-            ))
-          )}
-        </ListPane>
+      tabs={tabs}
+      tabsLabel={
+        showsCourseTabs ? course.code : (railAccess?.section.title ?? course.code)
+      }
+      contextLabel={course.code}
+      title="Responses"
+      description={
+        currentCycle
+          ? `What your students sent for ${currentCycle.label}. Only the teaching team can see this page.`
+          : "Only the teaching team can see this page."
       }
     >
+      {sp.at && <ScrollToPost anchorId={`r-${sp.at}`} />}
+
       <div className="stack-4" style={{ marginBottom: "var(--s5)" }}>
         {sp.ok && <Alert variant="success">{sp.ok}</Alert>}
         {sp.error && <Alert variant="error">{sp.error}</Alert>}
@@ -660,561 +602,624 @@ export default async function CourseResponsesPage({
         )}
       </div>
 
-      {!selectedRow || !detail ? (
-        <div className="ws-empty-detail">
-          <p>
-            {counts.total === 0
-              ? "No submissions yet. They arrive as students send this week's form."
-              : "Choose a submission from the list to read it and respond."}
+      {/* The controls stay in reach down a long column, and the count beside
+          them is the map a list pane used to be: how much is left. */}
+      <div className="feedbar">
+        <form className="feedbar__controls" method="get" action={path}>
+          {sp.category && (
+            <input type="hidden" name="category" value={sp.category} />
+          )}
+          {/* The scope, on its own line and full width: which form's responses
+              this whole column is, before anything narrows it. */}
+          {instances.length > 0 && (
+            <div className="feedbar__scope">
+            <AutoSubmitSelect
+              id="feed-week"
+              name="cycle"
+              defaultValue={currentCycleId ?? ""}
+              label="Which form"
+            >
+              {instances.map(({ instance, label, responseCount }) => (
+                <option key={instance.id} value={instance.id}>
+                  {label}
+                  {instance.state === "open" ? " · open" : ""} · {responseCount}{" "}
+                  sent
+                </option>
+              ))}
+            </AutoSubmitSelect>
+            </div>
+          )}
+
+          {/* The search line, with the narrowing controls trailing it. */}
+          <div className="feedbar__line">
+          <span className="feedbar__search">
+            <IconSearch size={15} />
+            <label className="visually-hidden" htmlFor="feed-q">
+              Search this form
+            </label>
+            <input
+              id="feed-q"
+              name="q"
+              type="search"
+              placeholder="Search"
+              defaultValue={sp.q ?? ""}
+            />
+          </span>
+
+          <AutoSubmitSelect
+            id="feed-filter"
+            name="filter"
+            defaultValue={filter}
+            label="Show"
+          >
+            {FILTERS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.key === "all"
+                  ? `Everything (${counts.total})`
+                  : f.key === "needs_review"
+                    ? `Needs a reply (${counts.needsReview})`
+                    : f.key === "answered"
+                      ? `Answered (${counts.answered})`
+                      : `Marked invalid (${counts.invalid})`}
+              </option>
+            ))}
+          </AutoSubmitSelect>
+
+          {/* Only when the reader actually has more than one: a control with a
+              single option is noise. */}
+          {sections.length > 1 && (
+            <AutoSubmitSelect
+              id="feed-section"
+              name="section"
+              defaultValue={sp.section ?? ""}
+              label="Section"
+            >
+              <option value="">All sections</option>
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.title}
+                </option>
+              ))}
+            </AutoSubmitSelect>
+          )}
+
+          <button className="visually-hidden" type="submit">
+            Search
+          </button>
+          </div>
+        </form>
+
+        <p className="feedbar__status">
+          <span>
+            <strong>{visible.length}</strong>{" "}
+            {visible.length === 1 ? "response" : "responses"} shown
+          </span>
+          {waitingCount > 0 ? (
+            <>
+              <span className="feedbar__waiting">
+                {waitingCount} still {waitingCount === 1 ? "needs" : "need"} a
+                reply
+              </span>
+              {nextWaiting && (
+                <a className="link small" href={`#r-${nextWaiting.response.id}`}>
+                  Jump to the next one
+                </a>
+              )}
+            </>
+          ) : (
+            <span>Nothing here is waiting on you.</span>
+          )}
+        </p>
+      </div>
+
+      {visible.length === 0 ? (
+        <EmptyState
+          title={
+            counts.total === 0
+              ? "Nothing sent yet"
+              : "Nothing matches these filters"
+          }
+        >
+          {counts.total === 0
+            ? "Responses appear here as students send this form. Nothing is lost while you are away."
+            : "Try another form, a wider filter, or clear the search."}
+        </EmptyState>
+      ) : (
+        <div className="feed">
+          {visible.map((row) => {
+            const sectionId = row.response.sectionId;
+            const timezone = timezoneOf(sectionId);
+            const doneNow = reviewedThisSession.has(row.response.id);
+            const waiting = needsReply(row);
+            const section = sections.find((s) => s.id === sectionId);
+            const flagEvent = flagEvents.get(row.response.id) ?? null;
+            const who = row.student?.fullName ?? "Identity hidden";
+
+            return (
+              <article
+                className={`post ${waiting && !doneNow ? "post--waiting" : ""} ${
+                  row.response.validity === "invalid" ? "post--invalid" : ""
+                }`}
+                key={row.response.id}
+                id={`r-${row.response.id}`}
+              >
+                {/* Three columns: who, what they said, and when. The time
+                    leaves the name line for a column of its own so the dates
+                    line up down the page and can be compared without reading
+                    the rest of the row. */}
+                <span className="post__mark" aria-hidden="true">
+                  {row.student ? initials(row.student.fullName) : "—"}
+                </span>
+
+                <div className="post__stamp">
+                  <span className="post__stamp-label">Submitted</span>
+                  <span className="post__stamp-when">
+                    {row.response.submittedAt
+                      ? formatDateTime(row.response.submittedAt, timezone)
+                      : "Not submitted"}
+                  </span>
+                  {/* Validity sits under the date — both are facts about the
+                      submission rather than about what it says. A "done" stamp
+                      used to be here too, but the reply it referred to is now
+                      visible in the thread below. */}
+                  {row.response.validity !== "valid" && (
+                    <ValidityBadge
+                      validity={row.response.validity as "flagged" | "invalid"}
+                    />
+                  )}
+                </div>
+
+                <div className="post__body">
+                  <p className="post__who">{who}</p>
+                  <MetaList
+                    items={[
+                      row.instanceLabel,
+                      // Named only when the reader has more than one, so the
+                      // label carries information rather than repeating.
+                      sections.length > 1 ? (section?.title ?? null) : null,
+                    ]}
+                  />
+
+                {/* What the form asked, before what the student added to it. */}
+                <AnswerSummary
+                  answers={row.answers}
+                  open={row.items.length === 0}
+                />
+
+                {row.items.length === 0 ? (
+                  /* They answered the form and asked nothing. There is no reply
+                     to write, and saying so plainly beats a row of buttons that
+                     would all be wrong. It still earns a post: this is where a
+                     reader sees who took part, and where an empty submission is
+                     judged. */
+                  /* The answers are already above, so there is nothing to
+                     re-count here — only the absence to state. */
+                  <p className="post__quiet">
+                    They answered the form and did not add a question or comment.
+                  </p>
+                ) : (
+                  row.items.map((entry) => {
+                    const { item, privateResponses, publicAnswers } = entry;
+                    const events = [
+                      ...privateResponses.map((response) => ({
+                        kind: "private" as const,
+                        at: response.createdAt,
+                        response,
+                      })),
+                      ...publicAnswers.map((answer) => ({
+                        kind: "public" as const,
+                        at: answer.publishedAt ?? answer.createdAt,
+                        answer,
+                      })),
+                    ].sort((a, b) => a.at.getTime() - b.at.getTime());
+                    const published = publicAnswers.some(
+                      (answer) => answer.state === "published",
+                    );
+                    const isComment = item.kind === "general_comment";
+                    const declined = item.disposition === "no_response";
+                    const settled = entry.settled;
+
+                    return (
+                      <section className="post__item" key={item.id}>
+                        {/* What kind of thing this is, before the thing itself —
+                            a reader knows how to read "Question · Content"
+                            before they start reading it, not after. */}
+                        <p className="post__itemmeta">
+                          <span>
+                            {isComment
+                              ? "General comment · never publishable"
+                              : `${sentenceCase(item.submissionType)} · ${categoryShortLabel(item.category)}`}
+                          </span>
+                          {/* A stamp only where the body cannot say it. An
+                              answered question shows its answer in the thread
+                              below, so "Answered" was labelling something the
+                              reader can already see; the states that leave no
+                              trace still need words. */}
+                          {published ? (
+                            <Stamp tone="green">Published</Stamp>
+                          ) : declined ? (
+                            <Stamp tone="neutral">Not being answered</Stamp>
+                          ) : isComment ? (
+                            <Stamp tone="neutral">No reply needed</Stamp>
+                          ) : settled ? null : (
+                            <Stamp tone="amber">Needs a reply</Stamp>
+                          )}
+                        </p>
+
+                        {/* The student's own words, in the document register,
+                            because a person wrote them. */}
+                        <blockquote className="post__words">
+                          {item.originalText}
+                        </blockquote>
+
+                        {events.length > 0 && (
+                          <Thread
+                            audience={
+                              events.some((e) => e.kind === "public") ? (
+                                <ThreadAudience scope="public">
+                                  Public answers go to everyone in{" "}
+                                  {section?.title ?? "the section"}, without{" "}
+                                  {who === "Identity hidden"
+                                    ? "the asker's"
+                                    : `${who}'s`}{" "}
+                                  name.
+                                </ThreadAudience>
+                              ) : (
+                                <ThreadAudience scope="private">
+                                  Only {who} and the teaching team can read this
+                                  thread.
+                                </ThreadAudience>
+                              )
+                            }
+                          >
+                            {events.map((event) => {
+                              if (event.kind === "private") {
+                                const message = event.response;
+                                const fromStudent =
+                                  message.authorRole === "student";
+                                return (
+                                  <ThreadMessage
+                                    key={`private-${message.id}`}
+                                    from={fromStudent ? "student" : "staff"}
+                                    author={
+                                      message.authorName ??
+                                      (fromStudent
+                                        ? "Identity hidden"
+                                        : "A teaching team member")
+                                    }
+                                    mark={
+                                      message.authorName
+                                        ? initials(message.authorName)
+                                        : null
+                                    }
+                                    action={
+                                      fromStudent
+                                        ? "followed up"
+                                        : "replied privately"
+                                    }
+                                    at={message.createdAt}
+                                    timezone={timezone}
+                                  >
+                                    <p className="thread__body">
+                                      {message.body}
+                                    </p>
+                                  </ThreadMessage>
+                                );
+                              }
+
+                              const { answer } = event;
+                              return (
+                                <ThreadMessage
+                                  key={`public-${answer.id}`}
+                                  from="public"
+                                  author={
+                                    answer.authorName ??
+                                    "A teaching team member"
+                                  }
+                                  mark={
+                                    answer.authorName
+                                      ? initials(answer.authorName)
+                                      : null
+                                  }
+                                  action={
+                                    answer.state === "published"
+                                      ? "answered the section"
+                                      : answer.state === "scheduled"
+                                        ? "scheduled an answer"
+                                        : "drafted an answer"
+                                  }
+                                  at={event.at}
+                                  timezone={timezone}
+                                >
+                                  {answer.publishFailed && (
+                                    <p style={{ marginTop: 4 }}>
+                                      <Stamp tone="red">Publication failed</Stamp>
+                                    </p>
+                                  )}
+                                  <p className="thread__body">
+                                    {answer.publicQuestionText}
+                                  </p>
+                                  {answer.answerBody && (
+                                    <p className="thread__body">
+                                      {answer.answerBody}
+                                    </p>
+                                  )}
+                                  <p style={{ marginTop: 4 }}>
+                                    {answer.state === "published" ? (
+                                      <Link
+                                        className="link small"
+                                        href={`/sections/${sectionId}/qa?selected=${answer.id}`}
+                                      >
+                                        See it in the class Q&amp;A
+                                      </Link>
+                                    ) : canOn(sectionId, "draftPublicAnswers") ? (
+                                      <Link
+                                        className="link small"
+                                        href={`/teach/sections/${sectionId}/publications`}
+                                      >
+                                        Finish it in the publication queue
+                                      </Link>
+                                    ) : null}
+                                  </p>
+                                </ThreadMessage>
+                              );
+                            })}
+                          </Thread>
+                        )}
+
+                        <div className="post__actions">
+                          {canOn(sectionId, "sendPrivateResponses") && (
+                            <Dialog
+                              variant="quiet"
+                              className="post__action"
+                              label={
+                                <>
+                                  <IconPrivate size={15} />
+                                  Reply privately
+                                </>
+                              }
+                              title="Reply privately"
+                              description={`Only ${who} can see this.`}
+                            >
+                              <form action={sendPrivate}>
+                                <input
+                                  type="hidden"
+                                  name="itemId"
+                                  value={item.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="responseId"
+                                  value={row.response.id}
+                                />
+                                <div className="field-row">
+                                  <label htmlFor={`private-${item.id}`}>
+                                    Your reply{" "}
+                                    <span className="required-mark">
+                                      Required
+                                    </span>
+                                  </label>
+                                  <textarea
+                                    id={`private-${item.id}`}
+                                    className="textarea-field"
+                                    name="body"
+                                    rows={6}
+                                    required
+                                  />
+                                </div>
+                                <div className="row">
+                                  <button
+                                    className="button button--primary"
+                                    type="submit"
+                                  >
+                                    Send private reply
+                                  </button>
+                                </div>
+                              </form>
+                            </Dialog>
+                          )}
+
+                          {/* A general comment is never triaged and can never
+                              become a Q&A entry — the schema enforces it. The
+                              button is absent rather than disabled, because an
+                              action that cannot exist should not look like one
+                              this reader merely lacks. */}
+                          {!isComment && canOn(sectionId, "draftPublicAnswers") && (
+                            <Dialog
+                              variant="quiet"
+                              className="post__action"
+                              label={
+                                <>
+                                  <IconPublic size={15} />
+                                  Answer publicly
+                                </>
+                              }
+                              title="Answer this student's section"
+                              description={`Everyone enrolled in ${section?.title ?? "their section"} sees the wording you write here. No other section does.`}
+                            >
+                              <PublicAnswerComposer
+                                action={draftOrPublish}
+                                itemId={item.id}
+                                selectedResponseId={row.response.id}
+                                /* The asker's own section. A shared form must
+                                   not widen a publication, so the target is
+                                   carried explicitly and re-checked
+                                   server-side. */
+                                sectionId={sectionId}
+                                originalQuestion={item.originalText}
+                                canPublish={canOn(
+                                  sectionId,
+                                  "publishPublicAnswers",
+                                )}
+                              />
+                            </Dialog>
+                          )}
+
+                          {/* The third outcome. A question can be replied to,
+                              published, or deliberately left — and without a
+                              way to say the third, the queue never empties and
+                              a reader has to reply to things that need no
+                              reply. Reversible, audited, and invisible to the
+                              student either way, so it needs no confirmation. */}
+                          {/* Exactly the condition `declineToAnswer` enforces,
+                              rather than a proxy for it: an item that already
+                              carries a reply or a drafted answer has an outcome,
+                              and "will not answer" would misdescribe it. Offering
+                              the control there would only produce an error. */}
+                          {!isComment &&
+                            (item.disposition === "undecided" ||
+                              item.disposition === "no_response") &&
+                            canOn(sectionId, "reviewResponses") && (
+                              <form action={declineAnswer}>
+                                <input
+                                  type="hidden"
+                                  name="itemId"
+                                  value={item.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="responseId"
+                                  value={row.response.id}
+                                />
+                                {declined && (
+                                  <input type="hidden" name="undo" value="yes" />
+                                )}
+                                <button
+                                  className="button button--quiet post__action"
+                                  type="submit"
+                                >
+                                  <IconNoReply size={15} />
+                                  {declined
+                                    ? "Put back in the queue"
+                                    : "Will not answer"}
+                                </button>
+                              </form>
+                            )}
+                        </div>
+                      </section>
+                    );
+                  })
+                )}
+
+                {/* Validity last, and folded. It removes a student's
+                    participation credit, so it must never sit beside Reply
+                    where one slip costs someone their week. */}
+                <ResponseValidity
+                  responseId={row.response.id}
+                  validity={row.response.validity}
+                  canMark={canOn(sectionId, "markValidity")}
+                  canFlag={canOn(sectionId, "flagValidity")}
+                  isInstructor={isInstructorOn(sectionId)}
+                  studentNumber={row.student?.studentNumber}
+                  flagLine={
+                    flagEvent
+                      ? `${flagEvent.actorName}: ${(flagEvent.reason ?? "no reason given").replace(/_/g, " ")}${flagEvent.staffNote ? ` — ${flagEvent.staffNote}` : ""}`
+                      : undefined
+                  }
+                  onFlag={flag}
+                  onConfirm={confirmFlagged}
+                  onDismiss={dismissFlag}
+                  onInvalidate={invalidate}
+                  onRestore={restoreValid}
+                />
+                </div>
+              </article>
+            );
+          })}
+
+          {/* The bottom of the pile, said out loud. A column with no end is the
+              one thing this page must not become: the week is finite, and
+              finishing it should feel like finishing. */}
+          <p className="feed__end">
+            That is all {visible.length}{" "}
+            {visible.length === 1 ? "response" : "responses"}
+            {currentCycle ? ` for ${currentCycle.label}` : ""}.{" "}
+            {waitingCount > 0
+              ? `${waitingCount} still ${waitingCount === 1 ? "needs" : "need"} a reply.`
+              : "Nothing is waiting on you."}
           </p>
         </div>
-      ) : (
-        <article className="review">
-          {/* Who, when, and what state — as separate elements, with this
-              submission's own actions beside them. */}
-          <header className="review__head">
-            <div className="review__ident">
-              <h1 className="object-title">
-                {selectedRow.student
-                  ? selectedRow.student.fullName
-                  : "Identity hidden"}
-              </h1>
-              <MetaList
-                items={[
-                  detail.instanceLabel,
-                  // Named only when the reader has more than one, so the label
-                  // carries information rather than repeating itself.
-                  sections.length > 1 ? (selectedSection?.title ?? null) : null,
-                  selectedRow.response.submittedAt
-                    ? `Submitted ${formatDateTime(
-                        selectedRow.response.submittedAt,
-                        detailTimezone,
-                      )}`
-                    : "Draft — not submitted yet",
-                ]}
-              />
-            </div>
-
-            <div className="review__head-actions">
-              <ValidityBadge
-                validity={
-                  selectedRow.response.validity as
-                    "valid" | "flagged" | "invalid"
-                }
-              />
-              {/* Invalidation is destructive, so it is separated from the two
-                  reply actions and never a one-click state change. */}
-              {isInstructor &&
-                can("markValidity") &&
-                selectedRow.response.validity === "valid" && (
-                  <Dialog
-                    variant="danger"
-                    className="button--small"
-                    label="Mark as invalid"
-                    title="Mark this submission as invalid?"
-                    description="This removes the week's participation credit. It is recorded and can be reversed."
-                  >
-                    <form action={invalidate}>
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <div className="field-row">
-                        <label htmlFor="invalid-reason">Reason</label>
-                        <select
-                          id="invalid-reason"
-                          className="select-field"
-                          name="reason"
-                          defaultValue="empty_or_meaningless"
-                        >
-                          {INVALID_REASONS.map((reason) => (
-                            <option key={reason.value} value={reason.value}>
-                              {reason.label}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="helper-text">Staff only.</span>
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="invalid-student-reason">
-                          What the student sees{" "}
-                          <span className="required-mark">Required</span>
-                        </label>
-                        <input
-                          id="invalid-student-reason"
-                          className="field"
-                          name="studentVisibleReason"
-                          required
-                        />
-                      </div>
-                      <div className="row">
-                        <button
-                          className="button button--danger"
-                          type="submit"
-                        >
-                          Mark as invalid
-                        </button>
-                      </div>
-                    </form>
-                  </Dialog>
-                )}
-
-              {/* A student assistant may flag; only an instructor decides. */}
-              {selectedRow.response.validity === "valid" &&
-                can("flagValidity") &&
-                !isInstructor && (
-                  <Dialog
-                    className="button--small"
-                    label="Flag for the instructor"
-                    title="Flag this submission?"
-                    description="The week's credit is kept until an instructor decides. The student is never told a flag exists."
-                  >
-                    <form action={flag}>
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <div className="field-row">
-                        <label htmlFor="flag-reason">Reason</label>
-                        <select
-                          id="flag-reason"
-                          className="select-field"
-                          name="reason"
-                          defaultValue="empty_or_meaningless"
-                        >
-                          {INVALID_REASONS.map((reason) => (
-                            <option key={reason.value} value={reason.value}>
-                              {reason.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="flag-note">
-                          Note for the instructor{" "}
-                          <span className="optional-mark">optional</span>
-                        </label>
-                        <input id="flag-note" className="field" name="note" />
-                      </div>
-                      <div className="row">
-                        <button
-                          className="button button--primary"
-                          type="submit"
-                        >
-                          Flag for the instructor
-                        </button>
-                      </div>
-                    </form>
-                  </Dialog>
-                )}
-
-              {isInstructor &&
-                can("markValidity") &&
-                selectedRow.response.validity === "flagged" && (
-                  <Dialog
-                    className="button--small"
-                    label="Decide on this flag"
-                    title="A student assistant flagged this submission"
-                    description={
-                      flagEvent
-                        ? `${flagEvent.actorName}: ${(flagEvent.reason ?? "no reason given").replace(/_/g, " ")}${flagEvent.staffNote ? ` — ${flagEvent.staffNote}` : ""}`
-                        : undefined
-                    }
-                  >
-                    <form action={confirmFlagged}>
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <div className="field-row">
-                        <label htmlFor="confirm-reason">Reason</label>
-                        <select
-                          id="confirm-reason"
-                          className="select-field"
-                          name="reason"
-                          defaultValue="empty_or_meaningless"
-                        >
-                          {INVALID_REASONS.map((reason) => (
-                            <option key={reason.value} value={reason.value}>
-                              {reason.label}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="helper-text">Staff only.</span>
-                      </div>
-                      <div className="field-row">
-                        <label htmlFor="confirm-student-reason">
-                          What the student sees{" "}
-                          <span className="required-mark">Required</span>
-                        </label>
-                        <input
-                          id="confirm-student-reason"
-                          className="field"
-                          name="studentVisibleReason"
-                          required
-                        />
-                      </div>
-                      <div className="row">
-                        <button className="button button--danger" type="submit">
-                          Remove the credit
-                        </button>
-                      </div>
-                    </form>
-                    <form action={dismissFlag} style={{ marginTop: "var(--s4)" }}>
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={selectedRow.response.id}
-                      />
-                      <button
-                        className="button button--secondary"
-                        type="submit"
-                      >
-                        Dismiss the flag and keep the credit
-                      </button>
-                    </form>
-                  </Dialog>
-                )}
-
-              {isInstructor &&
-                can("markValidity") &&
-                selectedRow.response.validity === "invalid" && (
-                  <form action={restoreValid} className="inline-form">
-                    <input
-                      type="hidden"
-                      name="responseId"
-                      value={selectedRow.response.id}
-                    />
-                    <button
-                      className="button button--secondary button--small"
-                      type="submit"
-                    >
-                      Restore the credit
-                    </button>
-                  </form>
-                )}
-            </div>
-          </header>
-
-          {/* Identity details a reviewer rarely needs, kept out of the header. */}
-          {(selectedRow.student || validityHistory.length > 0) && (
-            <details className="review__details">
-              <summary>Details</summary>
-              <div className="review__details-body">
-                {selectedRow.student && (
-                  <p className="meta">
-                    Student number{" "}
-                    <span className="ident">
-                      {selectedRow.student.studentNumber}
-                    </span>
-                  </p>
-                )}
-                {validityHistory.length > 0 && (
-                  <ul className="plain-list">
-                    {validityHistory.map((event) => (
-                      <li className="meta" key={event.id}>
-                        {event.priorValidity} to {event.newValidity} —{" "}
-                        {event.actorName} ({event.actorRole}),{" "}
-                        {formatDateTime(event.createdAt, detailTimezone)}
-                        {event.reason
-                          ? `, ${event.reason.replace(/_/g, " ")}`
-                          : ""}
-                        {event.staffNote ? `, ${event.staffNote}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </details>
-          )}
-
-          {detail.answers.length > 0 && (
-            <section className="review__section">
-              <h2 className="review__section-title">Submitted answers</h2>
-              {/* One aligned prompt/answer pair per question, so the whole set
-                  scans down a single column instead of reading as loose text. */}
-              <dl className="qa-pairs">
-                {detail.answers.map((answer, index) => (
-                  <div className="qa-pairs__row" key={index}>
-                    <dt>{answer.prompt}</dt>
-                    <dd>{renderAnswer(answer)}</dd>
-                  </div>
-                ))}
-              </dl>
-              {detail.unansweredCount > 0 && (
-                <p className="meta" style={{ marginTop: "var(--s3)" }}>
-                  {detail.unansweredCount} optional question
-                  {detail.unansweredCount === 1 ? "" : "s"} left blank.
-                </p>
-              )}
-            </section>
-          )}
-
-          {selectedRow.items.length === 0 ? (
-            <section className="review__section">
-              <Alert variant="info">
-                This student answered the form questions and did not add a
-                question of their own. There is nothing to answer.
-              </Alert>
-            </section>
-          ) : (
-            selectedRow.items.map(
-              ({ item, privateResponses, publicAnswers }) => {
-                const events = [
-                  ...privateResponses.map((response) => ({
-                    kind: "private" as const,
-                    at: response.createdAt,
-                    response,
-                  })),
-                  ...publicAnswers.map((answer) => ({
-                    kind: "public" as const,
-                    at: answer.publishedAt ?? answer.createdAt,
-                    answer,
-                  })),
-                ].sort((a, b) => a.at.getTime() - b.at.getTime());
-                const published = publicAnswers.some(
-                  (answer) => answer.state === "published",
-                );
-
-                return (
-                  <section className="review__section" key={item.id}>
-                    <div className="review__section-head">
-                      <h2 className="review__section-title">
-                        Student question
-                      </h2>
-                      {/* One status, in words. */}
-                      <Stamp
-                        tone={
-                          published
-                            ? "green"
-                            : item.reviewState === "resolved"
-                              ? "green"
-                              : "amber"
-                        }
-                      >
-                        {published
-                          ? "Published"
-                          : item.reviewState === "resolved"
-                            ? "Answered"
-                            : "Needs reply"}
-                      </Stamp>
-                    </div>
-
-                    {/* The category is secondary metadata, not the heading. */}
-                    <MetaList
-                      items={[
-                        categoryShortLabel(item.category),
-                        sentenceCase(item.submissionType),
-                      ]}
-                    />
-
-                    {/* Structure carries what the banner used to announce: this
-                        block is the student's own words, and it is private. */}
-                    <blockquote className="review__original">
-                      {item.originalText}
-                    </blockquote>
-
-                    <div className="review__actions">
-                      {can("sendPrivateResponses") && (
-                        <Dialog
-                          variant="primary"
-                          label="Reply privately"
-                          title="Reply privately"
-                          description={`Only ${selectedRow.student?.fullName ?? "this student"} can see this.`}
-                        >
-                          <form action={sendPrivate}>
-                            <input
-                              type="hidden"
-                              name="itemId"
-                              value={item.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="selected"
-                              value={selectedRow.response.id}
-                            />
-                            <div className="field-row">
-                              <label htmlFor={`private-${item.id}`}>
-                                Your reply{" "}
-                                <span className="required-mark">Required</span>
-                              </label>
-                              <textarea
-                                id={`private-${item.id}`}
-                                className="textarea-field"
-                                name="body"
-                                rows={6}
-                                required
-                              />
-                            </div>
-                            <div className="row">
-                              <button
-                                className="button button--primary"
-                                type="submit"
-                              >
-                                Send private reply
-                              </button>
-                            </div>
-                          </form>
-                        </Dialog>
-                      )}
-
-                      {can("draftPublicAnswers") && (
-                        <Dialog
-                          label="Answer publicly"
-                          title="Answer this student's section"
-                          description={`Everyone enrolled in ${selectedSection?.title ?? "their section"} sees the wording you write here. No other section does.`}
-                        >
-                          <PublicAnswerComposer
-                            action={draftOrPublish}
-                            itemId={item.id}
-                            selectedResponseId={selectedRow.response.id}
-                            /* The asker's own section. A shared form must not
-                               widen a publication, so the target is carried
-                               explicitly and re-checked server-side. */
-                            sectionId={selectedRow.response.sectionId}
-                            originalQuestion={item.originalText}
-                            canPublish={can("publishPublicAnswers")}
-                          />
-                        </Dialog>
-                      )}
-                    </div>
-
-                    {events.length > 0 && (
-                      <div className="responses">
-                        <h3 className="review__section-title">
-                          Responses
-                          {events.length > 1 && (
-                            <span className="review__count">
-                              {events.length}
-                            </span>
-                          )}
-                        </h3>
-                        {events.map((event) => {
-                          if (event.kind === "private") {
-                            return (
-                              <article
-                                className="response response--private"
-                                key={`private-${event.response.id}`}
-                              >
-                                <div className="response__head">
-                                  <span className="response__type">
-                                    <IconPrivate size={13} />
-                                    Private reply
-                                  </span>
-                                  <span className="response__audience">
-                                    Only{" "}
-                                    {selectedRow.student?.fullName ??
-                                      "this student"}{" "}
-                                    can see this
-                                  </span>
-                                  <span className="response__when">
-                                    {formatDateTime(
-                                      event.response.createdAt,
-                                      detailTimezone,
-                                    )}
-                                  </span>
-                                </div>
-                                <p className="response__body">
-                                  {event.response.body}
-                                </p>
-                              </article>
-                            );
-                          }
-
-                          const { answer } = event;
-                          const label =
-                            answer.state === "published"
-                              ? "Published answer"
-                              : answer.state === "scheduled"
-                                ? "Scheduled answer"
-                                : "Draft answer";
-
-                          return (
-                            <article
-                              className="response response--public"
-                              key={`public-${answer.id}`}
-                            >
-                              <div className="response__head">
-                                <span className="response__type">
-                                  <IconPublic size={13} />
-                                  {label}
-                                </span>
-                                <span className="response__audience">
-                                  Everyone in this section, without the
-                                  asker&apos;s name
-                                </span>
-                                <span className="response__when">
-                                  {formatDateTime(event.at, detailTimezone)}
-                                </span>
-                              </div>
-                              {answer.publishFailed && (
-                                <p style={{ marginTop: 4 }}>
-                                  <Stamp tone="red">Publication failed</Stamp>
-                                </p>
-                              )}
-                              <dl className="qa-pairs">
-                                <div className="qa-pairs__row">
-                                  <dt>Question</dt>
-                                  <dd>{answer.publicQuestionText}</dd>
-                                </div>
-                                {answer.answerBody && (
-                                  <div className="qa-pairs__row">
-                                    <dt>Answer</dt>
-                                    <dd>{answer.answerBody}</dd>
-                                  </div>
-                                )}
-                              </dl>
-                              <p style={{ marginTop: 6 }}>
-                                {answer.state === "published" ? (
-                                  <Link
-                                    className="link small"
-                                    href={`/sections/${selectedSectionId}/qa?selected=${answer.id}`}
-                                  >
-                                    See it in the class Q&amp;A
-                                  </Link>
-                                ) : can("draftPublicAnswers") ? (
-                                  <Link
-                                    className="link small"
-                                    href={`/teach/sections/${selectedSectionId}/publications`}
-                                  >
-                                    Finish it in the publication queue
-                                  </Link>
-                                ) : null}
-                              </p>
-                            </article>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </section>
-                );
-              },
-            )
-          )}
-        </article>
       )}
-    </WorkspaceShell>
+    </AppShell>
   );
 }
 
-/** An internal enum value, said the way a person would say it. */
-function sentenceCase(value: string): string {
-  const words = value.replace(/_/g, " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+/**
+ * The form answers, folded away behind one row.
+ *
+ * Every student answers the same prompts, so the full set down a column of
+ * thirty posts is thirty copies of the teacher's own questions — noise between
+ * the things that actually need a decision. One disclosure per post keeps the
+ * column reading as the students' words, and opening it costs a click.
+ *
+ * Inside, a scale, a yes/no or a choice still compresses to one readable pair,
+ * so a reader who opens a few can see the class rated the pace 2/5 without
+ * reading a paragraph. Written answers cannot compress and print in full.
+ */
+function AnswerSummary({
+  answers,
+  open,
+}: {
+  open?: boolean;
+  answers: {
+    prompt: string;
+    type: string;
+    scale: unknown;
+    value: unknown;
+    freeText: string | null;
+  }[];
+}) {
+  if (answers.length === 0) return null;
+  const chips = answers
+    .filter((a) => !a.freeText)
+    .map((a) => ({ label: shortPrompt(a.prompt), value: compactValue(a) }))
+    .filter((chip): chip is { label: string; value: string } => !!chip.value);
+  const written = answers.filter((a) => a.freeText);
+  if (chips.length === 0 && written.length === 0) return null;
+
+  return (
+    <details className="post__answers" open={open}>
+      <summary className="post__answers-summary">
+        Form answers
+        <span className="post__answers-count">{answers.length}</span>
+      </summary>
+      <div className="post__answers-body">
+        {chips.length > 0 && (
+          <ul className="post__chips">
+            {chips.map((chip, index) => (
+              <li key={index}>
+                <span className="post__chip-label">{chip.label}</span>
+                <span className="post__chip-value">{chip.value}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {written.length > 0 && (
+          <dl className="qa-pairs">
+            {written.map((answer, index) => (
+              <div className="qa-pairs__row" key={index}>
+                <dt>{answer.prompt}</dt>
+                <dd>{answer.freeText}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </div>
+    </details>
+  );
 }
 
-function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max).trimEnd()}…`;
+/** A prompt short enough to sit in a scannable row without becoming a sentence. */
+function shortPrompt(prompt: string): string {
+  const clean = prompt.replace(/[?:]\s*$/, "").trim();
+  return clean.length > 28 ? `${clean.slice(0, 27).trimEnd()}…` : clean;
 }
 
-function renderAnswer(answer: {
+/** The answer as one readable token, or null when it cannot honestly be one. */
+function compactValue(answer: {
+  scale: unknown;
   value: unknown;
-  freeText: string | null;
-}): string {
-  if (answer.freeText) return answer.freeText;
+}): string | null {
   const value = (answer.value ?? {}) as {
     optionLabels?: string[];
     scaleValue?: number;
@@ -1222,8 +1227,232 @@ function renderAnswer(answer: {
     dateValue?: string;
     timeValue?: string;
   };
-  if (value.optionLabels?.length) return value.optionLabels.join(", ");
-  if (value.scaleValue !== undefined) return String(value.scaleValue);
+  if (value.scaleValue !== undefined) {
+    const max = (answer.scale as { max?: number } | null)?.max;
+    // "2/5" says what "2" cannot: whether that is the bottom of the range.
+    return max ? `${value.scaleValue}/${max}` : String(value.scaleValue);
+  }
   if (value.boolValue !== undefined) return value.boolValue ? "Yes" : "No";
-  return value.dateValue ?? value.timeValue ?? "—";
+  if (value.optionLabels?.length) return value.optionLabels.join(", ");
+  return value.dateValue ?? value.timeValue ?? null;
+}
+
+/**
+ * Participation credit, in a disclosure at the foot of the post.
+ *
+ * Folded on purpose. Marking a submission invalid removes a student's credit for
+ * the week; putting that one slip away from "Reply privately" would be a
+ * destructive default. Opening it costs one click and states what it is for.
+ *
+ * The student number lives here too rather than in the header — it is an
+ * identifier a reader needs while making this decision, not while reading.
+ */
+function ResponseValidity({
+  responseId,
+  validity,
+  canMark,
+  canFlag,
+  isInstructor,
+  studentNumber,
+  flagLine,
+  onFlag,
+  onConfirm,
+  onDismiss,
+  onInvalidate,
+  onRestore,
+}: {
+  responseId: string;
+  validity: string;
+  canMark: boolean;
+  canFlag: boolean;
+  isInstructor: boolean;
+  studentNumber?: string | null;
+  flagLine?: string;
+  onFlag: (formData: FormData) => Promise<void>;
+  onConfirm: (formData: FormData) => Promise<void>;
+  onDismiss: (formData: FormData) => Promise<void>;
+  onInvalidate: (formData: FormData) => Promise<void>;
+  onRestore: (formData: FormData) => Promise<void>;
+}) {
+  const canDecide = isInstructor && canMark;
+  const offers =
+    (validity === "valid" && (canDecide || (canFlag && !isInstructor))) ||
+    (validity === "flagged" && canDecide) ||
+    (validity === "invalid" && canDecide);
+  if (!offers) return null;
+
+  return (
+    <details className="post__validity">
+      <summary>Participation credit</summary>
+      <div className="post__validity-body">
+        {studentNumber && (
+          <p className="meta">
+            Student number <span className="ident">{studentNumber}</span>
+          </p>
+        )}
+
+        {validity === "valid" && canDecide && (
+          <Dialog
+            variant="danger"
+            className="button--small"
+            label="Mark as invalid"
+            title="Mark this submission as invalid?"
+            description="This removes the week's participation credit. It is recorded and can be reversed."
+          >
+            <form action={onInvalidate}>
+              <input type="hidden" name="responseId" value={responseId} />
+              <div className="field-row">
+                <label htmlFor={`invalid-reason-${responseId}`}>Reason</label>
+                <select
+                  id={`invalid-reason-${responseId}`}
+                  className="select-field"
+                  name="reason"
+                  defaultValue="empty_or_meaningless"
+                >
+                  {INVALID_REASONS.map((reason) => (
+                    <option key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="helper-text">Staff only.</span>
+              </div>
+              <div className="field-row">
+                <label htmlFor={`invalid-student-${responseId}`}>
+                  What the student sees{" "}
+                  <span className="required-mark">Required</span>
+                </label>
+                <input
+                  id={`invalid-student-${responseId}`}
+                  className="field"
+                  name="studentVisibleReason"
+                  required
+                />
+              </div>
+              <div className="row">
+                <button className="button button--danger" type="submit">
+                  Mark as invalid
+                </button>
+              </div>
+            </form>
+          </Dialog>
+        )}
+
+        {/* A student assistant may flag; only an instructor decides. */}
+        {validity === "valid" && canFlag && !isInstructor && (
+          <Dialog
+            className="button--small"
+            label="Flag for the instructor"
+            title="Flag this submission?"
+            description="The week's credit is kept until an instructor decides. The student is never told a flag exists."
+          >
+            <form action={onFlag}>
+              <input type="hidden" name="responseId" value={responseId} />
+              <div className="field-row">
+                <label htmlFor={`flag-reason-${responseId}`}>Reason</label>
+                <select
+                  id={`flag-reason-${responseId}`}
+                  className="select-field"
+                  name="reason"
+                  defaultValue="empty_or_meaningless"
+                >
+                  {INVALID_REASONS.map((reason) => (
+                    <option key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field-row">
+                <label htmlFor={`flag-note-${responseId}`}>
+                  Note for the instructor{" "}
+                  <span className="optional-mark">optional</span>
+                </label>
+                <input
+                  id={`flag-note-${responseId}`}
+                  className="field"
+                  name="note"
+                />
+              </div>
+              <div className="row">
+                <button className="button button--primary" type="submit">
+                  Flag for the instructor
+                </button>
+              </div>
+            </form>
+          </Dialog>
+        )}
+
+        {validity === "flagged" && canDecide && (
+          <Dialog
+            className="button--small"
+            label="Decide on this flag"
+            title="A student assistant flagged this submission"
+            description={flagLine}
+          >
+            <form action={onConfirm}>
+              <input type="hidden" name="responseId" value={responseId} />
+              <div className="field-row">
+                <label htmlFor={`confirm-reason-${responseId}`}>Reason</label>
+                <select
+                  id={`confirm-reason-${responseId}`}
+                  className="select-field"
+                  name="reason"
+                  defaultValue="empty_or_meaningless"
+                >
+                  {INVALID_REASONS.map((reason) => (
+                    <option key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="helper-text">Staff only.</span>
+              </div>
+              <div className="field-row">
+                <label htmlFor={`confirm-student-${responseId}`}>
+                  What the student sees{" "}
+                  <span className="required-mark">Required</span>
+                </label>
+                <input
+                  id={`confirm-student-${responseId}`}
+                  className="field"
+                  name="studentVisibleReason"
+                  required
+                />
+              </div>
+              <div className="row">
+                <button className="button button--danger" type="submit">
+                  Remove the credit
+                </button>
+              </div>
+            </form>
+            <form action={onDismiss} style={{ marginTop: "var(--s4)" }}>
+              <input type="hidden" name="responseId" value={responseId} />
+              <button className="button button--secondary" type="submit">
+                Dismiss the flag and keep the credit
+              </button>
+            </form>
+          </Dialog>
+        )}
+
+        {validity === "invalid" && canDecide && (
+          <form action={onRestore} className="inline-form">
+            <input type="hidden" name="responseId" value={responseId} />
+            <button
+              className="button button--secondary button--small"
+              type="submit"
+            >
+              Restore the credit
+            </button>
+          </form>
+        )}
+      </div>
+    </details>
+  );
+}
+
+/** An internal enum value, said the way a person would say it. */
+function sentenceCase(value: string): string {
+  const words = value.replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

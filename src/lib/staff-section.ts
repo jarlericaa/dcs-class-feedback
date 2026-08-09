@@ -72,3 +72,18 @@ export async function loadStaffSectionAny(
     can: (permission) => access.staff!.permissions[permission],
   };
 }
+
+/**
+ * "DCS-101 · Section A", or just the title when it already carries the code.
+ *
+ * A teacher who names a section "DCS-101 Section A" should not be shown
+ * "DCS-101 · DCS-101 Section A" for their trouble. The course code still leads
+ * where the title omits it, because a section name alone does not say which
+ * course it belongs to.
+ */
+export function sectionLabel(courseCode: string, sectionTitle: string) {
+  const title = sectionTitle.trim();
+  return title.toLowerCase().startsWith(courseCode.trim().toLowerCase())
+    ? title
+    : `${courseCode} · ${title}`;
+}

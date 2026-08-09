@@ -62,6 +62,13 @@ export type AuditAction =
   | "response.review_state_changed"
   | "response.validity_changed"
   | "item.review_state_changed"
+  /**
+   * Staff decided a question will not be answered, and the reversal of that.
+   * The student is never told either happened (domain-model.md §3.5), so the
+   * audit log is the only record that a decision was taken at all.
+   */
+  | "item.answer_declined"
+  | "item.answer_declined_undone"
   | "item.type_category_corrected"
   | "private_response.created"
   | "public_answer.drafted"

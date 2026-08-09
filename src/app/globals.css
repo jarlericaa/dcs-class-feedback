@@ -1602,13 +1602,22 @@ kbd {
   background: var(--board-deep);
   border-right: 1px solid var(--rule-strong);
 }
-/* Single-column mode: the page scrolls, so the rail sticks under the top bar
-   and scrolls internally only when it is taller than the viewport. */
+/**
+ * Single-column mode: the page scrolls, so the rail sticks under the top bar
+ * and scrolls internally only when it is taller than the viewport.
+ *
+ * `height`, not `max-height`. A shrink-wrapped rail is as tall as the account's
+ * row count, so the batten down its right edge stopped mid-page and its footer
+ * rode up under the last row — while the same rail beside a two-pane route ran
+ * the full viewport with the footer at the bottom. Same rail, same account, two
+ * silhouettes, decided by which route was open. Pinning the height makes the two
+ * shell modes render one rail.
+ */
 .ws:not(.ws--panes) .ws-rail {
   position: sticky;
   top: 52px;
   align-self: flex-start;
-  max-height: calc(100dvh - 52px);
+  height: calc(100dvh - 52px);
 }
 .ws-rail__action {
   display: flex;
@@ -1640,8 +1649,34 @@ kbd {
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
+.ws-rail__group:first-child > .ws-rail__heading,
+.ws-rail > div:first-child > .ws-rail__heading,
 .ws-rail__heading:first-child {
   margin-top: 0;
+}
+/* The disclosure marker is drawn, not a glyph, and the row is a real control:
+   full width, its own hit area, and a rotation that says which way it goes. */
+.ws-rail__heading--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  cursor: pointer;
+  list-style: none;
+}
+.ws-rail__heading--toggle::-webkit-details-marker {
+  display: none;
+}
+.ws-rail__heading--toggle:hover {
+  color: var(--ink-soft);
+}
+.ws-rail__chevron {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+  transition: transform 0.12s ease;
+}
+.ws-rail__group[open] > .ws-rail__heading--toggle .ws-rail__chevron {
+  transform: rotate(90deg);
 }
 .ws-rail__item {
   display: flex;
@@ -1711,6 +1746,15 @@ kbd {
   background: var(--paper);
   border-right: 1px solid var(--rule-strong);
 }
+/* The promoted filter: full width, reads its own current value, above search. */
+.ws-list__primary {
+  flex: 0 0 auto;
+  padding: var(--s3) var(--s3) var(--s2);
+}
+.ws-list__primary .select-field {
+  width: 100%;
+}
+
 .ws-search {
   display: flex;
   align-items: center;
@@ -1844,12 +1888,56 @@ kbd {
   text-transform: uppercase;
 }
 
+/**
+ * A queue row reads like a posted notice: who it is from, what it says, and
+ * when it arrived — in that order, with room to breathe.
+ *
+ * `--flush` is the dense original, still used by the Q&A archive where the rows
+ * are one-line questions rather than submissions to triage.
+ */
 .ws-row {
-  display: block;
-  padding: 10px var(--s4);
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 2px var(--s3);
+  padding: var(--s3) var(--s4);
   border-bottom: 1px solid var(--rule);
   border-left: 3px solid transparent;
   transition: background-color 0.12s ease;
+}
+.ws-row--flush {
+  display: block;
+  padding: 10px var(--s4);
+}
+/* The asker's mark. Initials when the reader may see identities, a neutral
+   silhouette when they may not — never a colour that could sort students. */
+.ws-row__mark {
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-control);
+  color: var(--ink-muted);
+  background: var(--paper-quiet);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.ws-row__excerpt {
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.45;
+  /* Two lines is enough to tell two questions apart; more turns the queue into
+     a reading surface and hides how much is waiting. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 .ws-row:hover {
   background: var(--paper-quiet);
@@ -1861,6 +1949,9 @@ kbd {
 .ws-row--unread .ws-row__title {
   font-weight: 700;
 }
+.ws-row--flush.ws-row--unread .ws-row__title {
+  font-weight: 700;
+}
 .ws-row__top {
   display: flex;
   align-items: baseline;
@@ -1870,10 +1961,15 @@ kbd {
   flex: 1;
   min-width: 0;
   color: var(--ink);
-  font-family: var(--serif);
-  font-size: 15px;
+  font-size: 13px;
+  font-weight: 700;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+.ws-row--flush .ws-row__title {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 400;
 }
 .ws-row__flags {
   flex: 0 0 auto;
@@ -1896,6 +1992,589 @@ kbd {
 }
 
 /* --- detail pane and single-column pages ---------------------------------- */
+
+/* ==========================================================================
+   The review column — one week of responses, as posts
+   ========================================================================== */
+
+/**
+ * The bar above the column. Sticky, because the controls and the count of what
+ * is left are the map that a list pane used to be, and they have to stay in
+ * reach thirty posts down.
+ */
+.feedbar {
+  position: sticky;
+  top: 52px;
+  z-index: 3;
+  margin-bottom: var(--s5);
+  padding: var(--s3) 0;
+  background: var(--board);
+  border-bottom: 1px solid var(--rule-strong);
+}
+/* The scope on its own line, the search under it. Two decisions, in the order
+   they are made: which form am I reading, then what am I looking for in it. */
+.feedbar__scope .select-field {
+  width: 100%;
+}
+.feedbar__line {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+}
+.feedbar__line .select-field {
+  max-width: 22ch;
+}
+.feedbar__search {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 0 10px;
+  height: 38px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-control);
+  background: var(--paper);
+  color: var(--ink-faint);
+}
+.feedbar__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+}
+.feedbar__search input:focus {
+  outline: none;
+}
+.feedbar__search:focus-within {
+  border-color: var(--accent);
+}
+.feedbar__status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin-top: var(--s2);
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.feedbar__status strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.feedbar__waiting {
+  color: var(--amber-deep);
+  font-weight: 600;
+}
+
+/**
+ * One sheet, ruled between rows — not a stack of cards.
+ *
+ * Thirty bordered boxes down a column is thirty containers competing with the
+ * one thing that matters, which is the reading. A hairline is enough to say
+ * where one student ends and the next begins.
+ */
+.feed {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  /* The rows respond to the FEED's width, not the window's: two navigation
+     columns sit to the left of it, so the viewport says nothing useful about
+     how much room a row actually has. */
+  container-type: inline-size;
+}
+
+/**
+ * One post: one student, one occurrence. Flat paper squared to the board, like
+ * every other sheet in this system — a feed is a reading order, not a licence
+ * for a different kind of container.
+ */
+/**
+ * One student's response: who, what they said, and when — in three columns, so
+ * the marks and the dates line up down the page and can be compared without
+ * reading the rows between them.
+ */
+.post {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 2px var(--s4);
+  padding: var(--s5);
+  /* Set on every post so the amber marker changes colour, not geometry: a
+     border that only existed while something was waiting would shift the whole
+     column sideways by 3px per answered row. */
+  border-left: 3px solid transparent;
+  scroll-margin-top: 128px;
+}
+.post + .post {
+  border-top: 1px solid var(--rule);
+}
+.post__body {
+  grid-column: 2;
+  min-width: 0;
+}
+/* Who it is from, and when — top-aligned, so a long row does not strand them
+   in the middle of the whitespace beside it. */
+.post__stamp {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+}
+.post__stamp-label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.post__stamp-when {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.post--waiting {
+  border-left-color: var(--amber);
+}
+.post--invalid {
+  background: var(--paper-quiet);
+}
+.post__mark {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-control);
+  color: var(--ink-soft);
+  background: var(--board-deep);
+  font-size: 12px;
+  font-weight: 700;
+}
+.post__who {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.post__quiet {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--rule);
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* --- one student-written item inside a post ------------------------------- */
+
+/* The form answers now sit above, so every question is separated from what
+   precedes it — not only from a sibling question. */
+.post__item {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--rule);
+}
+/* The student's own words. Document register, because a person wrote them, and
+   a rule down the side so they cannot be mistaken for the platform speaking. */
+.post__words {
+  margin: 0;
+  padding-left: var(--s3);
+  border-left: 2px solid var(--rule-strong);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+/* Above the words it describes, so it reads as a label rather than a caption. */
+.post__itemmeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s2);
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+/**
+ * The actions on a question, as quiet text rather than buttons.
+ *
+ * A column of thirty posts carrying ninety bordered buttons reads as a control
+ * panel; the post is already the thing being acted on, so the actions can sit
+ * under it as words. The accent stays in reserve for hover and focus, which is
+ * where "what do I click?" is actually being asked.
+ */
+.post__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+}
+.post__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* A text action still has to be hittable: the label is 13px, the target is
+     not. */
+  min-height: 34px;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink-muted);
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.post__action:hover {
+  color: var(--accent-deep);
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.post__action:focus-visible {
+  outline-offset: 1px;
+}
+/* On a touch screen the finger, not the label, sets the size. */
+@media (pointer: coarse) {
+  .post__action {
+    min-height: 44px;
+  }
+}
+
+/**
+ * Too narrow for a column of its own: the date rejoins the name line rather
+ * than taking a third of the row away from the words.
+ *
+ * A dedicated column earns its place by letting a reader compare dates down the
+ * page without reading the rows. Below this width it stops paying for itself —
+ * the student's question is what the column is for.
+ */
+@container (max-width: 720px) {
+  .post {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+  .post__stamp {
+    grid-column: 2;
+    grid-row: auto;
+    order: -1;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--s2);
+    text-align: left;
+  }
+  .post__stamp-label {
+    display: none;
+  }
+}
+
+/* --- what has already been said back -------------------------------------- */
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-top: var(--s3);
+}
+/**
+ * The audience, once per thread rather than once per message. It is a single
+ * promise about the whole conversation, and repeating it on every line taught
+ * the reader to stop seeing it.
+ */
+.thread {
+  margin-top: var(--s3);
+}
+.thread__audience {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+/**
+ * The conversation, indented once under the question it belongs to.
+ *
+ * One rule for the whole thread, not one per message: the indentation already
+ * says these are subordinate to the question, and a rule beside every line
+ * turns a group of replies into a stack of containers. DESIGN.md §5 rules out
+ * that nesting for the same reason it rules out cards.
+ */
+.thread__messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  margin-top: var(--s2);
+  padding-left: var(--s3);
+  border-left: 1px solid var(--rule);
+}
+
+.thread__msg {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: var(--s2);
+}
+/**
+ * The mark carries who is speaking — tinted, filled, and without a border, so
+ * it reads as a person rather than as another small box.
+ *
+ * Squared to 2px, not round. DESIGN.md §5 allows exactly three radii and a
+ * circle is none of them; the noticeboard this system is built on stamps a
+ * name, it does not print a profile photo. Colour here is reinforcement only:
+ * the author's name sits beside it in words.
+ */
+.thread__mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-control);
+  color: var(--ink-soft);
+  background: var(--board-deep);
+  font-size: 11px;
+  font-weight: 700;
+}
+.thread__msg--student > .thread__mark {
+  color: var(--amber-deep);
+  background: var(--amber-wash);
+}
+.thread__msg--public > .thread__mark {
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+}
+.thread__main {
+  min-width: 0;
+}
+/* Author, what they did, and when — one line, so the words start immediately
+   under the name instead of a field away from it. */
+.thread__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.thread__author {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.thread__when {
+  font-variant-numeric: tabular-nums;
+  /* The exact time is in `title` and read out by assistive technology, so the
+     cursor should say so. */
+  cursor: help;
+}
+.thread__body {
+  margin-top: 1px;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* --- the form answers, compressed ----------------------------------------- */
+
+.post__answers {
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--rule);
+}
+/* Folded, it is one quiet row; open, it needs air before the first question. */
+.post__answers[open] {
+  padding-bottom: var(--s2);
+}
+/* A row that reads as a row: the whole width is the hit area, and the marker
+   turns so the state is legible without reading the label twice. */
+.post__answers-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.post__answers-summary::-webkit-details-marker {
+  display: none;
+}
+.post__answers-summary::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s ease;
+}
+.post__answers[open] > .post__answers-summary::before {
+  transform: rotate(45deg);
+}
+.post__answers-summary:hover {
+  color: var(--ink-soft);
+}
+.post__answers-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-stamp);
+  color: var(--ink-muted);
+  background: var(--paper-quiet);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.post__answers-body {
+  margin-top: var(--s3);
+}
+.post__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.post__chips li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.post__chip-label {
+  color: var(--ink-muted);
+}
+.post__chip-value {
+  color: var(--ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.post__answers-body .qa-pairs {
+  margin-top: var(--s3);
+}
+.post__validity {
+  margin-top: var(--s3);
+}
+.post__validity > summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.post__validity > summary:hover {
+  color: var(--ink-soft);
+}
+.post__validity-body {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+}
+
+/* The bottom of the pile, said out loud. */
+.feed__end {
+  margin-top: var(--s2);
+  padding: var(--s4) 0 var(--s6);
+  border-top: 1px solid var(--rule-strong);
+  color: var(--ink-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* --- contextual column ---------------------------------------------------- */
+
+/**
+ * The resource's own views, between the workspace rail and the page.
+ *
+ * Paper rather than the rail's board, so the two navigation layers read as
+ * different kinds of thing at a glance: the rail is the building, this is the
+ * room you are in. It matches the rail's height behaviour exactly — sticky and
+ * one viewport tall beside a scrolling page, full height beside two panes — so
+ * the two columns always end on the same line.
+ */
+.ws-subnav {
+  flex: 0 0 200px;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--s4) var(--s3) var(--s5);
+  overflow-y: auto;
+  background: var(--paper);
+  border-right: 1px solid var(--rule);
+}
+.ws:not(.ws--panes) .ws-subnav {
+  position: sticky;
+  top: 52px;
+  align-self: flex-start;
+  height: calc(100dvh - 52px);
+}
+.ws-subnav__heading {
+  margin: 0 0 var(--s3);
+  padding: 0 var(--s2) var(--s2);
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.ws-subnav__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ws-subnav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 7px var(--s2);
+  border-radius: var(--r-control);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.35;
+  transition: background-color 0.12s ease;
+}
+.ws-subnav__item:hover {
+  background: var(--paper-quiet);
+  color: var(--ink);
+}
+.ws-subnav__item--active {
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+  font-weight: 600;
+}
+.ws-subnav__text {
+  flex: 1;
+  min-width: 0;
+}
+.ws-subnav__count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 1px 5px;
+  border: 1px solid var(--amber-edge);
+  border-radius: var(--r-stamp);
+  color: var(--amber-deep);
+  background: var(--amber-wash);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 
 .ws-detail {
   flex: 1;
@@ -2472,6 +3151,10 @@ kbd {
   .ws-page__inner {
     width: calc(100% - var(--s7));
   }
+  .ws-subnav {
+    flex-basis: 176px;
+    width: 176px;
+  }
   .entry__grid {
     grid-template-columns: 1fr;
   }
@@ -2542,8 +3225,69 @@ kbd {
     width: calc(100% - var(--s5));
     padding: var(--s5) 0 var(--s7);
   }
+  /**
+   * No room for a second fixed column, so the same markup lays out as one
+   * horizontal scrolling row above the page. It scrolls rather than wrapping:
+   * a row that reflows to two lines moves the page heading down by a variable
+   * amount, which is the layout shift this pass exists to remove.
+   */
+  /* With the rail gone the body has one column of content, so it stacks: the
+     band on top, the page under it. Kept as a row, the band stayed a
+     full-height column beside the page and pushed the document sideways. */
+  .ws-body {
+    flex-direction: column;
+  }
+  /* Written at the same specificity as the sticky desktop rule it undoes, or
+     that rule keeps the band a viewport tall on single-column routes. */
+  .ws:not(.ws--panes) .ws-subnav,
+  .ws-subnav {
+    position: static;
+    flex: 0 0 auto;
+    /* An explicit width with `min-width: 0`, or the band takes its width from
+       its widest row and drags the whole document sideways instead of
+       scrolling inside itself. */
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    flex-direction: row;
+    gap: var(--s1);
+    padding: 0 var(--s3);
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .ws-subnav__heading {
+    display: none;
+  }
+  .ws-subnav__list {
+    display: flex;
+    gap: var(--s1);
+    flex-wrap: nowrap;
+    width: max-content;
+  }
+  .ws-subnav__item {
+    padding: 10px var(--s2) 9px;
+    margin-bottom: -1px;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .ws-subnav__item--active {
+    background: none;
+    border-bottom-color: var(--accent);
+  }
   .page-head {
     margin-bottom: var(--s5);
+  }
+  /* The contextual band scrolls away with the page here, so the bar sticks
+     directly under the top bar rather than under both. */
+  .feedbar {
+    top: 0;
+  }
+  .post {
+    padding: var(--s4);
+    scroll-margin-top: 96px;
   }
   .page-title {
     font-size: 24px;
@@ -2624,6 +3368,7 @@ kbd {
   .ws-rail,
   .ws-drawer,
   .ws-list,
+  .ws-subnav,
   .skip-link {
     display: none !important;
   }

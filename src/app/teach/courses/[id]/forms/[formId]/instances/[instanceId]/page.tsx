@@ -7,7 +7,8 @@ import { db } from "@/db";
 import { courses } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { courseNav } from "@/components/layout/nav";
+import { courseTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -51,6 +52,7 @@ export default async function InstanceEditorPage({
   const user = await requireUser();
   const { id: courseId, formId, instanceId } = await params;
   const { ok, error } = await searchParams;
+  const path = `/teach/courses/${courseId}/forms/${formId}/instances/${instanceId}`;
 
   let detail: InstanceDetail;
   try {
@@ -61,7 +63,7 @@ export default async function InstanceEditorPage({
         <AppShell
           user={toShellUser(user)}
           workspace="staff"
-          navGroups={[]}
+          navGroups={await primaryNavFor(user, path)}
           title="Form occurrence"
         >
           <AccessDenied what="this form" />
@@ -151,7 +153,14 @@ export default async function InstanceEditorPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={courseNav(courseId, `/teach/courses/${courseId}`)}
+      navGroups={await primaryNavFor(user, path)}
+      /* A form, its new-form page and one of its occurrences are all children
+         of Forms, not peers of it, so the strip marks Forms rather than going
+         blank. `activeHref` states that instead of lying about the path. */
+      tabs={courseTabs(courseId, path, {
+        activeHref: `/teach/courses/${courseId}`,
+      })}
+      tabsLabel={course.code}
       contextLabel={course.code}
       breadcrumbs={
         <Breadcrumbs

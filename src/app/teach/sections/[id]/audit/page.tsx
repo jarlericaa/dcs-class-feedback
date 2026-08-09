@@ -1,10 +1,10 @@
-import { loadStaffSection } from "@/lib/staff-section";
+import { loadStaffSection, sectionLabel } from "@/lib/staff-section";
 import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { staffSectionNav } from "@/components/layout/nav";
+import { staffSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
-  Breadcrumbs,
   EmptyState,
   MetaList,
   Pagination,
@@ -30,6 +30,7 @@ export default async function AuditPage({
   searchParams: Promise<{ action?: string; page?: string }>;
 }) {
   const { id: sectionId } = await params;
+  const path = `/teach/sections/${sectionId}/audit`;
   const { action, page } = await searchParams;
   const ctx = await loadStaffSection(sectionId);
   if (!ctx.ok || ctx.access.staff?.role === "ta") {
@@ -37,7 +38,7 @@ export default async function AuditPage({
       <AppShell
         user={toShellUser(ctx.user)}
         workspace="staff"
-        navGroups={[]}
+        navGroups={await primaryNavFor(ctx.user, path)}
         title="Audit history"
       >
         <AccessDenied what="this section's audit history" />
@@ -60,17 +61,14 @@ export default async function AuditPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/audit`)}
-      contextLabel={section.title}
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { href: "/", label: "Overview" },
-            { label: course.code },
-            { label: "Audit history" },
-          ]}
-        />
-      }
+      navGroups={await primaryNavFor(user, path, {
+        /* A section is reached through its course, and the course now has its
+           own rail row — so mark that one rather than the courses index. */
+        fallbackHref: `/teach/courses/${course.id}`,
+      })}
+      tabs={staffSectionTabs(access, path)}
+      tabsLabel={sectionLabel(course.code, section.title)}
+      contextLabel={sectionLabel(course.code, section.title)}
       title="Audit history"
     >
       <div className="stack-4">

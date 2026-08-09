@@ -13,12 +13,16 @@ import {
   ListPane,
   WorkspaceShell,
 } from "@/components/layout/workspace-shell";
-import { staffSectionNav, studentSectionNav } from "@/components/layout/nav";
+import {
+  staffSectionTabs,
+  studentSectionTabs,
+} from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import { AccessDenied, Category, MetaList } from "@/components/ui";
 import { CategoryMark, IconBack } from "@/components/ui/icons";
 import { listSectionQa } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
-import { getSectionWithCourse, listSectionsForUser } from "@/modules/catalog";
+import { getSectionWithCourse } from "@/modules/catalog";
 
 /**
  * Section Q&A archive — the class-facing knowledge archive, as a three-pane
@@ -60,7 +64,11 @@ export default async function QaArchivePage({
   } catch (err) {
     if (err instanceof AuthzError) {
       return (
-        <WorkspaceShell user={toShellUser(user)} contextTitle="Class Feedback">
+        <WorkspaceShell
+          user={toShellUser(user)}
+          contextTitle="Class Feedback"
+          navGroups={await primaryNavFor(user, `/sections/${sectionId}/qa`)}
+        >
           <AccessDenied what="this section's Q&A archive" />
         </WorkspaceShell>
       );
@@ -74,12 +82,26 @@ export default async function QaArchivePage({
 
   const { section } = await getSectionWithCourse(sectionId);
   const access = await authz.getSectionAccess(user.id, sectionId);
-  const { staffSections, studentSections } = await listSectionsForUser(user.id);
 
   const base = `/sections/${sectionId}/qa`;
-  const navGroups = access?.staff
-    ? staffSectionNav(access, base)
-    : studentSectionNav(sectionId, base);
+  // ONE route, two audiences. The rail is the same shape for both — it depends
+  // on the account, not the page — and only the peer views differ, because a
+  // staff member and a student genuinely have different ones.
+  const navGroups = await primaryNavFor(user, base, {
+    /* An assistant with no course standing reaches this archive through the
+       section row in their own rail; a student through their class row, which
+       this path already matches; a teacher through their courses, which is the
+       default. Naming it here keeps the rail from going quiet for the one
+       reader whose entrance the URL cannot show. */
+    fallbackHref: access?.staff
+      ? access.staff.hasCourseStanding
+        ? `/teach/courses/${section.courseId}`
+        : `/teach/sections/${sectionId}`
+      : undefined,
+  });
+  const tabs = access?.staff
+    ? staffSectionTabs(access, base)
+    : studentSectionTabs(sectionId, base);
   const link = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
     const merged = {
@@ -140,54 +162,14 @@ export default async function QaArchivePage({
   );
   const isFiltered = !!(sp.q?.trim() || sp.category || filter !== "all");
 
-  // Sections in the rail are the user's real sections, in whichever capacity.
-  const railSections = [
-    ...studentSections,
-    ...staffSections.filter((s) => !studentSections.some((x) => x.id === s.id)),
-  ];
-
   return (
     <WorkspaceShell
       user={toShellUser(user)}
       contextTitle={section.title}
       workspaceLabel={access?.staff ? "Staff workspace" : "Student workspace"}
-      primaryAction={
-        access?.staff
-          ? undefined
-          : { href: `/sections/${sectionId}`, label: "This week's form" }
-      }
-      /* A one-item group whose only entry links to the page you are already on
-         is chrome pretending to be structure, so the section switcher appears
-         only when there is somewhere else to switch to. */
-      courses={
-        railSections.length > 1
-          ? railSections.map((s) => ({
-              href: `/sections/${s.id}/qa`,
-              label: s.title,
-              active: s.id === sectionId,
-            }))
-          : undefined
-      }
       navGroups={navGroups}
-      categories={[
-        {
-          slug: "all",
-          label: "All topics",
-          shape: "circle",
-          count: allCount,
-          href: link({ category: undefined, selected: undefined }),
-          active: !sp.category,
-        },
-        ...QUESTION_CATEGORIES.map((c) => ({
-          slug: c.slug,
-          label: c.label,
-          shape: c.shape,
-          count: categoryCounts.get(c.slug) ?? 0,
-          href: link({ category: c.slug, selected: undefined }),
-          clearHref: link({ category: undefined, selected: undefined }),
-          active: sp.category === c.slug,
-        })),
-      ]}
+      tabs={tabs}
+      tabsLabel={section.title}
       selection={{
         active: !!sp.selected,
         backHref: link({ selected: undefined }),
@@ -220,6 +202,24 @@ export default async function QaArchivePage({
                 href: link({ filter: f.key, selected: undefined }),
               })),
             },
+            /* Topic narrows this list; it is not a place to go. Keeping it in
+               the rail made the rail a different shape on this one route. */
+            {
+              name: "Topic",
+              current: sp.category ?? "all",
+              options: [
+                {
+                  key: "all",
+                  label: `All topics (${allCount})`,
+                  href: link({ category: undefined, selected: undefined }),
+                },
+                ...QUESTION_CATEGORIES.map((c) => ({
+                  key: c.slug,
+                  label: `${c.label} (${categoryCounts.get(c.slug) ?? 0})`,
+                  href: link({ category: c.slug, selected: undefined }),
+                })),
+              ],
+            },
           ]}
         >
           {visible.length === 0 ? (
@@ -235,7 +235,7 @@ export default async function QaArchivePage({
                 {group.rows.map((entry) => (
                   <Link
                     key={entry.id}
-                    className={`ws-row ${active?.id === entry.id ? "ws-row--active" : ""}`}
+                    className={`ws-row ws-row--flush ${active?.id === entry.id ? "ws-row--active" : ""}`}
                     href={link({ selected: entry.id })}
                     aria-current={active?.id === entry.id ? "true" : undefined}
                   >

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { homeNav } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -49,10 +49,7 @@ export default async function CoursesPage({
       <AppShell
         user={toShellUser(user)}
         workspace="home"
-        navGroups={homeNav("/teach/courses", {
-          isTeacher: false,
-          isPlatformAdmin: user.isPlatformAdmin,
-        })}
+        navGroups={await primaryNavFor(user, "/teach/courses")}
         title="My courses"
       >
         <AccessDenied what="course management" />
@@ -91,10 +88,7 @@ export default async function CoursesPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={homeNav("/teach/courses", {
-        isTeacher: true,
-        isPlatformAdmin: user.isPlatformAdmin,
-      })}
+      navGroups={await primaryNavFor(user, "/teach/courses")}
       title="My courses"
       actions={
         <Link className="button button--primary" href="/teach/courses?new=1">

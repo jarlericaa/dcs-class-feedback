@@ -196,6 +196,14 @@ the registrar file arrives; the failure is silence, not permission.
 
 ### F3 · P1 · Navigation is ordered for steady state, so cold start lands at the operational end
 
+> **Superseded 2026-08-07.** `staffSectionNav` no longer exists. These
+> destinations are now a contextual tab strip (`staffSectionTabs`) inside the
+> section, not rows in the primary rail, and Roster import left navigation
+> altogether for a page-header action on the class list — which dissolves the
+> ordering complaint below rather than answering it. See the
+> [IA structure banner](IA-STRUCTURE.md) for the two-layer model. The finding
+> and its reasoning are kept because they are what motivated the split.
+
 **Evidence.** `staffSectionNav` builds, in order: Review inbox, Publication
 queue, Class Q&A, Class list, Roster import, Participation, Question
 backlog; then a separate **Manage** group with Section setup and Audit history

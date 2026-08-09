@@ -2,10 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { loadStaffSection } from "@/lib/staff-section";
+import { loadStaffSection, sectionLabel } from "@/lib/staff-section";
 import { formatDate } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { staffSectionNav } from "@/components/layout/nav";
+import { staffSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -60,6 +61,7 @@ export default async function BacklogPage({
   }>;
 }) {
   const { id: sectionId } = await params;
+  const path = `/teach/sections/${sectionId}/backlog`;
   const sp = await searchParams;
   const ctx = await loadStaffSection(sectionId, "manageBacklogImports");
   if (!ctx.ok) {
@@ -67,7 +69,7 @@ export default async function BacklogPage({
       <AppShell
         user={toShellUser(ctx.user)}
         workspace="staff"
-        navGroups={[]}
+        navGroups={await primaryNavFor(ctx.user, path)}
         title="Question backlog"
       >
         <AccessDenied what="this course's question backlog" />
@@ -88,7 +90,7 @@ export default async function BacklogPage({
         <AppShell
           user={toShellUser(user)}
           workspace="staff"
-          navGroups={[]}
+          navGroups={await primaryNavFor(ctx.user, path)}
           title="Question backlog"
         >
           <AccessDenied what="this course's question backlog" />
@@ -176,11 +178,14 @@ export default async function BacklogPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(
-        access,
-        `/teach/sections/${sectionId}/backlog`,
-      )}
-      contextLabel={section.title}
+      navGroups={await primaryNavFor(user, path, {
+        /* A section is reached through its course, and the course now has its
+           own rail row — so mark that one rather than the courses index. */
+        fallbackHref: `/teach/courses/${course.id}`,
+      })}
+      tabs={staffSectionTabs(access, path)}
+      tabsLabel={sectionLabel(course.code, section.title)}
+      contextLabel={sectionLabel(course.code, section.title)}
       breadcrumbs={
         <Breadcrumbs
           items={[

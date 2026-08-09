@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
-import { loadStaffSection } from "@/lib/staff-section";
+import { loadStaffSection, sectionLabel } from "@/lib/staff-section";
 import { AppShell } from "@/components/layout/app-shell";
-import { staffSectionNav } from "@/components/layout/nav";
-import { AccessDenied, Breadcrumbs } from "@/components/ui";
+import { staffSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
+import { AccessDenied } from "@/components/ui";
 import {
   RosterImport,
   type ImportState,
@@ -32,13 +33,14 @@ export default async function ImportPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: sectionId } = await params;
+  const path = `/teach/sections/${sectionId}/import`;
   const ctx = await loadStaffSection(sectionId, "viewStudentIdentities");
   if (!ctx.ok) {
     return (
       <AppShell
         user={toShellUser(ctx.user)}
         workspace="staff"
-        navGroups={[]}
+        navGroups={await primaryNavFor(ctx.user, path)}
         title="Roster import"
       >
         <AccessDenied what="this section's roster" />
@@ -198,17 +200,16 @@ export default async function ImportPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={staffSectionNav(access, `/teach/sections/${sectionId}/import`)}
-      contextLabel={section.title}
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { href: "/", label: "Overview" },
-            { label: course.code },
-            { label: "Roster import" },
-          ]}
-        />
-      }
+      navGroups={await primaryNavFor(user, path, {
+        /* A section is reached through its course, and the course now has its
+           own rail row — so mark that one rather than the courses index. */
+        fallbackHref: `/teach/courses/${course.id}`,
+      })}
+      tabs={staffSectionTabs(access, path, {
+        activeHref: `/teach/sections/${sectionId}/roster`,
+      })}
+      tabsLabel={sectionLabel(course.code, section.title)}
+      contextLabel={sectionLabel(course.code, section.title)}
       title="Import the class list"
       description="The UP email on each row is what gives that student their class. Importing it is the whole grant — nothing else has to be confirmed."
     >

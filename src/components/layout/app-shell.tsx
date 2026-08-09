@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { WorkspaceShell, type ShellUser } from "./workspace-shell";
-import type { NavGroup } from "./nav";
+import type { NavGroup, NavItem } from "./nav";
 
 /**
  * Single-column pages (the weekly form, history, setup, participation, admin,
@@ -27,6 +27,8 @@ export function AppShell({
   user,
   workspace,
   navGroups,
+  tabs,
+  tabsLabel,
   contextLabel,
   title,
   description,
@@ -40,6 +42,10 @@ export function AppShell({
   user: ShellUser;
   workspace: Workspace;
   navGroups: NavGroup[];
+  /** peer views of the resource this page belongs to; never global destinations */
+  tabs?: NavItem[];
+  /** names the resource the tabs belong to, e.g. "CS 33" */
+  tabsLabel?: string;
   contextLabel?: string;
   title?: string;
   description?: ReactNode;
@@ -57,6 +63,8 @@ export function AppShell({
       contextTitle={contextLabel ?? workspaceLabel}
       workspaceLabel={workspaceLabel}
       navGroups={navGroups}
+      tabs={tabs}
+      tabsLabel={tabsLabel}
     >
       {(title || description || actions || breadcrumbs) && (
         <div

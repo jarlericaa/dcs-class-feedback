@@ -4,7 +4,8 @@ import { db } from "@/db";
 import { classSections, courses } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { courseNav } from "@/components/layout/nav";
+import { courseTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -40,6 +41,7 @@ export default async function CourseWorkspacePage({
   const user = await requireUser();
   const { id: courseId } = await params;
   const { ok, error } = await searchParams;
+  const path = `/teach/courses/${courseId}`;
 
   let forms: CourseFormRow[];
   try {
@@ -50,7 +52,7 @@ export default async function CourseWorkspacePage({
         <AppShell
           user={toShellUser(user)}
           workspace="staff"
-          navGroups={[]}
+          navGroups={await primaryNavFor(user, path)}
           title="Course"
         >
           <AccessDenied what="this course" />
@@ -68,7 +70,7 @@ export default async function CourseWorkspacePage({
       <AppShell
         user={toShellUser(user)}
         workspace="staff"
-        navGroups={[]}
+        navGroups={await primaryNavFor(user, path)}
         title="Course"
       >
         <AccessDenied what="this course" />
@@ -85,9 +87,9 @@ export default async function CourseWorkspacePage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={courseNav(courseId, `/teach/courses/${courseId}`, {
-        needsReview,
-      })}
+      navGroups={await primaryNavFor(user, path)}
+      tabs={courseTabs(courseId, path, { needsReview })}
+      tabsLabel={course.code}
       contextLabel={course.code}
       /* The code is the title. The academic year and semester sit under it as
          quiet context so two offerings of CS 33 are never confused; the course

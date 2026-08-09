@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { homeNav } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   EmptyState,
   MetaList,
@@ -119,16 +119,32 @@ export default async function HomePage() {
     }),
   );
 
+  /**
+   * Sections staffed on someone else's course. They produce no course card,
+   * because this account cannot open the course — so without their own region
+   * a delegated assistant's board rendered completely empty while still
+   * counting as "has something", which left them no entrance at all.
+   */
+  const teachingIds = new Set(teaching.map((entry) => entry.course.id));
+  const assistedSections = staffSections.filter(
+    (section) => !teachingIds.has(section.courseId),
+  );
+
   const open = studentCards.filter((c) => !c.submitted);
   const hasNothing =
     staffCards.length === 0 &&
     studentCards.length === 0 &&
     studentSections.length === 0 &&
     staffSections.length === 0;
-  const isStaffView = staffCards.length > 0;
+  const isStaffView = staffCards.length > 0 || assistedSections.length > 0;
   // A batten divides one region from the next, so it earns its place only when
   // there IS a next one. With a single region the page title already names it.
-  const showStrips = studentCards.length > 0 && staffCards.length > 0;
+  const showStrips =
+    [
+      studentCards.length > 0,
+      staffCards.length > 0,
+      assistedSections.length > 0,
+    ].filter(Boolean).length > 1;
   // A count belongs on a label when it tells the reader something the cards do
   // not — that is, when there are more than a screenful.
   const countIf = (n: number) => (n > 4 ? `${n}` : undefined);
@@ -137,10 +153,7 @@ export default async function HomePage() {
     <AppShell
       user={toShellUser(user)}
       workspace={isStaffView ? "staff" : "student"}
-      navGroups={homeNav("/", {
-        isTeacher: user.isTeacher,
-        isPlatformAdmin: user.isPlatformAdmin,
-      })}
+      navGroups={await primaryNavFor(user, "/")}
       title="Overview"
       description={
         open.length > 0
@@ -248,6 +261,53 @@ export default async function HomePage() {
                       )}
                       <span className="section-notice__action">
                         {card.needsReview > 0 ? "Review responses" : "Open forms"}
+                        <IconForward size={15} />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {assistedSections.length > 0 && (
+          <section aria-labelledby={showStrips ? "assisting" : undefined}>
+            {showStrips && (
+              <StripLabel
+                id="assisting"
+                count={countIf(assistedSections.length)}
+              >
+                Sections you assist
+              </StripLabel>
+            )}
+            <div className="stack-4">
+              {assistedSections.map((section) => (
+                <Link
+                  className="notice section-notice"
+                  key={section.id}
+                  href={`/teach/sections/${section.id}`}
+                >
+                  <div className="notice__body">
+                    <div className="spread">
+                      <div style={{ minWidth: 0 }}>
+                        <MetaList
+                          items={[courseById.get(section.courseId)?.code]}
+                        />
+                        <h3 className="panel-title" style={{ marginTop: 4 }}>
+                          {section.title}
+                        </h3>
+                      </div>
+                    </div>
+                    <div className="section-notice__foot">
+                      {/* No counts: what this account may see of the section
+                          depends on its permissions, and a number it cannot
+                          open would be a promise the next page breaks. */}
+                      <span className="meta">
+                        Your work on this class section
+                      </span>
+                      <span className="section-notice__action">
+                        Open this section
                         <IconForward size={15} />
                       </span>
                     </div>

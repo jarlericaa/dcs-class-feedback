@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { homeNav } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import { AccessDenied, Alert, Stamp, Breadcrumbs } from "@/components/ui";
 import {
   CatalogError,
@@ -33,10 +33,7 @@ export default async function AdminPage({
       <AppShell
         user={toShellUser(user)}
         workspace="home"
-        navGroups={homeNav("/admin", {
-          isTeacher: user.isTeacher,
-          isPlatformAdmin: false,
-        })}
+        navGroups={await primaryNavFor(user, "/admin")}
         title="Platform admin"
       >
         <AccessDenied what="platform administration" />
@@ -77,10 +74,7 @@ export default async function AdminPage({
     <AppShell
       user={toShellUser(user)}
       workspace="admin"
-      navGroups={homeNav("/admin", {
-        isTeacher: user.isTeacher,
-        isPlatformAdmin: true,
-      })}
+      navGroups={await primaryNavFor(user, "/admin")}
       breadcrumbs={
         <Breadcrumbs
           items={[

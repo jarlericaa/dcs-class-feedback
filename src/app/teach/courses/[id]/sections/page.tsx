@@ -7,7 +7,8 @@ import { db } from "@/db";
 import { classSections, courses, enrollments } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { courseNav } from "@/components/layout/nav";
+import { courseTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -41,6 +42,7 @@ export default async function CourseSectionsPage({
   const user = await requireUser();
   const { id: courseId } = await params;
   const { ok, error, new: newSection } = await searchParams;
+  const path = `/teach/courses/${courseId}/sections`;
 
   try {
     await requireCourseStaff(db, user.id, courseId, { allowArchived: true });
@@ -50,8 +52,8 @@ export default async function CourseSectionsPage({
         <AppShell
           user={toShellUser(user)}
           workspace="staff"
-          navGroups={[]}
-          title="Class lists & access"
+          navGroups={await primaryNavFor(user, path)}
+          title="Class lists"
         >
           <AccessDenied what="this course's class lists" />
         </AppShell>
@@ -112,12 +114,11 @@ export default async function CourseSectionsPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={courseNav(
-        courseId,
-        `/teach/courses/${courseId}/sections`,
-      )}
+      navGroups={await primaryNavFor(user, path)}
+      tabs={courseTabs(courseId, path)}
+      tabsLabel={course.code}
       contextLabel={course.code}
-      title="Class lists & access"
+      title="Class lists"
       description={`Who can reach ${course.code}'s forms, and who runs each list.`}
       actions={
         <Link

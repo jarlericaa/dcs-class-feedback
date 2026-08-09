@@ -2,7 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { studentSectionNav } from "@/components/layout/nav";
+import { studentSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import { AccessDenied, EmptyState } from "@/components/ui";
 import { listOpenInstancesForStudent } from "@/modules/forms/submission";
 import { AuthzError } from "@/modules/authz";
@@ -38,7 +39,7 @@ export default async function SectionEntryPage({
         <AppShell
           user={toShellUser(user)}
           workspace="student"
-          navGroups={[]}
+          navGroups={await primaryNavFor(user, `/sections/${sectionId}`)}
           title="Class section"
         >
           <AccessDenied what="this class section" />
@@ -55,7 +56,9 @@ export default async function SectionEntryPage({
   const shell = {
     user: toShellUser(user),
     workspace: "student" as const,
-    navGroups: studentSectionNav(sectionId, `/sections/${sectionId}`),
+    navGroups: await primaryNavFor(user, `/sections/${sectionId}`),
+    tabs: studentSectionTabs(sectionId, `/sections/${sectionId}`),
+    tabsLabel: course.code,
     contextLabel: course.code,
     roomy: true,
   };

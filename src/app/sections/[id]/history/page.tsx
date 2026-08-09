@@ -1,16 +1,22 @@
 import Link from "next/link";
 
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, initials } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { studentSectionNav } from "@/components/layout/nav";
+import { studentSectionTabs } from "@/components/layout/nav";
+import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
-  Breadcrumbs,
   EmptyState,
   Notice,
   Quote,
   Stamp,
 } from "@/components/ui";
+import { IconRoster } from "@/components/ui/icons";
+import {
+  Thread,
+  ThreadAudience,
+  ThreadMessage,
+} from "@/components/ui/thread";
 import { getStudentHistory } from "@/modules/publishing";
 import { AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
@@ -41,7 +47,10 @@ export default async function HistoryPage({
         <AppShell
           user={toShellUser(user)}
           workspace="student"
-          navGroups={[]}
+          navGroups={await primaryNavFor(
+            user,
+            `/sections/${sectionId}/history`,
+          )}
           title="My submissions"
         >
           <AccessDenied what="this class section" />
@@ -60,17 +69,10 @@ export default async function HistoryPage({
     <AppShell
       user={toShellUser(user)}
       workspace="student"
-      navGroups={studentSectionNav(sectionId, `/sections/${sectionId}/history`)}
+      navGroups={await primaryNavFor(user, `/sections/${sectionId}/history`)}
+      tabs={studentSectionTabs(sectionId, `/sections/${sectionId}/history`)}
+      tabsLabel={course.code}
       contextLabel={`${course.code} · ${section.title}`}
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { href: "/", label: "Overview" },
-            { href: `/sections/${sectionId}`, label: course.code },
-            { label: "My submissions" },
-          ]}
-        />
-      }
       title="My submissions"
       /* Privacy, and it was also wrong: it said a submitted form cannot be
          edited while /sections/[id] says "Submitted · still editable". The
@@ -122,52 +124,84 @@ export default async function HistoryPage({
                   </dl>
                 )}
 
-                {entry.items.map((item) => (
-                  <div className="stack-3" key={item.id} style={{ marginTop: "var(--s5)" }}>
-                    <Quote label={`Your ${item.submissionType}`}>
-                      {item.originalText}
-                    </Quote>
-
-                    {item.privateResponses.map((reply, index) => (
-                      <Quote
-                        key={index}
-                        tone="private"
-                        label={
-                          <>
-                            Private reply from your teaching team,{" "}
-                            {formatDateTime(reply.createdAt, section.timezone)}
-                          </>
-                        }
-                      >
-                        {reply.body}
+                {entry.items.map((item) => {
+                  const hasReply =
+                    item.privateResponses.length > 0 || !!item.publicAnswer;
+                  return (
+                    <div
+                      className="stack-3"
+                      key={item.id}
+                      style={{ marginTop: "var(--s5)" }}
+                    >
+                      <Quote label={`Your ${item.submissionType}`}>
+                        {item.originalText}
                       </Quote>
-                    ))}
 
-                    {item.publicAnswer ? (
-                      <Quote
-                        tone="public"
-                        label={
-                          <>
-                            Published to your class without your name,{" "}
-                            {formatDateTime(
-                              item.publicAnswer.publishedAt,
-                              section.timezone,
-                            )}
-                          </>
-                        }
-                      >
-                        <strong>
-                          {item.publicAnswer.rewordedQuestion}
-                        </strong>
-                        {item.publicAnswer.answer && (
-                          <>
-                            {"\n\n"}
-                            {item.publicAnswer.answer}
-                          </>
-                        )}
-                      </Quote>
-                    ) : (
-                      item.privateResponses.length === 0 && (
+                      {hasReply ? (
+                        <Thread
+                          audience={
+                            item.publicAnswer ? (
+                              <ThreadAudience scope="public">
+                                A published answer goes to your whole class
+                                without your name on it. Anything private below
+                                is only between you and your teaching team.
+                              </ThreadAudience>
+                            ) : (
+                              <ThreadAudience scope="private">
+                                Only you and your teaching team can read this.
+                              </ThreadAudience>
+                            )
+                          }
+                        >
+                          {item.privateResponses.map((reply, index) => {
+                            /* The student's own follow-up shares this thread.
+                               Without the role their own words came back
+                               labelled as the teaching team's. */
+                            const mine = reply.authorRole === "student";
+                            return (
+                              <ThreadMessage
+                                key={index}
+                                from={mine ? "student" : "staff"}
+                                author={mine ? "You" : "Your teaching team"}
+                                mark={
+                                  mine ? (
+                                    initials(user.displayName)
+                                  ) : (
+                                    <IconRoster size={14} />
+                                  )
+                                }
+                                action={mine ? "followed up" : "replied"}
+                                at={reply.createdAt}
+                                timezone={section.timezone}
+                              >
+                                <p className="thread__body">{reply.body}</p>
+                              </ThreadMessage>
+                            );
+                          })}
+
+                          {item.publicAnswer && (
+                            <ThreadMessage
+                              from="public"
+                              author="Your teaching team"
+                              mark={<IconRoster size={14} />}
+                              action="answered the class"
+                              at={item.publicAnswer.publishedAt}
+                              timezone={section.timezone}
+                            >
+                              <p className="thread__body">
+                                <strong>
+                                  {item.publicAnswer.rewordedQuestion}
+                                </strong>
+                              </p>
+                              {item.publicAnswer.answer && (
+                                <p className="thread__body">
+                                  {item.publicAnswer.answer}
+                                </p>
+                              )}
+                            </ThreadMessage>
+                          )}
+                        </Thread>
+                      ) : (
                         <p className="meta">
                           <Stamp tone="neutral">No reply yet</Stamp>{" "}
                           <span style={{ marginLeft: 8 }}>
@@ -175,10 +209,10 @@ export default async function HistoryPage({
                             one.
                           </span>
                         </p>
-                      )
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  );
+                })}
               </article>
             ))}
           </Notice>

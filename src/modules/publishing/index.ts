@@ -649,9 +649,21 @@ export async function getStudentHistory(userId: string, sectionId: string) {
         category: item.category,
         originalText: item.originalText,
         status: answered ? ("answered" as const) : ("submitted" as const),
+        /**
+         * `authorRole` and nothing more.
+         *
+         * A thread can hold the student's own follow-up alongside staff
+         * replies, and without the role their own words render back at them as
+         * "from your teaching team". The staff member's NAME is deliberately
+         * absent: every student-facing surface in this product says "your
+         * teaching team", so a reply is the team's, not one person's — a
+         * teaching assistant delivering an unwelcome answer to a peer should
+         * not be individually attributable.
+         */
         privateResponses: privates.map((p) => ({
           body: p.body,
           createdAt: p.createdAt,
+          authorRole: p.authorRole,
         })),
         publicAnswer: publicView,
       });
