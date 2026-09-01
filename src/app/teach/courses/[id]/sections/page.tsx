@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { classSections, courses, enrollments } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { courseTabs } from "@/components/layout/nav";
+import { courseTabs, staffSectionTabGroups } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
@@ -20,7 +20,11 @@ import {
 import { IconPlus } from "@/components/ui/icons";
 import { TermFields } from "@/components/ui/term-fields";
 import { termParts } from "@/lib/term";
-import { AuthzError, requireCourseStaff } from "@/modules/authz";
+import {
+  AuthzError,
+  getSectionAccess,
+  requireCourseStaff,
+} from "@/modules/authz";
 import { CatalogError, createSection } from "@/modules/catalog";
 import { requireUser, toShellUser } from "@/lib/session";
 
@@ -84,6 +88,11 @@ export default async function CourseSectionsPage({
     for (const row of rows) {
       counts.set(row.sectionId, (counts.get(row.sectionId) ?? 0) + 1);
     }
+  }
+  const destinations = new Map<string, ReturnType<typeof staffSectionTabGroups>>();
+  for (const section of sections) {
+    const access = await getSectionAccess(db, user.id, section.id);
+    if (access) destinations.set(section.id, staffSectionTabGroups(access, ""));
   }
   const createOpen = newSection === "1" || !!error;
 
@@ -179,14 +188,15 @@ export default async function CourseSectionsPage({
             form goes to one section, several, or all of them.
           </EmptyState>
         ) : (
-          <section className="notice">
-            <ul className="data-list">
-              {sections.map((section) => {
-                const enrolled = counts.get(section.id) ?? 0;
-                return (
-                  <li key={section.id}>
-                    <span className="data-list__main">
-                      <strong>{section.title}</strong>
+          <div className="stack-3">
+            {sections.map((section) => {
+              const enrolled = counts.get(section.id) ?? 0;
+              const groups = destinations.get(section.id) ?? [];
+              return (
+                <section className="notice" key={section.id}>
+                  <div className="notice__head">
+                    <div>
+                      <h2>{section.title}</h2>
                       <MetaList
                         items={[
                           ...termParts(section.term),
@@ -194,36 +204,39 @@ export default async function CourseSectionsPage({
                             ? "No class list imported"
                             : `${enrolled} enrolled`,
                           section.timezone,
-                          !section.active && "Inactive",
                         ]}
                       />
-                    </span>
-                    <span className="row">
-                      {!section.active && <Stamp tone="neutral">Inactive</Stamp>}
-                      <Link
-                        className="button button--secondary button--small"
-                        href={`/teach/sections/${section.id}/roster`}
-                      >
-                        Class list
-                      </Link>
-                      <Link
-                        className="button button--secondary button--small"
-                        href={`/teach/sections/${section.id}/import`}
-                      >
-                        Import
-                      </Link>
-                      <Link
-                        className="button button--secondary button--small"
-                        href={`/teach/sections/${section.id}/setup`}
-                      >
-                        Staff & details
-                      </Link>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
+                    </div>
+                    {!section.active && <Stamp tone="neutral">Inactive</Stamp>}
+                  </div>
+                  {/* Every page this section leads to, grouped by what it is
+                      for — not hidden behind having to open the section
+                      first, and not one flat wall of links either. */}
+                  <div className="notice__body section-links">
+                    {groups.map((group) => (
+                      <div className="section-links__group" key={group.label}>
+                        <p className="section-links__heading">{group.label}</p>
+                        <nav
+                          className="section-links__list"
+                          aria-label={`${section.title} ${group.label}`}
+                        >
+                          {group.items.map((item) => (
+                            <Link
+                              key={item.href}
+                              className="link"
+                              href={item.href}
+                            >
+                              {item.label}
+                            </Link>
+                          ))}
+                        </nav>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
         )}
       </div>
     </AppShell>

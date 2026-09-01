@@ -486,6 +486,31 @@ kbd {
 .notice--pad {
   padding: var(--s5);
 }
+/* A resource's own destinations, grouped by what they are for — the class
+   list's own version of the section subnav's groups (nav.ts), so the two
+   never describe the same set of pages two different ways. Each group is its
+   own small column, so "which of these am I after" is answered before any
+   row is read, the way a settings screen groups its rows into named cards
+   instead of one flat list. */
+.section-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s5) var(--s6);
+}
+.section-links__heading {
+  margin: 0 0 var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.section-links__list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
 /* student surfaces breathe more than staff surfaces */
 .notice--roomy .notice__head {
   padding: var(--s6) var(--s6) var(--s4);
@@ -2571,6 +2596,21 @@ kbd {
   font-weight: 700;
   overflow-wrap: anywhere;
 }
+/* A category inside the strip — "Class list", "Weekly review", "Reports",
+   "Setup" — so a longer peer-view set reads as a small set of questions
+   ("which of these am I after?") instead of one flat wall of links. */
+.ws-subnav__group + .ws-subnav__group {
+  margin-top: var(--s4);
+}
+.ws-subnav__group-heading {
+  margin: 0 0 4px;
+  padding: 0 var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
 .ws-subnav__list {
   margin: 0;
   padding: 0;
@@ -3301,6 +3341,18 @@ kbd {
     overscroll-behavior-x: contain;
   }
   .ws-subnav__heading {
+    display: none;
+  }
+  /* No room for the grouped, headed columns either: a group's own heading
+     stacked over its list would fight the single scrolling row every other
+     route uses here. `contents` unwraps the group so its list joins that row
+     directly, same as the flat (ungrouped) case — losing the category label
+     is an acceptable trade at this width; the resource heading is already
+     gone for the same reason. */
+  .ws-subnav__group {
+    display: contents;
+  }
+  .ws-subnav__group-heading {
     display: none;
   }
   .ws-subnav__list {

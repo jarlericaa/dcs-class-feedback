@@ -14,7 +14,7 @@ import {
   WorkspaceShell,
 } from "@/components/layout/workspace-shell";
 import {
-  staffSectionTabs,
+  staffSectionTabGroups,
   studentSectionTabs,
 } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
@@ -99,9 +99,10 @@ export default async function QaArchivePage({
         : `/teach/sections/${sectionId}`
       : undefined,
   });
-  const tabs = access?.staff
-    ? staffSectionTabs(access, base)
-    : studentSectionTabs(sectionId, base);
+  const tabGroups = access?.staff
+    ? staffSectionTabGroups(access, base)
+    : undefined;
+  const tabs = access?.staff ? undefined : studentSectionTabs(sectionId, base);
   const link = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams();
     const merged = {
@@ -169,6 +170,7 @@ export default async function QaArchivePage({
       workspaceLabel={access?.staff ? "Staff workspace" : "Student workspace"}
       navGroups={navGroups}
       tabs={tabs}
+      tabGroups={tabGroups}
       tabsLabel={section.title}
       selection={{
         active: !!sp.selected,

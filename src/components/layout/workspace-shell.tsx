@@ -115,6 +115,7 @@ export function WorkspaceShell({
   workspaceLabel,
   navGroups,
   tabs,
+  tabGroups,
   tabsLabel,
   railFooter,
   listPane,
@@ -127,8 +128,12 @@ export function WorkspaceShell({
   /** "Student workspace", "Staff workspace" — stated, never inferred */
   workspaceLabel?: string;
   navGroups?: NavGroup[];
-  /** peer views of the resource this page belongs to; never global destinations */
+  /** peer views of the resource this page belongs to; never global destinations.
+   *  A flat strip. Pass `tabGroups` instead for a longer, categorized set. */
   tabs?: NavItem[];
+  /** the same peer views, pre-grouped by category. Takes precedence over `tabs`
+   *  when both are passed (they never are). */
+  tabGroups?: NavGroup[];
   /** names the resource those views belong to, e.g. "CS 33" */
   tabsLabel?: string;
   railFooter?: ReactNode;
@@ -212,7 +217,10 @@ export function WorkspaceShell({
         )}
 
         {/* The resource's own views, between the workspace and the page. */}
-        {tabs && tabs.length > 0 && (
+        {tabGroups && tabGroups.length > 0 && (
+          <SubNav groups={tabGroups} label={tabsLabel ?? contextTitle} />
+        )}
+        {!tabGroups && tabs && tabs.length > 0 && (
           <SubNav items={tabs} label={tabsLabel ?? contextTitle} />
         )}
 

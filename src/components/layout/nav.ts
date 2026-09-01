@@ -273,77 +273,128 @@ export function courseTabs(
 }
 
 /**
- * Peer views of ONE class section, filtered by effective permissions.
+ * Peer views of ONE class section, filtered by effective permissions and
+ * grouped by what they are FOR, not left as one flat strip. A teacher opening
+ * this is usually thinking in one of four registers — who has access, this
+ * week's work, what happened before, or how the section is configured — so
+ * the groups answer that question before the reader has read a single label.
  *
- * Order is daily work, then the shared archive, then administration — and it is
- * the same order for everyone, so a reader who loses a permission sees a
- * shorter strip, never a rearranged one.
+ * A permission that hides every item in a group hides the group's heading
+ * with it: an empty "Reports" strip label naming nothing is worse than no
+ * label at all.
  */
-export function staffSectionTabs(
+export function staffSectionTabGroups(
   access: SectionAccess,
   currentPath: string,
   opts: { needsReview?: number; activeHref?: string } = {},
-): NavItem[] {
+): NavGroup[] {
   const id = access.section.id;
   const staff = access.staff;
   if (!staff) return [];
   const perms = staff.permissions;
-  const items: NavItem[] = [];
+  const groups: NavGroup[] = [];
 
   // The review queue is COURSE-scoped: a form shared by several sections has one
   // queue, which is the point of sharing it. Course staff therefore reach it
   // through the course tab strip and it is not repeated here. Someone with no
   // course standing has no such strip, so for them the section is the only frame
   // there is and the queue appears in it. That difference follows the reader's
-  // permissions, not the page they happen to be on.
+  // permissions, not the page they happen to be on. Ungrouped: it is already
+  // the one thing a delegated assistant opens this section to do.
   if (perms.reviewResponses && !staff.hasCourseStanding) {
-    items.push({
-      href: `/teach/sections/${id}/review`,
-      label: "Review inbox",
-      count: opts.needsReview || undefined,
+    groups.push({
+      label: "Review",
+      items: [
+        {
+          href: `/teach/sections/${id}/review`,
+          label: "Review inbox",
+          count: opts.needsReview || undefined,
+        },
+      ],
     });
   }
+
+  // Who can reach this section's forms, and how they got there.
+  const classList: NavItem[] = [];
   if (perms.viewStudentIdentities) {
-    items.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
+    classList.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
+    classList.push({ href: `/teach/sections/${id}/import`, label: "Import" });
   }
-  if (perms.exportParticipation) {
-    items.push({
-      href: `/teach/sections/${id}/participation`,
-      label: "Participation",
-    });
-  }
-  // Any publication capability can READ the queue; each action inside is gated
-  // by its own flag, so a publish-only assistant still sees their work.
+  if (classList.length > 0) groups.push({ label: "Class list", items: classList });
+
+  // The recurring cycle: draft and publish this week's answers, then the
+  // archive students actually read once they are out. Any publication
+  // capability can READ the queue; each action inside is gated by its own
+  // flag, so a publish-only assistant still sees their work.
+  const weeklyReview: NavItem[] = [];
   if (
     perms.draftPublicAnswers ||
     perms.rewordPublicQuestions ||
     perms.publishPublicAnswers ||
     perms.schedulePublication
   ) {
-    items.push({
+    weeklyReview.push({
       href: `/teach/sections/${id}/publications`,
       label: "Publication queue",
     });
   }
   if (perms.manageBacklogImports) {
-    items.push({
+    weeklyReview.push({
       href: `/teach/sections/${id}/backlog`,
       label: "Question backlog",
     });
   }
-  items.push({ href: `/sections/${id}/qa`, label: "Class Q&A" });
-  if (perms.manageWeeklyCycles || perms.manageTemplates) {
-    items.push({ href: `/teach/sections/${id}/setup`, label: "Section setup" });
+  weeklyReview.push({ href: `/sections/${id}/qa`, label: "Class Q&A" });
+  groups.push({ label: "Weekly review", items: weeklyReview });
+
+  // Read-only history: how the section is doing, and what changed.
+  const reports: NavItem[] = [];
+  if (perms.exportParticipation) {
+    reports.push({
+      href: `/teach/sections/${id}/participation`,
+      label: "Participation",
+    });
   }
   // Audit browsing is not delegable to a TA in the MVP permission catalog.
   if (staff.role !== "ta") {
-    items.push({
-      href: `/teach/sections/${id}/audit`,
-      label: "Audit history",
+    reports.push({ href: `/teach/sections/${id}/audit`, label: "Audit history" });
+  }
+  if (reports.length > 0) groups.push({ label: "Reports", items: reports });
+
+  if (perms.manageWeeklyCycles || perms.manageTemplates) {
+    groups.push({
+      label: "Setup",
+      items: [
+        { href: `/teach/sections/${id}/setup`, label: "Section setup" },
+      ],
     });
   }
 
-  return mark(items, currentPath, opts.activeHref);
+  // Marked across every group at once, so the longest-match rule (and an
+  // activeHref override) stays global rather than resetting per group.
+  const flatActive = mark(
+    groups.flatMap((g) => g.items),
+    currentPath,
+    opts.activeHref,
+  );
+  const activeByHref = new Map(flatActive.map((i) => [i.href, i.active]));
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.map((i) => ({ ...i, active: activeByHref.get(i.href) ?? false })),
+  }));
+}
+
+/** Flattened form of {@link staffSectionTabGroups}, for the few callers that
+ *  still want one plain list (a page whose own layout has no room for group
+ *  headings). Prefer the grouped form wherever the reader can see it. */
+export function staffSectionTabs(
+  access: SectionAccess,
+  currentPath: string,
+  opts: { needsReview?: number; activeHref?: string } = {},
+): NavItem[] {
+  return staffSectionTabGroups(access, currentPath, opts).flatMap(
+    (g) => g.items,
+  );
 }
 
 /**
