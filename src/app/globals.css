@@ -59,9 +59,10 @@
 
   --focus: #164c50;
 
-  /* radius — nothing else exists */
-  --r-control: 2px;
-  --r-stamp: 3px;
+  /* radius */
+  --r-control: 6px;
+  --r-stamp: 5px;
+  --r-panel: 12px;
 
   /* the one elevation */
   --overlay-shadow: 0 12px 28px rgba(28, 30, 32, 0.16);
@@ -430,11 +431,13 @@ kbd {
 }
 
 /* ==========================================================================
-   The notice — a flat sheet squared to the board. Never rounded, never lifted.
+   The notice — a sheet on the board. Squared corners softened to a small
+   rounded rectangle; still flat, still never lifted (no shadow at rest).
    ========================================================================== */
 
 .notice {
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .notice--quiet {
@@ -477,6 +480,8 @@ kbd {
   padding: var(--s4) var(--s5);
   border-top: 1px solid var(--rule);
   background: var(--paper-quiet);
+  /* Its own fill would otherwise square off the panel's rounded bottom. */
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
 }
 .notice--pad {
   padding: var(--s5);
@@ -725,6 +730,7 @@ kbd {
   gap: var(--s3);
   padding: var(--s3) var(--s4);
   border: 1px solid;
+  border-radius: var(--r-panel);
   font-size: 13px;
 }
 .alert__icon {
@@ -940,6 +946,7 @@ kbd {
   gap: var(--s2);
   padding: var(--s3);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .toolbar .field {
@@ -962,7 +969,10 @@ kbd {
    longer has to compete with a form the reader did not ask for. */
 .disclose {
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
+  /* Clips the summary's hover fill to the rounded corners. */
+  overflow: hidden;
 }
 .disclose > summary {
   display: flex;
@@ -1002,6 +1012,8 @@ kbd {
 .disclose--inset {
   border: 0;
   border-top: 1px solid var(--rule);
+  border-radius: 0;
+  overflow: visible;
   background: var(--paper-quiet);
 }
 .disclose--inset[open] > summary {
@@ -1044,6 +1056,7 @@ kbd {
 /* A question is a hairline-divided row, not a card inside a card. */
 .q-list {
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .q-item {
@@ -1061,6 +1074,7 @@ kbd {
 /* Standing alone (the student-additions block) it keeps its own frame. */
 .q-item:not(.q-list > .q-item) {
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
 }
 .q-item__legend {
   float: left;
@@ -1160,7 +1174,7 @@ kbd {
   max-height: min(88vh, 900px);
   padding: 0;
   border: 1px solid var(--rule-strong);
-  border-radius: 0;
+  border-radius: var(--r-panel);
   background: var(--paper);
   color: var(--ink);
   box-shadow: var(--overlay-shadow);
@@ -1205,6 +1219,7 @@ kbd {
     max-height: 100dvh;
     margin: 0;
     border: 0;
+    border-radius: 0;
   }
   .preview__bar {
     padding: var(--s3) var(--s4);
@@ -2081,6 +2096,7 @@ kbd {
 .feed {
   background: var(--paper);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   /* The rows respond to the FEED's width, not the window's: two navigation
      columns sit to the left of it, so the viewport says nothing useful about
      how much room a row actually has. */
@@ -2704,7 +2720,10 @@ kbd {
   margin: var(--s6) auto;
   align-self: center;
   border: 1px solid var(--rule-strong);
+  border-radius: var(--r-panel);
   background: var(--paper);
+  /* Clips .entry__signin's own fill to the rounded corners. */
+  overflow: hidden;
 }
 .entry__grid {
   display: grid;
@@ -2783,6 +2802,7 @@ kbd {
   margin-top: var(--s5);
   padding: var(--s4);
   border: 1px dashed var(--rule-strong);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .entry__dev h3 {
@@ -3108,6 +3128,7 @@ kbd {
 .composer {
   padding: var(--s4);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .composer > h3 {
@@ -3132,6 +3153,7 @@ kbd {
 .visibility-note {
   padding: var(--s3);
   border: 1px solid var(--amber-edge);
+  border-radius: var(--r-panel);
   background: var(--amber-wash);
   color: var(--amber-deep);
   font-size: 12px;
@@ -3589,7 +3611,7 @@ kbd {
   max-height: min(88vh, 860px);
   padding: 0;
   border: 1px solid var(--rule-strong);
-  border-radius: 0;
+  border-radius: var(--r-panel);
   background: var(--paper);
   color: var(--ink);
   box-shadow: var(--overlay-shadow);
@@ -3647,6 +3669,7 @@ kbd {
     max-height: 100dvh;
     margin: 0;
     border: 0;
+    border-radius: 0;
   }
   .dlg__head {
     padding: var(--s3) var(--s4);
@@ -3817,6 +3840,7 @@ kbd {
   margin-top: var(--s2);
   padding: var(--s3);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper-quiet);
 }
 
