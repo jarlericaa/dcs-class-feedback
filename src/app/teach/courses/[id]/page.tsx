@@ -4,8 +4,7 @@ import { db } from "@/db";
 import { classSections, courses } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { courseTabs } from "@/components/layout/nav";
-import { primaryNavFor } from "@/lib/nav-context";
+import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -88,7 +87,7 @@ export default async function CourseWorkspacePage({
       user={toShellUser(user)}
       workspace="staff"
       navGroups={await primaryNavFor(user, path)}
-      tabs={courseTabs(courseId, path, { needsReview })}
+      tabGroups={await courseTabGroupsFor(user.id, courseId, path, { needsReview })}
       tabsLabel={course.code}
       contextLabel={course.code}
       /* The code is the title. The academic year and semester sit under it as

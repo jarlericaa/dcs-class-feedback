@@ -8,7 +8,7 @@ import { db } from "@/db";
 import { courses } from "@/db/schema";
 import { formatDateTime, initials } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { courseTabs, staffSectionTabs } from "@/components/layout/nav";
+import { courseTabGroups, staffSectionTabGroups } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
 import {
   markReviewedThisSession,
@@ -287,9 +287,14 @@ export default async function CourseResponsesPage({
       (await getSectionAccess(db, user.id, railSectionId)))
     : null;
   const showsCourseTabs = railAccess?.staff?.hasCourseStanding ?? true;
-  const tabs = showsCourseTabs
-    ? courseTabs(courseId, path, { needsReview: counts.needsReview })
-    : staffSectionTabs(railAccess!, path, {
+  const tabGroups = showsCourseTabs
+    ? courseTabGroups(
+        courseId,
+        path,
+        { needsReview: counts.needsReview },
+        sections.length === 1 ? (accessBySection.get(sections[0]!.id) ?? null) : null,
+      )
+    : staffSectionTabGroups(railAccess!, path, {
         needsReview: counts.needsReview,
         activeHref: `/teach/sections/${railSectionId}/review`,
       });
@@ -562,7 +567,7 @@ export default async function CourseResponsesPage({
           ? `/teach/courses/${courseId}`
           : `/teach/sections/${railSectionId}`,
       })}
-      tabs={tabs}
+      tabGroups={tabGroups}
       tabsLabel={
         showsCourseTabs ? course.code : (railAccess?.section.title ?? course.code)
       }

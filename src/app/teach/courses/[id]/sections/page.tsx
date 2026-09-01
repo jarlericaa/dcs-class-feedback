@@ -7,8 +7,8 @@ import { db } from "@/db";
 import { classSections, courses, enrollments } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { courseTabs, staffSectionTabGroups } from "@/components/layout/nav";
-import { primaryNavFor } from "@/lib/nav-context";
+import { staffSectionTabGroups } from "@/components/layout/nav";
+import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -124,7 +124,7 @@ export default async function CourseSectionsPage({
       user={toShellUser(user)}
       workspace="staff"
       navGroups={await primaryNavFor(user, path)}
-      tabs={courseTabs(courseId, path)}
+      tabGroups={await courseTabGroupsFor(user.id, courseId, path)}
       tabsLabel={course.code}
       contextLabel={course.code}
       title="Class lists"

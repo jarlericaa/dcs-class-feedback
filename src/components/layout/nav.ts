@@ -407,6 +407,53 @@ export function firstStaffSectionHref(access: SectionAccess): string | null {
   return staffSectionTabs(access, "")[0]?.href ?? null;
 }
 
+/**
+ * Peer views of ONE course, folding in its one section's own groups when
+ * there is exactly one — the common case, and the one where clicking
+ * "Class lists" to find out what is inside gains nothing, because there is
+ * only one answer.
+ *
+ * A course with several sections keeps the plain three-item strip and the
+ * click-through instead: which section a destination like "Publication
+ * queue" means is then a real, necessary choice, not friction. Inlining
+ * every section's groups there would not remove a click, it would stack N
+ * full group sets permanently into the sidebar — trading "hidden" for
+ * "overwhelming," the same defect from the other direction.
+ *
+ * The first group carries the course's own three destinations, unlabeled
+ * (exactly how they render today) — this is an addition to that sidebar, not
+ * a replacement of it.
+ */
+export function courseTabGroups(
+  courseId: string,
+  currentPath: string,
+  opts: { needsReview?: number; activeHref?: string } = {},
+  singleSectionAccess?: SectionAccess | null,
+): NavGroup[] {
+  // Reuses courseTabs rather than repeating its three items, so the two can
+  // never list the course's own destinations two different ways. Its active
+  // flags are provisional — overwritten below once the section's groups (if
+  // any) are marked alongside them.
+  const groups: NavGroup[] = [
+    { label: "", items: courseTabs(courseId, currentPath, opts) },
+  ];
+  if (singleSectionAccess) {
+    groups.push(...staffSectionTabGroups(singleSectionAccess, currentPath));
+  }
+
+  // Marked across every group at once — see staffSectionTabGroups for why.
+  const flatActive = mark(
+    groups.flatMap((g) => g.items),
+    currentPath,
+    opts.activeHref,
+  );
+  const activeByHref = new Map(flatActive.map((i) => [i.href, i.active]));
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.map((i) => ({ ...i, active: activeByHref.get(i.href) ?? false })),
+  }));
+}
+
 /** Peer views of ONE class, as a student sees them. */
 export function studentSectionTabs(
   sectionId: string,
