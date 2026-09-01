@@ -107,9 +107,9 @@ export default async function SectionRosterPage({
       })}
       tabs={staffSectionTabs(access, path)}
       tabsLabel={sectionLabel(course.code, section.title)}
+      tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
       title="Class list"
-      description="Students get access from the UP email on this list. Import the list again to add, correct, or remove someone."
       actions={
         <Link
           className="button button--primary"

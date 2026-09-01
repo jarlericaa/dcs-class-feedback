@@ -61,6 +61,7 @@ export default async function ParticipationPage({
       })}
       tabs={staffSectionTabs(access, path)}
       tabsLabel={sectionLabel(course.code, section.title)}
+      tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
       title="Participation"
       /* The three exports were a titled card whose whole body was these three

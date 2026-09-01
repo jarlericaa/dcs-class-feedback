@@ -48,7 +48,7 @@ function access(
 ): SectionAccess {
   const sectionId = overrides.sectionId ?? "sec-1";
   return {
-    section: { id: sectionId } as SectionAccess["section"],
+    section: { id: sectionId, courseId: "course-1" } as SectionAccess["section"],
     staff:
       overrides.staff === null
         ? null
@@ -405,7 +405,10 @@ describe("staffSectionTabs — permission visibility", () => {
     );
     // Course staff reach the one course-wide queue from the course strip;
     // repeating it here would offer the same destination in two contexts.
-    expect(withCourse.map((t) => t.label)).not.toContain("Review inbox");
+    expect(withCourse.map((t) => t.label)).toContain("Review responses");
+    expect(withCourse[0]!.href).toBe(
+      "/teach/courses/course-1/responses?section=sec-1",
+    );
 
     const withoutCourse = staffSectionTabs(
       access({
@@ -473,7 +476,7 @@ describe("studentSectionTabs", () => {
       "/sections/sec-1/qa",
     ]) {
       expect(studentSectionTabs("sec-1", path).map((t) => t.label)).toEqual([
-        "This week's form",
+        "Forms",
         "My submissions",
         "Class Q&A",
       ]);
@@ -492,7 +495,7 @@ describe("studentSectionTabs", () => {
     expect(active("/sections/sec-1/qa")).toEqual(["/sections/sec-1/qa"]);
   });
 
-  it("marks this week's form while a form instance is open", () => {
+  it("marks Forms while a form instance is open", () => {
     expect(
       studentSectionTabs("sec-1", "/forms/i1", {
         activeHref: "/sections/sec-1",

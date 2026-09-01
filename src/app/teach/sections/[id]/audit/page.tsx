@@ -68,6 +68,7 @@ export default async function AuditPage({
       })}
       tabs={staffSectionTabs(access, path)}
       tabsLabel={sectionLabel(course.code, section.title)}
+      tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
       title="Audit history"
     >

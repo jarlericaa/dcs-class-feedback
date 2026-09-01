@@ -118,7 +118,9 @@ export function Notice({
                 {title}
               </h2>
             )}
-            {description && <p>{description}</p>}
+            {description && (
+              <div className="notice__description">{description}</div>
+            )}
           </div>
           {aside && <div className="row">{aside}</div>}
         </div>
@@ -205,7 +207,7 @@ export function EmptyState({
   return (
     <div className="empty">
       <h2>{title}</h2>
-      {children && <p>{children}</p>}
+      {children && <div className="empty__description">{children}</div>}
       {action && (
         <Link
           className={`button button--${primary ? "primary" : "secondary"}`}

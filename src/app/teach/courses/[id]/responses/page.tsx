@@ -563,16 +563,12 @@ export default async function CourseResponsesPage({
           : `/teach/sections/${railSectionId}`,
       })}
       tabs={tabs}
+      tabsMode={showsCourseTabs ? undefined : "menu"}
       tabsLabel={
         showsCourseTabs ? course.code : (railAccess?.section.title ?? course.code)
       }
       contextLabel={course.code}
       title="Responses"
-      description={
-        currentCycle
-          ? `What your students sent for ${currentCycle.label}. Only the teaching team can see this page.`
-          : "Only the teaching team can see this page."
-      }
     >
       {sp.at && <ScrollToPost anchorId={`r-${sp.at}`} />}
 
@@ -615,11 +611,10 @@ export default async function CourseResponsesPage({
               defaultValue={currentCycleId ?? ""}
               label="Which form"
             >
-              {instances.map(({ instance, label, responseCount }) => (
+              {instances.map(({ instance, label }) => (
                 <option key={instance.id} value={instance.id}>
                   {label}
-                  {instance.state === "open" ? " · open" : ""} · {responseCount}{" "}
-                  sent
+                  {instance.state === "open" ? " · open" : ""}
                 </option>
               ))}
             </AutoSubmitSelect>
@@ -711,13 +706,11 @@ export default async function CourseResponsesPage({
       {visible.length === 0 ? (
         <EmptyState
           title={
-            counts.total === 0
-              ? "Nothing sent yet"
-              : "Nothing matches these filters"
+            counts.total === 0 ? "No responses yet" : "Nothing matches these filters"
           }
         >
           {counts.total === 0
-            ? "Responses appear here as students send this form. Nothing is lost while you are away."
+            ? undefined
             : "Try another form, a wider filter, or clear the search."}
         </EmptyState>
       ) : (

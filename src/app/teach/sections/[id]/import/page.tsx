@@ -209,9 +209,9 @@ export default async function ImportPage({
         activeHref: `/teach/sections/${sectionId}/roster`,
       })}
       tabsLabel={sectionLabel(course.code, section.title)}
+      tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
       title="Import the class list"
-      description="The UP email on each row is what gives that student their class. Importing it is the whole grant — nothing else has to be confirmed."
     >
       {/* No "how matching works" explainer: there is no matching. The reader is
           here to upload a file; the field's own helper text carries what the

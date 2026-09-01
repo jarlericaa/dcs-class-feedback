@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireUser, toShellUser } from "@/lib/session";
 import { formatDateTime } from "@/lib/datetime";
 import {
@@ -152,6 +153,13 @@ export default async function QaArchivePage({
     }
   }
 
+  // A selected answer can disappear when the reader changes a search or
+  // filter. Clear that stale URL selection instead of showing a different
+  // answer under the old URL.
+  if (sp.selected && !visible.some((entry) => entry.id === sp.selected)) {
+    redirect(link({ selected: undefined }));
+  }
+
   const active =
     visible.find((entry) => entry.id === sp.selected) ?? visible[0] ?? null;
   const groups = groupByDay(
@@ -169,6 +177,7 @@ export default async function QaArchivePage({
       workspaceLabel={access?.staff ? "Staff workspace" : "Student workspace"}
       navGroups={navGroups}
       tabs={tabs}
+      tabsMode={access?.staff ? "menu" : undefined}
       tabsLabel={section.title}
       selection={{
         active: !!sp.selected,
@@ -266,6 +275,9 @@ export default async function QaArchivePage({
           "when YOUR TEACHING TEAM answers a question". Staff are the teaching
           team, so the wording now follows the reader's role, and the list pane
           says nothing when it has nothing. */}
+      {sp.selected && (
+        <h1 className="ws-mobile-only-title">Class Q&amp;A</h1>
+      )}
       {!active ? (
         <div className="ws-empty-detail">
           <p>
@@ -278,7 +290,7 @@ export default async function QaArchivePage({
         </div>
       ) : (
         <article>
-          <h1 className="object-title">{active.question}</h1>
+          <h2 className="object-title">{active.question}</h2>
           {/* "Anonymous" is never used unqualified in this product
               (CONTENT-VOICE P3): it would imply a guarantee the system does not
               make. What is true is that classmates cannot see who asked. */}

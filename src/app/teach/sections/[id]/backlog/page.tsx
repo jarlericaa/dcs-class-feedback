@@ -185,6 +185,7 @@ export default async function BacklogPage({
       })}
       tabs={staffSectionTabs(access, path)}
       tabsLabel={sectionLabel(course.code, section.title)}
+      tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
       breadcrumbs={
         <Breadcrumbs
@@ -195,7 +196,7 @@ export default async function BacklogPage({
           ]}
         />
       }
-      title={`${course.code} Question backlog`}
+      title="Question backlog"
       actions={
         <Link
           className="button button--secondary"

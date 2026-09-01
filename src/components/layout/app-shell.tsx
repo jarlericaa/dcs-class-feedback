@@ -29,6 +29,7 @@ export function AppShell({
   navGroups,
   tabs,
   tabsLabel,
+  tabsMode,
   contextLabel,
   title,
   description,
@@ -46,6 +47,8 @@ export function AppShell({
   tabs?: NavItem[];
   /** names the resource the tabs belong to, e.g. "CS 33" */
   tabsLabel?: string;
+  /** section destinations are a menu rather than a second tab strip */
+  tabsMode?: "tabs" | "menu";
   contextLabel?: string;
   title?: string;
   description?: ReactNode;
@@ -65,6 +68,7 @@ export function AppShell({
       navGroups={navGroups}
       tabs={tabs}
       tabsLabel={tabsLabel}
+      tabsMode={tabsMode}
     >
       {(title || description || actions || breadcrumbs) && (
         <div
@@ -79,7 +83,9 @@ export function AppShell({
                 {status}
               </div>
             )}
-            {description && <p>{description}</p>}
+            {description && (
+              <div className="page-head__description">{description}</div>
+            )}
           </div>
           {actions && <div className="row">{actions}</div>}
         </div>

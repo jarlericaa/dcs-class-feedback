@@ -171,6 +171,7 @@ export default async function PublicationsPage({
       })}
       tabs={staffSectionTabs(access, path)}
       tabsLabel={sectionLabel(course.code, section.title)}
+      tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
       title="Publication queue"
     >

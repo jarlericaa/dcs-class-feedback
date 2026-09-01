@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -144,6 +143,7 @@ export default async function SetupPage({
       })}
       tabs={staffSectionTabs(access, path)}
       tabsLabel={sectionLabel(course.code, section.title)}
+      tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
       title="Section setup"
     >
@@ -160,15 +160,6 @@ export default async function SetupPage({
             weekly form should not have to repeat it per class list. What is left
             here is what genuinely belongs to a section — who runs it, and its own
             details. */}
-        <Alert variant="info" title="Forms are set up on the course">
-          Which forms this section receives, when they open, and what they ask
-          are set on the form itself.{" "}
-          <Link className="link" href={`/teach/courses/${course.id}`}>
-            Open {course.code}
-          </Link>
-          .
-        </Alert>
-
         <section className="notice">
           <div className="notice__head">
             <div>

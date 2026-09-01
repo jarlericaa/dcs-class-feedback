@@ -188,9 +188,9 @@ export default async function HomePage() {
                             and the form are the same in every section it went
                             to, so naming one would imply a choice to make. */}
                         <MetaList items={[card.courseCode]} />
-                        <h3 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title" style={{ marginTop: 4 }}>
                           {card.formTitle}
-                        </h3>
+                        </h2>
                       </div>
                       {card.submitted ? (
                         <Stamp tone="green">Submitted</Stamp>
@@ -243,7 +243,7 @@ export default async function HomePage() {
                       <div style={{ minWidth: 0 }}>
                         {/* The code IS the heading. The title reads underneath
                             it as what the code stands for. */}
-                        <h3 className="panel-title">{card.course.code}</h3>
+                        <h2 className="panel-title">{card.course.code}</h2>
                         <MetaList items={[card.course.title]} />
                       </div>
                       {card.course.archivedAt && (
@@ -294,9 +294,9 @@ export default async function HomePage() {
                         <MetaList
                           items={[courseById.get(section.courseId)?.code]}
                         />
-                        <h3 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title" style={{ marginTop: 4 }}>
                           {section.title}
-                        </h3>
+                        </h2>
                       </div>
                     </div>
                     <div className="section-notice__foot">
@@ -336,10 +336,10 @@ export default async function HomePage() {
                         <MetaList
                           items={[courseById.get(section.courseId)?.code]}
                         />
-                        <h3 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title" style={{ marginTop: 4 }}>
                           {courseById.get(section.courseId)?.title ??
                             section.title}
-                        </h3>
+                        </h2>
                       </div>
                       <Stamp tone="neutral">Nothing open</Stamp>
                     </div>

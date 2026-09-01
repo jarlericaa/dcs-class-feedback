@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 import { PreRenderedRichText } from "@/components/rich-text-client";
 import { Alert, FieldError } from "@/components/ui";
 
 /**
- * The weekly form. A client component for ONE reason: input must survive a
+ * The student form. A client component for ONE reason: input must survive a
  * failed submission. Answers live in React state, so a server-side validation
  * error re-renders the same values with inline messages instead of throwing
  * the student's work away.
@@ -45,11 +45,13 @@ export interface FormQuestionView {
 
 export interface SubmitState {
   status: "idle" | "error" | "saved" | "submitted";
-  /** questionId → message; the "" key carries a form-level message */
+  /** questionId → message; "" is form-level, and item keys are student blocks */
   errors: Record<string, string>;
   message?: string;
   /** items whose edit was refused because staff already acted on them */
   rejectedItemIds?: string[];
+  /** canonical server row ids for the client blocks written by the action */
+  itemIdMappings?: { clientKey: string; itemId: string }[];
 }
 
 /** The student's own question / general-comment blocks. */
@@ -91,9 +93,6 @@ export function questionErrorAttributes(
   };
 }
 
-let keyCounter = 0;
-const nextKey = () => `new-${(keyCounter += 1)}`;
-
 export function WeeklyForm({
   questions,
   action,
@@ -130,6 +129,11 @@ export function WeeklyForm({
 
   const [values, setValues] =
     useState<Record<string, AnswerValue>>(initialAnswers);
+  // React's id is stable across the server render and client hydration.
+  // Generated keys must not come from a module-level counter: the server may
+  // render more than one form before the browser hydrates it.
+  const generatedId = useId();
+  const [nextQuestionIndex, setNextQuestionIndex] = useState(1);
 
   // Repeatable question blocks + the single general comment (project-specs.md
   // §5.2). Held in state so a failed server validation never loses typed text.
@@ -144,7 +148,7 @@ export function WeeklyForm({
         : config.maxStudentQuestions > 0
           ? [
               {
-                clientKey: nextKey(),
+                clientKey: `${generatedId}-question-0`,
                 kind: "question" as const,
                 submissionType: "question",
                 category: "content",
@@ -156,7 +160,7 @@ export function WeeklyForm({
       ...(config.generalCommentEnabled
         ? [
             comment ?? {
-              clientKey: nextKey(),
+              clientKey: `${generatedId}-comment`,
               kind: "general_comment" as const,
               submissionType: "feedback",
               category: "misc",
@@ -167,6 +171,22 @@ export function WeeklyForm({
         : []),
     ];
   });
+
+  // Replacements receive a new immutable row id. Keep the client block tied to
+  // that canonical row so a later edit cannot accidentally create a second
+  // live item or bypass the server's already-acted-on warning.
+  useEffect(() => {
+    if (!state.itemIdMappings?.length) return;
+    const itemIds = new Map(
+      state.itemIdMappings.map(({ clientKey, itemId }) => [clientKey, itemId]),
+    );
+    setItems((prev) =>
+      prev.map((item) => {
+        const itemId = itemIds.get(item.clientKey);
+        return itemId && item.itemId !== itemId ? { ...item, itemId } : item;
+      }),
+    );
+  }, [state.itemIdMappings]);
 
   const questionItems = items.filter((item) => item.kind === "question");
   const commentItem = items.find((item) => item.kind === "general_comment");
@@ -179,11 +199,13 @@ export function WeeklyForm({
         item.clientKey === clientKey ? { ...item, ...patch } : item,
       ),
     );
-  const addQuestion = () =>
+  const addQuestion = () => {
+    const clientKey = `${generatedId}-question-${nextQuestionIndex}`;
+    setNextQuestionIndex((index) => index + 1);
     setItems((prev) => [
       ...prev.filter((i) => i.kind === "question"),
       {
-        clientKey: nextKey(),
+        clientKey,
         kind: "question" as const,
         submissionType: "question",
         category: "content",
@@ -192,6 +214,7 @@ export function WeeklyForm({
       },
       ...prev.filter((i) => i.kind === "general_comment"),
     ]);
+  };
   const removeQuestion = (clientKey: string) =>
     setItems((prev) => prev.filter((item) => item.clientKey !== clientKey));
 
@@ -242,14 +265,23 @@ export function WeeklyForm({
         <div style={{ marginBottom: "var(--s5)" }}>
           <Alert variant="error" title="Your form was not submitted">
             {formError ??
-              `Check ${errorCount} question${errorCount === 1 ? "" : "s"} below. Everything you typed has been kept.`}
+              `Check the highlighted field${errorCount === 1 ? "" : "s"} below. Everything you typed has been kept.`}
           </Alert>
         </div>
       )}
+      {(state.status === "saved" || state.status === "submitted") &&
+        state.message && (
+          <div style={{ marginBottom: "var(--s5)" }}>
+            <Alert variant={state.status === "saved" ? "info" : "success"}>
+              {state.message}
+            </Alert>
+          </div>
+        )}
 
       {questions.map((question) => {
         const error = state.errors[question.id];
         const errorId = `error-${question.id}`;
+        const legendId = `question-${question.id}-legend`;
         const describedBy =
           [
             question.description ? `desc-${question.id}` : null,
@@ -261,7 +293,7 @@ export function WeeklyForm({
 
         return (
           <fieldset className="question" key={question.id}>
-            <legend>
+            <legend id={legendId}>
               {question.promptHtml ? (
                 <PreRenderedRichText
                   html={question.promptHtml}
@@ -295,6 +327,7 @@ export function WeeklyForm({
               <textarea
                 className="textarea-field"
                 name={`q_${question.id}`}
+                aria-labelledby={legendId}
                 rows={question.type === "paragraph" ? 4 : 2}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
@@ -307,6 +340,7 @@ export function WeeklyForm({
               <div
                 className="choice-list"
                 role="group"
+                aria-labelledby={legendId}
                 {...questionErrorAttributes(error, describedBy)}
               >
                 {question.options.map((option) => {
@@ -328,6 +362,7 @@ export function WeeklyForm({
                             ? toggleCheckbox(question.id, option.stableId)
                             : setValue(question.id, option.stableId)
                         }
+                        {...questionErrorAttributes(error, describedBy)}
                       />
                       <span>{option.label}</span>
                     </label>
@@ -340,6 +375,7 @@ export function WeeklyForm({
               <select
                 className="select-field"
                 name={`q_${question.id}`}
+                aria-labelledby={legendId}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
@@ -357,6 +393,7 @@ export function WeeklyForm({
               <div
                 className="scale-list"
                 role="group"
+                aria-labelledby={legendId}
                 {...questionErrorAttributes(error, describedBy)}
               >
                 {scaleValues(question.scale).map((v) => (
@@ -367,6 +404,7 @@ export function WeeklyForm({
                       value={v}
                       checked={value === String(v)}
                       onChange={() => setValue(question.id, String(v))}
+                      {...questionErrorAttributes(error, describedBy)}
                     />
                     <span>{v}</span>
                   </label>
@@ -378,6 +416,7 @@ export function WeeklyForm({
               <div
                 className="scale-list"
                 role="group"
+                aria-labelledby={legendId}
                 {...questionErrorAttributes(error, describedBy)}
               >
                 {[
@@ -391,6 +430,7 @@ export function WeeklyForm({
                       value={option.key}
                       checked={value === option.key}
                       onChange={() => setValue(question.id, option.key)}
+                      {...questionErrorAttributes(error, describedBy)}
                     />
                     <span>{option.label}</span>
                   </label>
@@ -403,6 +443,7 @@ export function WeeklyForm({
                 className="field"
                 type={question.type}
                 name={`q_${question.id}`}
+                aria-labelledby={legendId}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
@@ -440,7 +481,7 @@ export function WeeklyForm({
                 {/* "Question 1" numbers nothing when only one is allowed. */}
                 {config.maxStudentQuestions > 1 && (
                   <div className="own-item__block-head">
-                    <h3 className="label">Question {index + 1}</h3>
+                    <p className="label">Question {index + 1}</p>
                     {questionItems.length > 1 && !readOnly && (
                       <button
                         type="button"
@@ -522,7 +563,7 @@ export function WeeklyForm({
                     onChange={(e) =>
                       updateItem(item.clientKey, { text: e.target.value })
                     }
-                    placeholder="Ask anything about this week, or tell your teacher what would help."
+                    placeholder="Ask anything about this form, or tell your teacher what would help."
                     aria-invalid={state.errors.item ? "true" : undefined}
                     aria-describedby={
                       state.errors.item ? "error-item" : undefined
@@ -578,8 +619,20 @@ export function WeeklyForm({
               onChange={(e) =>
                 updateItem(commentItem.clientKey, { text: e.target.value })
               }
+              aria-invalid={
+                state.errors.generalComment ? "true" : undefined
+              }
+              aria-describedby={
+                state.errors.generalComment
+                  ? "error-general-comment"
+                  : undefined
+              }
             />
           </div>
+          <FieldError
+            id="error-general-comment"
+            message={state.errors.generalComment}
+          />
         </fieldset>
       )}
 
@@ -593,7 +646,7 @@ export function WeeklyForm({
       <div className="submit-bar">
         <p className="submit-bar__note">
           {locked ? (
-            <>This week is closed, so it can no longer be changed.</>
+            <>This form is closed, so it can no longer be changed.</>
           ) : lifecycle === "submitted" ? (
             <>
               Submitted
@@ -631,7 +684,7 @@ export function WeeklyForm({
                 ? "Working…"
                 : lifecycle === "submitted"
                   ? "Save changes"
-                  : "Submit this week's form"}
+                  : "Submit this form"}
             </button>
           </>
         )}

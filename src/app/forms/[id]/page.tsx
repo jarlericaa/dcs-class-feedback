@@ -118,8 +118,8 @@ export default async function StudentFormPage({
     navGroups: await primaryNavFor(user, `/forms/${instanceId}`, {
       fallbackHref: `/sections/${attributedSectionId}`,
     }),
-    /* A form instance is what "This week's form" leads to, not a peer of it,
-       so the strip marks that tab rather than showing nothing selected. */
+    /* A form instance is what the section's Forms view leads to, not a peer of
+       it, so the strip marks that tab rather than showing nothing selected. */
     tabs: studentSectionTabs(attributedSectionId, `/forms/${instanceId}`, {
       activeHref: `/sections/${attributedSectionId}`,
     }),
@@ -284,13 +284,14 @@ export default async function StudentFormPage({
     const intent = String(formData.get("intent") ?? "submit");
     try {
       if (intent === "draft") {
-        await saveDraft(uid, instanceId, payload);
+        const result = await saveDraft(uid, instanceId, payload);
         revalidatePath(`/forms/${instanceId}`);
         return {
           status: "saved",
           errors: {},
           message:
             "Your draft is saved. It does not count until you submit, and only you can see it.",
+          itemIdMappings: result.itemIdMappings,
         };
       }
       const result =
@@ -308,6 +309,7 @@ export default async function StudentFormPage({
               ? "Your changes are saved. You can keep editing until the deadline."
               : "Submitted. You can still edit until the deadline.",
         rejectedItemIds: result.rejectedItemIds,
+        itemIdMappings: result.itemIdMappings,
       };
     } catch (err) {
       if (err instanceof SubmissionError) {

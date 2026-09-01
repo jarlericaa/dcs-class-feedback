@@ -226,7 +226,7 @@ function validateItems(
     comments.length === 0
   ) {
     throw new SubmissionError("The general comment is required on this form.", [
-      { questionId: "item", message: "Please fill this in." },
+      { questionId: "generalComment", message: "Please fill this in." },
     ]);
   }
   return { questions, comments };
@@ -285,7 +285,10 @@ async function writeItems(
   responseId: string,
   input: { questions: StudentItemInput[]; comments: StudentItemInput[] },
   actorUserId: string,
-): Promise<{ rejectedItemIds: string[] }> {
+): Promise<{
+  rejectedItemIds: string[];
+  itemIdMappings: { clientKey: string; itemId: string }[];
+}> {
   const existing = await dbx.query.studentSubmissionItems.findMany({
     where: and(
       eq(studentSubmissionItems.responseId, responseId),
@@ -295,6 +298,7 @@ async function writeItems(
   });
   const byId = new Map(existing.map((row) => [row.id, row]));
   const rejectedItemIds: string[] = [];
+  const itemIdMappings: { clientKey: string; itemId: string }[] = [];
   const keep = new Set<string>();
   const now = new Date();
 
@@ -323,6 +327,7 @@ async function writeItems(
             .set({ ordinal: item.ordinal, updatedAt: now })
             .where(eq(studentSubmissionItems.id, current.id));
         }
+        itemIdMappings.push({ clientKey: item.clientKey, itemId: current.id });
         keep.add(current.id);
         continue;
       }
@@ -330,6 +335,7 @@ async function writeItems(
         // Refuse this one change and keep the original, rather than failing the
         // whole save. The caller tells the student which item was refused.
         rejectedItemIds.push(current.id);
+        itemIdMappings.push({ clientKey: item.clientKey, itemId: current.id });
         keep.add(current.id);
         continue;
       }
@@ -354,6 +360,10 @@ async function writeItems(
           updatedAt: now,
         })
         .where(eq(studentSubmissionItems.id, current.id));
+      itemIdMappings.push({
+        clientKey: item.clientKey,
+        itemId: replacement!.id,
+      });
       await writeAudit(dbx, {
         actorUserId,
         action: "response.item_withdrawn",
@@ -382,6 +392,7 @@ async function writeItems(
         originalText: text,
       })
       .returning();
+    itemIdMappings.push({ clientKey: item.clientKey, itemId: inserted!.id });
     keep.add(inserted!.id);
   }
 
@@ -398,7 +409,7 @@ async function writeItems(
       .where(eq(studentSubmissionItems.id, row.id));
   }
 
-  return { rejectedItemIds };
+  return { rejectedItemIds, itemIdMappings };
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -585,7 +596,12 @@ async function saveResponse(
           : eq(questionAnswers.responseId, responseId),
       );
 
-    const { rejectedItemIds } = await writeItems(tx, responseId, items, userId);
+    const { rejectedItemIds, itemIdMappings } = await writeItems(
+      tx,
+      responseId,
+      items,
+      userId,
+    );
 
     const [updated] = await tx
       .select()
@@ -643,6 +659,8 @@ async function saveResponse(
       revision: updated!.revision,
       firstSubmission: phase !== "draft" && !wasSubmitted,
       rejectedItemIds,
+      /** Canonical live-row ids for the client blocks that were written. */
+      itemIdMappings,
       /** Every live question item, in form order. */
       studentItemIds: questionItemIds,
       /** The first question item, for callers that only ever create one. */

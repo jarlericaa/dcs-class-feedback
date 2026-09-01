@@ -26,11 +26,11 @@ import {
  * or remove a row. Only a permission change does that.
  *
  * CONTEXTUAL (`courseTabs`, `staffSectionTabs`, `studentSectionTabs`) is a
- * second, narrower column between the rail and the page. It answers "what are
- * the peer views of the resource I am looking at?" — the course, or one class
- * section. These are expected to change with the resource, because that is what
- * they describe. The functions are still named `*Tabs`: they return the same
- * peer set whether it is drawn as a strip or a column.
+ * compact horizontal band after the rail and above the page. It answers "what
+ * are the peer views of the resource I am looking at?" — the course, or one
+ * class section. These are expected to change with the resource, because that
+ * is what they describe. The functions are still named `*Tabs`: they return the
+ * same peer set regardless of viewport.
  *
  * One-off operations (create, import, export, publish, edit) belong in neither.
  * They are page-header actions on the page they act on.
@@ -201,7 +201,7 @@ export function primaryNav(
    * "All courses" leads the list because the index is where a course is
    * created, and because a reader who does not recognise any code below still
    * has somewhere to go. The named courses follow, so the common case — open
-   * the course I am teaching this week — is one click from anywhere.
+   * the course I am teaching — is one click from anywhere.
    */
   if (input.isTeacher) {
     groups.push({
@@ -291,17 +291,24 @@ export function staffSectionTabs(
   const items: NavItem[] = [];
 
   // The review queue is COURSE-scoped: a form shared by several sections has one
-  // queue, which is the point of sharing it. Course staff therefore reach it
-  // through the course tab strip and it is not repeated here. Someone with no
-  // course standing has no such strip, so for them the section is the only frame
-  // there is and the queue appears in it. That difference follows the reader's
-  // permissions, not the page they happen to be on.
-  if (perms.reviewResponses && !staff.hasCourseStanding) {
-    items.push({
-      href: `/teach/sections/${id}/review`,
-      label: "Review inbox",
-      count: opts.needsReview || undefined,
-    });
+  // queue, which is the point of sharing it. Course staff reach that queue from
+  // this section context with its section filter preserved. Someone with no
+  // course standing has no course strip, so their section-only queue remains the
+  // destination. Both links are gated by the same review capability.
+  if (perms.reviewResponses) {
+    items.push(
+      staff.hasCourseStanding
+        ? {
+            href: `/teach/courses/${access.section.courseId}/responses?section=${id}`,
+            label: "Review responses",
+            count: opts.needsReview || undefined,
+          }
+        : {
+            href: `/teach/sections/${id}/review`,
+            label: "Review inbox",
+            count: opts.needsReview || undefined,
+          },
+    );
   }
   if (perms.viewStudentIdentities) {
     items.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
@@ -364,7 +371,7 @@ export function studentSectionTabs(
 ): NavItem[] {
   return mark(
     [
-      { href: `/sections/${sectionId}`, label: "This week's form" },
+      { href: `/sections/${sectionId}`, label: "Forms" },
       { href: `/sections/${sectionId}/history`, label: "My submissions" },
       { href: `/sections/${sectionId}/qa`, label: "Class Q&A" },
     ],

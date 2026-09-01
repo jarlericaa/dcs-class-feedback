@@ -1,6 +1,7 @@
 /**
  * Development seed. Idempotent: safe to re-run (keyed lookups, no duplicates).
- * Populated fully in the UI-slice phase; foundation seeds users + catalog.
+ * The data is deliberately small but complete enough to exercise the staff
+ * review, private reply, public answer, and class Q&A paths.
  */
 export {};
 
@@ -16,7 +17,7 @@ async function main() {
   const { db } = await import("../src/db");
   const { classSections, courses, courseStaff, sectionStaff, users } =
     await import("../src/db/schema");
-  const { eq } = await import("drizzle-orm");
+  const { and, desc, eq, isNull } = await import("drizzle-orm");
   const { env } = await import("../src/env");
 
   async function upsertUser(u: {
@@ -57,14 +58,29 @@ async function main() {
   });
 
   let course = await db.query.courses.findFirst({
-    where: eq(courses.code, "DCS-101"),
+    where: eq(courses.code, "CS 33"),
   });
+  if (!course) {
+    // Migrate the original local demo key in place when this script is run
+    // without a database reset. This keeps re-seeding from creating a second
+    // demo course.
+    const legacy = await db.query.courses.findFirst({
+      where: eq(courses.code, "DCS-101"),
+    });
+    if (legacy) {
+      [course] = await db
+        .update(courses)
+        .set({ code: "CS 33", title: "Data Structures and Algorithms II" })
+        .where(eq(courses.id, legacy.id))
+        .returning();
+    }
+  }
   if (!course) {
     [course] = await db
       .insert(courses)
       .values({
-        code: "DCS-101",
-        title: "Introduction to Computing",
+        code: "CS 33",
+        title: "Data Structures and Algorithms II",
         ownerUserId: teacher.id,
       })
       .returning();
@@ -82,7 +98,7 @@ async function main() {
       .values({
         courseId: course!.id,
         term: "AY2026-1",
-        title: "DCS-101 Section A",
+        title: "THX",
         timezone: env.INSTITUTION_TIMEZONE,
       })
       .returning();
@@ -100,6 +116,13 @@ async function main() {
         sendPrivateResponses: true,
       },
     ]);
+  } else if (section.title === "DCS-101 Section A") {
+    // Keep an existing local seed recognizable after the course key changes.
+    [section] = await db
+      .update(classSections)
+      .set({ title: "THX" })
+      .where(eq(classSections.id, section.id))
+      .returning();
   }
 
   // --- roster + demo student account ---
@@ -122,15 +145,21 @@ async function main() {
           "student number,full name,up mail",
           "2026-0001,Juan Dela Cruz,student@up.edu.ph",
           "2026-0002,Maria Clara Santos,maria.santos@up.edu.ph",
-          "2026-0003,Jose Rizal Mercado,jose.mercado@up.edu.ph",
         ].join("\n"),
       ),
       "seed roster",
     );
   }
-  // Demo student account for dev-login. Nothing links it to Juan Dela Cruz
+  // Demo student accounts. Nothing links either account to a roster record
   // beyond the email being on the class list above — which is the point.
-  await upsertUser({ email: "student@up.edu.ph", displayName: "Juan Dela Cruz" });
+  const student = await upsertUser({
+    email: "student@up.edu.ph",
+    displayName: "Juan Dela Cruz",
+  });
+  const maria = await upsertUser({
+    email: "maria.santos@up.edu.ph",
+    displayName: "Maria Clara Santos",
+  });
 
   // --- weekly form template + recurrence schedule + cycles ---
   const { formTemplates, recurrenceSchedules } = await import(
@@ -207,6 +236,194 @@ async function main() {
   const { reconcile } = await import("../src/modules/scheduling");
   const result = await reconcile();
 
+  // --- response examples ---------------------------------------------------
+  // Use the real submission service so the seed exercises the same validation,
+  // attribution, revisions, and audit paths as a student submission.
+  const {
+    formInstances,
+    formQuestions,
+    formResponses,
+    privateResponses,
+    publicAnswers,
+    sourceLinks,
+    studentRecords,
+    studentSubmissionItems,
+  } = await import("../src/db/schema");
+  const { submitResponse } = await import("../src/modules/forms/submission");
+  const { createPrivateResponse } = await import("../src/modules/review");
+  const { draftPublicAnswer, publishNow } = await import(
+    "../src/modules/publishing"
+  );
+
+  const openInstance = await db.query.formInstances.findFirst({
+    where: and(
+      eq(formInstances.courseId, course!.id),
+      eq(formInstances.state, "open"),
+    ),
+    orderBy: desc(formInstances.openAt),
+  });
+  const snapshotQuestions = openInstance
+    ? await db.query.formQuestions.findMany({
+        where: eq(formQuestions.cycleId, openInstance.id),
+        orderBy: (questions, { asc }) => [asc(questions.displayOrder)],
+      })
+    : [];
+
+  type DemoQuestion = (typeof snapshotQuestions)[number];
+  function demoAnswer(question: DemoQuestion, index: number) {
+    switch (question.type) {
+      case "multiple_choice":
+      case "dropdown":
+      case "checkboxes": {
+        const options = Array.isArray(question.options)
+          ? (question.options as { stableId: string }[])
+          : [];
+        const optionIds = options
+          .slice(0, question.type === "checkboxes" ? 2 : 1)
+          .map((option) => option.stableId);
+        if (optionIds.length === 0) {
+          throw new Error(`Seed form question ${question.id} has no options`);
+        }
+        return { questionId: question.id, optionIds };
+      }
+      case "linear_scale": {
+        const scale = (question.scale ?? {}) as {
+          min?: number;
+          max?: number;
+        };
+        const min = scale.min ?? 1;
+        const max = scale.max ?? 5;
+        return {
+          questionId: question.id,
+          scaleValue: Math.min(max, min + 2 + (index % 2)),
+        };
+      }
+      case "yes_no":
+        return { questionId: question.id, boolValue: index % 2 === 0 };
+      case "date":
+        return { questionId: question.id, dateValue: "2026-09-01" };
+      case "time":
+        return { questionId: question.id, timeValue: "10:00" };
+      case "short_answer":
+      case "paragraph":
+        return {
+          questionId: question.id,
+          text:
+            index % 2 === 0
+              ? "The examples made this week's topic easier to follow."
+              : "More worked examples would help with the next problem set.",
+        };
+    }
+  }
+
+  const demoResponses = [
+    {
+      user: student,
+      email: "student@up.edu.ph",
+      item: {
+        clientKey: "seed-juan-question",
+        kind: "question" as const,
+        submissionType: "question" as const,
+        category: "content" as const,
+        text: "Could we see one more worked example of tree rotations?",
+      },
+    },
+    {
+      user: maria,
+      email: "maria.santos@up.edu.ph",
+      item: {
+        clientKey: "seed-maria-question",
+        kind: "question" as const,
+        submissionType: "question" as const,
+        category: "logistics" as const,
+        text: "When will the practice set for this topic be available?",
+      },
+      comment: {
+        clientKey: "seed-maria-comment",
+        kind: "general_comment" as const,
+        submissionType: "feedback" as const,
+        category: "misc" as const,
+        text: "The pacing felt better once we started working through examples.",
+      },
+    },
+  ];
+
+  let seededResponseCount = 0;
+  if (openInstance && snapshotQuestions.length > 0) {
+    for (const demo of demoResponses) {
+      const record = await db.query.studentRecords.findFirst({
+        where: eq(studentRecords.rosterEmail, demo.email),
+      });
+      if (!record) continue;
+
+      let response = await db.query.formResponses.findFirst({
+        where: and(
+          eq(formResponses.cycleId, openInstance.id),
+          eq(formResponses.studentRecordId, record.id),
+        ),
+      });
+      let itemId: string | null = null;
+      if (!response) {
+        const submitted = await submitResponse(demo.user.id, openInstance.id, {
+          answers: snapshotQuestions.map(demoAnswer),
+          items: [demo.item, ...(demo.comment ? [demo.comment] : [])],
+        });
+        response = await db.query.formResponses.findFirst({
+          where: eq(formResponses.id, submitted.responseId),
+        });
+        itemId = submitted.studentItemId;
+        seededResponseCount += 1;
+      }
+
+      if (!response) continue;
+      if (!itemId) {
+        const liveItem = await db.query.studentSubmissionItems.findFirst({
+          where: and(
+            eq(studentSubmissionItems.responseId, response.id),
+            eq(studentSubmissionItems.kind, "question"),
+            isNull(studentSubmissionItems.withdrawnAt),
+          ),
+        });
+        itemId = liveItem?.id ?? null;
+      }
+      if (!itemId || demo.user.id !== maria.id) continue;
+
+      const privateReply = await db.query.privateResponses.findFirst({
+        where: eq(privateResponses.itemId, itemId),
+      });
+      if (!privateReply) {
+        await createPrivateResponse(
+          teacher.id,
+          itemId,
+          "I will add another worked example to the next review set.",
+        );
+      }
+
+      const source = await db.query.sourceLinks.findFirst({
+        where: eq(sourceLinks.itemId, itemId),
+      });
+      let publicAnswer = source
+        ? await db.query.publicAnswers.findFirst({
+            where: eq(publicAnswers.id, source.publicAnswerId),
+          })
+        : undefined;
+      if (!publicAnswer) {
+        publicAnswer = await draftPublicAnswer(teacher.id, {
+          sectionId: section!.id,
+          itemIds: [itemId],
+          publicQuestionText: "When will the practice set for this topic be available?",
+          answerBody: "The practice set will be available before the next class.",
+          category: "logistics",
+        });
+      }
+      if (publicAnswer.state === "draft" && publicAnswer.answerBody) {
+        await publishNow(teacher.id, publicAnswer.id, {
+          anonymityAcknowledged: true,
+        });
+      }
+    }
+  }
+
   console.log("Seed complete:", {
     admin: admin.email,
     teacher: teacher.email,
@@ -214,6 +431,9 @@ async function main() {
     student: "student@up.edu.ph (Juan Dela Cruz, 2026-0001 — rostered, no claim step)",
     course: course!.code,
     section: section!.title,
+    responses: openInstance
+      ? `${seededResponseCount} new response${seededResponseCount === 1 ? "" : "s"} seeded`
+      : "No open form instance",
     scheduler: result,
   });
   process.exit(0);

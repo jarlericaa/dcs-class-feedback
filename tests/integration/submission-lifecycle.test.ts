@@ -457,7 +457,10 @@ describe("repeatable questions and the general comment", () => {
     ).resolves.toBeTruthy();
     await expect(
       submitResponse(student.user.id, cycle.id, { answers }, IN_WINDOW),
-    ).rejects.toThrow(/general comment is required/);
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(/general comment is required/),
+      details: [{ questionId: "generalComment", message: "Please fill this in." }],
+    });
   });
 
   it("disables the block entirely when the template allows zero questions", async () => {
@@ -478,7 +481,7 @@ describe("repeatable questions and the general comment", () => {
   });
 
   it("editing an untouched item preserves the original wording as a withdrawn row", async () => {
-    const { cycle, question, student } = await openCycle();
+    const { teacher, cycle, question, student } = await openCycle();
     const submitted = await submitResponse(
       student.user.id,
       cycle.id,
@@ -490,7 +493,7 @@ describe("repeatable questions and the general comment", () => {
     );
     const originalId = submitted.studentItemId!;
 
-    await editSubmittedResponse(
+    const edited = await editSubmittedResponse(
       student.user.id,
       cycle.id,
       {
@@ -506,6 +509,36 @@ describe("repeatable questions and the general comment", () => {
       },
       new Date(IN_WINDOW.getTime() + 60_000),
     );
+    const replacementId = edited.itemIdMappings.find(
+      (mapping) => mapping.clientKey === "q1",
+    )!.itemId;
+    expect(replacementId).not.toBe(originalId);
+
+    // A later edit must target the replacement, not the withdrawn original.
+    // This is the id the client reconciles after a successful save.
+    await db.insert(privateResponses).values({
+      itemId: replacementId,
+      authorUserId: teacher.id,
+      authorRole: "staff",
+      body: "a staff reply",
+    });
+    const refused = await editSubmittedResponse(
+      student.user.id,
+      cycle.id,
+      {
+        answers: [{ questionId: question.id, text: "ok" }],
+        items: [
+          {
+            clientKey: "q1",
+            itemId: replacementId,
+            kind: "question",
+            text: "another revision",
+          },
+        ],
+      },
+      new Date(IN_WINDOW.getTime() + 120_000),
+    );
+    expect(refused.rejectedItemIds).toContain(replacementId);
 
     const original = (await db.query.studentSubmissionItems.findFirst({
       where: eq(studentSubmissionItems.id, originalId),

@@ -14,9 +14,11 @@ import { NAV_ICONS, type NavGroup, type NavItem } from "./nav";
 
 /**
  * The workspace chrome: a white top bar with a hairline under it, a left rail
- * carrying the account's destinations, a contextual tab strip for the resource
- * on screen, and a body that is either a two-pane list/detail view or a single
- * scrolling page.
+ * carrying the account's destinations, and compact contextual navigation for
+ * the resource on screen. Course views use a tab band; section-only views use a
+ * menu so they do not replace the course navigation with a second tab strip.
+ * The band sits above either a two-pane list/detail view or a single scrolling
+ * page, so the page gets the room the old second navigation column consumed.
  *
  * The rail takes ONE input — `navGroups`, built by `primaryNav` from the
  * account — so it renders identically on every page that account can open. It
@@ -116,6 +118,7 @@ export function WorkspaceShell({
   navGroups,
   tabs,
   tabsLabel,
+  tabsMode,
   railFooter,
   listPane,
   selection,
@@ -131,6 +134,8 @@ export function WorkspaceShell({
   tabs?: NavItem[];
   /** names the resource those views belong to, e.g. "CS 33" */
   tabsLabel?: string;
+  /** section destinations are a menu rather than a second tab strip */
+  tabsMode?: "tabs" | "menu";
   railFooter?: ReactNode;
   /** when present the body is a two-pane list/detail view */
   listPane?: ReactNode;
@@ -211,34 +216,50 @@ export function WorkspaceShell({
           </nav>
         )}
 
-        {/* The resource's own views, between the workspace and the page. */}
-        {tabs && tabs.length > 0 && (
-          <SubNav items={tabs} label={tabsLabel ?? contextTitle} />
-        )}
+        <div className="ws-content">
+          {/* Resource views are a compact band, not a second fixed column. */}
+          {tabs && tabs.length > 0 && (
+            <SubNav
+              items={tabs}
+              label={tabsLabel ?? contextTitle}
+              mode={tabsMode}
+            />
+          )}
 
-        {listPane}
-
-        {listPane ? (
-          <main
-            className={`ws-detail ${
-              selection && !selection.active ? "ws-detail--hidden" : ""
+          <div
+            className={`ws-content__body${
+              listPane ? " ws-content__body--panes" : ""
             }`}
-            id="main-content"
           >
-            <div className="ws-detail__inner">
-              {selection?.active && (
-                <Link className="ws-backlink" href={selection.backHref}>
-                  <IconBack size={15} /> Back to the list
-                </Link>
-              )}
-              {children}
-            </div>
-          </main>
-        ) : (
-          <main className="ws-page" id="main-content">
-            <div className="ws-page__inner">{children}</div>
-          </main>
-        )}
+            {listPane ? (
+              <main
+                className="ws-content__panes"
+                id="main-content"
+                tabIndex={-1}
+              >
+                {listPane}
+                <section
+                  className={`ws-detail ${
+                    selection && !selection.active ? "ws-detail--hidden" : ""
+                  }`}
+                >
+                  <div className="ws-detail__inner">
+                    {selection?.active && (
+                      <Link className="ws-backlink" href={selection.backHref}>
+                        <IconBack size={15} /> Back to the list
+                      </Link>
+                    )}
+                    {children}
+                  </div>
+                </section>
+              </main>
+            ) : (
+              <main className="ws-page" id="main-content" tabIndex={-1}>
+                <div className="ws-page__inner">{children}</div>
+              </main>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -311,9 +332,6 @@ export function ListPane({
           placeholder={searchPlaceholder}
           defaultValue={searchValue ?? ""}
         />
-        <button className="visually-hidden" type="submit">
-          Search
-        </button>
       </form>
 
       {groups.length > 0 && <FilterMenu groups={groups} />}

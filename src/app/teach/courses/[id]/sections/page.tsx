@@ -119,7 +119,6 @@ export default async function CourseSectionsPage({
       tabsLabel={course.code}
       contextLabel={course.code}
       title="Class lists"
-      description={`Who can reach ${course.code}'s forms, and who runs each list.`}
       actions={
         <Link
           className="button button--primary"
