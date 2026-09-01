@@ -298,7 +298,7 @@ export default async function FormDetailPage({
               </EmptyState>
             </div>
           ) : (
-            <div className="table-scroll">
+            <div className="table-scroll table-scroll--flush">
               <table className="data-table">
                 <thead>
                   <tr>

@@ -117,7 +117,7 @@ export default async function ParticipationPage({
                 </p>
               </div>
             </div>
-            <div className="table-scroll">
+            <div className="table-scroll table-scroll--flush">
               <table className="data-table">
                 <caption className="visually-hidden">
                   Weekly participation by student

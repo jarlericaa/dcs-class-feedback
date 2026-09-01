@@ -143,7 +143,7 @@ export default async function CourseWorkspacePage({
           </EmptyState>
         ) : (
           <section className="notice">
-            <div className="table-scroll">
+            <div className="table-scroll table-scroll--flush">
               <table className="data-table">
                 <thead>
                   <tr>

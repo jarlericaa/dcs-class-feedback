@@ -1373,7 +1373,15 @@ kbd {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
+}
+/* The common case: sitting flush inside a .notice, 0 padding between them.
+   A second border there would double the parent's, 1px apart, and the two
+   round corners never quite line up. Radius stays, to clip the header row's
+   fill to the parent's curve; the visible edge is .notice's border alone. */
+.table-scroll--flush {
+  border: 0;
 }
 
 /* A raw before/after payload in the audit log. Data, so monospace is earned. */
