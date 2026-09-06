@@ -100,6 +100,8 @@ const LABELS: Record<string, string> = {
   "staff.assigned": "Staff member added",
   "staff.removed": "Staff member removed",
   "staff.permissions_changed": "Staff permissions changed",
+  "staff.course_assigned": "Course-wide access granted",
+  "staff.course_removed": "Course-wide access removed",
   "template.created": "Form created",
   "template.version_created": "Form version saved",
   "user.teacher_role_changed": "Teacher role changed",
@@ -139,8 +141,10 @@ const LABELS: Record<string, string> = {
 };
 
 export function auditActionLabel(action: string): string {
-  const known = LABELS[action];
-  if (known) return known;
+  // `hasOwn`, not a bare lookup: a plain object inherits Object.prototype, so
+  // an action of "toString" or "constructor" would otherwise return a function
+  // where a label belongs.
+  if (Object.hasOwn(LABELS, action)) return LABELS[action]!;
   const words = action.replace(/[._]/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

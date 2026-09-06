@@ -24,7 +24,11 @@ import {
   type SectionPermission,
 } from "@/modules/authz";
 import { checkRosterEmail } from "@/modules/identity/email";
-import { EMAIL_LIST_LIMIT, parseEmailList } from "@/lib/email-list";
+import {
+  EMAIL_LIST_LIMIT,
+  parseEmailList,
+  type ParsedEmailList,
+} from "@/lib/email-list";
 import type { BatchProblemReason } from "@/lib/staff-batch-labels";
 import {
   paginateArray,
@@ -789,6 +793,70 @@ export type AssignSectionStaffBatchResult =
   | { ok: false; problems: StaffBatchProblem[] };
 
 /**
+ * Pasted addresses → the active accounts behind them, or the coded reasons they
+ * were refused.
+ *
+ * Shared by both scopes on purpose: whether a grant lands on sections or on the
+ * whole course, "who is this address, and may they be given access at all?" is
+ * the same question with the same answers, and two copies of it would drift.
+ * What differs between the scopes — which roles are allowed, what a grant
+ * writes — stays with the caller.
+ *
+ * Creates nothing: no account, no invitation. An address with no active account
+ * is refused by name.
+ */
+async function resolveStaffTargets(parsed: ParsedEmailList): Promise<{
+  targets: (typeof users.$inferSelect)[];
+  problems: StaffBatchProblem[];
+}> {
+  const problems: StaffBatchProblem[] = [];
+
+  // Past the cap: named, never silently dropped.
+  for (const email of parsed.overflow) {
+    problems.push({ email, reason: "too_many" });
+  }
+
+  // Shape and domain, by the same rule that decides a class-list address.
+  // `missing` cannot occur — the parser drops empty tokens — and folding it
+  // into `invalid_format` keeps the reason vocabulary to the seven codes.
+  const usable: string[] = [];
+  for (const email of parsed.emails) {
+    const check = checkRosterEmail(email);
+    if (!check.ok) {
+      problems.push({
+        email,
+        reason:
+          check.problem === "disallowed_domain"
+            ? "disallowed_domain"
+            : "invalid_format",
+      });
+      continue;
+    }
+    usable.push(check.email);
+  }
+
+  const accounts = usable.length
+    ? await db.query.users.findMany({ where: inArray(users.email, usable) })
+    : [];
+  const accountByEmail = new Map(accounts.map((u) => [u.email, u]));
+  const targets: (typeof users.$inferSelect)[] = [];
+  for (const email of usable) {
+    const account = accountByEmail.get(email);
+    if (!account) {
+      problems.push({ email, reason: "no_account" });
+      continue;
+    }
+    if (!account.active) {
+      problems.push({ email, reason: "inactive_account" });
+      continue;
+    }
+    targets.push(account);
+  }
+
+  return { targets, problems };
+}
+
+/**
  * Add several people to several sections of one course, with one permission
  * set, in one audited action. Course-owner only.
  *
@@ -826,8 +894,8 @@ export async function assignSectionStaffBatch(
   if (requestedSectionIds.length === 0) {
     throw new CatalogError("Choose at least one section to add them to.");
   }
-  const { emails, overflow } = parseEmailList(input.emails, EMAIL_LIST_LIMIT);
-  if (emails.length === 0) {
+  const parsed = parseEmailList(input.emails, EMAIL_LIST_LIMIT);
+  if (parsed.emails.length === 0) {
     throw new CatalogError("Add at least one email address.");
   }
 
@@ -856,49 +924,11 @@ export async function assignSectionStaffBatch(
     sections.push(section);
   }
 
-  // Past the cap: named, never silently dropped.
-  for (const email of overflow) {
-    problems.push({ email, reason: "too_many" });
-  }
-
-  // Shape and domain, by the same rule that decides a class-list address.
-  // `missing` cannot occur — the parser drops empty tokens — and folding it
-  // into `invalid_format` keeps the reason vocabulary to the seven codes.
-  const usable: string[] = [];
-  for (const email of emails) {
-    const check = checkRosterEmail(email);
-    if (!check.ok) {
-      problems.push({
-        email,
-        reason:
-          check.problem === "disallowed_domain"
-            ? "disallowed_domain"
-            : "invalid_format",
-      });
-      continue;
-    }
-    usable.push(check.email);
-  }
-
-  const accounts = usable.length
-    ? await db.query.users.findMany({ where: inArray(users.email, usable) })
-    : [];
-  const accountByEmail = new Map(accounts.map((u) => [u.email, u]));
-  const targets: (typeof users.$inferSelect)[] = [];
-  for (const email of usable) {
-    const account = accountByEmail.get(email);
-    if (!account) {
-      problems.push({ email, reason: "no_account" });
-      continue;
-    }
-    if (!account.active) {
-      problems.push({ email, reason: "inactive_account" });
-      continue;
-    }
-    targets.push(account);
-  }
+  const resolved = await resolveStaffTargets(parsed);
+  problems.push(...resolved.problems);
 
   if (problems.length > 0 || !role) return { ok: false, problems };
+  const targets = resolved.targets;
 
   // Deny-by-default: only an explicit `true` on a flag in the catalog grants
   // anything, so an unknown or non-boolean field can never widen a permission.
@@ -973,6 +1003,210 @@ export async function removeSectionStaff(
       entityType: "section_staff",
       entityId: sectionStaffId,
       before: { sectionId, targetUserId: row.userId, role: row.role },
+    });
+  });
+}
+
+// --- course-wide standing (ADR-0004) --------------------------------------
+
+/**
+ * The roles course-wide standing can be granted with.
+ *
+ * Instructor-only, and deliberately shorter than the section list: course
+ * standing is full capability on every section of the course, including
+ * sections that do not exist yet, so there is nothing for a permission flag to
+ * narrow. A Student Assistant is a per-section grant by definition — a
+ * course-wide TA would be a TA whose flags could never be scoped, which is not
+ * a thing the permission catalog can express. See ADR-0004.
+ */
+const COURSE_STAFF_ROLES = ["teacher", "co_teacher"] as const;
+
+export type CourseStaffRole = (typeof COURSE_STAFF_ROLES)[number];
+
+export interface AssignCourseStaffInput {
+  /**
+   * Addresses, either already split or as the one blob a paste produces —
+   * `parseEmailList` handles both, so the caller never has to pre-split.
+   */
+  emails: readonly string[] | string;
+  role: CourseStaffRole;
+}
+
+export type AssignCourseStaffResult =
+  | {
+      ok: true;
+      /** Correlates every audit row this action wrote. */
+      batchId: string;
+      added: number;
+      updated: number;
+      unchanged: number;
+    }
+  | { ok: false; problems: StaffBatchProblem[] };
+
+/**
+ * Grant course-wide instructor standing to one or more people. Course-owner
+ * only (ADR-0003, extended by ADR-0004).
+ *
+ * A `course_staff` row is the widest grant in the product: `requireSectionStaff`
+ * admits course staff before it ever looks at a section row, so the grantee
+ * administers every section of the course AND every section added to it later.
+ * That is the reason it is Instructor-only and the reason only the owner may
+ * write one — the escalation ADR-0003 closes at section scope would be worse
+ * here, not better.
+ *
+ * All-or-nothing on the same terms as the section batch: one refused address
+ * grants nobody anything, and says which address and why. Idempotent — an
+ * address that already holds standing is re-affirmed, never inserted twice
+ * (`course_staff_unique` would refuse it anyway, and a caught constraint error
+ * is a worse answer than a counted `unchanged`).
+ */
+export async function assignCourseStaff(
+  actorUserId: string,
+  courseId: string,
+  input: AssignCourseStaffInput,
+): Promise<AssignCourseStaffResult> {
+  // Authorization FIRST, before any part of the request is materialized — see
+  // assignSectionStaffBatch for why the uuid guard sits ahead of it. Archiving
+  // is enforced by requireCourseOwner itself (no `allowArchived`).
+  if (!z.string().uuid().safeParse(courseId).success) {
+    throw new CatalogError("Course not found");
+  }
+  await requireCourseOwner(db, actorUserId, courseId);
+
+  const parsed = parseEmailList(input.emails, EMAIL_LIST_LIMIT);
+  if (parsed.emails.length === 0) {
+    throw new CatalogError("Add at least one email address.");
+  }
+
+  const problems: StaffBatchProblem[] = [];
+
+  // Re-checked at runtime even though the parameter is typed: this is reached
+  // from a form post, where the type guarantees nothing. `ta` lands here — it
+  // is a valid section role and NOT a valid course-wide one, which is exactly
+  // what `role_not_allowed_for_scope` says.
+  const role = COURSE_STAFF_ROLES.includes(input.role) ? input.role : null;
+  if (!role) {
+    problems.push({ email: "", reason: "role_not_allowed_for_scope" });
+  }
+
+  const resolved = await resolveStaffTargets(parsed);
+  problems.push(...resolved.problems);
+
+  if (problems.length > 0 || !role) return { ok: false, problems };
+
+  const batchId = randomUUID();
+  let added = 0;
+  let updated = 0;
+  let unchanged = 0;
+  // One transaction over every grant, so the atomic refusal above is matched by
+  // an atomic write: a failure part-way rolls back the grants AND their audit
+  // rows together.
+  await db.transaction(async (tx) => {
+    for (const target of resolved.targets) {
+      const existing = await tx.query.courseStaff.findFirst({
+        where: and(
+          eq(courseStaff.courseId, courseId),
+          eq(courseStaff.userId, target.id),
+        ),
+      });
+      // Re-affirming identical standing still writes and still audits, exactly
+      // as the section path does: somebody took the action. The `unchanged`
+      // count summarizes the batch — it never skips a write.
+      const outcome = !existing
+        ? "added"
+        : existing.role === role
+          ? "unchanged"
+          : "updated";
+      let rowId: string;
+      if (existing) {
+        await tx
+          .update(courseStaff)
+          .set({ role })
+          .where(eq(courseStaff.id, existing.id));
+        rowId = existing.id;
+      } else {
+        const [created] = await tx
+          .insert(courseStaff)
+          .values({ courseId, userId: target.id, role })
+          .returning();
+        rowId = created!.id;
+      }
+      await writeAudit(tx, {
+        actorUserId,
+        action: "staff.course_assigned",
+        entityType: "course_staff",
+        entityId: rowId,
+        before: existing ? { role: existing.role } : undefined,
+        after: {
+          courseId,
+          targetUserId: target.id,
+          email: target.email,
+          role,
+        },
+        metadata: { batchId, targetUserId: target.id },
+        courseId,
+      });
+      if (outcome === "added") added += 1;
+      else if (outcome === "updated") updated += 1;
+      else unchanged += 1;
+    }
+  });
+
+  return { ok: true, batchId, added, updated, unchanged };
+}
+
+/**
+ * Revoke one course-wide standing row. Course-owner only.
+ *
+ * Deletes the `course_staff` row and NOTHING else. Any `section_staff` row the
+ * same person holds survives, because it is a separate, narrower grant somebody
+ * made on purpose: revoking course standing should return them to the sections
+ * they were explicitly given, not silently remove them from those too. Nothing
+ * they already did — reviews, replies, published answers — is touched.
+ *
+ * The owner's own standing is not removable: it comes from
+ * `courses.owner_user_id`, so deleting their `course_staff` row would change
+ * nothing about their access while making the Teaching team view lie about who
+ * owns the course.
+ */
+export async function removeCourseStaff(
+  actorUserId: string,
+  courseId: string,
+  courseStaffId: string,
+): Promise<void> {
+  if (!z.string().uuid().safeParse(courseId).success) {
+    throw new CatalogError("Course not found");
+  }
+  const course = await requireCourseOwner(db, actorUserId, courseId);
+  if (!z.string().uuid().safeParse(courseStaffId).success) {
+    throw new CatalogError("Course-wide access not found");
+  }
+
+  // Scoped to THIS course, so a row id from another course is not found rather
+  // than deleted.
+  const row = await db.query.courseStaff.findFirst({
+    where: and(
+      eq(courseStaff.id, courseStaffId),
+      eq(courseStaff.courseId, courseId),
+    ),
+  });
+  if (!row) throw new CatalogError("Course-wide access not found");
+  if (row.userId === course.ownerUserId) {
+    throw new CatalogError(
+      "The course owner's own access cannot be removed. Transfer the course instead.",
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(courseStaff).where(eq(courseStaff.id, courseStaffId));
+    await writeAudit(tx, {
+      actorUserId,
+      action: "staff.course_removed",
+      entityType: "course_staff",
+      entityId: courseStaffId,
+      before: { courseId, targetUserId: row.userId, role: row.role },
+      metadata: { targetUserId: row.userId },
+      courseId,
     });
   });
 }

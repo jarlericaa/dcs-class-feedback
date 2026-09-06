@@ -11,6 +11,7 @@ import {
   users,
 } from "@/db/schema";
 import {
+  assignCourseStaff,
   assignSectionStaff,
   assignSectionStaffBatch,
   CatalogError,
@@ -20,6 +21,7 @@ import {
   listAccountsForAdmin,
   listCourseAccess,
   listSectionStaff,
+  removeCourseStaff,
   removeSectionStaff,
   setTeacherRole,
   updateSection,
@@ -725,6 +727,391 @@ describe("catalog: courses, sections, and staff assignment", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.role).toBe("co_teacher");
       expect(rows[0]!.publishPublicAnswers).toBe(true);
+    });
+  });
+
+  describe("assignCourseStaff / removeCourseStaff: standing on the whole course", () => {
+    it("grants standing and audits it with the course, the target and a batch id", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const one = await makeUser();
+      const two = await makeUser();
+      const course = await makeCourse(owner.id);
+
+      const result = await assignCourseStaff(owner.id, course.id, {
+        emails: `${one.email}, ${two.email}`,
+        role: "co_teacher",
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        added: 2,
+        updated: 0,
+        unchanged: 0,
+      });
+      if (!result.ok) return;
+
+      const rows = await db.query.courseStaff.findMany({
+        where: eq(courseStaff.courseId, course.id),
+      });
+      // The owner's own row, plus the two grants.
+      expect(rows).toHaveLength(3);
+      for (const person of [one, two]) {
+        const row = rows.find((r) => r.userId === person.id);
+        expect(row!.role).toBe("co_teacher");
+      }
+
+      const events = await db.query.auditEvents.findMany({
+        where: eq(auditEvents.action, "staff.course_assigned"),
+      });
+      expect(events).toHaveLength(2);
+      for (const event of events) {
+        expect(event.actorUserId).toBe(owner.id);
+        expect(event.entityType).toBe("course_staff");
+        // The denormalized scope column, so the row is findable by course.
+        expect(event.courseId).toBe(course.id);
+        expect(event.sectionId).toBeNull();
+        expect(event.metadata).toMatchObject({ batchId: result.batchId });
+        expect(event.after).toMatchObject({
+          courseId: course.id,
+          role: "co_teacher",
+        });
+      }
+      // One id for the whole action, not one per write.
+      expect(
+        new Set(
+          events.map((e) => (e.metadata as { batchId: string }).batchId),
+        ).size,
+      ).toBe(1);
+      const targets = events.map(
+        (e) => (e.after as { targetUserId: string }).targetUserId,
+      );
+      expect(new Set(targets)).toEqual(new Set([one.id, two.id]));
+    });
+
+    it("is idempotent: re-granting updates the one row rather than inserting a second", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+
+      expect(
+        await assignCourseStaff(owner.id, course.id, {
+          emails: [target.email],
+          role: "teacher",
+        }),
+      ).toMatchObject({ ok: true, added: 1, updated: 0, unchanged: 0 });
+      // Same request again: nothing changes, and it is still recorded that
+      // somebody re-affirmed it.
+      expect(
+        await assignCourseStaff(owner.id, course.id, {
+          emails: [target.email],
+          role: "teacher",
+        }),
+      ).toMatchObject({ ok: true, added: 0, updated: 0, unchanged: 1 });
+      expect(
+        await assignCourseStaff(owner.id, course.id, {
+          emails: [target.email],
+          role: "co_teacher",
+        }),
+      ).toMatchObject({ ok: true, added: 0, updated: 1, unchanged: 0 });
+
+      const rows = await db.query.courseStaff.findMany({
+        where: and(
+          eq(courseStaff.courseId, course.id),
+          eq(courseStaff.userId, target.id),
+        ),
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.role).toBe("co_teacher");
+      const events = await db.query.auditEvents.findMany({
+        where: eq(auditEvents.action, "staff.course_assigned"),
+      });
+      expect(events).toHaveLength(3);
+      expect(events[2]!.before).toMatchObject({ role: "teacher" });
+      expect(events[2]!.after).toMatchObject({ role: "co_teacher" });
+    });
+
+    /**
+     * Course-wide standing is full capability on every section, including
+     * sections that do not exist yet — so there is nothing for a TA's flags to
+     * narrow, and a course-wide TA is not a thing the catalog can express
+     * (ADR-0004).
+     */
+    it("refuses a course-wide student assistant", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+
+      const result = await assignCourseStaff(owner.id, course.id, {
+        emails: [target.email],
+        role: "ta" as unknown as "teacher",
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        problems: [{ email: "", reason: "role_not_allowed_for_scope" }],
+      });
+      const rows = await db.query.courseStaff.findMany({
+        where: eq(courseStaff.userId, target.id),
+      });
+      expect(rows).toHaveLength(0);
+    });
+
+    it("refuses the whole grant when one address is bad, changing no row", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const good = await makeUser();
+      const gone = await makeUser({ active: false });
+      const course = await makeCourse(owner.id);
+      const before = await db.query.courseStaff.findMany();
+
+      const result = await assignCourseStaff(owner.id, course.id, {
+        emails: `${good.email}, nonsense, someone@gmail.com, typo@up.edu.ph, ${gone.email}`,
+        role: "teacher",
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.problems).toEqual([
+        { email: "nonsense", reason: "invalid_format" },
+        { email: "someone@gmail.com", reason: "disallowed_domain" },
+        { email: "typo@up.edu.ph", reason: "no_account" },
+        { email: gone.email, reason: "inactive_account" },
+      ]);
+      // Not even the good address was granted, and no account was created.
+      expect(await db.query.courseStaff.findMany()).toHaveLength(before.length);
+      expect(
+        await db.query.auditEvents.findMany({
+          where: eq(auditEvents.action, "staff.course_assigned"),
+        }),
+      ).toHaveLength(0);
+      expect(await db.query.users.findMany()).toHaveLength(3);
+    });
+
+    it("names the addresses past the cap", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const pasted = Array.from(
+        { length: 51 },
+        (_, i) => `person-${i}@up.edu.ph`,
+      );
+
+      const result = await assignCourseStaff(owner.id, course.id, {
+        emails: pasted.join("\n"),
+        role: "teacher",
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.problems.filter((p) => p.reason === "too_many")).toEqual([
+        { email: "person-50@up.edu.ph", reason: "too_many" },
+      ]);
+    });
+
+    it("needs at least one address", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      await expect(
+        assignCourseStaff(owner.id, course.id, {
+          emails: "  ,; \n ",
+          role: "teacher",
+        }),
+      ).rejects.toBeInstanceOf(CatalogError);
+    });
+
+    it("is the course owner's call only — a course instructor cannot widen the set", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const instructor = await makeUser({ isTeacher: true });
+      const outsider = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      await db
+        .insert(courseStaff)
+        .values({ courseId: course.id, userId: instructor.id, role: "teacher" });
+
+      // Course standing is full instructor capability, and still not this.
+      await expect(
+        assignCourseStaff(instructor.id, course.id, {
+          emails: [target.email],
+          role: "teacher",
+        }),
+      ).rejects.toBeInstanceOf(AuthzError);
+      await expect(
+        assignCourseStaff(outsider.id, course.id, {
+          emails: [target.email],
+          role: "teacher",
+        }),
+      ).rejects.toBeInstanceOf(AuthzError);
+      expect(
+        await db.query.courseStaff.findMany({
+          where: eq(courseStaff.userId, target.id),
+        }),
+      ).toHaveLength(0);
+    });
+
+    it("refuses an archived course, which is read-only", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      await db
+        .update(courses)
+        .set({ archivedAt: new Date() })
+        .where(eq(courses.id, course.id));
+
+      await expect(
+        assignCourseStaff(owner.id, course.id, {
+          emails: [target.email],
+          role: "teacher",
+        }),
+      ).rejects.toBeInstanceOf(CourseArchivedError);
+      const row = await db.query.courseStaff.findFirst({
+        where: eq(courseStaff.userId, target.id),
+      });
+      expect(row).toBeUndefined();
+    });
+
+    it("shows the granted row in the one Teaching team view, with a removable id", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser({ displayName: "Zoe" });
+      const course = await makeCourse(owner.id);
+      await assignCourseStaff(owner.id, course.id, {
+        emails: [target.email],
+        role: "co_teacher",
+      });
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      const row = team.rows.find((r) => r.user.id === target.id)!;
+      expect(row.scope).toBe("course");
+      expect(row).toMatchObject({ isOwner: false });
+      // The owner's standing is not a row anyone can delete; a grant is.
+      expect(row.scope === "course" && row.courseStaffId).toBeTruthy();
+      const ownerRow = team.rows.find((r) => r.user.id === owner.id)!;
+      expect(ownerRow).toMatchObject({ isOwner: true, courseStaffId: null });
+    });
+
+    it("revokes one row, audits it, and leaves an explicit section grant alone", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      // Both tiers at once: wide standing on the course, and a narrow grant
+      // somebody made on purpose.
+      await assignCourseStaff(owner.id, course.id, {
+        emails: [target.email],
+        role: "teacher",
+      });
+      await addSectionStaff(section.id, target.id, "ta", {
+        reviewResponses: true,
+      });
+      const granted = (await db.query.courseStaff.findMany({
+        where: and(
+          eq(courseStaff.courseId, course.id),
+          eq(courseStaff.userId, target.id),
+        ),
+      }))[0]!;
+
+      await removeCourseStaff(owner.id, course.id, granted.id);
+
+      expect(
+        await db.query.courseStaff.findMany({
+          where: eq(courseStaff.userId, target.id),
+        }),
+      ).toHaveLength(0);
+      // The narrower grant survives: revoking the wide one returns them to the
+      // sections they were explicitly given, not to nothing.
+      const sectionRows = await db.query.sectionStaff.findMany({
+        where: eq(sectionStaff.userId, target.id),
+      });
+      expect(sectionRows).toHaveLength(1);
+      expect(sectionRows[0]!.reviewResponses).toBe(true);
+
+      const events = await db.query.auditEvents.findMany({
+        where: eq(auditEvents.action, "staff.course_removed"),
+      });
+      expect(events).toHaveLength(1);
+      expect(events[0]!.actorUserId).toBe(owner.id);
+      expect(events[0]!.entityId).toBe(granted.id);
+      expect(events[0]!.courseId).toBe(course.id);
+      expect(events[0]!.before).toMatchObject({
+        courseId: course.id,
+        targetUserId: target.id,
+        role: "teacher",
+      });
+    });
+
+    it("refuses to remove the course owner's own standing", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const ownRow = (await db.query.courseStaff.findMany({
+        where: and(
+          eq(courseStaff.courseId, course.id),
+          eq(courseStaff.userId, owner.id),
+        ),
+      }))[0]!;
+
+      await expect(
+        removeCourseStaff(owner.id, course.id, ownRow.id),
+      ).rejects.toBeInstanceOf(CatalogError);
+      expect(
+        await db.query.courseStaff.findMany({ where: eq(courseStaff.id, ownRow.id) }),
+      ).toHaveLength(1);
+    });
+
+    it("refuses a row from another course, a missing row, and a malformed id", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const otherOwner = await makeUser({ isTeacher: true });
+      const otherCourse = await makeCourse(otherOwner.id);
+      const theirRow = (await db.query.courseStaff.findMany({
+        where: eq(courseStaff.courseId, otherCourse.id),
+      }))[0]!;
+
+      for (const id of [
+        theirRow.id,
+        "00000000-0000-4000-8000-000000000000",
+        "not-a-uuid",
+      ]) {
+        await expect(
+          removeCourseStaff(owner.id, course.id, id),
+        ).rejects.toBeInstanceOf(CatalogError);
+      }
+      // The other course's row is untouched.
+      expect(
+        await db.query.courseStaff.findMany({ where: eq(courseStaff.id, theirRow.id) }),
+      ).toHaveLength(1);
+    });
+
+    it("lets only the owner revoke, and not on an archived course", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const instructor = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      await db
+        .insert(courseStaff)
+        .values({ courseId: course.id, userId: instructor.id, role: "teacher" });
+      await assignCourseStaff(owner.id, course.id, {
+        emails: [target.email],
+        role: "teacher",
+      });
+      const granted = (await db.query.courseStaff.findMany({
+        where: and(
+          eq(courseStaff.courseId, course.id),
+          eq(courseStaff.userId, target.id),
+        ),
+      }))[0]!;
+
+      await expect(
+        removeCourseStaff(instructor.id, course.id, granted.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+
+      await db
+        .update(courses)
+        .set({ archivedAt: new Date() })
+        .where(eq(courses.id, course.id));
+      await expect(
+        removeCourseStaff(owner.id, course.id, granted.id),
+      ).rejects.toBeInstanceOf(CourseArchivedError);
+      expect(
+        await db.query.courseStaff.findMany({ where: eq(courseStaff.id, granted.id) }),
+      ).toHaveLength(1);
     });
   });
 

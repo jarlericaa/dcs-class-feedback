@@ -202,13 +202,33 @@ export function primaryNav(
    * created, and because a reader who does not recognise any code below still
    * has somewhere to go. The named courses follow, so the common case — open
    * the course I am teaching this week — is one click from anywhere.
+   *
+   * Shown for the teacher capability OR for anyone holding a course, because
+   * those are two different ways to have one. Course-wide standing is grantable
+   * to an account that was never given the teacher role (ADR-0004), and gating
+   * the group on the flag alone left such a grantee with a course they could
+   * open and no row anywhere that led to it.
+   *
+   * "All courses" stays capability-gated inside the group: it is the course
+   * INDEX, where a course is created, and it refuses an account without the
+   * teacher role. Offering it to a grantee would put a row in the rail that
+   * rejects the reader who clicks it, which is the one thing this rail must not
+   * do. Their named courses are the destinations they actually hold.
    */
-  if (input.isTeacher) {
+  if (input.isTeacher || input.courses.length > 0) {
     groups.push({
       label: "My courses",
       collapsible: true,
       items: [
-        { href: "/teach/courses", label: "All courses", icon: "course" },
+        ...(input.isTeacher
+          ? [
+              {
+                href: "/teach/courses",
+                label: "All courses",
+                icon: "course" as const,
+              },
+            ]
+          : []),
         ...input.courses.map((course) => ({
           href: `/teach/courses/${course.id}`,
           label: course.label,

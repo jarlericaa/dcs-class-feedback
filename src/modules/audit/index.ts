@@ -40,6 +40,9 @@ export type AuditAction =
   | "staff.assigned"
   | "staff.removed"
   | "staff.permissions_changed"
+  /** course-wide instructor standing, granted and revoked (ADR-0004) */
+  | "staff.course_assigned"
+  | "staff.course_removed"
   | "roster.imported"
   | "student_record.name_corrected"
   | "template.created"

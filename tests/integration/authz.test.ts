@@ -11,12 +11,18 @@ import {
 } from "./fixtures";
 import {
   AuthzError,
+  getSectionAccess,
+  requireCourseOwner,
   requireCourseStaff,
   requireEnrolledStudent,
+  requireInstructor,
   requirePlatformAdmin,
   requireSectionQaAccess,
   requireSectionStaff,
 } from "@/modules/authz";
+import { assignCourseStaff, removeCourseStaff } from "@/modules/catalog";
+import { courseStaff } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 
 describe("authorization (deny-by-default, resource-scoped)", () => {
   beforeEach(async () => {
@@ -99,6 +105,124 @@ describe("authorization (deny-by-default, resource-scoped)", () => {
     await expect(
       requireSectionStaff(db, co.id, section.id, "exportParticipation"),
     ).resolves.toBeTruthy();
+  });
+
+  /**
+   * Course-wide standing, end to end (ADR-0004). The authorization side of it
+   * was already implemented — `requireSectionStaff` admits course staff before
+   * it looks at a section row — but nothing could grant such a row, so the
+   * reach of the grant had never been exercised from the outside.
+   */
+  describe("course-wide standing reaches every section, present and future", () => {
+    async function grantee() {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const existing = await makeSection(course.id);
+      // Deliberately NOT a teacher: the grant is what confers access, and an
+      // account can hold a course without ever having been given the teacher
+      // capability.
+      const person = await makeUser();
+      const result = await assignCourseStaff(owner.id, course.id, {
+        emails: [person.email],
+        role: "co_teacher",
+      });
+      expect(result.ok).toBe(true);
+      return { owner, course, existing, person };
+    }
+
+    it("admits the grantee to a section created AFTER the grant", async () => {
+      const { course, existing, person } = await grantee();
+      const later = await makeSection(course.id);
+
+      for (const section of [existing, later]) {
+        await expect(
+          requireSectionStaff(db, person.id, section.id),
+        ).resolves.toBeTruthy();
+        // Every named permission, including the ones no TA flag was set for.
+        await expect(
+          requireSectionStaff(db, person.id, section.id, "exportParticipation"),
+        ).resolves.toBeTruthy();
+        await expect(
+          requireSectionStaff(db, person.id, section.id, "viewStudentIdentities"),
+        ).resolves.toBeTruthy();
+        // And the non-delegable tier: they are an Instructor, not an assistant.
+        await expect(
+          requireInstructor(db, person.id, section.id),
+        ).resolves.toBeTruthy();
+      }
+      await expect(
+        requireCourseStaff(db, person.id, course.id),
+      ).resolves.toBeTruthy();
+    });
+
+    it("reports course standing in the read model without making them the owner", async () => {
+      const { course, existing, person } = await grantee();
+
+      const access = await getSectionAccess(db, person.id, existing.id);
+      expect(access!.staff).toMatchObject({
+        role: "course_staff",
+        hasCourseStanding: true,
+        isInstructor: true,
+        isCourseOwner: false,
+      });
+      expect(access!.staff!.permissions.markValidity).toBe(true);
+
+      // Full capability is not ownership: they cannot alter who else has access.
+      await expect(
+        requireCourseOwner(db, person.id, course.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+      await expect(
+        assignCourseStaff(person.id, course.id, {
+          emails: [person.email],
+          role: "teacher",
+        }),
+      ).rejects.toBeInstanceOf(AuthzError);
+    });
+
+    it("denies every section again once the standing is revoked", async () => {
+      const { owner, course, existing, person } = await grantee();
+      const later = await makeSection(course.id);
+      // An explicit, narrower grant on ONE section, made separately.
+      await addSectionStaff(existing.id, person.id, "ta", {
+        reviewResponses: true,
+      });
+      const row = (await db.query.courseStaff.findMany({
+        where: and(
+          eq(courseStaff.courseId, course.id),
+          eq(courseStaff.userId, person.id),
+        ),
+      }))[0]!;
+
+      await removeCourseStaff(owner.id, course.id, row.id);
+
+      // The course itself, and the section they were never explicitly given.
+      await expect(
+        requireCourseStaff(db, person.id, course.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+      await expect(
+        requireSectionStaff(db, person.id, later.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+      expect(await getSectionAccess(db, person.id, later.id)).toBeNull();
+
+      // The explicit section grant survives, at ITS OWN narrower scope: they
+      // may review, and nothing more.
+      await expect(
+        requireSectionStaff(db, person.id, existing.id, "reviewResponses"),
+      ).resolves.toBeTruthy();
+      await expect(
+        requireSectionStaff(db, person.id, existing.id, "exportParticipation"),
+      ).rejects.toBeInstanceOf(AuthzError);
+      // And they are back to being an assistant, not an Instructor.
+      await expect(
+        requireInstructor(db, person.id, existing.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+      const access = await getSectionAccess(db, person.id, existing.id);
+      expect(access!.staff).toMatchObject({
+        role: "ta",
+        hasCourseStanding: false,
+        isInstructor: false,
+      });
+    });
   });
 
   it("student access requires a rostered email AND an active enrollment", async () => {

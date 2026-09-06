@@ -139,6 +139,62 @@ describe("primaryNav — stability", () => {
     expect(groups[1]!.items[1]!.href).toBe("/teach/courses/c1");
   });
 
+  /**
+   * Course-wide standing is grantable to an account that never held the teacher
+   * capability (ADR-0004). Gating the group on the flag alone left such a
+   * grantee with a course they could open and no row anywhere leading to it.
+   */
+  it("gives a course to a grantee who is not a teacher", () => {
+    const grantee = primaryNav("/", {
+      isTeacher: false,
+      isPlatformAdmin: false,
+      courses: COURSES,
+      studentSections: [],
+      assistedSections: [],
+    });
+    expect(labels(grantee)).toEqual([
+      ["Workspace", ["Overview"]],
+      ["My courses", ["CS 33"]],
+    ]);
+    expect(grantee[1]!.items[0]!.href).toBe("/teach/courses/c1");
+    // NOT the course index: that is where a course is created and it refuses an
+    // account without the teacher capability. A rail row that rejects the
+    // reader who clicks it is the one thing this rail must not produce.
+    expect(grantee.flatMap((g) => g.items.map((i) => i.href))).not.toContain(
+      "/teach/courses",
+    );
+  });
+
+  it("marks the grantee's course row on its own routes", () => {
+    const grantee = {
+      isTeacher: false,
+      isPlatformAdmin: false,
+      courses: COURSES,
+      studentSections: [],
+      assistedSections: [],
+    };
+    for (const route of ["/teach/courses/c1", "/teach/courses/c1/staff"]) {
+      expect(activeHrefs(primaryNav(route, grantee)), route).toEqual([
+        "/teach/courses/c1",
+      ]);
+    }
+    // And the rail still depends on the account, not the route.
+    expect(labels(primaryNav("/teach/courses/c1/staff", grantee))).toEqual(
+      labels(primaryNav("/", grantee)),
+    );
+  });
+
+  it("still omits My courses for an account with neither the flag nor a course", () => {
+    const nobody = primaryNav("/", {
+      isTeacher: false,
+      isPlatformAdmin: false,
+      courses: [],
+      studentSections: [],
+      assistedSections: [],
+    });
+    expect(nobody.map((g) => g.label)).toEqual(["Workspace"]);
+  });
+
   it("gives a student their classes and a delegated assistant their sections", () => {
     const student = primaryNav("/", {
       isTeacher: false,
