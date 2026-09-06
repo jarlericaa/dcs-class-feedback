@@ -4,6 +4,7 @@ import {
   courseTabs,
   firstStaffSectionHref,
   primaryNav,
+  staffSectionTabGroups,
   staffSectionTabs,
   studentSectionTabs,
   type NavGroup,
@@ -365,13 +366,29 @@ describe("staffSectionTabs — permission visibility", () => {
     expect(tabs.map((t) => t.label)).toEqual([
       "Review inbox",
       "Class list",
-      "Participation",
+      "Import",
       "Publication queue",
       "Question backlog",
       "Class Q&A",
+      "Participation",
       "Section setup",
       // Audit is not delegable to a TA in the MVP permission catalog.
     ]);
+  });
+
+  it("offers Import only alongside Class list, on the same flag", () => {
+    expect(
+      staffSectionTabs(
+        access({ permissions: { viewStudentIdentities: true } }),
+        "/x",
+      ).map((t) => t.label),
+    ).toContain("Import");
+    expect(
+      staffSectionTabs(
+        access({ permissions: { viewStudentIdentities: false } }),
+        "/x",
+      ).map((t) => t.label),
+    ).not.toContain("Import");
   });
 
   it("opens the publication queue to any one publication capability", () => {
@@ -405,10 +422,8 @@ describe("staffSectionTabs — permission visibility", () => {
     );
     // Course staff reach the one course-wide queue from the course strip;
     // repeating it here would offer the same destination in two contexts.
-    expect(withCourse.map((t) => t.label)).toContain("Review responses");
-    expect(withCourse[0]!.href).toBe(
-      "/teach/courses/course-1/responses?section=sec-1",
-    );
+    expect(withCourse.map((t) => t.label)).not.toContain("Review responses");
+    expect(withCourse.map((t) => t.label)).toContain("Class Q&A");
 
     const withoutCourse = staffSectionTabs(
       access({
@@ -452,17 +467,75 @@ describe("staffSectionTabs — active state", () => {
     expect(active("/sections/sec-1/qa")).toEqual(["/sections/sec-1/qa"]);
   });
 
-  it("marks the class list while its importer is open", () => {
-    // The importer is an operation ON the class list, not a peer of it, so it
-    // has no tab of its own — and the strip must not go blank because of that.
-    expect(active("/teach/sections/sec-1/import")).toEqual([]);
-    expect(
-      active("/teach/sections/sec-1/import", "/teach/sections/sec-1/roster"),
-    ).toEqual(["/teach/sections/sec-1/roster"]);
+  it("marks Import while its own page is open, not Class list", () => {
+    // Import is a peer of Class list (same group, same permission), not an
+    // operation floating outside the strip, so it carries its own active state.
+    expect(active("/teach/sections/sec-1/import")).toEqual([
+      "/teach/sections/sec-1/import",
+    ]);
   });
 
   it("does not let the participation export unmark participation", () => {
     expect(active("/teach/sections/sec-1/participation/export")).toEqual([
+      "/teach/sections/sec-1/participation",
+    ]);
+  });
+});
+
+describe("staffSectionTabGroups", () => {
+  it("groups a full permission set into named, ordered categories", () => {
+    const groups = staffSectionTabGroups(
+      access({
+        role: "teacher",
+        hasCourseStanding: false,
+        permissions: {
+          reviewResponses: true,
+          viewStudentIdentities: true,
+          exportParticipation: true,
+          draftPublicAnswers: true,
+          manageBacklogImports: true,
+          manageTemplates: true,
+        },
+      }),
+      "/x",
+    );
+    expect(labels(groups)).toEqual([
+      ["Review", ["Review inbox"]],
+      ["Class list", ["Class list", "Import"]],
+      ["Weekly review", ["Publication queue", "Question backlog", "Class Q&A"]],
+      ["Reports", ["Participation", "Audit history"]],
+      ["Setup", ["Section setup"]],
+    ]);
+  });
+
+  it("omits a group's heading entirely when every item in it is hidden", () => {
+    // A TA: no roster access (drops Class list), no participation export and
+    // no audit (drops Reports), no template/cycle management (drops Setup).
+    // An empty "Reports" strip label naming nothing would be worse than no
+    // label — the group must not render at all.
+    const groups = staffSectionTabGroups(
+      access({ role: "ta", hasCourseStanding: true }),
+      "/x",
+    );
+    expect(labels(groups)).toEqual([
+      ["Weekly review", ["Class Q&A"]],
+    ]);
+  });
+
+  it("flattens to the same list staffSectionTabs returns", () => {
+    const a = access({
+      permissions: { viewStudentIdentities: true, exportParticipation: true },
+    });
+    const flat = staffSectionTabGroups(a, "/x").flatMap((g) => g.items);
+    expect(flat).toEqual(staffSectionTabs(a, "/x"));
+  });
+
+  it("marks active across every group at once, not per group", () => {
+    const a = access({
+      permissions: { viewStudentIdentities: true, exportParticipation: true },
+    });
+    const groups = staffSectionTabGroups(a, "/teach/sections/sec-1/participation");
+    expect(activeHrefs(groups)).toEqual([
       "/teach/sections/sec-1/participation",
     ]);
   });
@@ -476,7 +549,7 @@ describe("studentSectionTabs", () => {
       "/sections/sec-1/qa",
     ]) {
       expect(studentSectionTabs("sec-1", path).map((t) => t.label)).toEqual([
-        "Forms",
+        "This week's form",
         "My submissions",
         "Class Q&A",
       ]);

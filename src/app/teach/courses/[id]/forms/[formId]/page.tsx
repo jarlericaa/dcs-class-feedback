@@ -7,8 +7,7 @@ import { db } from "@/db";
 import { courses } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { courseTabs } from "@/components/layout/nav";
-import { primaryNavFor } from "@/lib/nav-context";
+import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
   Alert,
@@ -253,7 +252,7 @@ export default async function FormDetailPage({
       /* A form, its new-form page and one of its occurrences are all children
          of Forms, not peers of it, so the strip marks Forms rather than going
          blank. `activeHref` states that instead of lying about the path. */
-      tabs={courseTabs(courseId, path, {
+      tabGroups={await courseTabGroupsFor(user.id, courseId, path, {
         activeHref: `/teach/courses/${courseId}`,
       })}
       tabsLabel={course.code}
@@ -298,7 +297,7 @@ export default async function FormDetailPage({
               </EmptyState>
             </div>
           ) : (
-            <div className="table-scroll">
+            <div className="table-scroll table-scroll--flush">
               <table className="data-table">
                 <thead>
                   <tr>

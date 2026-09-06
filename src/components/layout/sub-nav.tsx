@@ -1,31 +1,37 @@
 import Link from "next/link";
 import { IconChevron } from "@/components/ui/icons";
-import type { NavItem } from "./nav";
+import type { NavGroup, NavItem } from "./nav";
 
 /**
- * The contextual navigation band. Course views use the compact link row; the
- * larger set of section-only destinations uses the same band as a menu so a
- * section page does not replace the course navigation with a second tab strip.
- *
- * Every destination remains a real link. There is no client state, and the
- * menu uses native details/summary behaviour so it works without JavaScript.
+ * The contextual navigation column. Course views can carry the course's own
+ * destinations plus the groups for a single section; section views use the
+ * same grouped structure on its own. Every destination remains a real link.
+ * The optional menu mode is retained for flat callers that need a compact
+ * disclosure on narrow or section-only surfaces.
  */
 export function SubNav({
   items,
+  groups,
   label,
   mode = "tabs",
 }: {
-  items: NavItem[];
-  /** the resource these views belong to, e.g. "CS 33" */
+  items?: NavItem[];
+  groups?: NavGroup[];
+  /** the resource these views belong to, e.g. "DCS-101" */
   label: string;
   mode?: "tabs" | "menu";
 }) {
-  // A band with one destination is chrome pretending to be structure: there is
-  // nowhere to go, and the page heading already says where you are.
-  if (items.length < 2) return null;
+  const resolvedGroups = groups ?? (items ? [{ label: "", items }] : []);
+  const flatCount = resolvedGroups.reduce(
+    (count, group) => count + group.items.length,
+    0,
+  );
+  // A column with one destination is chrome pretending to be structure: there
+  // is nowhere to go, and the page heading already says where you are.
+  if (flatCount < 2) return null;
 
   const labelId = "ws-subnav-label";
-  if (mode === "menu") {
+  if (mode === "menu" && !groups) {
     return (
       <nav
         className="ws-subnav ws-subnav--menu"
@@ -40,23 +46,9 @@ export function SubNav({
             <IconChevron className="ws-subnav__menu-chevron" size={13} />
           </summary>
           <ul className="ws-subnav__menu-list">
-            {items.map((item) => (
+            {resolvedGroups[0]!.items.map((item) => (
               <li key={item.href}>
-                <Link
-                  className={`ws-subnav__menu-item ${
-                    item.active ? "ws-subnav__menu-item--active" : ""
-                  }`}
-                  href={item.href}
-                  aria-current={item.active ? "page" : undefined}
-                >
-                  <span>{item.label}</span>
-                  {item.count ? (
-                    <span className="ws-subnav__count">
-                      {item.count}
-                      <span className="visually-hidden"> needing review</span>
-                    </span>
-                  ) : null}
-                </Link>
+                <MenuItem item={item} />
               </li>
             ))}
           </ul>
@@ -70,29 +62,60 @@ export function SubNav({
       <p className="ws-subnav__heading" id={labelId}>
         {label}
       </p>
-      <div className="ws-subnav__scroll">
-        <ul className="ws-subnav__list">
-          {items.map((item) => (
-            <li key={item.href}>
-              <Link
-                className={`ws-subnav__item ${
-                  item.active ? "ws-subnav__item--active" : ""
-                }`}
-                href={item.href}
-                aria-current={item.active ? "page" : undefined}
-              >
-                <span className="ws-subnav__text">{item.label}</span>
-                {item.count ? (
-                  <span className="ws-subnav__count">
-                    {item.count}
-                    <span className="visually-hidden"> needing review</span>
-                  </span>
-                ) : null}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {resolvedGroups.map((group, index) => (
+        <div className="ws-subnav__group" key={group.label || `group-${index}`}>
+          {group.label && (
+            <p className="ws-subnav__group-heading">{group.label}</p>
+          )}
+          <SubNavList items={group.items} />
+        </div>
+      ))}
     </nav>
+  );
+}
+
+function SubNavList({ items }: { items: NavItem[] }) {
+  return (
+    <ul className="ws-subnav__list">
+      {items.map((item) => (
+        <li key={item.href}>
+          <Link
+            className={`ws-subnav__item ${
+              item.active ? "ws-subnav__item--active" : ""
+            }`}
+            href={item.href}
+            aria-current={item.active ? "page" : undefined}
+          >
+            <span className="ws-subnav__text">{item.label}</span>
+            {item.count ? (
+              <span className="ws-subnav__count">
+                {item.count}
+                <span className="visually-hidden"> needing review</span>
+              </span>
+            ) : null}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MenuItem({ item }: { item: NavItem }) {
+  return (
+    <Link
+      className={`ws-subnav__menu-item ${
+        item.active ? "ws-subnav__menu-item--active" : ""
+      }`}
+      href={item.href}
+      aria-current={item.active ? "page" : undefined}
+    >
+      <span>{item.label}</span>
+      {item.count ? (
+        <span className="ws-subnav__count">
+          {item.count}
+          <span className="visually-hidden"> needing review</span>
+        </span>
+      ) : null}
+    </Link>
   );
 }

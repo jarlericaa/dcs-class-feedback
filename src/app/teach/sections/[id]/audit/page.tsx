@@ -1,7 +1,7 @@
 import { loadStaffSection, sectionLabel } from "@/lib/staff-section";
 import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { staffSectionTabs } from "@/components/layout/nav";
+import { staffSectionTabGroups } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
@@ -66,7 +66,7 @@ export default async function AuditPage({
            own rail row — so mark that one rather than the courses index. */
         fallbackHref: `/teach/courses/${course.id}`,
       })}
-      tabs={staffSectionTabs(access, path)}
+      tabGroups={staffSectionTabGroups(access, path)}
       tabsLabel={sectionLabel(course.code, section.title)}
       tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}

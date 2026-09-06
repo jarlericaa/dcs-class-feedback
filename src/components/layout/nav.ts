@@ -26,11 +26,11 @@ import {
  * or remove a row. Only a permission change does that.
  *
  * CONTEXTUAL (`courseTabs`, `staffSectionTabs`, `studentSectionTabs`) is a
- * compact horizontal band after the rail and above the page. It answers "what
- * are the peer views of the resource I am looking at?" — the course, or one
- * class section. These are expected to change with the resource, because that
- * is what they describe. The functions are still named `*Tabs`: they return the
- * same peer set regardless of viewport.
+ * second, narrower column between the rail and the page. It answers "what are
+ * the peer views of the resource I am looking at?" — the course, or one class
+ * section. These are expected to change with the resource, because that is what
+ * they describe. The functions are still named `*Tabs`: they return the same
+ * peer set whether it is drawn as a strip or a column.
  *
  * One-off operations (create, import, export, publish, edit) belong in neither.
  * They are page-header actions on the page they act on.
@@ -201,7 +201,7 @@ export function primaryNav(
    * "All courses" leads the list because the index is where a course is
    * created, and because a reader who does not recognise any code below still
    * has somewhere to go. The named courses follow, so the common case — open
-   * the course I am teaching — is one click from anywhere.
+   * the course I am teaching this week — is one click from anywhere.
    */
   if (input.isTeacher) {
     groups.push({
@@ -273,84 +273,128 @@ export function courseTabs(
 }
 
 /**
- * Peer views of ONE class section, filtered by effective permissions.
+ * Peer views of ONE class section, filtered by effective permissions and
+ * grouped by what they are FOR, not left as one flat strip. A teacher opening
+ * this is usually thinking in one of four registers — who has access, this
+ * week's work, what happened before, or how the section is configured — so
+ * the groups answer that question before the reader has read a single label.
  *
- * Order is daily work, then the shared archive, then administration — and it is
- * the same order for everyone, so a reader who loses a permission sees a
- * shorter strip, never a rearranged one.
+ * A permission that hides every item in a group hides the group's heading
+ * with it: an empty "Reports" strip label naming nothing is worse than no
+ * label at all.
  */
-export function staffSectionTabs(
+export function staffSectionTabGroups(
   access: SectionAccess,
   currentPath: string,
   opts: { needsReview?: number; activeHref?: string } = {},
-): NavItem[] {
+): NavGroup[] {
   const id = access.section.id;
   const staff = access.staff;
   if (!staff) return [];
   const perms = staff.permissions;
-  const items: NavItem[] = [];
+  const groups: NavGroup[] = [];
 
   // The review queue is COURSE-scoped: a form shared by several sections has one
-  // queue, which is the point of sharing it. Course staff reach that queue from
-  // this section context with its section filter preserved. Someone with no
-  // course standing has no course strip, so their section-only queue remains the
-  // destination. Both links are gated by the same review capability.
-  if (perms.reviewResponses) {
-    items.push(
-      staff.hasCourseStanding
-        ? {
-            href: `/teach/courses/${access.section.courseId}/responses?section=${id}`,
-            label: "Review responses",
-            count: opts.needsReview || undefined,
-          }
-        : {
-            href: `/teach/sections/${id}/review`,
-            label: "Review inbox",
-            count: opts.needsReview || undefined,
-          },
-    );
-  }
-  if (perms.viewStudentIdentities) {
-    items.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
-  }
-  if (perms.exportParticipation) {
-    items.push({
-      href: `/teach/sections/${id}/participation`,
-      label: "Participation",
+  // queue, which is the point of sharing it. Course staff therefore reach it
+  // through the course tab strip and it is not repeated here. Someone with no
+  // course standing has no such strip, so for them the section is the only frame
+  // there is and the queue appears in it. That difference follows the reader's
+  // permissions, not the page they happen to be on. Ungrouped: it is already
+  // the one thing a delegated assistant opens this section to do.
+  if (perms.reviewResponses && !staff.hasCourseStanding) {
+    groups.push({
+      label: "Review",
+      items: [
+        {
+          href: `/teach/sections/${id}/review`,
+          label: "Review inbox",
+          count: opts.needsReview || undefined,
+        },
+      ],
     });
   }
-  // Any publication capability can READ the queue; each action inside is gated
-  // by its own flag, so a publish-only assistant still sees their work.
+
+  // Who can reach this section's forms, and how they got there.
+  const classList: NavItem[] = [];
+  if (perms.viewStudentIdentities) {
+    classList.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
+    classList.push({ href: `/teach/sections/${id}/import`, label: "Import" });
+  }
+  if (classList.length > 0) groups.push({ label: "Class list", items: classList });
+
+  // The recurring cycle: draft and publish this week's answers, then the
+  // archive students actually read once they are out. Any publication
+  // capability can READ the queue; each action inside is gated by its own
+  // flag, so a publish-only assistant still sees their work.
+  const weeklyReview: NavItem[] = [];
   if (
     perms.draftPublicAnswers ||
     perms.rewordPublicQuestions ||
     perms.publishPublicAnswers ||
     perms.schedulePublication
   ) {
-    items.push({
+    weeklyReview.push({
       href: `/teach/sections/${id}/publications`,
       label: "Publication queue",
     });
   }
   if (perms.manageBacklogImports) {
-    items.push({
+    weeklyReview.push({
       href: `/teach/sections/${id}/backlog`,
       label: "Question backlog",
     });
   }
-  items.push({ href: `/sections/${id}/qa`, label: "Class Q&A" });
-  if (perms.manageWeeklyCycles || perms.manageTemplates) {
-    items.push({ href: `/teach/sections/${id}/setup`, label: "Section setup" });
+  weeklyReview.push({ href: `/sections/${id}/qa`, label: "Class Q&A" });
+  groups.push({ label: "Weekly review", items: weeklyReview });
+
+  // Read-only history: how the section is doing, and what changed.
+  const reports: NavItem[] = [];
+  if (perms.exportParticipation) {
+    reports.push({
+      href: `/teach/sections/${id}/participation`,
+      label: "Participation",
+    });
   }
   // Audit browsing is not delegable to a TA in the MVP permission catalog.
   if (staff.role !== "ta") {
-    items.push({
-      href: `/teach/sections/${id}/audit`,
-      label: "Audit history",
+    reports.push({ href: `/teach/sections/${id}/audit`, label: "Audit history" });
+  }
+  if (reports.length > 0) groups.push({ label: "Reports", items: reports });
+
+  if (perms.manageWeeklyCycles || perms.manageTemplates) {
+    groups.push({
+      label: "Setup",
+      items: [
+        { href: `/teach/sections/${id}/setup`, label: "Section setup" },
+      ],
     });
   }
 
-  return mark(items, currentPath, opts.activeHref);
+  // Marked across every group at once, so the longest-match rule (and an
+  // activeHref override) stays global rather than resetting per group.
+  const flatActive = mark(
+    groups.flatMap((g) => g.items),
+    currentPath,
+    opts.activeHref,
+  );
+  const activeByHref = new Map(flatActive.map((i) => [i.href, i.active]));
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.map((i) => ({ ...i, active: activeByHref.get(i.href) ?? false })),
+  }));
+}
+
+/** Flattened form of {@link staffSectionTabGroups}, for the few callers that
+ *  still want one plain list (a page whose own layout has no room for group
+ *  headings). Prefer the grouped form wherever the reader can see it. */
+export function staffSectionTabs(
+  access: SectionAccess,
+  currentPath: string,
+  opts: { needsReview?: number; activeHref?: string } = {},
+): NavItem[] {
+  return staffSectionTabGroups(access, currentPath, opts).flatMap(
+    (g) => g.items,
+  );
 }
 
 /**
@@ -363,6 +407,53 @@ export function firstStaffSectionHref(access: SectionAccess): string | null {
   return staffSectionTabs(access, "")[0]?.href ?? null;
 }
 
+/**
+ * Peer views of ONE course, folding in its one section's own groups when
+ * there is exactly one — the common case, and the one where clicking
+ * "Class lists" to find out what is inside gains nothing, because there is
+ * only one answer.
+ *
+ * A course with several sections keeps the plain three-item strip and the
+ * click-through instead: which section a destination like "Publication
+ * queue" means is then a real, necessary choice, not friction. Inlining
+ * every section's groups there would not remove a click, it would stack N
+ * full group sets permanently into the sidebar — trading "hidden" for
+ * "overwhelming," the same defect from the other direction.
+ *
+ * The first group carries the course's own three destinations, unlabeled
+ * (exactly how they render today) — this is an addition to that sidebar, not
+ * a replacement of it.
+ */
+export function courseTabGroups(
+  courseId: string,
+  currentPath: string,
+  opts: { needsReview?: number; activeHref?: string } = {},
+  singleSectionAccess?: SectionAccess | null,
+): NavGroup[] {
+  // Reuses courseTabs rather than repeating its three items, so the two can
+  // never list the course's own destinations two different ways. Its active
+  // flags are provisional — overwritten below once the section's groups (if
+  // any) are marked alongside them.
+  const groups: NavGroup[] = [
+    { label: "", items: courseTabs(courseId, currentPath, opts) },
+  ];
+  if (singleSectionAccess) {
+    groups.push(...staffSectionTabGroups(singleSectionAccess, currentPath));
+  }
+
+  // Marked across every group at once — see staffSectionTabGroups for why.
+  const flatActive = mark(
+    groups.flatMap((g) => g.items),
+    currentPath,
+    opts.activeHref,
+  );
+  const activeByHref = new Map(flatActive.map((i) => [i.href, i.active]));
+  return groups.map((g) => ({
+    ...g,
+    items: g.items.map((i) => ({ ...i, active: activeByHref.get(i.href) ?? false })),
+  }));
+}
+
 /** Peer views of ONE class, as a student sees them. */
 export function studentSectionTabs(
   sectionId: string,
@@ -371,7 +462,7 @@ export function studentSectionTabs(
 ): NavItem[] {
   return mark(
     [
-      { href: `/sections/${sectionId}`, label: "Forms" },
+      { href: `/sections/${sectionId}`, label: "This week's form" },
       { href: `/sections/${sectionId}/history`, label: "My submissions" },
       { href: `/sections/${sectionId}/qa`, label: "Class Q&A" },
     ],

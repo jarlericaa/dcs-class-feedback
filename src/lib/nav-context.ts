@@ -1,6 +1,10 @@
 import { cache } from "react";
+import { eq } from "drizzle-orm";
 
-import { primaryNav, type NavGroup } from "@/components/layout/nav";
+import { courseTabGroups, primaryNav, type NavGroup } from "@/components/layout/nav";
+import { db } from "@/db";
+import { classSections } from "@/db/schema";
+import { getSectionAccess } from "@/modules/authz";
 import type { SessionUser } from "@/lib/session";
 import { sectionLabel } from "@/lib/staff-section";
 import { listCoursesForUser, listSectionsForUser } from "@/modules/catalog";
@@ -92,4 +96,29 @@ export async function primaryNavFor(
 
 function isResourceRoute(path: string) {
   return path.startsWith("/teach/sections/") || path.startsWith("/sections/");
+}
+
+/**
+ * The course's own tab strip, resolved for whichever reader and path called
+ * it — folding in the one section's own groups when the course has exactly
+ * one (see {@link courseTabGroups} for why only then). `userId` is the reader
+ * whose permissions decide what that section's groups contain, not
+ * necessarily the same account primaryNavFor was built for on every caller,
+ * so it is taken explicitly rather than threaded through a shared cache.
+ */
+export async function courseTabGroupsFor(
+  userId: string,
+  courseId: string,
+  currentPath: string,
+  opts: { needsReview?: number; activeHref?: string } = {},
+): Promise<NavGroup[]> {
+  const sections = await db.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+    columns: { id: true },
+  });
+  const singleSectionAccess =
+    sections.length === 1
+      ? await getSectionAccess(db, userId, sections[0]!.id)
+      : null;
+  return courseTabGroups(courseId, currentPath, opts, singleSectionAccess);
 }

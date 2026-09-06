@@ -28,6 +28,7 @@ export function AppShell({
   workspace,
   navGroups,
   tabs,
+  tabGroups,
   tabsLabel,
   tabsMode,
   contextLabel,
@@ -43,8 +44,11 @@ export function AppShell({
   user: ShellUser;
   workspace: Workspace;
   navGroups: NavGroup[];
-  /** peer views of the resource this page belongs to; never global destinations */
+  /** peer views of the resource this page belongs to; never global destinations.
+   *  A flat strip. Pass `tabGroups` instead for a longer, categorized set. */
   tabs?: NavItem[];
+  /** the same peer views, pre-grouped by category */
+  tabGroups?: NavGroup[];
   /** names the resource the tabs belong to, e.g. "CS 33" */
   tabsLabel?: string;
   /** section destinations are a menu rather than a second tab strip */
@@ -67,6 +71,7 @@ export function AppShell({
       workspaceLabel={workspaceLabel}
       navGroups={navGroups}
       tabs={tabs}
+      tabGroups={tabGroups}
       tabsLabel={tabsLabel}
       tabsMode={tabsMode}
     >

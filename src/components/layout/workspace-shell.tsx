@@ -14,11 +14,9 @@ import { NAV_ICONS, type NavGroup, type NavItem } from "./nav";
 
 /**
  * The workspace chrome: a white top bar with a hairline under it, a left rail
- * carrying the account's destinations, and compact contextual navigation for
- * the resource on screen. Course views use a tab band; section-only views use a
- * menu so they do not replace the course navigation with a second tab strip.
- * The band sits above either a two-pane list/detail view or a single scrolling
- * page, so the page gets the room the old second navigation column consumed.
+ * carrying the account's destinations, a contextual tab strip for the resource
+ * on screen, and a body that is either a two-pane list/detail view or a single
+ * scrolling page.
  *
  * The rail takes ONE input — `navGroups`, built by `primaryNav` from the
  * account — so it renders identically on every page that account can open. It
@@ -117,6 +115,7 @@ export function WorkspaceShell({
   workspaceLabel,
   navGroups,
   tabs,
+  tabGroups,
   tabsLabel,
   tabsMode,
   railFooter,
@@ -130,11 +129,15 @@ export function WorkspaceShell({
   /** "Student workspace", "Staff workspace" — stated, never inferred */
   workspaceLabel?: string;
   navGroups?: NavGroup[];
-  /** peer views of the resource this page belongs to; never global destinations */
+  /** peer views of the resource this page belongs to; never global destinations.
+   *  A flat strip. Pass `tabGroups` instead for a longer, categorized set. */
   tabs?: NavItem[];
+  /** the same peer views, pre-grouped by category. Takes precedence over `tabs`
+   *  when both are passed (they never are). */
+  tabGroups?: NavGroup[];
   /** names the resource those views belong to, e.g. "CS 33" */
   tabsLabel?: string;
-  /** section destinations are a menu rather than a second tab strip */
+  /** retained for flat callers that use the compact disclosure */
   tabsMode?: "tabs" | "menu";
   railFooter?: ReactNode;
   /** when present the body is a two-pane list/detail view */
@@ -216,50 +219,42 @@ export function WorkspaceShell({
           </nav>
         )}
 
-        <div className="ws-content">
-          {/* Resource views are a compact band, not a second fixed column. */}
-          {tabs && tabs.length > 0 && (
-            <SubNav
-              items={tabs}
-              label={tabsLabel ?? contextTitle}
-              mode={tabsMode}
-            />
-          )}
+        {/* The resource's own views, between the workspace and the page. */}
+        {tabGroups && tabGroups.length > 0 && (
+          <SubNav groups={tabGroups} label={tabsLabel ?? contextTitle} />
+        )}
+        {!tabGroups && tabs && tabs.length > 0 && (
+          <SubNav
+            items={tabs}
+            label={tabsLabel ?? contextTitle}
+            mode={tabsMode}
+          />
+        )}
 
-          <div
-            className={`ws-content__body${
-              listPane ? " ws-content__body--panes" : ""
+        {listPane}
+
+        {listPane ? (
+          <main
+            className={`ws-detail ${
+              selection && !selection.active ? "ws-detail--hidden" : ""
             }`}
+            id="main-content"
+            tabIndex={-1}
           >
-            {listPane ? (
-              <main
-                className="ws-content__panes"
-                id="main-content"
-                tabIndex={-1}
-              >
-                {listPane}
-                <section
-                  className={`ws-detail ${
-                    selection && !selection.active ? "ws-detail--hidden" : ""
-                  }`}
-                >
-                  <div className="ws-detail__inner">
-                    {selection?.active && (
-                      <Link className="ws-backlink" href={selection.backHref}>
-                        <IconBack size={15} /> Back to the list
-                      </Link>
-                    )}
-                    {children}
-                  </div>
-                </section>
-              </main>
-            ) : (
-              <main className="ws-page" id="main-content" tabIndex={-1}>
-                <div className="ws-page__inner">{children}</div>
-              </main>
-            )}
-          </div>
-        </div>
+            <div className="ws-detail__inner">
+              {selection?.active && (
+                <Link className="ws-backlink" href={selection.backHref}>
+                  <IconBack size={15} /> Back to the list
+                </Link>
+              )}
+              {children}
+            </div>
+          </main>
+        ) : (
+          <main className="ws-page" id="main-content" tabIndex={-1}>
+            <div className="ws-page__inner">{children}</div>
+          </main>
+        )}
       </div>
     </div>
   );
@@ -332,6 +327,9 @@ export function ListPane({
           placeholder={searchPlaceholder}
           defaultValue={searchValue ?? ""}
         />
+        <button className="visually-hidden" type="submit">
+          Search
+        </button>
       </form>
 
       {groups.length > 0 && <FilterMenu groups={groups} />}

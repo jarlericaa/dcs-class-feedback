@@ -61,9 +61,10 @@
 
   --focus: #164c50;
 
-  /* radius — nothing else exists */
-  --r-control: 2px;
-  --r-stamp: 3px;
+  /* radius */
+  --r-control: 6px;
+  --r-stamp: 5px;
+  --r-panel: 12px;
 
   /* the one elevation */
   --overlay-shadow: 0 12px 28px rgba(28, 30, 32, 0.16);
@@ -434,11 +435,13 @@ kbd {
 }
 
 /* ==========================================================================
-   The notice — a flat sheet squared to the board. Never rounded, never lifted.
+   The notice — a sheet on the board. Squared corners softened to a small
+   rounded rectangle; still flat, still never lifted (no shadow at rest).
    ========================================================================== */
 
 .notice {
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .notice--quiet {
@@ -483,9 +486,36 @@ kbd {
   padding: var(--s4) var(--s5);
   border-top: 1px solid var(--rule);
   background: var(--paper-quiet);
+  /* Its own fill would otherwise square off the panel's rounded bottom. */
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
 }
 .notice--pad {
   padding: var(--s5);
+}
+/* A resource's own destinations, grouped by what they are for — the class
+   list's own version of the section subnav's groups (nav.ts), so the two
+   never describe the same set of pages two different ways. Each group is its
+   own small column, so "which of these am I after" is answered before any
+   row is read, the way a settings screen groups its rows into named cards
+   instead of one flat list. */
+.section-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--s5) var(--s6);
+}
+.section-links__heading {
+  margin: 0 0 var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.section-links__list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 /* student surfaces breathe more than staff surfaces */
 .notice--roomy .notice__head {
@@ -731,6 +761,7 @@ kbd {
   gap: var(--s3);
   padding: var(--s3) var(--s4);
   border: 1px solid;
+  border-radius: var(--r-panel);
   font-size: 13px;
 }
 .alert__icon {
@@ -946,6 +977,7 @@ kbd {
   gap: var(--s2);
   padding: var(--s3);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .toolbar .field {
@@ -967,8 +999,11 @@ kbd {
    before hydration, and the summary IS the action's name, so the page header no
    longer has to compete with a form the reader did not ask for. */
 .disclose {
-  border: 1px solid var(--control-edge);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
+  /* Clips the summary's hover fill to the rounded corners. */
+  overflow: hidden;
 }
 .disclose > summary {
   display: flex;
@@ -1008,6 +1043,8 @@ kbd {
 .disclose--inset {
   border: 0;
   border-top: 1px solid var(--rule);
+  border-radius: 0;
+  overflow: visible;
   background: var(--paper-quiet);
 }
 .disclose--inset[open] > summary {
@@ -1050,6 +1087,7 @@ kbd {
 /* A question is a hairline-divided row, not a card inside a card. */
 .q-list {
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .q-item {
@@ -1067,6 +1105,7 @@ kbd {
 /* Standing alone (the student-additions block) it keeps its own frame. */
 .q-item:not(.q-list > .q-item) {
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
 }
 .q-item__legend {
   float: left;
@@ -1166,7 +1205,7 @@ kbd {
   max-height: min(88vh, 900px);
   padding: 0;
   border: 1px solid var(--rule-strong);
-  border-radius: 0;
+  border-radius: var(--r-panel);
   background: var(--paper);
   color: var(--ink);
   box-shadow: var(--overlay-shadow);
@@ -1211,6 +1250,7 @@ kbd {
     max-height: 100dvh;
     margin: 0;
     border: 0;
+    border-radius: 0;
   }
   .preview__bar {
     padding: var(--s3) var(--s4);
@@ -1364,7 +1404,15 @@ kbd {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
+}
+/* The common case: sitting flush inside a .notice, 0 padding between them.
+   A second border there would double the parent's, 1px apart, and the two
+   round corners never quite line up. Radius stays, to clip the header row's
+   fill to the parent's curve; the visible edge is .notice's border alone. */
+.table-scroll--flush {
+  border: 0;
 }
 
 /* A raw before/after payload in the audit log. Data, so monospace is earned. */
@@ -2111,6 +2159,7 @@ kbd {
 .feed {
   background: var(--paper);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   /* The rows respond to the FEED's width, not the window's: two navigation
      columns sit to the left of it, so the viewport says nothing useful about
      how much room a row actually has. */
@@ -2602,6 +2651,21 @@ kbd {
   overflow-x: auto;
   overscroll-behavior-x: contain;
 }
+/* A category inside the strip — "Class list", "Weekly review", "Reports",
+   "Setup" — so a longer peer-view set reads as a small set of questions
+   ("which of these am I after?") instead of one flat wall of links. */
+.ws-subnav__group + .ws-subnav__group {
+  margin-top: var(--s4);
+}
+.ws-subnav__group-heading {
+  margin: 0 0 4px;
+  padding: 0 var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
 .ws-subnav__list {
   display: flex;
   gap: var(--s1);
@@ -2854,7 +2918,10 @@ kbd {
   margin: var(--s6) auto;
   align-self: center;
   border: 1px solid var(--rule-strong);
+  border-radius: var(--r-panel);
   background: var(--paper);
+  /* Clips .entry__signin's own fill to the rounded corners. */
+  overflow: hidden;
 }
 .entry__grid {
   display: grid;
@@ -2933,6 +3000,7 @@ kbd {
   margin-top: var(--s5);
   padding: var(--s4);
   border: 1px dashed var(--rule-strong);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .entry__dev h3 {
@@ -3258,6 +3326,7 @@ kbd {
 .composer {
   padding: var(--s4);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper);
 }
 .composer > h3 {
@@ -3282,6 +3351,7 @@ kbd {
 .visibility-note {
   padding: var(--s3);
   border: 1px solid var(--amber-edge);
+  border-radius: var(--r-panel);
   background: var(--amber-wash);
   color: var(--amber-deep);
   font-size: 12px;
@@ -3415,6 +3485,42 @@ kbd {
   }
   .ws-subnav {
     padding: 0 var(--s3);
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .ws-subnav__heading {
+    display: none;
+  }
+  /* No room for the grouped, headed columns either: a group's own heading
+     stacked over its list would fight the single scrolling row every other
+     route uses here. `contents` unwraps the group so its list joins that row
+     directly, same as the flat (ungrouped) case — losing the category label
+     is an acceptable trade at this width; the resource heading is already
+     gone for the same reason. */
+  .ws-subnav__group {
+    display: contents;
+  }
+  .ws-subnav__group-heading {
+    display: none;
+  }
+  .ws-subnav__list {
+    display: flex;
+    gap: var(--s1);
+    flex-wrap: nowrap;
+    width: max-content;
+  }
+  .ws-subnav__item {
+    padding: 10px var(--s2) 9px;
+    margin-bottom: -1px;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .ws-subnav__item--active {
+    background: none;
+    border-bottom-color: var(--accent);
   }
   .page-head {
     margin-bottom: var(--s5);
@@ -3499,6 +3605,150 @@ kbd {
     transition: none !important;
     animation: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* --- grouped contextual navigation ----------------------------------------
+   The merged staff navigation is a real secondary column on wide screens.
+   It collapses back into one horizontal scroller once there is no room for a
+   second column, keeping the page itself usable on phones. */
+.ws-subnav {
+  flex: 0 0 200px;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--s4) var(--s3) var(--s5);
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--paper);
+  border-right: 1px solid var(--rule);
+  border-bottom: 0;
+}
+.ws:not(.ws--panes) .ws-subnav {
+  position: sticky;
+  top: 52px;
+  align-self: flex-start;
+  height: calc(100dvh - 52px);
+}
+.ws-subnav__heading {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0 0 var(--s3);
+  padding: 0 var(--s2) var(--s2);
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.ws-subnav__group + .ws-subnav__group {
+  margin-top: var(--s4);
+}
+.ws-subnav__group-heading {
+  margin: 0 0 4px;
+  padding: 0 var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.ws-subnav__list {
+  display: block;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ws-subnav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 34px;
+  padding: 7px var(--s2);
+  border: 0;
+  border-radius: var(--r-control);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: normal;
+  transition: background-color 0.12s ease;
+}
+.ws-subnav__item:hover {
+  color: var(--ink);
+  background: var(--paper-quiet);
+}
+.ws-subnav__item--active {
+  color: var(--accent-deep);
+  border-bottom-color: transparent;
+  background: var(--accent-wash);
+  font-weight: 600;
+}
+.ws-subnav__text {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .ws-subnav {
+    flex-basis: 176px;
+    width: 176px;
+  }
+}
+
+@media (max-width: 860px) {
+  .ws-body {
+    flex-direction: column;
+  }
+  .ws:not(.ws--panes) .ws-subnav,
+  .ws-subnav {
+    position: static;
+    align-self: auto;
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    height: auto;
+    padding: 0 var(--s3);
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+  }
+  .ws-subnav__heading {
+    display: none;
+  }
+  .ws-subnav__group {
+    display: contents;
+  }
+  .ws-subnav__group-heading {
+    display: none;
+  }
+  .ws-subnav__list {
+    display: flex;
+    gap: var(--s1);
+    flex-wrap: nowrap;
+    width: max-content;
+  }
+  .ws-subnav__item {
+    min-height: 48px;
+    padding: 10px var(--s2) 9px;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .ws-subnav__item--active {
+    background: none;
+    border-bottom-color: var(--accent);
   }
 }
 
@@ -3715,7 +3965,7 @@ kbd {
   max-height: min(88vh, 860px);
   padding: 0;
   border: 1px solid var(--rule-strong);
-  border-radius: 0;
+  border-radius: var(--r-panel);
   background: var(--paper);
   color: var(--ink);
   box-shadow: var(--overlay-shadow);
@@ -3773,6 +4023,7 @@ kbd {
     max-height: 100dvh;
     margin: 0;
     border: 0;
+    border-radius: 0;
   }
   .dlg__head {
     padding: var(--s3) var(--s4);
@@ -3943,6 +4194,7 @@ kbd {
   margin-top: var(--s2);
   padding: var(--s3);
   border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
   background: var(--paper-quiet);
 }
 
