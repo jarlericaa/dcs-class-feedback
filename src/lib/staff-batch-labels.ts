@@ -58,3 +58,65 @@ export function staffBatchProblemLabel(reason: string): string {
 
 /** The fallback sentence, exported so callers can recognize it if they must. */
 export const UNKNOWN_STAFF_BATCH_PROBLEM = UNKNOWN;
+
+/**
+ * What a grant actually did, as a short phrase.
+ *
+ * Three counts rather than one, because they answer different questions and
+ * collapsing them would hide the interesting one: `added` is new access,
+ * `updated` is access somebody already had at a different role, and `unchanged`
+ * is the re-affirmed grant that looks like a no-op and is worth saying out loud
+ * — an owner who pasted the wrong list needs to see that nothing moved.
+ *
+ * Zero terms are omitted so a plain success does not read as a report. Counts
+ * are per grant, which at section scope means per person per class list: adding
+ * two people to two class lists is four.
+ */
+export function staffGrantSummary(counts: {
+  added: number;
+  updated: number;
+  unchanged: number;
+}): string {
+  const parts: string[] = [];
+  if (counts.added > 0) parts.push(`${counts.added} added`);
+  if (counts.updated > 0) parts.push(`${counts.updated} updated`);
+  if (counts.unchanged > 0) {
+    parts.push(`${counts.unchanged} already had this access`);
+  }
+  // Every count zero means the request named nobody the service had to touch.
+  // It is not an error, and it must not be reported as a success either.
+  if (parts.length === 0) return "Nothing changed";
+  return parts.join(", ");
+}
+
+/**
+ * Where the access reaches, said in terms of what the reader chose.
+ *
+ * An EMPTY list is course-wide standing, and it names the future explicitly:
+ * that a grant covers sections which do not exist yet is the whole difference
+ * between the two scopes, and it is not visible in any list of section names.
+ *
+ * Length is the only thing that decides which sentence this is — a blank title
+ * is never treated as "no sections", because reporting a class-list grant as
+ * course-wide would misstate how far the access reaches. Titles come from the
+ * database, where a section's name cannot be blank.
+ *
+ * Beyond three class lists it counts instead of listing: a wrapped sentence of
+ * eight titles is not read, and the table underneath already enumerates every
+ * grant.
+ */
+export function staffScopeSentence(sectionTitles: readonly string[]): string {
+  const [first, second, third] = sectionTitles;
+  switch (sectionTitles.length) {
+    case 0:
+      return "They reach every section of this course, including sections added later.";
+    case 1:
+      return `Added to ${first}.`;
+    case 2:
+      return `Added to ${first} and ${second}.`;
+    case 3:
+      return `Added to ${first}, ${second} and ${third}.`;
+    default:
+      return `Added to ${sectionTitles.length} class lists.`;
+  }
+}

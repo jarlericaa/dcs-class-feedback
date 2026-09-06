@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { asc, eq } from "drizzle-orm";
 import { currentUserId } from "@/auth";
+import { db } from "@/db";
+import { classSections } from "@/db/schema";
 import { AppShell } from "@/components/layout/app-shell";
 import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import {
@@ -13,9 +16,19 @@ import {
   Stamp,
 } from "@/components/ui";
 import { Dialog } from "@/components/ui/dialog";
-import { requireUser, toShellUser } from "@/lib/session";
-import { AuthzError, SECTION_PERMISSIONS } from "@/modules/authz";
 import {
+  AddStaffDialog,
+  type AddStaffState,
+} from "@/components/staff/add-staff-dialog";
+import { requireUser, toShellUser } from "@/lib/session";
+import {
+  AuthzError,
+  SECTION_PERMISSION_LABELS,
+  SECTION_PERMISSIONS,
+} from "@/modules/authz";
+import {
+  assignCourseStaff,
+  assignSectionStaffBatch,
   CatalogError,
   listCourseAccess,
   removeCourseStaff,
@@ -40,12 +53,16 @@ const SECTION_ROLE_LABELS: Record<string, string> = {
  * who staffs three of eight sections is three rows here, and until this page
  * existed the only way to see that was to open eight section-setup pages.
  *
- * The one write it offers is revoking course-wide standing, and only to the
- * course owner (ADR-0004) — because this is the only view where such a row is
- * visible at all, so it is the only place the mistake of granting one can be
- * undone. Section grants are still changed on their own section's setup page,
- * and adding people is not here yet. Every service re-checks the owner
- * regardless of what this page renders.
+ * The writes it offers are the owner's alone (ADR-0004): ADDING staff at either
+ * scope, and revoking a course-wide row. Both live here because this is the only
+ * view where the two tiers are visible together — granting course-wide standing
+ * from inside one section's setup page reads as granting that section, which is
+ * the misreading the whole tier already suffered from, and a grant that can be
+ * made in a view that cannot show it is a grant nobody can find again.
+ *
+ * A section grant's PERMISSIONS are still edited on that section's own setup
+ * page, beside the rest of what belongs to a section. Every service re-checks
+ * the owner regardless of what this page renders.
  */
 export default async function CourseTeachingTeamPage({
   params,
@@ -83,10 +100,27 @@ export default async function CourseTeachingTeamPage({
     throw err;
   }
   const { course, team, isOwner } = access;
-  // The control below is rendered for the owner only, and `removeCourseStaff`
+  // The controls below are rendered for the owner only, and every service
   // refuses everyone else anyway: this decides what is OFFERED, never what is
   // allowed. An archived course is read-only, so it is offered nothing.
-  const canRevoke = isOwner && !course.archivedAt;
+  const canManage = isOwner && !course.archivedAt;
+
+  /**
+   * The course's class lists, for the Add staff dialog's narrower scope.
+   *
+   * Read directly, as the course's own Class lists page does, because
+   * `listCourseAccess` above has already authorized this reader on this course
+   * and a section's title is strictly less than the table below it discloses.
+   * The service re-resolves every id against the course before writing, so a
+   * stale or tampered choice is refused there rather than trusted from here.
+   */
+  const sections = canManage
+    ? await db.query.classSections.findMany({
+        where: eq(classSections.courseId, courseId),
+        orderBy: asc(classSections.title),
+        columns: { id: true, title: true },
+      })
+    : [];
 
   // NB: a "use server" closure serializes everything it captures, so this may
   // only close over plain values such as courseId.
@@ -112,6 +146,69 @@ export default async function CourseTeachingTeamPage({
     );
   }
 
+  /**
+   * Add staff, at whichever scope was chosen.
+   *
+   * Two services, one form: they are genuinely different writes — a
+   * `course_staff` row versus one `section_staff` row per class list — and the
+   * dialog exists because the reader should not have to know which. Nothing is
+   * decided here beyond which one to call; both re-check the owner, re-validate
+   * every address, refuse the whole request atomically, and audit their own
+   * writes.
+   *
+   * Returns state rather than redirecting, so a refusal can name the addresses
+   * it refused with the paste still on screen.
+   */
+  async function addStaff(
+    _previous: AddStaffState,
+    formData: FormData,
+  ): Promise<AddStaffState> {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    const emails = String(formData.get("emails") ?? "");
+    const role = String(formData.get("role") ?? "");
+    const courseWide = String(formData.get("scope") ?? "course") === "course";
+    try {
+      if (courseWide) {
+        const result = await assignCourseStaff(uid, courseId, {
+          emails,
+          // Re-checked inside the service against the roles course scope
+          // allows; a student assistant is refused there, not here.
+          role: role as "teacher" | "co_teacher",
+        });
+        if (!result.ok) return { status: "error", problems: result.problems };
+        revalidatePath(`/teach/courses/${courseId}/staff`);
+        return { status: "done", result: { ...result, sectionTitles: [] } };
+      }
+      const result = await assignSectionStaffBatch(uid, courseId, {
+        emails,
+        sectionIds: formData.getAll("sectionIds").map(String),
+        role: role as "teacher" | "ta" | "co_teacher",
+        // Only a ticked box grants anything, and only for a key in the
+        // catalogue: the service ignores everything else regardless.
+        permissions: Object.fromEntries(
+          SECTION_PERMISSIONS.filter(
+            (permission) => formData.get(`perm_${permission}`) === "on",
+          ).map((permission) => [permission, true]),
+        ),
+      });
+      if (!result.ok) return { status: "error", problems: result.problems };
+      revalidatePath(`/teach/courses/${courseId}/staff`);
+      return {
+        status: "done",
+        result: {
+          added: result.added,
+          updated: result.updated,
+          unchanged: result.unchanged,
+          sectionTitles: result.sections.map((section) => section.title),
+        },
+      };
+    } catch (err) {
+      return { status: "error", message: describe(err) };
+    }
+  }
+
   return (
     <AppShell
       user={toShellUser(user)}
@@ -121,6 +218,16 @@ export default async function CourseTeachingTeamPage({
       tabsLabel={course.code}
       contextLabel={course.code}
       title="Teaching team"
+      actions={
+        canManage ? (
+          <AddStaffDialog
+            action={addStaff}
+            sections={sections}
+            permissions={SECTION_PERMISSIONS}
+            permissionLabels={SECTION_PERMISSION_LABELS}
+          />
+        ) : undefined
+      }
       description={
         <MetaList
           items={[
@@ -137,8 +244,9 @@ export default async function CourseTeachingTeamPage({
 
         {team.total === 0 ? (
           <EmptyState title="Nobody staffs this course yet">
-            Staff are added to a class list on its own setup page, by the person
-            who owns the course.
+            {canManage
+              ? "Add staff to every section of this course, or to the class lists you choose."
+              : "Only the person who owns this course can add staff to it."}
           </EmptyState>
         ) : (
           <>
@@ -151,7 +259,7 @@ export default async function CourseTeachingTeamPage({
                       <th scope="col">Can reach</th>
                       <th scope="col">Role</th>
                       <th scope="col">Permissions</th>
-                      {canRevoke && (
+                      {canManage && (
                         <th scope="col">
                           <span className="visually-hidden">Actions</span>
                         </th>
@@ -163,7 +271,7 @@ export default async function CourseTeachingTeamPage({
                       <AccessRow
                         key={rowKey(row)}
                         row={row}
-                        canRevoke={canRevoke}
+                        canRevoke={canManage}
                         onRevoke={dropCourseStanding}
                       />
                     ))}

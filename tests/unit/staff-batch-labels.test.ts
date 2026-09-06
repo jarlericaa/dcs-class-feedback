@@ -3,6 +3,8 @@ import {
   STAFF_BATCH_PROBLEM_REASONS,
   UNKNOWN_STAFF_BATCH_PROBLEM,
   staffBatchProblemLabel,
+  staffGrantSummary,
+  staffScopeSentence,
 } from "@/lib/staff-batch-labels";
 
 /**
@@ -78,6 +80,89 @@ describe("staffBatchProblemLabel", () => {
   it("is safe against a prototype key rather than returning a function", () => {
     for (const key of ["toString", "constructor", "__proto__", "hasOwnProperty"]) {
       expect(staffBatchProblemLabel(key)).toBe(UNKNOWN_STAFF_BATCH_PROBLEM);
+    }
+  });
+});
+
+/**
+ * What the Add staff dialog says after a grant. Counts are per grant, which at
+ * class-list scope means per person per class list, so the wording must not
+ * imply people.
+ */
+describe("staffGrantSummary", () => {
+  it("reports only the counts that happened", () => {
+    expect(staffGrantSummary({ added: 2, updated: 0, unchanged: 0 })).toBe(
+      "2 added",
+    );
+    expect(staffGrantSummary({ added: 0, updated: 3, unchanged: 0 })).toBe(
+      "3 updated",
+    );
+    expect(staffGrantSummary({ added: 0, updated: 0, unchanged: 4 })).toBe(
+      "4 already had this access",
+    );
+  });
+
+  it("keeps the three counts distinct rather than collapsing them", () => {
+    expect(staffGrantSummary({ added: 1, updated: 2, unchanged: 3 })).toBe(
+      "1 added, 2 updated, 3 already had this access",
+    );
+  });
+
+  /**
+   * The interesting case: an owner who pasted a list everybody was already on
+   * must be told nothing moved, not congratulated.
+   */
+  it("says so plainly when a re-affirmed grant changed nothing", () => {
+    expect(staffGrantSummary({ added: 0, updated: 0, unchanged: 2 })).toContain(
+      "already had this access",
+    );
+    expect(staffGrantSummary({ added: 0, updated: 0, unchanged: 0 })).toBe(
+      "Nothing changed",
+    );
+  });
+
+  it("never claims a number it was not given", () => {
+    const summary = staffGrantSummary({ added: 1, updated: 0, unchanged: 0 });
+    expect(summary).not.toMatch(/updated|already/);
+    expect(summary).not.toContain("0");
+  });
+});
+
+describe("staffScopeSentence", () => {
+  it("names the future for a course-wide grant, which no list of titles can", () => {
+    const sentence = staffScopeSentence([]);
+    expect(sentence).toContain("every section");
+    expect(sentence).toMatch(/added later/);
+  });
+
+  it("lists one, two or three class lists by name", () => {
+    expect(staffScopeSentence(["Section A"])).toBe("Added to Section A.");
+    expect(staffScopeSentence(["Section A", "Lab 1"])).toBe(
+      "Added to Section A and Lab 1.",
+    );
+    expect(staffScopeSentence(["Section A", "Lab 1", "Lab 2"])).toBe(
+      "Added to Section A, Lab 1 and Lab 2.",
+    );
+  });
+
+  it("counts instead of listing beyond three", () => {
+    expect(staffScopeSentence(["A", "B", "C", "D"])).toBe(
+      "Added to 4 class lists.",
+    );
+    expect(
+      staffScopeSentence(Array.from({ length: 8 }, (_, i) => `S${i}`)),
+    ).toBe("Added to 8 class lists.");
+  });
+
+  /**
+   * Length alone decides the branch. A blank title cannot exist — a section's
+   * name is required in the database — but if one ever did, reporting a
+   * class-list grant as course-wide would overstate how far the access reaches,
+   * which is the one error this sentence must not make.
+   */
+  it("never reports a class-list grant as course-wide", () => {
+    for (const titles of [[""], ["   "], ["", ""]]) {
+      expect(staffScopeSentence(titles)).not.toContain("every section");
     }
   });
 });
