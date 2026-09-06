@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/db";
+import { db, type Tx } from "@/db";
 import {
   classSections,
   courses,
@@ -22,6 +23,9 @@ import {
   SECTION_PERMISSIONS,
   type SectionPermission,
 } from "@/modules/authz";
+import { checkRosterEmail } from "@/modules/identity/email";
+import { EMAIL_LIST_LIMIT, parseEmailList } from "@/lib/email-list";
+import type { BatchProblemReason } from "@/lib/staff-batch-labels";
 import {
   paginateArray,
   parsePageParams,
@@ -593,9 +597,14 @@ const permissionsShape = Object.fromEntries(
   SECTION_PERMISSIONS.map((p) => [p, z.boolean().optional()]),
 ) as Record<SectionPermission, z.ZodOptional<z.ZodBoolean>>;
 
+/** The three section roles. One list, so the schema and the batch agree. */
+const SECTION_STAFF_ROLES = ["teacher", "ta", "co_teacher"] as const;
+
+export type SectionStaffRole = (typeof SECTION_STAFF_ROLES)[number];
+
 const staffAssignmentSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
-  role: z.enum(["teacher", "ta", "co_teacher"]),
+  role: z.enum(SECTION_STAFF_ROLES),
   permissions: z.object(permissionsShape).default({}),
 });
 
@@ -609,6 +618,95 @@ function normalizePermissions(
   return Object.fromEntries(
     SECTION_PERMISSIONS.map((p) => [p, full ? true : (requested[p] ?? false)]),
   ) as Record<SectionPermission, boolean>;
+}
+
+/** What one (person x section) grant did. Reported as counts by the batch. */
+export type StaffAssignmentOutcome = "added" | "updated" | "unchanged";
+
+/**
+ * ONE (person x section) grant, written inside the caller's transaction.
+ *
+ * Extracted so that adding several people to several sections is literally the
+ * same write, audited the same way, repeated — rather than a second
+ * implementation of the same semantics that could drift from the flags the
+ * single-section form grants.
+ *
+ * The caller authorizes and resolves the target first; this function assumes
+ * both and does neither. It is not exported for that reason.
+ *
+ * `batchId` correlates the writes of one multi-section action, and is the ONLY
+ * thing it changes about the audit rows: without it the row is byte-for-byte
+ * what the single-section path has always written. The batch additionally sets
+ * the denormalized `sectionId` column, which the single path leaves null.
+ */
+async function assignSectionStaffTx(
+  tx: Tx,
+  actorUserId: string,
+  sectionId: string,
+  target: typeof users.$inferSelect,
+  role: SectionStaffRole,
+  permissions: Record<SectionPermission, boolean>,
+  batchId?: string,
+): Promise<StaffAssignmentOutcome> {
+  const existing = await tx.query.sectionStaff.findFirst({
+    where: and(
+      eq(sectionStaff.sectionId, sectionId),
+      eq(sectionStaff.userId, target.id),
+    ),
+  });
+
+  if (existing) {
+    // Re-affirming an identical grant still writes and still audits: somebody
+    // took the action, and the single-section path has always recorded it. The
+    // `unchanged` outcome only summarizes the batch — it never skips a write.
+    const changed =
+      existing.role !== role ||
+      SECTION_PERMISSIONS.some((p) => existing[p] !== permissions[p]);
+    await tx
+      .update(sectionStaff)
+      .set({ role, ...permissions })
+      .where(eq(sectionStaff.id, existing.id));
+    await writeAudit(tx, {
+      actorUserId,
+      action: "staff.permissions_changed",
+      entityType: "section_staff",
+      entityId: existing.id,
+      before: {
+        role: existing.role,
+        ...Object.fromEntries(SECTION_PERMISSIONS.map((p) => [p, existing[p]])),
+      },
+      after: { role, ...permissions },
+      metadata: {
+        sectionId,
+        targetUserId: target.id,
+        ...(batchId ? { batchId } : {}),
+      },
+      ...(batchId ? { sectionId } : {}),
+    });
+    return changed ? "updated" : "unchanged";
+  }
+
+  const [created] = await tx
+    .insert(sectionStaff)
+    .values({ sectionId, userId: target.id, role, ...permissions })
+    .returning();
+  await writeAudit(tx, {
+    actorUserId,
+    action: "staff.assigned",
+    entityType: "section_staff",
+    entityId: created!.id,
+    after: {
+      sectionId,
+      targetUserId: target.id,
+      email: target.email,
+      role,
+      ...permissions,
+    },
+    ...(batchId
+      ? { metadata: { sectionId, targetUserId: target.id, batchId }, sectionId }
+      : {}),
+  });
+  return "added";
 }
 
 /**
@@ -635,51 +733,218 @@ export async function assignSectionStaff(
   }
 
   const permissions = normalizePermissions(input.role, input.permissions);
-  const existing = await db.query.sectionStaff.findFirst({
-    where: and(
-      eq(sectionStaff.sectionId, sectionId),
-      eq(sectionStaff.userId, target.id),
+  await db.transaction(async (tx) => {
+    await assignSectionStaffTx(
+      tx,
+      actorUserId,
+      sectionId,
+      target,
+      input.role,
+      permissions,
+    );
+  });
+}
+
+// --- adding staff to several sections in one action ------------------------
+
+/**
+ * One refused address — or one refused part of the request.
+ *
+ * `reason` is a code, never a sentence: the wording belongs to the UI boundary
+ * (`staffBatchProblemLabel`), and a validator's own message must never reach a
+ * reader who cannot act on it.
+ */
+export interface StaffBatchProblem {
+  /** The address this is about, or "" when it is about the request itself. */
+  email: string;
+  reason: BatchProblemReason;
+  /** Set when the problem is about a chosen section rather than an address. */
+  sectionId?: string;
+}
+
+export type { BatchProblemReason };
+
+export interface AssignSectionStaffBatchInput {
+  /**
+   * Addresses, either already split or as the one blob a paste produces —
+   * `parseEmailList` handles both, so the caller never has to pre-split.
+   */
+  emails: readonly string[] | string;
+  sectionIds: readonly string[];
+  role: SectionStaffRole;
+  permissions: Partial<Record<SectionPermission, boolean>>;
+}
+
+export type AssignSectionStaffBatchResult =
+  | {
+      ok: true;
+      /** Correlates every audit row this action wrote. */
+      batchId: string;
+      added: number;
+      updated: number;
+      unchanged: number;
+      /** The sections written to, in the order they were given. */
+      sections: { id: string; title: string }[];
+    }
+  | { ok: false; problems: StaffBatchProblem[] };
+
+/**
+ * Add several people to several sections of one course, with one permission
+ * set, in one audited action. Course-owner only.
+ *
+ * All-or-nothing, deliberately: a paste of eight addresses with one typo in it
+ * grants nobody anything, and says which address was refused and why. A partial
+ * apply would leave the owner to work out who got in and who did not, and
+ * re-pasting the corrected list would then re-write grants that already existed.
+ *
+ * The whole request is checked before a single row is written — shape, then
+ * sections, then addresses, then accounts — and every refusal is collected
+ * rather than thrown one at a time, so one pass names every problem.
+ *
+ * Creates no accounts and sends no invitations: an address with no active
+ * account is refused (`no_account` / `inactive_account`), exactly as the
+ * single-section path refuses it. Whether an invitation flow should exist is
+ * still open (issue #17, item 1) and is not decided here.
+ */
+export async function assignSectionStaffBatch(
+  actorUserId: string,
+  courseId: string,
+  input: AssignSectionStaffBatchInput,
+): Promise<AssignSectionStaffBatchResult> {
+  // Authorization comes FIRST, before any part of the request is materialized:
+  // only the course owner may staff a section, and a caller without that
+  // standing must not learn which sections or accounts exist by the shape of
+  // the answer. The uuid guard ahead of it is not a policy decision — it only
+  // keeps a malformed id from reaching Postgres as a cast error. Archiving is
+  // enforced by requireCourseOwner itself (no `allowArchived`).
+  if (!z.string().uuid().safeParse(courseId).success) {
+    throw new CatalogError("Course not found");
+  }
+  await requireCourseOwner(db, actorUserId, courseId);
+
+  const requestedSectionIds = [...new Set(input.sectionIds ?? [])];
+  if (requestedSectionIds.length === 0) {
+    throw new CatalogError("Choose at least one section to add them to.");
+  }
+  const { emails, overflow } = parseEmailList(input.emails, EMAIL_LIST_LIMIT);
+  if (emails.length === 0) {
+    throw new CatalogError("Add at least one email address.");
+  }
+
+  const problems: StaffBatchProblem[] = [];
+
+  // The role is re-checked at runtime even though the parameter is typed: this
+  // is reached from a form post, where the type guarantees nothing.
+  const role = SECTION_STAFF_ROLES.includes(input.role) ? input.role : null;
+  if (!role) {
+    problems.push({ email: "", reason: "role_not_allowed_for_scope" });
+  }
+
+  // Sections are resolved against THIS course, so a section id from another
+  // course (or a stale one) is refused rather than written to.
+  const courseSections = await db.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+  });
+  const sectionById = new Map(courseSections.map((s) => [s.id, s]));
+  const sections: (typeof classSections.$inferSelect)[] = [];
+  for (const id of requestedSectionIds) {
+    const section = sectionById.get(id);
+    if (!section) {
+      problems.push({ email: "", reason: "not_in_course", sectionId: id });
+      continue;
+    }
+    sections.push(section);
+  }
+
+  // Past the cap: named, never silently dropped.
+  for (const email of overflow) {
+    problems.push({ email, reason: "too_many" });
+  }
+
+  // Shape and domain, by the same rule that decides a class-list address.
+  // `missing` cannot occur — the parser drops empty tokens — and folding it
+  // into `invalid_format` keeps the reason vocabulary to the seven codes.
+  const usable: string[] = [];
+  for (const email of emails) {
+    const check = checkRosterEmail(email);
+    if (!check.ok) {
+      problems.push({
+        email,
+        reason:
+          check.problem === "disallowed_domain"
+            ? "disallowed_domain"
+            : "invalid_format",
+      });
+      continue;
+    }
+    usable.push(check.email);
+  }
+
+  const accounts = usable.length
+    ? await db.query.users.findMany({ where: inArray(users.email, usable) })
+    : [];
+  const accountByEmail = new Map(accounts.map((u) => [u.email, u]));
+  const targets: (typeof users.$inferSelect)[] = [];
+  for (const email of usable) {
+    const account = accountByEmail.get(email);
+    if (!account) {
+      problems.push({ email, reason: "no_account" });
+      continue;
+    }
+    if (!account.active) {
+      problems.push({ email, reason: "inactive_account" });
+      continue;
+    }
+    targets.push(account);
+  }
+
+  if (problems.length > 0 || !role) return { ok: false, problems };
+
+  // Deny-by-default: only an explicit `true` on a flag in the catalog grants
+  // anything, so an unknown or non-boolean field can never widen a permission.
+  // normalizePermissions then applies the role rule — a teacher or co-teacher
+  // holds every capability, a TA exactly what was ticked.
+  const requested = Object.fromEntries(
+    SECTION_PERMISSIONS.filter((p) => input.permissions?.[p] === true).map(
+      (p) => [p, true],
     ),
+  ) as Partial<Record<SectionPermission, boolean>>;
+  const permissions = normalizePermissions(role, requested);
+
+  const batchId = randomUUID();
+  let added = 0;
+  let updated = 0;
+  let unchanged = 0;
+  // One transaction over every grant, so the atomic refusal above is matched by
+  // an atomic write: a failure part-way rolls back the grants AND their audit
+  // rows together.
+  await db.transaction(async (tx) => {
+    for (const target of targets) {
+      for (const section of sections) {
+        const outcome = await assignSectionStaffTx(
+          tx,
+          actorUserId,
+          section.id,
+          target,
+          role,
+          permissions,
+          batchId,
+        );
+        if (outcome === "added") added += 1;
+        else if (outcome === "updated") updated += 1;
+        else unchanged += 1;
+      }
+    }
   });
 
-  await db.transaction(async (tx) => {
-    if (existing) {
-      await tx
-        .update(sectionStaff)
-        .set({ role: input.role, ...permissions })
-        .where(eq(sectionStaff.id, existing.id));
-      await writeAudit(tx, {
-        actorUserId,
-        action: "staff.permissions_changed",
-        entityType: "section_staff",
-        entityId: existing.id,
-        before: {
-          role: existing.role,
-          ...Object.fromEntries(SECTION_PERMISSIONS.map((p) => [p, existing[p]])),
-        },
-        after: { role: input.role, ...permissions },
-        metadata: { sectionId, targetUserId: target.id },
-      });
-      return;
-    }
-    const [created] = await tx
-      .insert(sectionStaff)
-      .values({ sectionId, userId: target.id, role: input.role, ...permissions })
-      .returning();
-    await writeAudit(tx, {
-      actorUserId,
-      action: "staff.assigned",
-      entityType: "section_staff",
-      entityId: created!.id,
-      after: {
-        sectionId,
-        targetUserId: target.id,
-        email: target.email,
-        role: input.role,
-        ...permissions,
-      },
-    });
-  });
+  return {
+    ok: true,
+    batchId,
+    added,
+    updated,
+    unchanged,
+    sections: sections.map((s) => ({ id: s.id, title: s.title })),
+  };
 }
 
 export async function removeSectionStaff(

@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import {
   assignSectionStaff,
+  assignSectionStaffBatch,
   CatalogError,
   countSectionCourseStanding,
   createCourse,
@@ -23,7 +24,12 @@ import {
   setTeacherRole,
   updateSection,
 } from "@/modules/catalog";
-import { AuthzError, getSectionAccess } from "@/modules/authz";
+import {
+  AuthzError,
+  CourseArchivedError,
+  SECTION_PERMISSIONS,
+  getSectionAccess,
+} from "@/modules/authz";
 import { MAX_PAGE_SIZE } from "@/lib/pagination";
 
 describe("catalog: courses, sections, and staff assignment", () => {
@@ -295,6 +301,430 @@ describe("catalog: courses, sections, and staff assignment", () => {
       await expect(
         removeSectionStaff(owner.id, section.id, ownerRow.staff.id),
       ).rejects.toBeInstanceOf(CatalogError);
+    });
+  });
+
+  describe("assignSectionStaffBatch: several people, several sections, one action", () => {
+    it("adds every named person to every chosen section, with one batch id", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const one = await makeUser();
+      const two = await makeUser();
+      const course = await makeCourse(owner.id);
+      const lab = await makeSection(course.id);
+      const lecture = await makeSection(course.id);
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [one.email, two.email],
+        sectionIds: [lab.id, lecture.id],
+        role: "ta",
+        permissions: { reviewResponses: true },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result).toMatchObject({ added: 4, updated: 0, unchanged: 0 });
+      expect(new Set(result.sections.map((s) => s.id))).toEqual(
+        new Set([lab.id, lecture.id]),
+      );
+
+      const rows = await db.query.sectionStaff.findMany();
+      expect(rows).toHaveLength(4);
+      for (const person of [one, two]) {
+        for (const section of [lab, lecture]) {
+          const row = rows.find(
+            (r) => r.userId === person.id && r.sectionId === section.id,
+          );
+          expect(row!.role).toBe("ta");
+          expect(row!.reviewResponses).toBe(true);
+        }
+      }
+    });
+
+    /**
+     * The whole point of the batch: one typo grants NOBODY anything. A partial
+     * apply would leave the owner to work out who got in, and re-pasting the
+     * corrected list would re-write the grants that already succeeded.
+     */
+    it("refuses the whole batch when one address is bad, changing no row", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const good = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [good.email, "typo@up.edu.ph"],
+        sectionIds: [section.id],
+        role: "ta",
+        permissions: { reviewResponses: true },
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        problems: [{ email: "typo@up.edu.ph", reason: "no_account" }],
+      });
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(0);
+      expect(await db.query.auditEvents.findMany()).toHaveLength(0);
+      // And it created no account for the typo, exactly as the single-section
+      // path refuses to.
+      expect(await db.query.users.findMany()).toHaveLength(2);
+    });
+
+    it("distinguishes a malformed address, an off-domain one, and a deactivated account", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const gone = await makeUser({ active: false });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: `nonsense, someone@gmail.com, ${gone.email}`,
+        sectionIds: [section.id],
+        role: "ta",
+        permissions: {},
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.problems).toEqual([
+        { email: "nonsense", reason: "invalid_format" },
+        { email: "someone@gmail.com", reason: "disallowed_domain" },
+        { email: gone.email, reason: "inactive_account" },
+      ]);
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(0);
+    });
+
+    it("refuses a section that belongs to another course, before any write", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      const mine = await makeSection(course.id);
+      const otherOwner = await makeUser({ isTeacher: true });
+      const otherCourse = await makeCourse(otherOwner.id);
+      const theirs = await makeSection(otherCourse.id);
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [target.email],
+        sectionIds: [mine.id, theirs.id],
+        role: "ta",
+        permissions: { reviewResponses: true },
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.problems).toEqual([
+        { email: "", reason: "not_in_course", sectionId: theirs.id },
+      ]);
+      // Not even the section that WAS in the course was written to.
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(0);
+    });
+
+    it("refuses an unrecognized role rather than letting a validator error escape", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [target.email],
+        sectionIds: [section.id],
+        role: "professor" as unknown as "ta",
+        permissions: {},
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.problems).toEqual([
+        { email: "", reason: "role_not_allowed_for_scope" },
+      ]);
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(0);
+    });
+
+    it("names the addresses past the cap instead of silently dropping them", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      const pasted = Array.from(
+        { length: 51 },
+        (_, i) => `person-${i}@up.edu.ph`,
+      );
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: pasted.join("\n"),
+        sectionIds: [section.id],
+        role: "ta",
+        permissions: {},
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      const tooMany = result.problems.filter((p) => p.reason === "too_many");
+      expect(tooMany).toEqual([
+        { email: "person-50@up.edu.ph", reason: "too_many" },
+      ]);
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(0);
+    });
+
+    it("is the course owner's call only", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const coTeacher = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await addSectionStaff(section.id, coTeacher.id, "co_teacher");
+      await db
+        .insert(courseStaff)
+        .values({ courseId: course.id, userId: coTeacher.id, role: "teacher" });
+
+      await expect(
+        assignSectionStaffBatch(coTeacher.id, course.id, {
+          emails: [target.email],
+          sectionIds: [section.id],
+          role: "ta",
+          permissions: { reviewResponses: true },
+        }),
+      ).rejects.toBeInstanceOf(AuthzError);
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(1);
+    });
+
+    it("refuses an archived course, which is read-only", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await db
+        .update(courses)
+        .set({ archivedAt: new Date() })
+        .where(eq(courses.id, course.id));
+
+      await expect(
+        assignSectionStaffBatch(owner.id, course.id, {
+          emails: [target.email],
+          sectionIds: [section.id],
+          role: "ta",
+          permissions: { reviewResponses: true },
+        }),
+      ).rejects.toBeInstanceOf(CourseArchivedError);
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(0);
+    });
+
+    it("needs at least one section and at least one address", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      await expect(
+        assignSectionStaffBatch(owner.id, course.id, {
+          emails: [target.email],
+          sectionIds: [],
+          role: "ta",
+          permissions: {},
+        }),
+      ).rejects.toBeInstanceOf(CatalogError);
+      await expect(
+        assignSectionStaffBatch(owner.id, course.id, {
+          emails: "  ,; \n ",
+          sectionIds: [section.id],
+          role: "ta",
+          permissions: {},
+        }),
+      ).rejects.toBeInstanceOf(CatalogError);
+      expect(await db.query.sectionStaff.findMany()).toHaveLength(0);
+    });
+
+    it("writes one row per section for an address repeated in the paste", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const target = await makeUser();
+      const course = await makeCourse(owner.id);
+      const lab = await makeSection(course.id);
+      const lecture = await makeSection(course.id);
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        // The same mailbox three times, spelled three ways, plus a repeated
+        // section id: one grant per (person, section) all the same.
+        emails: `${target.email}, ${target.email.toUpperCase()}\n  ${target.email}  `,
+        sectionIds: [lab.id, lecture.id, lab.id],
+        role: "ta",
+        permissions: { reviewResponses: true },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.added).toBe(2);
+      expect(result.sections).toHaveLength(2);
+      const rows = await db.query.sectionStaff.findMany();
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r) => r.sectionId))).toEqual(
+        new Set([lab.id, lecture.id]),
+      );
+    });
+
+    it("stores every capability for a co-teacher, on every chosen section", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const co = await makeUser();
+      const course = await makeCourse(owner.id);
+      const lab = await makeSection(course.id);
+      const lecture = await makeSection(course.id);
+
+      await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [co.email],
+        sectionIds: [lab.id, lecture.id],
+        // Nothing ticked: a co-teacher holds everything by role, not by flag.
+        role: "co_teacher",
+        permissions: {},
+      });
+
+      const rows = await db.query.sectionStaff.findMany({
+        where: eq(sectionStaff.userId, co.id),
+      });
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        expect(row.role).toBe("co_teacher");
+        for (const permission of SECTION_PERMISSIONS) {
+          expect(row[permission]).toBe(true);
+        }
+      }
+    });
+
+    it("grants a TA exactly the ticked flags, and cannot be widened by a stray field", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const ta = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [ta.email],
+        sectionIds: [section.id],
+        role: "ta",
+        permissions: {
+          reviewResponses: true,
+          sendPrivateResponses: true,
+          // Deny-by-default: anything that is not exactly `true` grants nothing,
+          // and a field outside the catalog is not a permission at all.
+          exportParticipation: undefined,
+          viewStudentIdentities: "yes" as unknown as boolean,
+          manageEverything: true,
+        } as never,
+      });
+
+      const row = await db.query.sectionStaff.findFirst({
+        where: and(
+          eq(sectionStaff.sectionId, section.id),
+          eq(sectionStaff.userId, ta.id),
+        ),
+      });
+      const granted = SECTION_PERMISSIONS.filter((p) => row![p]);
+      expect(granted).toEqual(["reviewResponses", "sendPrivateResponses"]);
+    });
+
+    it("audits every write with the shared batch id and the section it touched", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const one = await makeUser();
+      const two = await makeUser();
+      const course = await makeCourse(owner.id);
+      const lab = await makeSection(course.id);
+      const lecture = await makeSection(course.id);
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [one.email, two.email],
+        sectionIds: [lab.id, lecture.id],
+        role: "ta",
+        permissions: { reviewResponses: true },
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const events = await db.query.auditEvents.findMany({
+        where: eq(auditEvents.action, "staff.assigned"),
+      });
+      expect(events).toHaveLength(4);
+      for (const event of events) {
+        expect(event.actorUserId).toBe(owner.id);
+        expect(event.metadata).toMatchObject({ batchId: result.batchId });
+        // The denormalized column too, so the section's audit history finds the
+        // row by scope and not only by the staff row's id.
+        expect([lab.id, lecture.id]).toContain(event.sectionId);
+        expect((event.metadata as { sectionId: string }).sectionId).toBe(
+          event.sectionId,
+        );
+      }
+      // One id for the whole action, not one per write.
+      expect(
+        new Set(
+          events.map((e) => (e.metadata as { batchId: string }).batchId),
+        ).size,
+      ).toBe(1);
+      const pairs = events.map(
+        (e) =>
+          `${(e.after as { targetUserId: string }).targetUserId}:${e.sectionId}`,
+      );
+      expect(new Set(pairs).size).toBe(4);
+    });
+
+    it("tells an added grant from a changed one and from an unchanged one", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const ta = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      const request = {
+        emails: [ta.email],
+        sectionIds: [section.id],
+        role: "ta" as const,
+        permissions: { reviewResponses: true },
+      };
+
+      expect(
+        await assignSectionStaffBatch(owner.id, course.id, request),
+      ).toMatchObject({ ok: true, added: 1, updated: 0, unchanged: 0 });
+      // Re-running the same request changes nothing — and still records that
+      // somebody re-affirmed it, exactly as the single-section path does.
+      expect(
+        await assignSectionStaffBatch(owner.id, course.id, request),
+      ).toMatchObject({ ok: true, added: 0, updated: 0, unchanged: 1 });
+      expect(
+        await assignSectionStaffBatch(owner.id, course.id, {
+          ...request,
+          permissions: { reviewResponses: true, markValidity: true },
+        }),
+      ).toMatchObject({ ok: true, added: 0, updated: 1, unchanged: 0 });
+
+      const changes = await db.query.auditEvents.findMany({
+        where: eq(auditEvents.action, "staff.permissions_changed"),
+      });
+      expect(changes).toHaveLength(2);
+      expect(changes[1]!.before).toMatchObject({ markValidity: false });
+      expect(changes[1]!.after).toMatchObject({ markValidity: true });
+      const row = await db.query.sectionStaff.findFirst({
+        where: eq(sectionStaff.userId, ta.id),
+      });
+      expect(row!.markValidity).toBe(true);
+    });
+
+    it("re-configures through the same path the single-section form uses", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const ta = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await assignSectionStaff(owner.id, section.id, {
+        email: ta.email,
+        role: "ta",
+        permissions: { reviewResponses: true },
+      });
+
+      const result = await assignSectionStaffBatch(owner.id, course.id, {
+        emails: [ta.email],
+        sectionIds: [section.id],
+        role: "co_teacher",
+        permissions: {},
+      });
+
+      expect(result).toMatchObject({ ok: true, added: 0, updated: 1 });
+      const rows = await db.query.sectionStaff.findMany({
+        where: eq(sectionStaff.userId, ta.id),
+      });
+      // Re-configured in place: still one grant on the section, not a second row.
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.role).toBe("co_teacher");
+      expect(rows[0]!.publishPublicAnswers).toBe(true);
     });
   });
 
