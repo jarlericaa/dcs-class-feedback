@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -25,6 +26,7 @@ import { TermFields } from "@/components/ui/term-fields";
 import {
   assignSectionStaff,
   CatalogError,
+  countSectionCourseStanding,
   listSectionStaff,
   removeSectionStaff,
   updateSection,
@@ -70,6 +72,16 @@ export default async function SetupPage({
   const isOwner = access.staff!.isCourseOwner;
 
   const staff = await listSectionStaff(user.id, sectionId);
+  /**
+   * Course-standing instructors administer this section too, and the list below
+   * — which reads `section_staff` only — cannot show them. A count says so
+   * without turning this panel into a second, unpaginated list of people; the
+   * course's own Teaching team page is where they are actually enumerated.
+   */
+  const courseStandingCount = await countSectionCourseStanding(
+    user.id,
+    sectionId,
+  );
 
   // --- server actions ------------------------------------------------------
   // NB: everything a "use server" closure captures is serialized, so these
@@ -164,6 +176,26 @@ export default async function SetupPage({
           <div className="notice__head">
             <div>
               <h2>Teaching team</h2>
+              {courseStandingCount > 0 && (
+                <div className="notice__description">
+                  <p>
+                    {courseStandingCount === 1
+                      ? "1 course instructor also reaches this section through the course."
+                      : `${courseStandingCount} course instructors also reach this section through the course.`}{" "}
+                    {/* Only offered to someone who can actually open it: a
+                        section-only teacher or assistant has no course standing
+                        and the course page would refuse them. */}
+                    {access.staff!.hasCourseStanding && (
+                      <Link
+                        className="link"
+                        href={`/teach/courses/${course.id}/staff`}
+                      >
+                        See the whole course&rsquo;s teaching team
+                      </Link>
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <ul className="data-list">

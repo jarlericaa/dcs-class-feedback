@@ -90,6 +90,7 @@ describe("primaryNav — stability", () => {
       "/teach/courses/c1",
       "/teach/courses/c1/responses",
       "/teach/courses/c1/sections",
+      "/teach/courses/c1/staff",
       "/teach/courses/c1/forms/new",
       "/teach/sections/sec-1/roster",
       "/teach/sections/sec-1/audit",
@@ -290,18 +291,26 @@ describe("primaryNav — active state", () => {
 });
 
 describe("courseTabs", () => {
-  it("is the same three peer views regardless of path", () => {
+  it("is the same four peer views regardless of path", () => {
     for (const route of [
       "/teach/courses/c1",
       "/teach/courses/c1/responses",
       "/teach/courses/c1/sections",
+      "/teach/courses/c1/staff",
     ]) {
       expect(courseTabs("c1", route).map((t) => t.label)).toEqual([
         "Forms",
         "Responses",
         "Class lists",
+        "Teaching team",
       ]);
     }
+  });
+
+  it("keeps who-can-reach and who-can-act as separate destinations", () => {
+    const hrefs = courseTabs("c1", "/x").map((t) => t.href);
+    expect(hrefs).toContain("/teach/courses/c1/sections");
+    expect(hrefs).toContain("/teach/courses/c1/staff");
   });
 
   it("prefers the longest match, so Forms does not swallow its siblings", () => {
@@ -314,7 +323,16 @@ describe("courseTabs", () => {
     expect(active("/teach/courses/c1/responses")).toBe(
       "/teach/courses/c1/responses",
     );
+    expect(active("/teach/courses/c1/staff")).toBe("/teach/courses/c1/staff");
   });
+
+  it("marks exactly one tab on the teaching team page", () => {
+    const marked = courseTabs("c1", "/teach/courses/c1/staff").filter(
+      (t) => t.active,
+    );
+    expect(marked.map((t) => t.href)).toEqual(["/teach/courses/c1/staff"]);
+  });
+
 
   it("marks Forms for a form, a new form and an occurrence", () => {
     for (const path of [

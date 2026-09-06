@@ -250,7 +250,11 @@ export function primaryNav(
  *
  * Forms comes first because it is the work object. Responses is the queue over
  * those forms. Class lists is who can reach them — the audience, not a thing a
- * teacher comes here to work on, so it sits last.
+ * teacher comes here to work on. Teaching team is who may ACT on them, and it
+ * sits last for the same reason: it is set once a term, not worked on weekly.
+ * The two are deliberately separate destinations — students reach a form,
+ * staff administer it, and welding both into "Class lists" was what left course
+ * standing with nowhere to be seen.
  */
 export function courseTabs(
   courseId: string,
@@ -266,6 +270,7 @@ export function courseTabs(
         count: opts.needsReview || undefined,
       },
       { href: `/teach/courses/${courseId}/sections`, label: "Class lists" },
+      { href: `/teach/courses/${courseId}/staff`, label: "Teaching team" },
     ],
     currentPath,
     opts.activeHref,

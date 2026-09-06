@@ -6,21 +6,25 @@ import {
   auditEvents,
   classSections,
   courses,
+  courseStaff,
   sectionStaff,
   users,
 } from "@/db/schema";
 import {
   assignSectionStaff,
   CatalogError,
+  countSectionCourseStanding,
   createCourse,
   createSection,
   listAccountsForAdmin,
+  listCourseAccess,
   listSectionStaff,
   removeSectionStaff,
   setTeacherRole,
   updateSection,
 } from "@/modules/catalog";
 import { AuthzError, getSectionAccess } from "@/modules/authz";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 
 describe("catalog: courses, sections, and staff assignment", () => {
   beforeEach(async () => {
@@ -291,6 +295,216 @@ describe("catalog: courses, sections, and staff assignment", () => {
       await expect(
         removeSectionStaff(owner.id, section.id, ownerRow.staff.id),
       ).rejects.toBeInstanceOf(CatalogError);
+    });
+  });
+
+  describe("listCourseAccess: who has access to a course, and to which sections", () => {
+    it("refuses an account with no standing on the course", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const outsider = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+
+      await expect(
+        listCourseAccess(outsider.id, course.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+    });
+
+    it("refuses a section-only assistant, who has no course standing", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const ta = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
+
+      await expect(listCourseAccess(ta.id, course.id)).rejects.toBeInstanceOf(
+        AuthzError,
+      );
+    });
+
+    it("lists the owner once, even though they also hold a course_staff row", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      // makeCourse writes the owner's course_staff row, exactly as createCourse does.
+      const course = await makeCourse(owner.id);
+
+      const { team, isOwner } = await listCourseAccess(owner.id, course.id);
+      const ownerRows = team.rows.filter((r) => r.user.id === owner.id);
+      expect(ownerRows).toHaveLength(1);
+      expect(ownerRows[0]!.scope).toBe("course");
+      expect(ownerRows[0]).toMatchObject({ isOwner: true, courseStaffId: null });
+      expect(isOwner).toBe(true);
+    });
+
+    it("shows course standing and every section grant in one list", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const coInstructor = await makeUser();
+      const ta = await makeUser();
+      const course = await makeCourse(owner.id);
+      const alpha = await makeSection(course.id);
+      const beta = await makeSection(course.id);
+      await db
+        .insert(courseStaff)
+        .values({ courseId: course.id, userId: coInstructor.id, role: "teacher" });
+      await addSectionStaff(alpha.id, ta.id, "ta", {
+        reviewResponses: true,
+        sendPrivateResponses: true,
+      });
+      await addSectionStaff(beta.id, ta.id, "ta", { reviewResponses: true });
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      // Course standing first, then one row per section grant — the same person
+      // staffing two of two sections is two rows, which is the point.
+      expect(team.rows.map((r) => r.scope)).toEqual([
+        "course",
+        "course",
+        "section",
+        "section",
+      ]);
+      const grants = team.rows.filter((r) => r.scope === "section");
+      expect(grants.map((r) => r.user.id)).toEqual([ta.id, ta.id]);
+      expect(new Set(grants.map((r) => r.section.id))).toEqual(
+        new Set([alpha.id, beta.id]),
+      );
+      const co = team.rows.find((r) => r.user.id === coInstructor.id)!;
+      expect(co.scope).toBe("course");
+      expect(co).toMatchObject({ isOwner: false });
+    });
+
+    it("pages with a stable order and clamps an absurd pageSize", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      for (const name of ["Ana", "Ben", "Cara", "Dee"]) {
+        const person = await makeUser({ displayName: name });
+        await addSectionStaff(section.id, person.id, "ta");
+      }
+
+      const all = await listCourseAccess(owner.id, course.id);
+      expect(all.team.total).toBe(5); // the owner + four assistants
+
+      const first = await listCourseAccess(owner.id, course.id, {
+        page: 1,
+        pageSize: 2,
+      });
+      const second = await listCourseAccess(owner.id, course.id, {
+        page: 2,
+        pageSize: 2,
+      });
+      expect(first.team.rows).toHaveLength(2);
+      expect(first.team.totalPages).toBe(3);
+      expect(first.team.hasNext).toBe(true);
+      expect(second.team.hasPrevious).toBe(true);
+      // No row appears on two pages, and the pages reassemble the whole list in
+      // order — so a reader paging through sees each person exactly once.
+      const third = await listCourseAccess(owner.id, course.id, {
+        page: 3,
+        pageSize: 2,
+      });
+      const paged = [...first.team.rows, ...second.team.rows, ...third.team.rows];
+      expect(paged.map((r) => r.user.displayName)).toEqual(
+        all.team.rows.map((r) => r.user.displayName),
+      );
+
+      // Untrusted params never throw and never lift the ceiling.
+      const clamped = await listCourseAccess(owner.id, course.id, {
+        page: "nonsense",
+        pageSize: "100000",
+      });
+      expect(clamped.team.page).toBe(1);
+      expect(clamped.team.pageSize).toBe(MAX_PAGE_SIZE);
+    });
+
+    it("never reaches into another course", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const otherOwner = await makeUser({ isTeacher: true });
+      const otherCourse = await makeCourse(otherOwner.id);
+      const otherSection = await makeSection(otherCourse.id);
+      const stranger = await makeUser();
+      await addSectionStaff(otherSection.id, stranger.id, "teacher");
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      expect(team.rows.map((r) => r.user.id)).toEqual([owner.id]);
+    });
+
+    it("reads an archived course rather than refusing it", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      await db
+        .update(courses)
+        .set({ archivedAt: new Date() })
+        .where(eq(courses.id, course.id));
+
+      const { team, course: read } = await listCourseAccess(
+        owner.id,
+        course.id,
+      );
+      expect(read.archivedAt).not.toBeNull();
+      expect(team.total).toBe(1);
+    });
+  });
+
+  describe("countSectionCourseStanding: a scalar, not a list", () => {
+    it("counts the owner and course staff once each, distinctly", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const coInstructor = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      // Owner alone: their own course_staff row must not count them twice.
+      expect(await countSectionCourseStanding(owner.id, section.id)).toBe(1);
+
+      await db
+        .insert(courseStaff)
+        .values({ courseId: course.id, userId: coInstructor.id, role: "teacher" });
+      expect(await countSectionCourseStanding(owner.id, section.id)).toBe(2);
+    });
+
+    it("is readable by a section-only assistant, who cannot open the course view", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const ta = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
+
+      expect(await countSectionCourseStanding(ta.id, section.id)).toBe(1);
+      await expect(listCourseAccess(ta.id, course.id)).rejects.toBeInstanceOf(
+        AuthzError,
+      );
+    });
+
+    it("refuses an account with no standing on the section", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const outsider = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      await expect(
+        countSectionCourseStanding(outsider.id, section.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+    });
+
+    it("ignores section staff and another course's staff", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      // Standing on the section itself, not through the course: not counted.
+      const sectionTeacher = await makeUser();
+      await addSectionStaff(section.id, sectionTeacher.id, "teacher");
+      // Another course's owner and staff: a different course entirely.
+      const otherOwner = await makeUser({ isTeacher: true });
+      await makeCourse(otherOwner.id);
+
+      expect(await countSectionCourseStanding(owner.id, section.id)).toBe(1);
+    });
+
+    it("returns a bare number — no names, emails or ids to leak", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      const count = await countSectionCourseStanding(owner.id, section.id);
+      expect(typeof count).toBe("number");
+      expect(JSON.stringify(count)).not.toContain(owner.email);
     });
   });
 

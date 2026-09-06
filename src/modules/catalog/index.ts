@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -22,6 +22,11 @@ import {
   SECTION_PERMISSIONS,
   type SectionPermission,
 } from "@/modules/authz";
+import {
+  paginateArray,
+  parsePageParams,
+  type Page,
+} from "@/lib/pagination";
 import { env } from "@/env";
 
 /**
@@ -183,6 +188,192 @@ export async function listSectionStaff(actorUserId: string, sectionId: string) {
   });
   const byId = new Map(accounts.map((u) => [u.id, u]));
   return rows.map((row) => ({ staff: row, user: byId.get(row.userId) ?? null }));
+}
+
+// --- who has access to a course, and to which sections ---------------------
+
+/**
+ * Standing that comes from the COURSE: the owner, or a `course_staff` row.
+ *
+ * Either one is full instructor capability on every section of the course —
+ * `requireSectionStaff` admits course staff before it ever looks at a section
+ * row, and `getSectionAccess` reports them as `course_staff` holding every
+ * permission. It covers sections that do not exist yet, which is exactly why it
+ * has to be visible somewhere.
+ */
+export interface CourseStandingRow {
+  scope: "course";
+  user: typeof users.$inferSelect;
+  isOwner: boolean;
+  /**
+   * The removable `course_staff` row, or null for the owner — whose standing
+   * comes from `courses.owner_user_id` and is not a row anyone can delete.
+   */
+  courseStaffId: string | null;
+}
+
+/** Standing that comes from ONE section: a `section_staff` row. */
+export interface SectionGrantRow {
+  scope: "section";
+  user: typeof users.$inferSelect;
+  section: typeof classSections.$inferSelect;
+  staff: typeof sectionStaff.$inferSelect;
+}
+
+export type CourseAccessRow = CourseStandingRow | SectionGrantRow;
+
+/**
+ * Everyone who can reach this course's material, and how — as ONE ordered,
+ * paginated list rather than a panel per scope.
+ *
+ * One list because the two scopes answer the same question ("who has access,
+ * and to what?") and because a second, unpaginated panel beside a paginated
+ * table is the defect this view exists to avoid. Each row states its own scope,
+ * so a page boundary never separates a row from the heading that explained it.
+ *
+ * Read-only and staff-only: `requireCourseStaff` runs BEFORE any row is
+ * materialized, so paging slices an already-authorized result and never stands
+ * in for an authorization check. `allowArchived` because reading an archived
+ * course is explicitly allowed — this model writes nothing.
+ */
+export async function listCourseAccess(
+  actorUserId: string,
+  courseId: string,
+  opts: {
+    page?: string | number | null;
+    pageSize?: string | number | null;
+  } = {},
+): Promise<{
+  course: typeof courses.$inferSelect;
+  isOwner: boolean;
+  team: Page<CourseAccessRow>;
+}> {
+  const course = await requireCourseStaff(db, actorUserId, courseId, {
+    allowArchived: true,
+  });
+  const params = parsePageParams(opts);
+
+  const courseStaffRows = await db.query.courseStaff.findMany({
+    where: eq(courseStaff.courseId, courseId),
+  });
+  const sections = await db.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+  });
+  const sectionStaffRows = sections.length
+    ? await db.query.sectionStaff.findMany({
+        where: inArray(
+          sectionStaff.sectionId,
+          sections.map((s) => s.id),
+        ),
+      })
+    : [];
+
+  const userIds = [
+    ...new Set([
+      course.ownerUserId,
+      ...courseStaffRows.map((r) => r.userId),
+      ...sectionStaffRows.map((r) => r.userId),
+    ]),
+  ];
+  const accounts = userIds.length
+    ? await db.query.users.findMany({ where: inArray(users.id, userIds) })
+    : [];
+  const userById = new Map(accounts.map((u) => [u.id, u]));
+  const sectionById = new Map(sections.map((s) => [s.id, s]));
+
+  // The owner almost always ALSO holds a course_staff row — createCourse writes
+  // one — so they are emitted once, as the owner, and their row is skipped.
+  const standing: CourseStandingRow[] = [];
+  const seen = new Set<string>();
+  const owner = userById.get(course.ownerUserId);
+  if (owner) {
+    seen.add(owner.id);
+    standing.push({
+      scope: "course",
+      user: owner,
+      isOwner: true,
+      courseStaffId: null,
+    });
+  }
+  for (const row of courseStaffRows) {
+    if (seen.has(row.userId)) continue;
+    const user = userById.get(row.userId);
+    if (!user) continue;
+    seen.add(row.userId);
+    standing.push({
+      scope: "course",
+      user,
+      isOwner: false,
+      courseStaffId: row.id,
+    });
+  }
+  standing.sort(
+    (a, b) =>
+      Number(b.isOwner) - Number(a.isOwner) ||
+      a.user.displayName.localeCompare(b.user.displayName) ||
+      // A total order, so a row cannot swap pages between two requests.
+      a.user.id.localeCompare(b.user.id),
+  );
+
+  const grants: SectionGrantRow[] = [];
+  for (const row of sectionStaffRows) {
+    const user = userById.get(row.userId);
+    const section = sectionById.get(row.sectionId);
+    if (!user || !section) continue;
+    grants.push({ scope: "section", user, section, staff: row });
+  }
+  grants.sort(
+    (a, b) =>
+      a.section.title.localeCompare(b.section.title) ||
+      a.user.displayName.localeCompare(b.user.displayName) ||
+      a.staff.id.localeCompare(b.staff.id),
+  );
+
+  return {
+    course,
+    isOwner: course.ownerUserId === actorUserId,
+    team: paginateArray<CourseAccessRow>([...standing, ...grants], params),
+  };
+}
+
+/**
+ * How many distinct people administer THIS section through course standing.
+ *
+ * A count, deliberately — not a list. The section's Teaching team panel shows
+ * `section_staff` rows, and course-standing instructors are invisible in it,
+ * which quietly implies that list is the whole set of people with access. One
+ * number corrects that without adding a second list to a page that has no page
+ * state to paginate one with.
+ *
+ * Returns no names, emails or ids: strictly less than the panel beside it
+ * already discloses, and nothing a reader could not infer from having access.
+ * Counted in the database so no identity is ever materialized here.
+ */
+export async function countSectionCourseStanding(
+  actorUserId: string,
+  sectionId: string,
+): Promise<number> {
+  const section = await requireSectionStaff(
+    db,
+    actorUserId,
+    sectionId,
+    undefined,
+    { allowArchived: true },
+  );
+  // UNION, not a join: the owner may or may not also hold a course_staff row,
+  // and either way they are one person.
+  const result = await db.execute<{ count: number }>(sql`
+    SELECT count(*)::int AS count FROM (
+      SELECT ${courses.ownerUserId} AS user_id
+        FROM ${courses}
+        WHERE ${courses.id} = ${section.courseId}
+      UNION
+      SELECT ${courseStaff.userId} AS user_id
+        FROM ${courseStaff}
+        WHERE ${courseStaff.courseId} = ${section.courseId}
+    ) AS course_standing
+  `);
+  return result.rows[0]?.count ?? 0;
 }
 
 /**
