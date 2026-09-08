@@ -28,19 +28,35 @@ import {
 } from "@/modules/authz";
 import {
   assignCourseStaff,
+  assignSectionStaff,
   assignSectionStaffBatch,
   CatalogError,
   listCourseAccess,
   removeCourseStaff,
+  removeSectionStaff,
   type CourseAccessRow,
-  type SectionGrantRow,
 } from "@/modules/catalog";
+import { EditStaffPermissions } from "@/components/staff/staff-permissions";
 
-/** The domain's role names, in the product's sentence case. */
+/**
+ * Two roles, and two names for them: Course handler and SA.
+ *
+ * `teacher` and `co_teacher` both read as Course handler because they have
+ * never meant two sets of capabilities — roles-and-permissions.md is explicit
+ * that every instructor assigned to a course holds equal permissions, so the
+ * separate names described a distinction that did not exist. Owner is not a
+ * third role either: it is a course handler whose standing happens to be
+ * unrevokable, which the absent Remove button already says.
+ *
+ * The stored enum still carries the older values; only what the reader is told
+ * collapses.
+ */
+const COURSE_HANDLER = "Course handler";
+
 const SECTION_ROLE_LABELS: Record<string, string> = {
-  teacher: "Teacher",
-  co_teacher: "Co-teacher",
-  ta: "Student assistant",
+  teacher: COURSE_HANDLER,
+  co_teacher: COURSE_HANDLER,
+  ta: "SA",
 };
 
 /**
@@ -113,6 +129,19 @@ export default async function CourseTeachingTeamPage({
    * and a section's title is strictly less than the table below it discloses.
    * The service re-resolves every id against the course before writing, so a
    * stale or tampered choice is refused there rather than trusted from here.
+   *
+   * DELIBERATELY UNPAGED, and it is not an exception to the "every list is
+   * paginated" rule — it is not a list of results. It is the complete option set
+   * of a multi-select control, and the completeness is the point: paging it
+   * would hide sections the owner is trying to grant, so a grant made from page
+   * 1 would silently mean something narrower than it looked. Every option must
+   * therefore be present and selectable at once. It is bounded by the sections
+   * of ONE course (a handful in practice, tens at the extreme), and the table
+   * below it — which IS a result list — is paged normally.
+   *
+   * If a course ever grows enough sections that the checkbox list is unusable,
+   * the fix is a search/filter INSIDE the control that still submits the full
+   * selection, never a page cut that drops options from the form.
    */
   const sections = canManage
     ? await db.query.classSections.findMany({
@@ -209,6 +238,66 @@ export default async function CourseTeachingTeamPage({
     }
   }
 
+  /**
+   * Change one section grant — its role, its permission set, or both.
+   *
+   * This used to live on the section's own setup page, which is gone: it was a
+   * second teaching-team table over the same `section_staff` rows, reachable
+   * only by first choosing a section, and the count it printed said less than
+   * the list here does.
+   *
+   * The section id comes from the form rather than from a route, so it is the
+   * one input worth being explicit about: `assignSectionStaff` resolves the
+   * section and then calls `requireCourseOwner` against THAT section's course,
+   * so a tampered id is refused rather than redirected at someone else's class
+   * list. The permission map is written in full — every catalogue key, ticked
+   * or not — because this is an edit, and an absent key must clear a
+   * permission rather than silently keep it.
+   */
+  async function saveSectionStaff(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    const role = String(formData.get("role") ?? "ta") as
+      | "teacher"
+      | "ta"
+      | "co_teacher";
+    try {
+      await assignSectionStaff(uid, String(formData.get("sectionId") ?? ""), {
+        email: String(formData.get("email") ?? ""),
+        role,
+        permissions: Object.fromEntries(
+          SECTION_PERMISSIONS.map((permission) => [
+            permission,
+            formData.get(`perm_${permission}`) === "on",
+          ]),
+        ),
+      });
+    } catch (err) {
+      redirect(backTo(courseId, describe(err), "error"));
+    }
+    revalidatePath(`/teach/courses/${courseId}/staff`);
+    redirect(backTo(courseId, "Teaching staff updated."));
+  }
+
+  /** Remove one section grant. Course-wide standing is revoked separately. */
+  async function dropSectionStanding(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    try {
+      await removeSectionStaff(
+        uid,
+        String(formData.get("sectionId") ?? ""),
+        String(formData.get("staffId") ?? ""),
+      );
+    } catch (err) {
+      redirect(backTo(courseId, describe(err), "error"));
+    }
+    revalidatePath(`/teach/courses/${courseId}/staff`);
+    redirect(backTo(courseId, "Staff member removed from that class list."));
+  }
+
   return (
     <AppShell
       user={toShellUser(user)}
@@ -254,11 +343,14 @@ export default async function CourseTeachingTeamPage({
               <div className="table-scroll table-scroll--flush">
                 <table className="data-table">
                   <thead>
+                    {/* Person, role, and what you can do about it. "Can reach"
+                        and "Permissions" are both gone: the scope column
+                        repeated what the Remove dialog already names, and the
+                        permission list restated what the editor one click away
+                        shows in full. */}
                     <tr>
                       <th scope="col">Person</th>
-                      <th scope="col">Can reach</th>
                       <th scope="col">Role</th>
-                      <th scope="col">Permissions</th>
                       {canManage && (
                         <th scope="col">
                           <span className="visually-hidden">Actions</span>
@@ -273,6 +365,8 @@ export default async function CourseTeachingTeamPage({
                         row={row}
                         canRevoke={canManage}
                         onRevoke={dropCourseStanding}
+                        onSaveSection={saveSectionStaff}
+                        onRemoveSection={dropSectionStanding}
                       />
                     ))}
                   </tbody>
@@ -305,10 +399,14 @@ function AccessRow({
   row,
   canRevoke,
   onRevoke,
+  onSaveSection,
+  onRemoveSection,
 }: {
   row: CourseAccessRow;
   canRevoke: boolean;
   onRevoke: (formData: FormData) => Promise<void>;
+  onSaveSection: (formData: FormData) => Promise<void>;
+  onRemoveSection: (formData: FormData) => Promise<void>;
 }) {
   return (
     <tr>
@@ -317,24 +415,11 @@ function AccessRow({
         <MetaList items={[row.user.email]} />
       </th>
       <td>
-        {row.scope === "course" ? (
-          <>
-            <Stamp tone="neutral">Every section</Stamp>
-            <MetaList items={["Including sections added later"]} />
-          </>
-        ) : (
-          row.section.title
-        )}
-      </td>
-      <td>
         {row.scope === "course"
-          ? row.isOwner
-            ? "Course owner"
-            : "Course instructor"
+          ? COURSE_HANDLER
           : (SECTION_ROLE_LABELS[row.staff.role] ??
             row.staff.role.replace("_", " "))}
       </td>
-      <td>{describePermissions(row)}</td>
       {canRevoke && (
         <td>
           {/* Only a course-standing row that IS a row can be revoked. The
@@ -363,28 +448,51 @@ function AccessRow({
                 </div>
               </form>
             </Dialog>
+          ) : row.scope === "section" ? (
+            /* A section grant is edited and revoked HERE, next to the row that
+               states it. It used to be changed only on that section's own
+               setup page, which meant the one table listing everybody was the
+               one place you could not act on them. */
+            <div className="row">
+              <EditStaffPermissions
+                action={onSaveSection}
+                displayName={row.user.displayName}
+                email={row.user.email}
+                role={row.staff.role}
+                sectionId={row.section.id}
+                permissions={SECTION_PERMISSIONS.map((permission) => ({
+                  key: permission,
+                  granted: Boolean(row.staff[permission]),
+                }))}
+                permissionLabels={SECTION_PERMISSION_LABELS}
+              />
+              <Dialog
+                variant="danger"
+                className="button--small"
+                label="Remove"
+                title={`Remove ${row.user.displayName} from ${row.section.title}?`}
+                description="They lose access to this class list only. Nothing they already did is deleted."
+              >
+                <form action={onRemoveSection}>
+                  <input type="hidden" name="staffId" value={row.staff.id} />
+                  <input
+                    type="hidden"
+                    name="sectionId"
+                    value={row.section.id}
+                  />
+                  <div className="row">
+                    <button className="button button--danger" type="submit">
+                      Remove from this class list
+                    </button>
+                  </div>
+                </form>
+              </Dialog>
+            </div>
           ) : null}
         </td>
       )}
     </tr>
   );
-}
-
-/**
- * A teacher, co-teacher or course instructor holds every capability by role, so
- * counting flags for them would print a number that decides nothing. Only a
- * student assistant has a permission set worth counting.
- */
-function describePermissions(row: CourseAccessRow): string {
-  if (row.scope === "course" || row.staff.role !== "ta") {
-    return "Every permission";
-  }
-  return `${countGranted(row)} of ${SECTION_PERMISSIONS.length}`;
-}
-
-function countGranted(row: SectionGrantRow): number {
-  return SECTION_PERMISSIONS.filter((permission) => row.staff[permission])
-    .length;
 }
 
 /** Stable across pages: a person can hold several rows, so the row identifies itself. */

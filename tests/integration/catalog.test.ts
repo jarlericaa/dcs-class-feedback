@@ -21,6 +21,7 @@ import {
   listAccountsForAdmin,
   listCourseAccess,
   listSectionStaff,
+  listSectionStaffPage,
   removeCourseStaff,
   removeSectionStaff,
   setTeacherRole,
@@ -287,6 +288,49 @@ describe("catalog: courses, sections, and staff assignment", () => {
       expect(events).toHaveLength(1);
       expect(events[0]!.before).toMatchObject({ markValidity: false });
       expect(events[0]!.after).toMatchObject({ markValidity: true });
+    });
+
+    it("refuses edit and remove on an archived course, matching the hidden controls", async () => {
+      // Section setup hides Edit permissions / Remove once the course is
+      // archived. These are the services behind those controls: they refuse
+      // regardless, so hiding them is presentation and this is the enforcement.
+      const owner = await makeUser({ isTeacher: true });
+      const ta = await makeUser();
+      const course = await makeCourse(owner.id);
+      const section = await createSection(owner.id, {
+        courseId: course.id,
+        term: "AY2026-1",
+        title: "Section A",
+      });
+      const staffRow = await addSectionStaff(section.id, ta.id, "ta", {
+        reviewResponses: true,
+      });
+      await db
+        .update(courses)
+        .set({ archivedAt: new Date() })
+        .where(eq(courses.id, course.id));
+
+      await expect(
+        assignSectionStaff(owner.id, section.id, {
+          email: ta.email,
+          role: "ta",
+          permissions: { exportParticipation: true },
+        }),
+      ).rejects.toBeInstanceOf(CourseArchivedError);
+
+      await expect(
+        removeSectionStaff(owner.id, section.id, staffRow.id),
+      ).rejects.toBeInstanceOf(CourseArchivedError);
+
+      // Nothing changed on either path.
+      const after = await db.query.sectionStaff.findFirst({
+        where: and(
+          eq(sectionStaff.sectionId, section.id),
+          eq(sectionStaff.userId, ta.id),
+        ),
+      });
+      expect(after!.exportParticipation).toBe(false);
+      expect(after!.reviewResponses).toBe(true);
     });
 
     it("refuses to remove the course owner from their own section", async () => {
@@ -1115,6 +1159,81 @@ describe("catalog: courses, sections, and staff assignment", () => {
     });
   });
 
+  describe("listSectionStaffPage: the section's own team, paginated", () => {
+    it("pages with a stable order and clamps an absurd pageSize", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await createSection(owner.id, {
+        courseId: course.id,
+        term: "AY2026-1",
+        title: "Section A",
+      });
+      for (const name of ["Dee", "Ana", "Cara", "Ben"]) {
+        const person = await makeUser({ displayName: name });
+        await addSectionStaff(section.id, person.id, "ta");
+      }
+
+      const all = await listSectionStaffPage(owner.id, section.id);
+      expect(all.total).toBe(5); // the creating owner + four assistants
+      // Ordered by display name, so paging is deterministic.
+      const names: string[] = all.rows.map((r) => r.user?.displayName ?? "");
+      expect([...names]).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+
+      const p1 = await listSectionStaffPage(owner.id, section.id, {
+        page: 1,
+        pageSize: 2,
+      });
+      const p2 = await listSectionStaffPage(owner.id, section.id, {
+        page: 2,
+        pageSize: 2,
+      });
+      const p3 = await listSectionStaffPage(owner.id, section.id, {
+        page: 3,
+        pageSize: 2,
+      });
+      expect(p1.totalPages).toBe(3);
+      expect(p1.hasNext).toBe(true);
+      expect(p3.hasPrevious).toBe(true);
+      // No row appears twice and none is dropped.
+      const paged = [...p1.rows, ...p2.rows, ...p3.rows].map((r) => r.staff.id);
+      expect(new Set(paged).size).toBe(5);
+      expect(paged).toEqual(all.rows.map((r) => r.staff.id));
+
+      const clamped = await listSectionStaffPage(owner.id, section.id, {
+        page: "nonsense",
+        pageSize: "100000",
+      });
+      expect(clamped.page).toBe(1);
+      expect(clamped.pageSize).toBe(MAX_PAGE_SIZE);
+    });
+
+    it("applies the same authorization as the unpaged read", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const outsider = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+
+      await expect(
+        listSectionStaffPage(outsider.id, section.id),
+      ).rejects.toBeInstanceOf(AuthzError);
+    });
+
+    it("leaves the unpaged listSectionStaff contract intact", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await createSection(owner.id, {
+        courseId: course.id,
+        term: "AY2026-1",
+        title: "Section A",
+      });
+      // Still an array of every row — callers that assert on the whole set,
+      // and listCourseAccess, must not be narrowed to page 1.
+      const rows = await listSectionStaff(owner.id, section.id);
+      expect(Array.isArray(rows)).toBe(true);
+      expect(rows).toHaveLength(1);
+    });
+  });
+
   describe("listCourseAccess: who has access to a course, and to which sections", () => {
     it("refuses an account with no standing on the course", async () => {
       const owner = await makeUser({ isTeacher: true });
@@ -1149,6 +1268,265 @@ describe("catalog: courses, sections, and staff assignment", () => {
       expect(ownerRows[0]!.scope).toBe("course");
       expect(ownerRows[0]).toMatchObject({ isOwner: true, courseStaffId: null });
       expect(isOwner).toBe(true);
+    });
+
+    it("lists the owner once when they also hold a section_staff row", async () => {
+      // `createSection` writes a `section_staff` row for whoever created the
+      // section, so the owner of a course they built themselves has BOTH the
+      // ownership row and a section row on every class list. Rendered as-is
+      // that reads as several separate grants to the same person, none of them
+      // removable — the duplicate seen in the browser. Rank 0 already says the
+      // owner holds every capability on every section, including sections that
+      // do not exist yet, so the section rows add nothing.
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const alpha = await makeSection(course.id);
+      const beta = await makeSection(course.id);
+      await addSectionStaff(alpha.id, owner.id, "teacher");
+      await addSectionStaff(beta.id, owner.id, "teacher");
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      expect(team.rows.filter((r) => r.user.id === owner.id)).toHaveLength(1);
+      expect(team.rows).toHaveLength(1);
+      // The count is the same query, so the total cannot claim rows the page
+      // does not contain — a pager offering page 2 of a one-row list.
+      expect(team.total).toBe(1);
+      expect(team.totalPages).toBe(1);
+      expect(team.hasNext).toBe(false);
+      const [row] = team.rows;
+      expect(row!.scope).toBe("course");
+      expect(row).toMatchObject({ isOwner: true, courseStaffId: null });
+    });
+
+    /**
+     * The suppression is about what a row GRANTS, not about who wrote it.
+     *
+     * A `teacher` or `co_teacher` row resolves to every capability by role, so
+     * for the owner it repeats rank 0 and goes. A `ta` row does not repeat
+     * anything: somebody wrote a narrower role deliberately, and since rank 0
+     * still means the owner holds everything, that row is a mistake a reader
+     * needs to be able to SEE — especially as `removeSectionStaff` refuses to
+     * delete it.
+     */
+    it("keeps a deliberately narrowed ta row for the owner, and drops the automatic instructor one", async () => {
+      const owner = await makeUser({ isTeacher: true, displayName: "Owner" });
+      const course = await makeCourse(owner.id);
+      const automatic = await makeSection(course.id);
+      const narrowed = await makeSection(course.id);
+      // What `createSection` writes by itself: redundant, so suppressed.
+      await addSectionStaff(automatic.id, owner.id, "teacher");
+      // What `assignSectionStaff` would write if somebody chose `ta`: kept.
+      await addSectionStaff(narrowed.id, owner.id, "ta", {
+        reviewResponses: true,
+      });
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      expect(team.total).toBe(2);
+      expect(team.rows.map((r) => r.scope)).toEqual(["course", "section"]);
+      const kept = team.rows[1]!;
+      expect(kept.scope === "section" && kept.section.id).toBe(narrowed.id);
+      expect(kept.scope === "section" && kept.staff.role).toBe("ta");
+      // The instructor row on the other section left no trace.
+      expect(
+        team.rows.some(
+          (r) => r.scope === "section" && r.section.id === automatic.id,
+        ),
+      ).toBe(false);
+    });
+
+    it("suppresses an owner co_teacher row too, because it grants the same everything", async () => {
+      const owner = await makeUser({ isTeacher: true });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await addSectionStaff(section.id, owner.id, "co_teacher");
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      expect(team.total).toBe(1);
+      expect(team.rows.map((r) => r.scope)).toEqual(["course"]);
+    });
+
+    /**
+     * The count, the order and the offset all come from one SQL statement over
+     * the same UNION, so the suppression has to be invisible to paging: no
+     * short page, no phantom next page, and no row seen twice.
+     */
+    it("totals and pages an owner-plus-section-grant team consistently", async () => {
+      const owner = await makeUser({ isTeacher: true, displayName: "Zoe" });
+      const course = await makeCourse(owner.id);
+      const alpha = await makeSection(course.id);
+      const beta = await makeSection(course.id);
+      // Two automatic owner rows, suppressed, plus one deliberate ta row for
+      // the owner that is not.
+      await addSectionStaff(alpha.id, owner.id, "teacher");
+      await addSectionStaff(beta.id, owner.id, "teacher");
+      const ana = await makeUser({ displayName: "Ana" });
+      const ben = await makeUser({ displayName: "Ben" });
+      await addSectionStaff(alpha.id, ana.id, "ta", { reviewResponses: true });
+      await addSectionStaff(beta.id, ben.id, "ta", { reviewResponses: true });
+
+      const all = await listCourseAccess(owner.id, course.id);
+      // Owner once, plus the two assistants. Neither automatic owner row shows.
+      expect(all.team.total).toBe(3);
+      expect(all.team.rows.map((r) => r.user.displayName)).toEqual([
+        "Zoe",
+        "Ana",
+        "Ben",
+      ]);
+
+      const seen: string[] = [];
+      for (let page = 1; page <= 3; page += 1) {
+        const { team } = await listCourseAccess(owner.id, course.id, {
+          page,
+          pageSize: 1,
+        });
+        expect(team.total, `page ${page} total`).toBe(3);
+        expect(team.totalPages, `page ${page} pages`).toBe(3);
+        expect(team.rows, `page ${page} rows`).toHaveLength(1);
+        seen.push(team.rows[0]!.user.displayName ?? "");
+      }
+      expect(seen).toEqual(["Zoe", "Ana", "Ben"]);
+      // The boundary the suppression could break: page 2 of 2 must be the
+      // section grants, not a gap where the owner's own rows used to be.
+      const half = await listCourseAccess(owner.id, course.id, {
+        page: 2,
+        pageSize: 2,
+      });
+      expect(half.team.rows.map((r) => r.user.displayName)).toEqual(["Ben"]);
+      expect(half.team.hasNext).toBe(false);
+    });
+
+    it("pages an owner whose only extra row is a kept ta grant", async () => {
+      // The kept row sits at rank 2 behind the owner, so the two-row boundary
+      // is exactly one page each and must not report a third.
+      const owner = await makeUser({ isTeacher: true, displayName: "Owner" });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await addSectionStaff(section.id, owner.id, "ta", {
+        exportParticipation: true,
+      });
+
+      const first = await listCourseAccess(owner.id, course.id, {
+        page: 1,
+        pageSize: 1,
+      });
+      expect(first.team.total).toBe(2);
+      expect(first.team.totalPages).toBe(2);
+      expect(first.team.rows[0]!.scope).toBe("course");
+      expect(first.team.hasNext).toBe(true);
+
+      const second = await listCourseAccess(owner.id, course.id, {
+        page: 2,
+        pageSize: 1,
+      });
+      expect(second.team.rows[0]!.scope).toBe("section");
+      expect(second.team.hasNext).toBe(false);
+
+      const past = await listCourseAccess(owner.id, course.id, {
+        page: 3,
+        pageSize: 1,
+      });
+      expect(past.team.rows).toEqual([]);
+    });
+
+    it("keeps every section grant belonging to somebody who is not the owner", async () => {
+      // The rule reaches the owner and nobody else: an instructor row for a
+      // co-teacher grants everything on that section too, and it is still a
+      // separately-removable grant somebody chose to make (ADR-0004).
+      const owner = await makeUser({ isTeacher: true, displayName: "Owner" });
+      const coTeacher = await makeUser({ displayName: "Co" });
+      const course = await makeCourse(owner.id);
+      const alpha = await makeSection(course.id);
+      const beta = await makeSection(course.id);
+      await addSectionStaff(alpha.id, owner.id, "teacher");
+      await addSectionStaff(alpha.id, coTeacher.id, "teacher");
+      await addSectionStaff(beta.id, coTeacher.id, "co_teacher");
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      expect(team.total).toBe(3);
+      const grants = team.rows.filter((r) => r.scope === "section");
+      expect(grants).toHaveLength(2);
+      expect(grants.every((r) => r.user.id === coTeacher.id)).toBe(true);
+      expect(new Set(grants.map((r) => r.scope === "section" && r.section.id)))
+        .toEqual(new Set([alpha.id, beta.id]));
+    });
+
+    it("keeps BOTH rows for a non-owner holding course and section standing", async () => {
+      // The suppression above is the owner's alone. A non-owner with a
+      // `course_staff` row and a section grant was given two grants somebody
+      // chose to make and can separately remove (ADR-0004); collapsing them
+      // would hide which class lists a demotion leaves them on.
+      const owner = await makeUser({ isTeacher: true, displayName: "Owner" });
+      const coInstructor = await makeUser({ displayName: "Co" });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await addSectionStaff(section.id, owner.id, "teacher");
+      await db
+        .insert(courseStaff)
+        .values({ courseId: course.id, userId: coInstructor.id, role: "teacher" });
+      await addSectionStaff(section.id, coInstructor.id, "co_teacher");
+
+      const { team } = await listCourseAccess(owner.id, course.id);
+      expect(team.total).toBe(3);
+      // Owner (rank 0), the co-instructor's course row (rank 1), then their
+      // section grant (rank 2) — the owner's own section row is the only one gone.
+      expect(team.rows.map((r) => r.scope)).toEqual([
+        "course",
+        "course",
+        "section",
+      ]);
+      expect(team.rows.map((r) => r.user.id)).toEqual([
+        owner.id,
+        coInstructor.id,
+        coInstructor.id,
+      ]);
+      const grant = team.rows[2]!;
+      expect(grant.scope === "section" && grant.section.id).toBe(section.id);
+    });
+
+    it("pages an owner-plus-section-grants team without a phantom row", async () => {
+      // The page boundary over the suppressed rows: the owner's own section
+      // rows must leave no gap that a LIMIT/OFFSET slice can land in, or a page
+      // comes back short while the pager still advertises a next page.
+      const owner = await makeUser({ isTeacher: true, displayName: "Zoe" });
+      const course = await makeCourse(owner.id);
+      const alpha = await makeSection(course.id);
+      const beta = await makeSection(course.id);
+      // The owner staffs both sections, as creating them does.
+      await addSectionStaff(alpha.id, owner.id, "teacher");
+      await addSectionStaff(beta.id, owner.id, "teacher");
+      const ana = await makeUser({ displayName: "Ana" });
+      const ben = await makeUser({ displayName: "Ben" });
+      await addSectionStaff(alpha.id, ana.id, "ta");
+      await addSectionStaff(beta.id, ben.id, "ta");
+
+      const all = await listCourseAccess(owner.id, course.id);
+      expect(all.team.total).toBe(3); // the owner once, plus two assistants
+      expect(all.team.rows.map((r) => r.user.displayName)).toEqual([
+        "Zoe",
+        "Ana",
+        "Ben",
+      ]);
+
+      const seen: string[] = [];
+      for (let page = 1; page <= 3; page += 1) {
+        const { team } = await listCourseAccess(owner.id, course.id, {
+          page,
+          pageSize: 1,
+        });
+        expect(team.total).toBe(3);
+        expect(team.totalPages).toBe(3);
+        expect(team.rows).toHaveLength(1);
+        seen.push(team.rows[0]!.user.displayName ?? "");
+      }
+      // Paging reassembles exactly the whole list, in the same order.
+      expect(seen).toEqual(all.team.rows.map((r) => r.user.displayName));
+      // Past the end is empty rather than a wrapped or repeated row.
+      const past = await listCourseAccess(owner.id, course.id, {
+        page: 4,
+        pageSize: 1,
+      });
+      expect(past.team.rows).toEqual([]);
+      expect(past.team.hasNext).toBe(false);
     });
 
     it("shows course standing and every section grant in one list", async () => {
@@ -1228,6 +1606,38 @@ describe("catalog: courses, sections, and staff assignment", () => {
       });
       expect(clamped.team.page).toBe(1);
       expect(clamped.team.pageSize).toBe(MAX_PAGE_SIZE);
+    });
+
+    it("keeps course standing before section grants across a page boundary", async () => {
+      // The ordering now happens in SQL over a UNION, so the boundary between
+      // the two scopes is the part most likely to break. Page through it one
+      // row at a time and assert the grouping survives.
+      const owner = await makeUser({ isTeacher: true, displayName: "Zoe" });
+      const coInstructor = await makeUser({ displayName: "Adam" });
+      const ta = await makeUser({ displayName: "Bea" });
+      const course = await makeCourse(owner.id);
+      const section = await makeSection(course.id);
+      await db
+        .insert(courseStaff)
+        .values({ courseId: course.id, userId: coInstructor.id, role: "teacher" });
+      await addSectionStaff(section.id, ta.id, "ta");
+
+      const scopes: string[] = [];
+      const owners: boolean[] = [];
+      for (let page = 1; page <= 3; page += 1) {
+        const { team } = await listCourseAccess(owner.id, course.id, {
+          page,
+          pageSize: 1,
+        });
+        expect(team.rows).toHaveLength(1);
+        const row = team.rows[0]!;
+        scopes.push(row.scope);
+        if (row.scope === "course") owners.push(row.isOwner);
+      }
+      // Owner first even though "Zoe" sorts last by name, then course staff,
+      // then the section grant.
+      expect(scopes).toEqual(["course", "course", "section"]);
+      expect(owners).toEqual([true, false]);
     });
 
     it("never reaches into another course", async () => {

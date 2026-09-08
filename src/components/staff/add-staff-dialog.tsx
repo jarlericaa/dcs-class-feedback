@@ -13,7 +13,7 @@ import {
 /**
  * Adding staff: one dialog, one permission set, however many people.
  *
- * It replaces a fourteen-checkbox form that sat permanently expanded in a
+ * It replaced a fourteen-checkbox form that sat permanently expanded in a
  * section's setup page and could only ever add one person to that one section.
  * A lab instructor teaching three of eight class lists meant opening three
  * pages and repeating the same fourteen choices three times.
@@ -27,6 +27,13 @@ import {
  *   it at all. The service refuses that combination independently.
  * - PER CLASS LIST is the narrow grant, with the permission catalogue attached,
  *   and it is where a student assistant belongs.
+ *
+ * `fixedSection` pins the dialog to one class list and drops the scope choice.
+ * No page passes it today — the section setup page that did is gone, and staff
+ * are assigned from the course's Teaching team, where every scope is visible
+ * in one table. It is kept because the constraint it encodes still holds: a
+ * grant made from inside one section must read as a grant to THAT section, so
+ * any future single-section entry point needs this and not the scope picker.
  *
  * Every field is controlled, which is not incidental: React resets an
  * uncontrolled form when its action completes, and a refused paste of twenty
@@ -68,21 +75,25 @@ export const ADD_STAFF_INITIAL: AddStaffState = { status: "idle" };
 
 type Scope = "course" | "sections";
 
+/**
+ * Two roles, and only two. "Co-teacher" was a third name over the same
+ * standing as Teacher — roles-and-permissions.md gives every instructor on a
+ * course equal permissions — so offering it as a third option asked the reader
+ * to make a choice that decided nothing. Existing `co_teacher` rows keep
+ * working and read as Teacher wherever they are shown.
+ */
 const SECTION_ROLES = [
-  { value: "ta", label: "Student assistant" },
-  { value: "co_teacher", label: "Co-teacher" },
+  { value: "ta", label: "SA" },
   { value: "teacher", label: "Teacher" },
 ] as const;
 
 /** Course-wide standing is Instructor-only (ADR-0004): no assistant, no flags. */
-const COURSE_ROLES = [
-  { value: "co_teacher", label: "Co-teacher" },
-  { value: "teacher", label: "Teacher" },
-] as const;
+const COURSE_ROLES = [{ value: "teacher", label: "Teacher" }] as const;
 
 export function AddStaffDialog({
   action,
-  sections,
+  sections = [],
+  fixedSection,
   permissions,
   permissionLabels,
 }: {
@@ -91,7 +102,12 @@ export function AddStaffDialog({
     formData: FormData,
   ) => Promise<AddStaffState>;
   /** the course's class lists, for the per-class-list scope */
-  sections: AddStaffSection[];
+  sections?: AddStaffSection[];
+  /**
+   * Locks the grant to ONE class list and drops the scope choice with it.
+   * Supersedes `sections`, which a caller in this mode has no reason to pass.
+   */
+  fixedSection?: AddStaffSection;
   /** the permission catalogue, in its canonical order */
   permissions: readonly string[];
   permissionLabels: Record<string, string>;
@@ -112,6 +128,7 @@ export function AddStaffDialog({
       <AddStaffForm
         action={action}
         sections={sections}
+        fixedSection={fixedSection}
         permissions={permissions}
         permissionLabels={permissionLabels}
       />
@@ -129,6 +146,7 @@ export function AddStaffDialog({
 function AddStaffForm({
   action,
   sections,
+  fixedSection,
   permissions,
   permissionLabels,
 }: {
@@ -137,6 +155,7 @@ function AddStaffForm({
     formData: FormData,
   ) => Promise<AddStaffState>;
   sections: AddStaffSection[];
+  fixedSection?: AddStaffSection;
   permissions: readonly string[];
   permissionLabels: Record<string, string>;
 }) {
@@ -147,8 +166,12 @@ function AddStaffForm({
   const [emails, setEmails] = useState("");
   // Course-wide leads because it is the answer to "a co-teacher for CS 33",
   // which is the common case. A course with no class lists yet has only that.
-  const [scope, setScope] = useState<Scope>("course");
-  const [role, setRole] = useState<string>("co_teacher");
+  const [pickedScope, setPickedScope] = useState<Scope>("course");
+  // A locked scope is not a choice this component gets to hold state about.
+  const scope: Scope = fixedSection ? "sections" : pickedScope;
+  // One class list's own page is where an assistant is delegated; the course's
+  // page is where an instructor is added. Each opens on its own common case.
+  const [role, setRole] = useState<string>(fixedSection ? "ta" : "teacher");
   const [chosen, setChosen] = useState<string[]>([]);
   const [granted, setGranted] = useState<string[]>([]);
 
@@ -161,12 +184,12 @@ function AddStaffForm({
   }, [state]);
 
   const roles = scope === "course" ? COURSE_ROLES : SECTION_ROLES;
-  // Switching to course-wide with "Student assistant" selected would post a
+  // Switching to course-wide with "SA" selected would post a
   // combination the service refuses. Correct it here rather than letting the
   // reader submit a form that cannot succeed.
   const effectiveRole = roles.some((option) => option.value === role)
     ? role
-    : "co_teacher";
+    : "teacher";
   const showPermissions = scope === "sections" && effectiveRole === "ta";
   const noSections = sections.length === 0;
 
@@ -228,43 +251,59 @@ function AddStaffForm({
         </span>
       </div>
 
-      <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-        <legend className="field-label">What they can reach</legend>
-        <div className="stack-2" style={{ marginTop: "var(--s2)" }}>
-          <label className="choice">
-            <input
-              type="radio"
-              name="scope"
-              value="course"
-              checked={scope === "course"}
-              onChange={() => setScope("course")}
-            />
-            <span>Every section of this course</span>
-          </label>
-          <label className="choice">
-            <input
-              type="radio"
-              name="scope"
-              value="sections"
-              checked={scope === "sections"}
-              onChange={() => setScope("sections")}
-              disabled={noSections}
-            />
-            <span>Only the class lists I choose</span>
-          </label>
+      {fixedSection ? (
+        /* Stated, not chosen — but still stated. On this page there is only one
+           answer, and a grant whose reach is left implied is how a reader ends
+           up believing they granted something narrower than they did. The field
+           order matches the other mode so the two do not read as two forms. */
+        <div className="field-row">
+          <span className="field-label">What they can reach</span>
+          <span>Only {fixedSection.title}</span>
+          <span className="helper-text">
+            Access to every section of this course is granted on the
+            course&rsquo;s own Teaching team page, where such a grant can also
+            be seen and undone.
+          </span>
         </div>
-        {/* One line, outside the labels: a choice row is a single line by
-            design, and a paragraph is not valid inside a label anyway. */}
-        <span className="helper-text">
-          {scope === "course"
-            ? "Course-wide access covers sections added later, which is the difference between the two. It cannot be narrowed."
-            : noSections
-              ? "This course has no class lists yet, so there is nothing narrower to choose."
-              : "A narrower grant, on the class lists you tick. This is where a student assistant belongs."}
-        </span>
-      </fieldset>
+      ) : (
+        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend className="field-label">What they can reach</legend>
+          <div className="stack-2" style={{ marginTop: "var(--s2)" }}>
+            <label className="choice">
+              <input
+                type="radio"
+                name="scope"
+                value="course"
+                checked={scope === "course"}
+                onChange={() => setPickedScope("course")}
+              />
+              <span>Every section of this course</span>
+            </label>
+            <label className="choice">
+              <input
+                type="radio"
+                name="scope"
+                value="sections"
+                checked={scope === "sections"}
+                onChange={() => setPickedScope("sections")}
+                disabled={noSections}
+              />
+              <span>Only the class lists I choose</span>
+            </label>
+          </div>
+          {/* One line, outside the labels: a choice row is a single line by
+              design, and a paragraph is not valid inside a label anyway. */}
+          <span className="helper-text">
+            {scope === "course"
+              ? "Course-wide access covers sections added later, which is the difference between the two. It cannot be narrowed."
+              : noSections
+                ? "This course has no class lists yet, so there is nothing narrower to choose."
+                : "A narrower grant, on the class lists you tick. This is where a student assistant belongs."}
+          </span>
+        </fieldset>
+      )}
 
-      {scope === "sections" && !noSections && (
+      {scope === "sections" && !fixedSection && !noSections && (
         <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="field-label">Class lists</legend>
           <div className="form-grid" style={{ marginTop: "var(--s2)" }}>
@@ -302,14 +341,16 @@ function AddStaffForm({
         <span className="helper-text">
           {scope === "course"
             ? "A course-wide grant is always full instructor access, so there is no student assistant here."
-            : "A teacher or co-teacher holds every capability on the class lists you choose."}
+            : fixedSection
+              ? "A teacher or co-teacher holds every capability on this class list."
+              : "A teacher or co-teacher holds every capability on the class lists you choose."}
         </span>
       </div>
 
       {showPermissions && (
         <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="field-label">
-            Student assistant permissions
+            SA permissions
           </legend>
           <div className="form-grid" style={{ marginTop: "var(--s2)" }}>
             {permissions.map((permission) => (

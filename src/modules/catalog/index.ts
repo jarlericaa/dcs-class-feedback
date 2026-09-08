@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { db, type Tx } from "@/db";
 import {
@@ -12,6 +22,11 @@ import {
   users,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import {
+  normalizeStudentNumber,
+  revealStudentNumber,
+  studentNumberHash,
+} from "@/modules/crypto/student-number";
 import {
   getStudentRecordForUser,
   requireCourseOwner,
@@ -31,7 +46,7 @@ import {
 } from "@/lib/email-list";
 import type { BatchProblemReason } from "@/lib/staff-batch-labels";
 import {
-  paginateArray,
+  buildPage,
   parsePageParams,
   type Page,
 } from "@/lib/pagination";
@@ -198,6 +213,58 @@ export async function listSectionStaff(actorUserId: string, sectionId: string) {
   return rows.map((row) => ({ staff: row, user: byId.get(row.userId) ?? null }));
 }
 
+/** One row of a section's own teaching team. */
+export type SectionStaffRow = Awaited<
+  ReturnType<typeof listSectionStaff>
+>[number];
+
+/**
+ * The same list, paginated — what the section setup page renders.
+ *
+ * A section's staff is small in practice, but "small in practice" is what every
+ * unbounded list says before it is not, so this honours the repository rule that
+ * a rendered list is paged. Ordering is total (name, then row id) so a row can
+ * never swap pages between two requests.
+ *
+ * `listSectionStaff` is deliberately left alone: its callers want the whole set
+ * for assertions and for the course-wide read model, and narrowing that contract
+ * to page 1 would silently drop rows.
+ */
+export async function listSectionStaffPage(
+  actorUserId: string,
+  sectionId: string,
+  opts: {
+    page?: string | number | null;
+    pageSize?: string | number | null;
+  } = {},
+): Promise<Page<SectionStaffRow>> {
+  await requireSectionStaff(db, actorUserId, sectionId, undefined, {
+    allowArchived: true,
+  });
+  const params = parsePageParams(opts, 25);
+
+  // Count and page come from the database: only the requested rows are
+  // hydrated, so the query cost does not grow with a section's whole team.
+  const [{ count: total } = { count: 0 }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(sectionStaff)
+    .where(eq(sectionStaff.sectionId, sectionId));
+
+  // Ordered by name then row id — a total order, so a row cannot swap pages
+  // between two requests. The join is inner: `section_staff.user_id` is a
+  // foreign key, so a row without its account cannot exist.
+  const rows = await db
+    .select({ staff: sectionStaff, user: users })
+    .from(sectionStaff)
+    .innerJoin(users, eq(users.id, sectionStaff.userId))
+    .where(eq(sectionStaff.sectionId, sectionId))
+    .orderBy(asc(users.displayName), asc(sectionStaff.id))
+    .limit(params.pageSize)
+    .offset(params.offset);
+
+  return buildPage<SectionStaffRow>(rows, total, params);
+}
+
 // --- who has access to a course, and to which sections ---------------------
 
 /**
@@ -261,86 +328,177 @@ export async function listCourseAccess(
   });
   const params = parsePageParams(opts);
 
-  const courseStaffRows = await db.query.courseStaff.findMany({
-    where: eq(courseStaff.courseId, courseId),
-  });
-  const sections = await db.query.classSections.findMany({
-    where: eq(classSections.courseId, courseId),
-  });
-  const sectionStaffRows = sections.length
-    ? await db.query.sectionStaff.findMany({
-        where: inArray(
-          sectionStaff.sectionId,
-          sections.map((s) => s.id),
-        ),
-      })
-    : [];
+  /**
+   * One ordered set over both scopes, resolved in PostgreSQL.
+   *
+   * `rank` carries the grouping the page must not lose — 0 the owner, 1 course
+   * staff, 2 section grants — and the remaining sort columns give a total order
+   * inside each group, so a row cannot swap pages between two requests.
+   *
+   * The OWNER is emitted once, from `courses`, and the rows the platform wrote
+   * FOR THEM BY ITSELF are suppressed, because neither adds anything to what
+   * rank 0 already states — that the owner holds every capability on every
+   * section, including sections that do not exist yet — and neither is
+   * removable while they own the course, so a second and third row would read
+   * as three separate grants offering nothing to act on.
+   *
+   * Two different suppressions, and the difference matters:
+   *
+   * - **rank 1**, their `course_staff` row: always theirs and always automatic.
+   *   `createCourse` is the only thing that writes it and `removeCourseStaff`
+   *   refuses to delete it, so there is no version of that row that says
+   *   anything rank 0 does not.
+   * - **rank 2**, their `section_staff` row: suppressed only when it grants
+   *   everything anyway — an instructor row, which is what `createSection`
+   *   writes by itself. A `ta` row for the owner was written deliberately and
+   *   is kept, because hiding it would leave a row in the database that no view
+   *   discloses and that `removeSectionStaff` refuses to delete. See
+   *   `redundantOwnerSectionRow` below.
+   *
+   * Both are scoped to the owner alone. A NON-owner with both a `course_staff`
+   * row and section grants keeps every row, because those are deliberate,
+   * separately-removable grants somebody chose to make (ADR-0004), and losing
+   * the section rows would hide which class lists a later demotion would leave
+   * them on.
+   *
+   * Only ids are selected here. The page's entities are hydrated below, so the
+   * query returns one page and a count rather than the whole team.
+   */
+  /**
+   * An owner `section_staff` row that says nothing rank 0 does not.
+   *
+   * Redundancy is decided by what the row GRANTS, not by how it got written —
+   * and for `teacher` or `co_teacher` what it grants is every capability on the
+   * section BY ROLE, whatever the stored flags happen to say
+   * (`getSectionAccess` resolves those roles to `allPermissions(true)` without
+   * reading the columns). `createSection` writes exactly such a row for whoever
+   * created the section, so for the owner of a course they built themselves this
+   * is the duplicate that was showing up on every class list.
+   *
+   * A `ta` row for the owner is the one shape that is NOT redundant: somebody
+   * called `assignSectionStaff` and wrote a narrower role deliberately. Rank 0
+   * still means they hold everything — a demotion of the owner is not a thing
+   * this model can express — so the row is kept precisely so a reader can see
+   * that it exists. Hiding it would leave a row in the database that no view
+   * discloses and that `removeSectionStaff` refuses to delete.
+   *
+   * At most one row per (section, owner) — `section_staff_unique` — so this
+   * suppresses one row per section, never a set.
+   *
+   * Written as the positive list rather than `<> 'ta'` so that it fails SAFE.
+   * `section_staff_role` is exactly `teacher | ta | co_teacher` today; a fourth
+   * value added later would fall outside this list and be SHOWN, which is the
+   * direction to be wrong in — a row a reader can see is a row they can ask
+   * about, and one silently hidden is not.
+   */
+  const redundantOwnerSectionRow = sql`(
+    ${sectionStaff.userId} = (
+      SELECT ${courses.ownerUserId} FROM ${courses}
+       WHERE ${courses.id} = ${courseId})
+    AND ${sectionStaff.role} IN ('teacher', 'co_teacher')
+  )`;
 
-  const userIds = [
-    ...new Set([
-      course.ownerUserId,
-      ...courseStaffRows.map((r) => r.userId),
-      ...sectionStaffRows.map((r) => r.userId),
-    ]),
+  const keyset = sql`
+    SELECT 0 AS rank,
+           ${courses.ownerUserId} AS user_id,
+           NULL::uuid AS section_id,
+           NULL::uuid AS staff_id,
+           NULL::uuid AS course_staff_id,
+           '' AS section_title,
+           ${users.displayName} AS display_name,
+           ${courses.ownerUserId}::text AS tiebreak
+      FROM ${courses}
+      JOIN ${users} ON ${users.id} = ${courses.ownerUserId}
+     WHERE ${courses.id} = ${courseId}
+    UNION ALL
+    SELECT 1, ${courseStaff.userId}, NULL::uuid, NULL::uuid, ${courseStaff.id},
+           '', ${users.displayName}, ${courseStaff.userId}::text
+      FROM ${courseStaff}
+      JOIN ${users} ON ${users.id} = ${courseStaff.userId}
+     WHERE ${courseStaff.courseId} = ${courseId}
+       AND ${courseStaff.userId} <> (
+             SELECT ${courses.ownerUserId} FROM ${courses}
+              WHERE ${courses.id} = ${courseId})
+    UNION ALL
+    SELECT 2, ${sectionStaff.userId}, ${sectionStaff.sectionId}, ${sectionStaff.id},
+           NULL::uuid, ${classSections.title}, ${users.displayName},
+           ${sectionStaff.id}::text
+      FROM ${sectionStaff}
+      JOIN ${classSections} ON ${classSections.id} = ${sectionStaff.sectionId}
+      JOIN ${users} ON ${users.id} = ${sectionStaff.userId}
+     WHERE ${classSections.courseId} = ${courseId}
+       AND NOT ${redundantOwnerSectionRow}
+  `;
+
+  const counted = await db.execute<{ count: number }>(
+    sql`SELECT count(*)::int AS count FROM (${keyset}) AS team`,
+  );
+  const total = counted.rows[0]?.count ?? 0;
+
+  const paged = await db.execute<{
+    rank: number;
+    user_id: string;
+    section_id: string | null;
+    staff_id: string | null;
+    course_staff_id: string | null;
+  }>(sql`
+    SELECT rank, user_id, section_id, staff_id, course_staff_id
+      FROM (${keyset}) AS team
+     ORDER BY rank, section_title, display_name, tiebreak
+     LIMIT ${params.pageSize} OFFSET ${params.offset}
+  `);
+
+  // Hydrate only what this page needs.
+  const pageRows = paged.rows;
+  const userIds = [...new Set(pageRows.map((r) => r.user_id))];
+  const sectionIds = [
+    ...new Set(pageRows.map((r) => r.section_id).filter((v): v is string => !!v)),
   ];
-  const accounts = userIds.length
-    ? await db.query.users.findMany({ where: inArray(users.id, userIds) })
-    : [];
+  const staffIds = [
+    ...new Set(pageRows.map((r) => r.staff_id).filter((v): v is string => !!v)),
+  ];
+  const [accounts, sectionRows, staffRows] = await Promise.all([
+    userIds.length
+      ? db.query.users.findMany({ where: inArray(users.id, userIds) })
+      : Promise.resolve([]),
+    sectionIds.length
+      ? db.query.classSections.findMany({
+          where: inArray(classSections.id, sectionIds),
+        })
+      : Promise.resolve([]),
+    staffIds.length
+      ? db.query.sectionStaff.findMany({
+          where: inArray(sectionStaff.id, staffIds),
+        })
+      : Promise.resolve([]),
+  ]);
   const userById = new Map(accounts.map((u) => [u.id, u]));
-  const sectionById = new Map(sections.map((s) => [s.id, s]));
+  const sectionById = new Map(sectionRows.map((x) => [x.id, x]));
+  const staffById = new Map(staffRows.map((x) => [x.id, x]));
 
-  // The owner almost always ALSO holds a course_staff row — createCourse writes
-  // one — so they are emitted once, as the owner, and their row is skipped.
-  const standing: CourseStandingRow[] = [];
-  const seen = new Set<string>();
-  const owner = userById.get(course.ownerUserId);
-  if (owner) {
-    seen.add(owner.id);
-    standing.push({
-      scope: "course",
-      user: owner,
-      isOwner: true,
-      courseStaffId: null,
-    });
-  }
-  for (const row of courseStaffRows) {
-    if (seen.has(row.userId)) continue;
-    const user = userById.get(row.userId);
+  const rows: CourseAccessRow[] = [];
+  for (const r of pageRows) {
+    const user = userById.get(r.user_id);
     if (!user) continue;
-    seen.add(row.userId);
-    standing.push({
-      scope: "course",
-      user,
-      isOwner: false,
-      courseStaffId: row.id,
-    });
+    if (r.rank === 2) {
+      const section = r.section_id ? sectionById.get(r.section_id) : undefined;
+      const staff = r.staff_id ? staffById.get(r.staff_id) : undefined;
+      if (!section || !staff) continue;
+      rows.push({ scope: "section", user, section, staff });
+    } else {
+      rows.push({
+        scope: "course",
+        user,
+        isOwner: r.rank === 0,
+        courseStaffId: r.course_staff_id,
+      });
+    }
   }
-  standing.sort(
-    (a, b) =>
-      Number(b.isOwner) - Number(a.isOwner) ||
-      a.user.displayName.localeCompare(b.user.displayName) ||
-      // A total order, so a row cannot swap pages between two requests.
-      a.user.id.localeCompare(b.user.id),
-  );
-
-  const grants: SectionGrantRow[] = [];
-  for (const row of sectionStaffRows) {
-    const user = userById.get(row.userId);
-    const section = sectionById.get(row.sectionId);
-    if (!user || !section) continue;
-    grants.push({ scope: "section", user, section, staff: row });
-  }
-  grants.sort(
-    (a, b) =>
-      a.section.title.localeCompare(b.section.title) ||
-      a.user.displayName.localeCompare(b.user.displayName) ||
-      a.staff.id.localeCompare(b.staff.id),
-  );
 
   return {
     course,
     isOwner: course.ownerUserId === actorUserId,
-    team: paginateArray<CourseAccessRow>([...standing, ...grants], params),
+    team: buildPage<CourseAccessRow>(rows, total, params),
   };
 }
 
@@ -391,6 +549,13 @@ export async function countSectionCourseStanding(
  * that is, whether this student has ever logged in. It is NOT a link decision:
  * access follows from the email being on the list, and nothing here can grant or
  * withhold it.
+ *
+ * Carries the WHOLE student number in clear, for the one reader entitled to it
+ * (see the field's own note). Viewing is not audited, deliberately and
+ * consistently with `getParticipationOverview`: the capability that permits it
+ * is granted and revoked under audit, and a log entry per page view — one per
+ * reload, one per search — would bury the events the log exists for. Producing
+ * a FILE is audited, because that is what leaves the building.
  */
 export async function listSectionRoster(actorUserId: string, sectionId: string) {
   await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", { allowArchived: true });
@@ -422,6 +587,28 @@ export async function listSectionRoster(actorUserId: string, sectionId: string) 
             {
               enrollment: row,
               record,
+              /**
+               * The whole student number, in clear, for the staff member who
+               * holds `viewStudentIdentities` — required at the top of this
+               * function, so reaching this line IS the authorization.
+               *
+               * Read the number, never the record: the plaintext lives only in
+               * this field, so a caller cannot pick it up by accident from
+               * `record` (which carries the ciphertext and the last four). It
+               * is null when the value cannot be opened — a row from before
+               * the encryption backfill, or a ciphertext sealed with a key
+               * this deployment no longer holds — and the caller falls back to
+               * the last four rather than printing a truncated value as if it
+               * were whole.
+               *
+               * NORMALIZED, so it has no separator; `formatStudentNumber` in
+               * `src/lib/student-number.ts` restores that for reading.
+               *
+               * This read model is therefore identity-bearing in the strongest
+               * sense the product has. It must never be rendered on a student
+               * route, put in an email, or logged.
+               */
+              studentNumber: revealOrNull(record),
               signedIn:
                 !!record.rosterEmail &&
                 activeAccountEmails.has(record.rosterEmail),
@@ -430,6 +617,212 @@ export async function listSectionRoster(actorUserId: string, sectionId: string) 
         : [];
     })
     .sort((a, b) => a.record.fullName.localeCompare(b.record.fullName));
+}
+
+/** State narrowing offered by the class-list screen. */
+export type RosterState = "all" | "signed_in" | "not_signed_in" | "dropped";
+
+export interface RosterPageEntry {
+  enrollment: typeof enrollments.$inferSelect;
+  record: typeof studentRecords.$inferSelect;
+  /** Whole number in clear, or null when the ciphertext cannot be opened. */
+  studentNumber: string | null;
+  signedIn: boolean;
+}
+
+/**
+ * Figures for the whole section, independent of the filters on screen.
+ *
+ * Counted in the database rather than derived from a page: a total that only
+ * described the visible rows would contradict the heading it sits under.
+ */
+export interface RosterStats {
+  /** Every enrollment, active or dropped — what "N students" means here. */
+  total: number;
+  signedIn: number;
+  missingEmail: number;
+}
+
+/**
+ * The class list, filtered, ordered, counted and sliced IN THE DATABASE.
+ *
+ * `listSectionRoster` below returns the whole section and stays as it is: the
+ * privacy tests hold it to a contract, and the roster import and its outcome
+ * panel want the complete set. This is what the rendered route uses, so a class
+ * list does not cost one AES-GCM decrypt per enrolled student per keystroke —
+ * only the rows on the page are opened.
+ *
+ * ## The encrypted-number search boundary
+ *
+ * The plaintext student number lives nowhere in the database: the columns are a
+ * ciphertext, a keyed HMAC and the last four characters. So a SQL predicate can
+ * match a number exactly (through the hash, which is what identity is keyed on)
+ * or by its last four — and cannot match an arbitrary substring of it, because
+ * there is nothing to match against. Both spellings of a whole number still
+ * work, since the hash is taken over the normalized form: `2026-00001` and
+ * `202600001` are one lookup. What a reader loses is a partial like `2026` or
+ * `00001`, which the in-memory version answered by searching decrypted text.
+ * Restoring that would mean storing the number in clear, which is the one thing
+ * project-specs.md §11 forbids — so it stays lost, and deliberately.
+ *
+ * Ordering is total (name, then enrollment id) so a row cannot swap pages
+ * between two requests.
+ */
+export async function listSectionRosterPage(
+  actorUserId: string,
+  sectionId: string,
+  opts: {
+    state?: RosterState;
+    q?: string | null;
+    page?: string | number | null;
+    pageSize?: string | number | null;
+  } = {},
+): Promise<Page<RosterPageEntry> & { stats: RosterStats }> {
+  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", {
+    allowArchived: true,
+  });
+  const params = parsePageParams(opts);
+
+  /**
+   * "Signed in" is an ACTIVE account whose address equals the roster email.
+   *
+   * `users.email` is unique, so this left join cannot duplicate an enrollment
+   * row and the counts stay honest. `active` belongs in the ON clause, not the
+   * WHERE: a deactivated account must read as not signed in, exactly as the
+   * in-memory version had it.
+   */
+  const signedInJoin = and(
+    eq(users.email, studentRecords.rosterEmail),
+    eq(users.active, true),
+  );
+  const signedInExpr = sql<boolean>`${users.id} IS NOT NULL`;
+
+  // --- section-wide figures, one round trip, unaffected by the filters ------
+  const [stats = { total: 0, signedIn: 0, missingEmail: 0 }] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      signedIn: sql<number>`count(*) FILTER (WHERE ${users.id} IS NOT NULL)::int`,
+      missingEmail: sql<number>`count(*) FILTER (WHERE ${studentRecords.rosterEmail} IS NULL)::int`,
+    })
+    .from(enrollments)
+    .innerJoin(studentRecords, eq(studentRecords.id, enrollments.studentRecordId))
+    .leftJoin(users, signedInJoin)
+    .where(eq(enrollments.sectionId, sectionId));
+
+  // --- the narrowing the screen asked for ----------------------------------
+  const filters = [eq(enrollments.sectionId, sectionId)];
+  const state = opts.state ?? "all";
+  if (state === "signed_in") filters.push(isNotNull(users.id));
+  // Deliberately includes a record with no roster email at all: it has never
+  // signed in and never can, which is precisely what this filter is for.
+  if (state === "not_signed_in") filters.push(isNull(users.id));
+  if (state === "dropped") filters.push(eq(enrollments.status, "deactivated"));
+
+  const needle = opts.q?.trim().toLowerCase();
+  if (needle) {
+    const like = `%${escapeLike(needle)}%`;
+    const clauses = [
+      ilike(studentRecords.fullName, like),
+      ilike(enrollments.rosterName, like),
+      ilike(studentRecords.rosterEmail, like),
+    ];
+    // Punctuation is stripped from BOTH sides, so "2026-00001" and "202600001"
+    // are one search — the stored forms carry no separator either.
+    const digits = normalizeStudentNumber(needle);
+    if (digits) {
+      const hash = hashOrNull(digits);
+      if (hash) clauses.push(eq(studentRecords.studentNumberHash, hash));
+      // Only the complete stored tail is searchable. The database deliberately
+      // has no plaintext number column, so a shorter fragment would either be
+      // a misleading partial match or require decrypting every record.
+      if (digits.length === 4) {
+        clauses.push(eq(studentRecords.studentNumberLast4, digits));
+      }
+    }
+    filters.push(or(...clauses)!);
+  }
+  const where = and(...filters);
+
+  const [{ count: total } = { count: 0 }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(enrollments)
+    .innerJoin(studentRecords, eq(studentRecords.id, enrollments.studentRecordId))
+    .leftJoin(users, signedInJoin)
+    .where(where);
+
+  const rows = await db
+    .select({
+      enrollment: enrollments,
+      record: studentRecords,
+      signedIn: signedInExpr,
+    })
+    .from(enrollments)
+    .innerJoin(studentRecords, eq(studentRecords.id, enrollments.studentRecordId))
+    .leftJoin(users, signedInJoin)
+    .where(where)
+    .orderBy(asc(studentRecords.fullName), asc(enrollments.id))
+    .limit(params.pageSize)
+    .offset(params.offset);
+
+  return {
+    ...buildPage<RosterPageEntry>(
+      // Only THIS page's ciphertexts are opened. The decrypt is the expensive,
+      // identity-bearing step, so it happens once per rendered row and never
+      // for the rest of the class.
+      rows.map((row) => ({
+        enrollment: row.enrollment,
+        record: row.record,
+        studentNumber: revealOrNull(row.record),
+        signedIn: !!row.signedIn,
+      })),
+      total,
+      params,
+    ),
+    stats,
+  };
+}
+
+/**
+ * A search term is a literal, never a pattern.
+ *
+ * Without this a `%` typed into the box matches everybody and a `_` matches
+ * anybody — surprising rather than dangerous (the value is still a bound
+ * parameter, so this is not an injection fix), but a class list should find
+ * what was typed.
+ */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * The lookup hash of a normalized number, or null.
+ *
+ * Never throws: a deployment whose hash key is missing must still render a
+ * searchable class list by name and email rather than failing the page.
+ */
+function hashOrNull(normalized: string): string | null {
+  try {
+    return studentNumberHash(normalized);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open a sealed student number, or null.
+ *
+ * Never throws: one unreadable row must not take down a whole class list, and
+ * the caller has a truthful fallback for it.
+ */
+function revealOrNull(record: {
+  id: string;
+  studentNumberCiphertext: string | null;
+}): string | null {
+  try {
+    return revealStudentNumber(record);
+  } catch {
+    return null;
+  }
 }
 
 // --- courses ---------------------------------------------------------------
@@ -461,6 +854,9 @@ export async function createCourse(actorUserId: string, rawInput: unknown) {
       entityType: "course",
       entityId: course!.id,
       after: { code: course!.code, title: course!.title },
+      // Course-scoped like course.updated, so every section this course later
+      // gains finds the record of its own creation.
+      courseId: course!.id,
     });
     return course!;
   });
@@ -498,6 +894,9 @@ export async function updateCourse(
       entityId: courseId,
       before: { code: before.code, title: before.title, active: before.active },
       after: input,
+      // A course id is reachable from no section, so this is what puts "the
+      // course was renamed / archived" into each of its sections' histories.
+      courseId,
     });
   });
 }
@@ -539,6 +938,8 @@ export async function createSection(actorUserId: string, rawInput: unknown) {
       action: "section.created",
       entityType: "class_section",
       entityId: section!.id,
+      sectionId: section!.id,
+      courseId: input.courseId,
       after: {
         courseId: input.courseId,
         term: section!.term,
@@ -584,6 +985,7 @@ export async function updateSection(
       action: "section.updated",
       entityType: "class_section",
       entityId: sectionId,
+      sectionId,
       before: {
         term: before.term,
         title: before.title,
@@ -685,7 +1087,7 @@ async function assignSectionStaffTx(
         targetUserId: target.id,
         ...(batchId ? { batchId } : {}),
       },
-      ...(batchId ? { sectionId } : {}),
+      sectionId,
     });
     return changed ? "updated" : "unchanged";
   }
@@ -706,8 +1108,9 @@ async function assignSectionStaffTx(
       role,
       ...permissions,
     },
+    sectionId,
     ...(batchId
-      ? { metadata: { sectionId, targetUserId: target.id, batchId }, sectionId }
+      ? { metadata: { sectionId, targetUserId: target.id, batchId } }
       : {}),
   });
   return "added";
@@ -1003,6 +1406,10 @@ export async function removeSectionStaff(
       entityType: "section_staff",
       entityId: sectionStaffId,
       before: { sectionId, targetUserId: row.userId, role: row.role },
+      // The section_staff row is deleted in this same transaction, so the
+      // entity-id fan-out can never find it again: the scope has to be on the
+      // audit row itself or the removal disappears from the section's history.
+      sectionId,
     });
   });
 }

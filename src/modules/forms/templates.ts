@@ -2,7 +2,11 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import { formQuestions, formTemplates, templateVersions } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
-import { requireCourseStaff, requireSectionStaff } from "@/modules/authz";
+import {
+  AuthzError,
+  requireCourseStaffOrSectionGrant,
+  requireSectionStaff,
+} from "@/modules/authz";
 import { questionDefinitionSchema, type QuestionDefinition } from "./questions";
 
 /**
@@ -17,6 +21,27 @@ import { questionDefinitionSchema, type QuestionDefinition } from "./questions";
  * ownership, and archived state. It does NOT own a delivery pattern: weekly is
  * one of four delivery modes and lives on the schedule
  * (docs/domain/forms-and-audiences.md §2.1).
+ *
+ * ## Authorization
+ *
+ * A form belongs to the COURSE, but `manage_templates` is a per-SECTION flag —
+ * roles-and-permissions.md §3 lists "Manage templates" as `C
+ * (manage_templates)`, delegable to a student assistant, and it is not in the
+ * non-delegable table. Requiring course staff alone made the advertised
+ * permission unusable: the flag could be granted, it opened the forms nav
+ * group, and then every action behind it was denied.
+ *
+ * So these entry points use `requireCourseStaffOrSectionGrant`, which admits
+ * course staff or anyone holding the flag on at least one section of that
+ * course. It is the same helper the course-level BACKLOG uses for
+ * `manage_backlog_imports`, for the same reason.
+ *
+ * Two things this deliberately does NOT do. It does not touch delivery:
+ * schedules, audiences and instance lifecycle stay on `manage_weekly_cycles`,
+ * so a TA who may edit a form's questions still cannot decide who receives it
+ * or when. And it does not relax the archive rule — the write paths pass no
+ * options, so an archived course refuses them through either branch, while the
+ * two read models opt in with `allowArchived` exactly as before.
  */
 
 async function insertVersionQuestions(
@@ -97,7 +122,12 @@ export async function createTemplate(
     studentSection?: StudentSectionConfig;
   },
 ) {
-  await requireCourseStaff(db, actorUserId, input.courseId);
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    input.courseId,
+    "manageTemplates",
+  );
   const questions = input.questions.map((q) =>
     questionDefinitionSchema.parse(q),
   );
@@ -159,7 +189,14 @@ export async function createTemplateVersion(
     where: eq(formTemplates.id, templateId),
   });
   if (!template) throw new Error("Template not found");
-  await requireCourseStaff(db, actorUserId, template.courseId);
+  // Resolved against the template's OWN course, so a flag held elsewhere
+  // reaches nothing here.
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    template.courseId,
+    "manageTemplates",
+  );
   const parsed = questions.map((q) => questionDefinitionSchema.parse(q));
 
   return db.transaction(async (tx) => {
@@ -211,6 +248,10 @@ export async function createTemplateVersion(
       entityType: "template_version",
       entityId: version!.id,
       after: { templateId, versionNumber: nextNumber },
+      // A template_version id is reachable from no section, so without this
+      // the one row that answers "who changed the questions, and when?" was
+      // missing from every section's history. The form belongs to the course.
+      courseId: template.courseId,
     });
     return version!;
   });
@@ -238,7 +279,12 @@ export async function updateTemplateDetails(
     where: eq(formTemplates.id, templateId),
   });
   if (!template) throw new Error("Form not found");
-  await requireCourseStaff(db, actorUserId, template.courseId);
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    template.courseId,
+    "manageTemplates",
+  );
   const title = input.title?.trim();
   if (input.title !== undefined && !title) {
     throw new Error("A form needs a name.");
@@ -277,13 +323,24 @@ export async function updateTemplateDetails(
 
 /**
  * Definitions of a course with their latest version and question count, for the
- * form list and the delivery picker. Course-staff only.
+ * form list and the delivery picker.
+ *
+ * Course staff, or a section assistant holding `manage_templates` — reading the
+ * forms is the smallest thing that permission has to allow, and gating the list
+ * more tightly than the edit would leave a TA able to change a form only by
+ * knowing its id.
  */
 export async function listTemplatesForCourse(
   actorUserId: string,
   courseId: string,
 ) {
-  await requireCourseStaff(db, actorUserId, courseId, { allowArchived: true });
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "manageTemplates",
+    { allowArchived: true },
+  );
   const templates = await db.query.formTemplates.findMany({
     where: eq(formTemplates.courseId, courseId),
     orderBy: asc(formTemplates.title),
@@ -311,10 +368,22 @@ export async function listTemplatesForSection(
   sectionId: string,
   courseId: string,
 ) {
-  await requireSectionStaff(db, actorUserId, sectionId, "manageWeeklyCycles", { allowArchived: true });
+  const section = await requireSectionStaff(
+    db,
+    actorUserId,
+    sectionId,
+    "manageWeeklyCycles",
+    { allowArchived: true },
+  );
+  // The caller supplies courseId because the delivery form already has it, but
+  // the section is the authority. Never let a permitted section become a
+  // selector for another course's templates.
+  if (section.courseId !== courseId) {
+    throw new AuthzError("No access to this course");
+  }
   const templates = await db.query.formTemplates.findMany({
     where: and(
-      eq(formTemplates.courseId, courseId),
+      eq(formTemplates.courseId, section.courseId),
       eq(formTemplates.archived, false),
     ),
     orderBy: asc(formTemplates.title),
@@ -340,7 +409,13 @@ export async function getTemplateDetail(
     where: eq(formTemplates.id, templateId),
   });
   if (!template) throw new Error("Template not found");
-  await requireCourseStaff(db, actorUserId, template.courseId, { allowArchived: true });
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    template.courseId,
+    "manageTemplates",
+    { allowArchived: true },
+  );
   const versions = await db.query.templateVersions.findMany({
     where: eq(templateVersions.templateId, templateId),
     orderBy: desc(templateVersions.versionNumber),
