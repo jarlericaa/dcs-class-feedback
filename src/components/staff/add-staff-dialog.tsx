@@ -76,19 +76,21 @@ export const ADD_STAFF_INITIAL: AddStaffState = { status: "idle" };
 type Scope = "course" | "sections";
 
 /**
- * Two roles, and only two. "Co-teacher" was a third name over the same
- * standing as Teacher — roles-and-permissions.md gives every instructor on a
- * course equal permissions — so offering it as a third option asked the reader
- * to make a choice that decided nothing. Existing `co_teacher` rows keep
- * working and read as Teacher wherever they are shown.
+ * Two roles, and only two: Course handler and SA. "Teacher" and "Co-teacher"
+ * were two names over one standing — roles-and-permissions.md gives every
+ * instructor on a course equal permissions — so offering both asked the reader
+ * to make a choice that decided nothing. Existing `teacher` and `co_teacher`
+ * rows keep working and read as Course handler wherever they are shown.
  */
 const SECTION_ROLES = [
   { value: "ta", label: "SA" },
-  { value: "teacher", label: "Teacher" },
+  { value: "teacher", label: "Course handler" },
 ] as const;
 
-/** Course-wide standing is Instructor-only (ADR-0004): no assistant, no flags. */
-const COURSE_ROLES = [{ value: "teacher", label: "Teacher" }] as const;
+/** Course-wide standing is handler-only (ADR-0004): no assistant, no flags. */
+const COURSE_ROLES = [
+  { value: "teacher", label: "Course handler" },
+] as const;
 
 export function AddStaffDialog({
   action,

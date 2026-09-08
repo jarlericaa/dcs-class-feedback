@@ -50,7 +50,7 @@ export function EditStaffPermissions({
       className="button--small"
       label="Edit permissions"
       title={`Permissions for ${displayName}`}
-      description="Permissions apply to an SA. A Teacher holds every capability."
+      description="Permissions apply to an SA. A course handler holds every capability."
     >
       <form action={action}>
         <input type="hidden" name="email" value={email} />
@@ -66,13 +66,12 @@ export function EditStaffPermissions({
             name="role"
             defaultValue={role}
           >
-            {/* Two roles. "Co-teacher" was never a third standing — every
-                instructor on a course holds equal permissions — so offering it
-                as a third option only invited a choice with no consequence.
-                Rows already stored as `co_teacher` keep working and read as
-                Teacher. */}
+            {/* Two roles. "Teacher" and "Co-teacher" were never two standings
+                — every instructor on a course holds equal permissions — so
+                offering both invited a choice with no consequence. Rows stored
+                as either read as Course handler. */}
             <option value="ta">SA</option>
-            <option value="teacher">Teacher</option>
+            <option value="teacher">Course handler</option>
           </select>
         </div>
 

@@ -13,7 +13,6 @@ import {
   EmptyState,
   MetaList,
   Pagination,
-  Stamp,
 } from "@/components/ui";
 import { Dialog } from "@/components/ui/dialog";
 import {
