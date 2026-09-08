@@ -143,8 +143,12 @@ async function main() {
       parseRosterCsv(
         [
           "student number,full name,up mail",
-          "2026-0001,Juan Dela Cruz,student@up.edu.ph",
-          "2026-0002,Maria Clara Santos,maria.santos@up.edu.ph",
+          // Real UP shape — four-digit entry year, five-digit serial. The
+          // demo list used to carry four-digit serials, which made the class
+          // list read "Student number ending 0001" and hid what the format
+          // actually looks like (GitHub issue #12).
+          "2026-00001,Juan Dela Cruz,student@up.edu.ph",
+          "2026-00002,Maria Clara Santos,maria.santos@up.edu.ph",
         ].join("\n"),
       ),
       "seed roster",
@@ -194,11 +198,31 @@ async function main() {
           displayOrder: 1,
           scale: { min: 1, max: 5, step: 1 },
         },
+        /**
+         * A prompt carrying real authored content: inline maths and a code
+         * span, with Markdown help text under it.
+         *
+         * The seed used to offer nothing but plain sentences, which made the
+         * review view's rendering impossible to judge from demo data — issue
+         * #10 asks exactly that question ("is seeded data being mistaken for
+         * the production format?"). A teacher writing `$\\int$` in a prompt is
+         * ordinary, so the demo form contains one.
+         */
+        {
+          prompt:
+            "Was the derivation of $\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$ clear?",
+          description:
+            "Say **which step** lost you, or name the `induction` case.",
+          type: "short_answer",
+          required: true,
+          displayOrder: 2,
+        },
         {
           prompt: "Anything else about this week?",
+          description: "Optional. Anything the questions above did not cover.",
           type: "paragraph",
           required: false,
-          displayOrder: 2,
+          displayOrder: 3,
         },
       ],
     });
@@ -270,7 +294,17 @@ async function main() {
     : [];
 
   type DemoQuestion = (typeof snapshotQuestions)[number];
+  /**
+   * One student's answer to one question, or `null` for a question they left
+   * alone.
+   *
+   * The second demo student skips every OPTIONAL question, so the seeded week
+   * contains the case the review view has to state rather than hide: a
+   * question the form asked and nobody answered. Required questions are never
+   * skipped — the server would refuse the submission.
+   */
   function demoAnswer(question: DemoQuestion, index: number) {
+    if (!question.required && index % 2 === 1) return null;
     switch (question.type) {
       case "multiple_choice":
       case "dropdown":
@@ -310,7 +344,20 @@ async function main() {
           questionId: question.id,
           text:
             index % 2 === 0
-              ? "The examples made this week's topic easier to follow."
+              ? /* Long on purpose: the review column collapses an answer past
+                   `LONG_TEXT_CHARS`, and a demo week with nothing long in it
+                   cannot show that the control works. */
+                "The examples made this week's topic easier to follow, " +
+                "especially the second one where we walked through the " +
+                "recurrence step by step instead of jumping straight to the " +
+                "closed form. I had been treating the base case as a " +
+                "formality, and seeing it actually fail for n = 0 was what " +
+                "made the induction click. The part I am still unsure about " +
+                "is when to unroll a recurrence versus when to guess a bound " +
+                "and verify it — both were presented as options and I cannot " +
+                "yet tell which one a problem is asking for. If there is a " +
+                "rule of thumb for choosing between them, that would help " +
+                "more than another worked example of either one on its own."
               : "More worked examples would help with the next problem set.",
         };
     }
@@ -365,7 +412,9 @@ async function main() {
       let itemId: string | null = null;
       if (!response) {
         const submitted = await submitResponse(demo.user.id, openInstance.id, {
-          answers: snapshotQuestions.map(demoAnswer),
+          answers: snapshotQuestions
+            .map(demoAnswer)
+            .filter((a): a is NonNullable<typeof a> => a !== null),
           items: [demo.item, ...(demo.comment ? [demo.comment] : [])],
         });
         response = await db.query.formResponses.findFirst({
@@ -428,7 +477,7 @@ async function main() {
     admin: admin.email,
     teacher: teacher.email,
     ta: ta.email,
-    student: "student@up.edu.ph (Juan Dela Cruz, 2026-0001 — rostered, no claim step)",
+    student: "student@up.edu.ph (Juan Dela Cruz, 2026-00001 — rostered, no claim step)",
     course: course!.code,
     section: section!.title,
     responses: openInstance
