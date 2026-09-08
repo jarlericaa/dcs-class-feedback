@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { parse } from "csv-parse/sync";
-import { and, eq, ne, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { z } from "zod";
 import { db, type DbOrTx } from "@/db";
-import { enrollments, importBatches, studentRecords } from "@/db/schema";
+import {
+  auditEvents,
+  enrollments,
+  importBatches,
+  studentRecords,
+} from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import { requireSectionStaff } from "@/modules/authz";
 import {
@@ -40,9 +46,19 @@ export {
 /**
  * Class-list import (docs/domain/student-identity.md, docs/product/specification.md §6.1).
  *
- * Flow: parse (XLSX upload, or pasted CSV as a fallback) → editable preview
- * (create/enroll/reactivate/rename/deactivate + per-row warnings) → commit in a
+ * Flow: parse (a CRS-style XLSX, CSV file, or pasted CSV) → commit in one
  * transaction with an ImportBatch, audited.
+ *
+ * `previewRosterImport` still computes the plan without changing anything and
+ * is the read model the tests hold the planner to, but the class-list screen no
+ * longer walks a teacher through it: GitHub issue #12 asked for upload → apply,
+ * so what a reader sees is the OUTCOME (`getRosterImportOutcome`) rather than a
+ * forecast of it. Nothing about correctness depended on the preview — the
+ * commit re-derives every decision from live data inside its own transaction —
+ * only the chance to fix a file before writing.
+ *
+ * `parseRosterXlsx` handles the registrar's CRS export in the class-list UI;
+ * pasted CSV remains the lightweight fallback.
  *
  * The imported UP email IS the student's access: importing an address is what
  * gives that person their classes, so an email that is missing, malformed, off
@@ -150,7 +166,17 @@ export function parseRosterCsv(content: string): ParsedRoster {
     const emailRaw = at(rec, "email");
     const emailResult = readRosterEmail(emailRaw, line, seenEmails);
     warnings.push(...emailResult.warnings);
-    const dupLine = seen.get(studentNumber.toUpperCase());
+    /**
+     * Keyed on the NORMALIZED number, never the raw cell.
+     *
+     * `normalizeStudentNumber` is what the identity itself is keyed on — the
+     * uniqueness hash and every lookup go through it — so `2026-00001` and
+     * `202600001` are one student. Comparing raw text here let those two spell
+     * the same person twice, and the second line then silently overwrote the
+     * first one's UP email: the access key, reassigned with no warning.
+     */
+    const numberKey = normalizeStudentNumber(studentNumber);
+    const dupLine = seen.get(numberKey);
     if (dupLine !== undefined) {
       // Reported as a row error too, so the existing "duplicates are surfaced"
       // behaviour of the CSV path is preserved for callers reading `errors`.
@@ -161,7 +187,7 @@ export function parseRosterCsv(content: string): ParsedRoster {
       warnings.push({ code: "duplicate_student_number", firstSeenLine: dupLine });
       continue;
     }
-    seen.set(studentNumber.toUpperCase(), line);
+    seen.set(numberKey, line);
 
     const crsStatusRaw = at(rec, "enrollmentStatus");
     const crsStatus = normalizeCrsStatus(crsStatusRaw);
@@ -246,11 +272,19 @@ export function applyPreviewEdits(
     const crsStatus = normalizeCrsStatus(crsStatusRaw) === "unknown"
       ? patch.crsStatus
       : normalizeCrsStatus(crsStatusRaw);
+    const numberChanged = studentNumber !== row.studentNumber;
     const changed =
-      studentNumber !== row.studentNumber ||
+      numberChanged ||
       fullName !== row.fullName ||
       emailResult.email !== row.email;
-    const warnings: RowWarning[] = [...emailResult.warnings];
+    const warnings: RowWarning[] = [
+      // A name or email edit is not a correction to the source cell. Keep its
+      // numeric-origin warning until the number itself is replaced with text.
+      ...(row.numberWasNumericCell && !numberChanged
+        ? [{ code: "numeric_student_number" as const }]
+        : []),
+      ...emailResult.warnings,
+    ];
     if (isMalformedStudentNumber(studentNumber)) {
       warnings.push({ code: "malformed_student_number" });
     }
@@ -274,8 +308,9 @@ export function applyPreviewEdits(
       crsStatusRaw,
       crsStatus,
       enlistmentDate: parseEnlistmentDate(patch.enlistmentDate ?? null),
-      // Editing a numeric-cell number is exactly how staff fix a lost zero.
-      numberWasNumericCell: changed ? false : row.numberWasNumericCell,
+      // Editing the number is exactly how staff fix a lost zero; editing a name
+      // or email must not accidentally clear the numeric-cell warning.
+      numberWasNumericCell: numberChanged ? false : row.numberWasNumericCell,
       warnings,
       edited: changed || row.edited,
     };
@@ -442,31 +477,90 @@ async function liveRowWarnings(
  * imported rows instead would silently drop a student from the class because of
  * a typo in one cell.
  *
- * A number too malformed to match any record contributes a hash that matches
- * nothing, which is harmless — nothing is ever resolved by name.
+ * A number too malformed to match any record is excluded. Malformed and
+ * numeric-cell rows also make deactivation unsafe, so this is a belt-and-
+ * braces guard rather than a way to treat an uncertain row as absent.
  */
 function presentStudentNumberHashes(parsed: ParsedRoster): string[] {
   return [
-    ...new Set(parsed.rows.map((row) => studentNumberHash(row.studentNumber))),
+    ...new Set(
+      parsed.rows
+        .filter((row) => !isMalformedStudentNumber(row.studentNumber))
+        .map((row) => studentNumberHash(row.studentNumber)),
+    ),
   ];
+}
+
+/**
+ * Whether this parse describes the class list well enough to remove anyone.
+ *
+ * Deactivation is the one destructive-feeling thing an import does, and it is
+ * inferred from ABSENCE — so it is only sound when the file can be trusted to
+ * say who is present. Three parses cannot say that:
+ *
+ * - **A line that did not parse.** A row dropped for a missing number or a
+ *   missing name never reaches `parsed.rows`, so it cannot be counted present
+ *   the way a warning-blocked row is, and the student it named would be
+ *   deactivated over a single empty cell. A row with no number at all cannot be
+ *   rescued individually — there is nothing to match on — so the whole file
+ *   waits until the line is fixed. Re-importing the corrected file then
+ *   deactivates whoever really left.
+ * - **No usable rows at all.** A header-only file, or one whose every line
+ *   failed: it mentions nobody, and "mentions nobody" must never read as
+ *   "everybody left". Without this a CSV containing just its header would
+ *   remove a whole class in one click.
+ * - **Every usable row blocked.** The original valve: a file that imported
+ *   nothing tells us nothing reliable either.
+ *
+ * A warning-blocked row with a trustworthy number still counts as PRESENT,
+ * which is the behaviour `presentStudentNumberHashes` exists for — a bad email
+ * cell must not drop a student, but it must not stop the genuinely absent being
+ * dropped either. Malformed or uncertain numeric numbers are the exception:
+ * they make the whole deactivation pass wait for a trustworthy file.
+ */
+function deactivationIsSafe(
+  parsed: ParsedRoster,
+  blockedCount: number,
+): boolean {
+  if (parsed.errors.length > 0) return false;
+  if (parsed.rows.length === 0) return false;
+  if (blockedCount === parsed.rows.length) return false;
+  // These rows cannot safely establish presence: a malformed value has no
+  // lookup key, and a numeric XLSX cell may have already lost leading zeroes.
+  if (
+    parsed.rows.some((row) =>
+      row.warnings.some(
+        (warning) =>
+          warning.code === "malformed_student_number" ||
+          warning.code === "numeric_student_number",
+      ),
+    )
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
  * Active enrollments this import would deactivate: those whose student number
  * the file does not mention at all (D10 — deactivate, never delete).
  *
- * `everyRowBlocked` is the safety valve. A file that imported nothing tells us
- * nothing reliable about who left, so it removes nobody; without this, a class
- * list uploaded with a broken email column would empty the section.
+ * Takes the blocked COUNT rather than a precomputed verdict so the rule lives
+ * in exactly one place: the preview and the commit cannot drift apart by
+ * writing the same condition twice.
  */
 async function enrollmentsToDeactivate(
   dbx: DbOrTx,
   sectionId: string,
   parsed: ParsedRoster,
-  everyRowBlocked: boolean,
+  blockedCount: number,
 ) {
-  if (everyRowBlocked) return [];
+  if (!deactivationIsSafe(parsed, blockedCount)) return [];
   const present = presentStudentNumberHashes(parsed);
+  // Belt and braces. `deactivationIsSafe` already refuses an empty parse, but
+  // an empty `present` used to fall through to a WHERE with no number filter at
+  // all — which matches every active enrollment. Never let that shape exist.
+  if (present.length === 0) return [];
   return dbx
     .select({
       enrollmentId: enrollments.id,
@@ -483,9 +577,7 @@ async function enrollmentsToDeactivate(
       and(
         eq(enrollments.sectionId, sectionId),
         eq(enrollments.status, "active"),
-        present.length > 0
-          ? notInArray(studentRecords.studentNumberHash, present)
-          : undefined,
+        notInArray(studentRecords.studentNumberHash, present),
       ),
     );
 }
@@ -511,13 +603,25 @@ export async function previewRosterImport(
 
   const actions: PlannedAction[] = [];
   for (const row of parsed.rows) {
-    const record = await db.query.studentRecords.findFirst({
-      where: eq(studentRecords.studentNumberHash, studentNumberHash(row.studentNumber)),
-    });
+    // Number warnings are blocking, but malformed values cannot be hashed at
+    // all. Skip the lookup and let the shared warning policy produce the
+    // explicit refused-row action instead of turning a bad cell into a 500.
+    const record = isMalformedStudentNumber(row.studentNumber)
+      ? undefined
+      : await db.query.studentRecords.findFirst({
+          where: eq(
+            studentRecords.studentNumberHash,
+            studentNumberHash(row.studentNumber),
+          ),
+        });
     // Conflicts only live data can see. Assigned rather than pushed so previewing
     // the same parsed roster twice cannot accumulate duplicate warnings.
     row.warnings = [
       ...row.warnings.filter((w) => !LIVE_WARNINGS.includes(w.code)),
+      ...(row.numberWasNumericCell &&
+      !row.warnings.some((w) => w.code === "numeric_student_number")
+        ? [{ code: "numeric_student_number" as const }]
+        : []),
       ...(await liveRowWarnings(db, sectionId, row, record)),
     ];
     if (row.warnings.some(isBlocking)) {
@@ -583,7 +687,7 @@ export async function previewRosterImport(
     db,
     sectionId,
     parsed,
-    parsed.rows.length > 0 && blockedCount === parsed.rows.length,
+    blockedCount,
   );
 
   return {
@@ -666,10 +770,16 @@ export async function commitRosterImport(
     let blockedRows = 0;
 
     for (const row of parsed.rows) {
-      const hash = studentNumberHash(row.studentNumber);
-      let record = await tx.query.studentRecords.findFirst({
-        where: eq(studentRecords.studentNumberHash, hash),
-      });
+      // Keep malformed values in the explicit blocked-row path; hashing an
+      // all-punctuation cell would otherwise abort the whole transaction.
+      const hash = isMalformedStudentNumber(row.studentNumber)
+        ? null
+        : studentNumberHash(row.studentNumber);
+      let record = hash
+        ? await tx.query.studentRecords.findFirst({
+            where: eq(studentRecords.studentNumberHash, hash),
+          })
+        : undefined;
 
       // Re-derived inside the transaction, never trusted from the preview: the
       // email is the access key, so a row whose address is missing, malformed,
@@ -683,6 +793,12 @@ export async function commitRosterImport(
         ...new Set(
           [
             ...row.warnings.filter((w) => !LIVE_WARNINGS.includes(w.code)),
+            // Defense in depth for callers that construct or mutate a parsed
+            // row instead of using one of the bundled parsers.
+            ...(row.numberWasNumericCell &&
+            !row.warnings.some((w) => w.code === "numeric_student_number")
+              ? [{ code: "numeric_student_number" as const }]
+              : []),
             ...(await liveRowWarnings(tx, sectionId, row, record)),
           ]
             .filter(isBlocking)
@@ -871,7 +987,7 @@ export async function commitRosterImport(
       tx,
       sectionId,
       parsed,
-      parsed.rows.length > 0 && blockedRows === parsed.rows.length,
+      blockedRows,
     );
     for (const a of absent) {
       await tx
@@ -921,4 +1037,117 @@ export async function commitRosterImport(
 
     return summary;
   });
+}
+
+/**
+ * What one import actually did, for the screen that follows it.
+ *
+ * Assembled from what the commit already persisted rather than from anything
+ * new: the counts come off the `ImportBatch` row, the refused rows come from
+ * this batch's own `roster.row_rejected` audit events, and the deactivations
+ * from its `roster.row_deactivated` ones. Nothing had to be added to the audit
+ * log or to the stored summary to make this readable, which matters — those
+ * rows deliberately carry no student number, name or address, and this is the
+ * boundary where the names are resolved for a reader already entitled to them.
+ *
+ * It replaces what the preview used to say BEFORE writing. A teacher who
+ * uploads a file with three bad email cells still needs to be told which three
+ * lines, and dropping the preview without this would have made that
+ * unanswerable.
+ */
+export interface ImportOutcome {
+  batchId: string;
+  sourceDescription: string | null;
+  committedAt: Date | null;
+  summary: ImportSummary | null;
+  /** refused rows, by file line and reason code — never any of their content */
+  blocked: { line: number | null; reasons: string[] }[];
+  /** enrolments the file no longer mentions, now inactive but not deleted */
+  deactivated: { name: string; studentNumberLast4: string | null }[];
+}
+
+export async function getRosterImportOutcome(
+  actorUserId: string,
+  sectionId: string,
+  batchId: string,
+): Promise<ImportOutcome | null> {
+  await requireSectionStaff(db, actorUserId, sectionId, "viewStudentIdentities", {
+    allowArchived: true,
+  });
+  // This value comes from the query string. Reject it before PostgreSQL sees it;
+  // comparing malformed text to a UUID column would otherwise become a 500.
+  if (!z.string().uuid().safeParse(batchId).success) return null;
+  const batch = await db.query.importBatches.findFirst({
+    where: and(eq(importBatches.id, batchId), eq(importBatches.sectionId, sectionId)),
+  });
+  // Scoped to THIS section, so a batch id from another class list resolves to
+  // nothing rather than to somebody else's import.
+  if (!batch) return null;
+
+  const events = await db.query.auditEvents.findMany({
+    where: and(
+      eq(auditEvents.sectionId, sectionId),
+      inArray(auditEvents.action, [
+        "roster.row_rejected",
+        "roster.row_deactivated",
+      ]),
+    ),
+    orderBy: asc(auditEvents.createdAt),
+  });
+  const mine = events.filter(
+    (event) =>
+      (event.metadata as { importBatchId?: string } | null)?.importBatchId ===
+        batchId || event.entityId === batchId,
+  );
+
+  const blocked = mine
+    .filter((event) => event.action === "roster.row_rejected")
+    .map((event) => {
+      const meta = (event.metadata ?? {}) as {
+        line?: number;
+        reasons?: string[];
+      };
+      return { line: meta.line ?? null, reasons: meta.reasons ?? [] };
+    });
+
+  const dropped = mine.filter(
+    (event) => event.action === "roster.row_deactivated",
+  );
+  const recordIds = [
+    ...new Set(
+      dropped
+        .map(
+          (event) =>
+            (event.metadata as { studentRecordId?: string } | null)
+              ?.studentRecordId,
+        )
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  const records = recordIds.length
+    ? await db.query.studentRecords.findMany({
+        where: inArray(studentRecords.id, recordIds),
+        columns: { id: true, fullName: true, studentNumberLast4: true },
+      })
+    : [];
+  const byId = new Map(records.map((r) => [r.id, r]));
+
+  return {
+    batchId,
+    sourceDescription: batch.sourceDescription,
+    committedAt: batch.committedAt,
+    summary: (batch.summary as ImportSummary | null) ?? null,
+    blocked,
+    deactivated: recordIds.flatMap((id) => {
+      const record = byId.get(id);
+      return record
+        ? [
+            {
+              name: record.fullName,
+              studentNumberLast4: record.studentNumberLast4,
+            },
+          ]
+        : [];
+    }),
+  };
 }

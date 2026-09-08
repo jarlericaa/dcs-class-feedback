@@ -726,3 +726,319 @@ describe("section-scoped import is not global identity-edit authority", () => {
     expect((await maria()).rosterEmail).toBe("moved@up.edu.ph");
   });
 });
+
+/**
+ * Deactivation is inferred from ABSENCE, so it is only sound when the parse can
+ * be trusted to say who is present.
+ *
+ * A row that FAILED TO PARSE never reaches `parsed.rows`, so — unlike a row
+ * blocked by a warning — it cannot be counted present, and the student it named
+ * would be dropped over one empty cell. A parse that yields no usable rows at
+ * all (a header-only file, a file of blank lines, a file whose every line is
+ * malformed) mentions nobody, and "mentions nobody" must never read as
+ * "everybody left": before this was guarded, such a file removed the whole
+ * class in one click, with no confirmation step to catch it.
+ *
+ * The other half of the contract is asserted too: none of this may make a
+ * genuinely departed student undroppable.
+ */
+describe("a parse that cannot say who is present deactivates nobody", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  async function classOfThree() {
+    const teacher = await makeUser({ isTeacher: true });
+    const course = await makeCourse(teacher.id);
+    const section = await makeSection(course.id);
+    await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n" +
+          "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+          "2026-002,Maria Santos,maria.santos@up.edu.ph\n" +
+          "2026-003,Pedro Reyes,pedro.reyes@up.edu.ph\n",
+      ),
+      "v1",
+    );
+    return { teacher, section };
+  }
+
+  const activeCount = async (sectionId: string) =>
+    (
+      await db.query.enrollments.findMany({
+        where: and(
+          eq(enrollments.sectionId, sectionId),
+          eq(enrollments.status, "active"),
+        ),
+      })
+    ).length;
+
+  const statusOf = async (sectionId: string, studentNumber: string) => {
+    const record = (await db.query.studentRecords.findFirst({
+      where: eq(
+        studentRecords.studentNumberHash,
+        studentNumberHash(studentNumber),
+      ),
+    }))!;
+    const enrollment = await db.query.enrollments.findFirst({
+      where: and(
+        eq(enrollments.sectionId, sectionId),
+        eq(enrollments.studentRecordId, record.id),
+      ),
+    });
+    return enrollment?.status;
+  };
+
+  it("keeps a student whose NAME cell is empty, though her row never parsed", async () => {
+    const { teacher, section } = await classOfThree();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        "2026-002,,maria.santos@up.edu.ph\n" +
+        "2026-003,Pedro Reyes,pedro.reyes@up.edu.ph\n",
+    );
+    // The row is genuinely lost to the parser — that is the premise.
+    expect(parsed.rows).toHaveLength(2);
+    expect(parsed.errors).toEqual([{ line: 3, message: "Missing full name" }]);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.errored).toBe(1);
+    expect(summary.deactivated).toBe(0);
+    expect(await statusOf(section.id, "2026-002")).toBe("active");
+    expect(await activeCount(section.id)).toBe(3);
+  });
+
+  it("keeps everyone when a row has no student number to match on", async () => {
+    const { teacher, section } = await classOfThree();
+    // Nothing can rescue this row individually: with no number there is no
+    // identity to mark present, so the whole file waits to be fixed.
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        ",Maria Santos,maria.santos@up.edu.ph\n",
+    );
+    expect(parsed.errors).toEqual([
+      { line: 3, message: "Missing student number" },
+    ]);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.deactivated).toBe(0);
+    // Pedro is absent from this file too, but a file this unreliable may not
+    // decide that either.
+    expect(await activeCount(section.id)).toBe(3);
+  });
+
+  it("deactivates nobody from a header-only file", async () => {
+    const { teacher, section } = await classOfThree();
+    const parsed = parseRosterCsv("student number,full name,up mail\n");
+    // No fileError: the header is valid, which is exactly what made this
+    // dangerous — it reaches commit looking like a legitimate empty class list.
+    expect(parsed.fileError).toBeUndefined();
+    expect(parsed.rows).toHaveLength(0);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.deactivated).toBe(0);
+    expect(await activeCount(section.id)).toBe(3);
+  });
+
+  it("deactivates nobody from a file of blank lines", async () => {
+    const { teacher, section } = await classOfThree();
+    const parsed = parseRosterCsv("student number,full name,up mail\n,,\n,,\n");
+    expect(parsed.rows).toHaveLength(0);
+    expect(parsed.errors).toHaveLength(0);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.deactivated).toBe(0);
+    expect(await activeCount(section.id)).toBe(3);
+  });
+
+  it("deactivates nobody when every line failed to parse", async () => {
+    const { teacher, section } = await classOfThree();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        ",Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        ",Maria Santos,maria.santos@up.edu.ph\n",
+    );
+    expect(parsed.rows).toHaveLength(0);
+    expect(parsed.errors).toHaveLength(2);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.deactivated).toBe(0);
+    expect(await activeCount(section.id)).toBe(3);
+  });
+
+  it("the preview promises exactly what the commit does, in every unsafe case", async () => {
+    const { teacher, section } = await classOfThree();
+    const unsafe = [
+      // header only
+      "student number,full name,up mail\n",
+      // blank lines only
+      "student number,full name,up mail\n,,\n",
+      // every line unparseable
+      "student number,full name,up mail\n,Juan,juan.delacruz@up.edu.ph\n",
+      // one parse error alongside good rows, and Pedro absent
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        "2026-002,,maria.santos@up.edu.ph\n",
+      // every usable row blocked (the original valve)
+      "student number,full name,up mail\n2026-001,Juan Dela Cruz,oops\n",
+    ];
+    for (const csv of unsafe) {
+      const parsed = parseRosterCsv(csv);
+      const preview = await previewRosterImport(teacher.id, section.id, parsed);
+      expect(preview.toDeactivate).toEqual([]);
+      const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+      expect(summary.deactivated).toBe(0);
+      expect(await activeCount(section.id)).toBe(3);
+    }
+  });
+
+  it("refuses malformed and uncertain numbers without aborting or deactivating", async () => {
+    const { teacher, section } = await classOfThree();
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "!!!,Punctuation Only,punctuation@up.edu.ph\n" +
+        "2.02312e+8,Scientific Value,scientific@up.edu.ph\n" +
+        "2026.00001,Decimal Value,decimal@up.edu.ph\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n",
+    );
+
+    // The malformed rows are explicit refused actions, not a parser or hash
+    // failure. The clean row remains importable, but an uncertain number makes
+    // absence unsafe, so no existing student is dropped.
+    const preview = await previewRosterImport(teacher.id, section.id, parsed);
+    expect(preview.blockedCount).toBe(3);
+    expect(preview.actions.filter((a) => a.kind === "blocked")).toHaveLength(3);
+    expect(preview.toDeactivate).toEqual([]);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.blocked).toBe(3);
+    expect(summary.deactivated).toBe(0);
+    expect(summary.created).toBe(0);
+    expect(await activeCount(section.id)).toBe(3);
+    expect((await db.query.studentRecords.findMany()).map((r) => r.rosterEmail)).toEqual([
+      "juan.delacruz@up.edu.ph",
+      "maria.santos@up.edu.ph",
+      "pedro.reyes@up.edu.ph",
+    ]);
+  });
+
+  it("still drops a student who is genuinely off a clean list", async () => {
+    const { teacher, section } = await classOfThree();
+    // No parse errors, usable rows, not all blocked: the list is trustworthy,
+    // so absence means absence. Maria's row is blocked on its email AND Pedro
+    // is missing — she stays, he goes.
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-001,Juan Dela Cruz,juan.delacruz@up.edu.ph\n" +
+        "2026-002,Maria Santos,not-an-email\n",
+    );
+    expect(parsed.errors).toHaveLength(0);
+
+    const preview = await previewRosterImport(teacher.id, section.id, parsed);
+    expect(preview.toDeactivate).toHaveLength(1);
+
+    const summary = await commitRosterImport(teacher.id, section.id, parsed, "v2");
+    expect(summary.blocked).toBe(1);
+    expect(summary.deactivated).toBe(1);
+    expect(await statusOf(section.id, "2026-001")).toBe("active");
+    expect(await statusOf(section.id, "2026-002")).toBe("active");
+    expect(await statusOf(section.id, "2026-003")).toBe("deactivated");
+  });
+});
+
+/**
+ * Two spellings of one student number are one student.
+ *
+ * The identity is the NORMALIZED number — that is what the uniqueness hash and
+ * every lookup are keyed on — so in-file duplicate detection has to normalize
+ * too. Comparing raw cells let `2026-00001` and `202600001` pass as two people,
+ * and the second line then overwrote the first one's UP email: the access key,
+ * reassigned to a different person with no warning and no blocked row.
+ */
+describe("in-file duplicate student numbers collide across punctuation", () => {
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  async function setup() {
+    const teacher = await makeUser({ isTeacher: true });
+    const course = await makeCourse(teacher.id);
+    const section = await makeSection(course.id);
+    return { teacher, section };
+  }
+
+  const recordFor = async (studentNumber: string) =>
+    db.query.studentRecords.findFirst({
+      where: eq(
+        studentRecords.studentNumberHash,
+        studentNumberHash(studentNumber),
+      ),
+    });
+
+  it("flags the second spelling as a duplicate rather than a second student", async () => {
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-00001,Juan Dela Cruz,juan@up.edu.ph\n" +
+        "202600001,Maria Santos,maria@up.edu.ph\n",
+    );
+    // Reported on both channels the CSV path offers.
+    expect(parsed.errors).toEqual([
+      {
+        line: 3,
+        message: "Duplicate student number 202600001 (first seen on line 2)",
+      },
+    ]);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]!.studentNumber).toBe("2026-00001");
+  });
+
+  it("cannot overwrite the first student's identity or UP email", async () => {
+    const { teacher, section } = await setup();
+    const summary = await commitRosterImport(
+      teacher.id,
+      section.id,
+      parseRosterCsv(
+        "student number,full name,up mail\n" +
+          "2026-00001,Juan Dela Cruz,juan@up.edu.ph\n" +
+          "202600001,Maria Santos,maria@up.edu.ph\n",
+      ),
+      "dup file",
+    );
+    expect(summary.created).toBe(1);
+    expect(summary.errored).toBe(1);
+    // The line that would have stolen the access key never ran.
+    expect(summary.emailsLinked).toBe(1);
+    expect(summary.namesUpdated).toBe(0);
+
+    const record = (await recordFor("2026-00001"))!;
+    expect(record.fullName).toBe("Juan Dela Cruz");
+    expect(record.rosterEmail).toBe("juan@up.edu.ph");
+    expect(await db.query.studentRecords.findMany()).toHaveLength(1);
+  });
+
+  it("separator, spacing and case are all one number", async () => {
+    for (const spelling of ["2026 00001", "2026--00001", " 2026-00001 "]) {
+      const parsed = parseRosterCsv(
+        "student number,full name,up mail\n" +
+          "2026-00001,Juan Dela Cruz,juan@up.edu.ph\n" +
+          `${spelling},Maria Santos,maria@up.edu.ph\n`,
+      );
+      expect(parsed.rows).toHaveLength(1);
+      expect(parsed.errors).toHaveLength(1);
+      expect(parsed.errors[0]!.message).toContain("Duplicate student number");
+    }
+  });
+
+  it("does not collide two genuinely different numbers", async () => {
+    const parsed = parseRosterCsv(
+      "student number,full name,up mail\n" +
+        "2026-00001,Juan Dela Cruz,juan@up.edu.ph\n" +
+        "2026-00002,Maria Santos,maria@up.edu.ph\n",
+    );
+    expect(parsed.rows).toHaveLength(2);
+    expect(parsed.errors).toHaveLength(0);
+  });
+});

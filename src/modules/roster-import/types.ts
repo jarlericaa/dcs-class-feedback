@@ -49,6 +49,9 @@ export const WARNING_LABELS: Record<RowWarning["code"], string> = {
  * Warnings that STOP a row being imported. Everything else is advisory and the
  * teacher decides. Anything touching the email is blocking, because the email is
  * the access key: guessing at it would hand one student another's classes.
+ * Student-number cells that cannot be trusted are blocking too: importing one
+ * would either create an identity that cannot be matched later or silently
+ * accept a spreadsheet-corrupted value.
  */
 export const BLOCKING_WARNINGS: readonly RowWarning["code"][] = [
   "missing_email",
@@ -58,6 +61,8 @@ export const BLOCKING_WARNINGS: readonly RowWarning["code"][] = [
   "email_belongs_to_another_record",
   "cross_section_email_conflict",
   "duplicate_student_number",
+  "numeric_student_number",
+  "malformed_student_number",
 ];
 
 export function isBlocking(warning: RowWarning): boolean {
@@ -71,8 +76,8 @@ export interface RosterRow {
   studentNumber: string;
   /**
    * True when the source cell was numeric, so a leading zero cannot be
-   * recovered. We warn instead of zero-padding: guessing the width would invent
-   * an identifier.
+   * recovered. The row is refused instead of zero-padding: guessing the width
+   * would invent an identifier.
    */
   numberWasNumericCell: boolean;
   /** Exactly as the file spelled it, so the preview shows what was uploaded. */

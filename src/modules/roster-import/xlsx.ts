@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { normalizeStudentNumber } from "@/modules/crypto/student-number";
 import {
   composeFullName,
   isMalformedStudentNumber,
@@ -28,7 +29,7 @@ import {
  *     custom-`numFmt` cell and therefore usually preserves the zero;
  *  2. only fall back to the raw numeric value when the formatted text is the
  *     bare number too;
- *  3. flag that row so staff can fix it in the preview.
+ *  3. refuse that row so staff can save the source cell as text and re-import.
  *
  * We never zero-pad: guessing the width would invent an identifier.
  */
@@ -276,11 +277,14 @@ export async function parseRosterXlsx(
     if (isMalformedStudentNumber(studentNumber)) {
       warnings.push({ code: "malformed_student_number" });
     }
-    const dupLine = seen.get(studentNumber.toUpperCase());
+    // Normalized, not raw — same reason as the CSV path: the number's identity
+    // is its normalized form, so two spellings of it are one student.
+    const numberKey = normalizeStudentNumber(studentNumber);
+    const dupLine = seen.get(numberKey);
     if (dupLine !== undefined) {
       warnings.push({ code: "duplicate_student_number", firstSeenLine: dupLine });
     } else {
-      seen.set(studentNumber.toUpperCase(), line);
+      seen.set(numberKey, line);
     }
     const emailRaw = at(textRow, "email");
     const emailResult = readRosterEmail(emailRaw, line, seenEmails);
