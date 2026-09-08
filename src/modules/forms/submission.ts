@@ -285,6 +285,7 @@ async function writeItems(
   responseId: string,
   input: { questions: StudentItemInput[]; comments: StudentItemInput[] },
   actorUserId: string,
+  scope: { sectionId: string; courseId: string },
 ): Promise<{
   rejectedItemIds: string[];
   itemIdMappings: { clientKey: string; itemId: string }[];
@@ -376,6 +377,8 @@ async function writeItems(
           priorLength: current.originalText.length,
           newLength: text.length,
         },
+        sectionId: scope.sectionId,
+        courseId: scope.courseId,
       });
       keep.add(replacement!.id);
       continue;
@@ -407,6 +410,18 @@ async function writeItems(
       .update(studentSubmissionItems)
       .set({ withdrawnAt: now, updatedAt: now })
       .where(eq(studentSubmissionItems.id, row.id));
+    await writeAudit(dbx, {
+      actorUserId,
+      action: "response.item_withdrawn",
+      entityType: "student_submission_item",
+      entityId: row.id,
+      metadata: {
+        priorLength: row.originalText.length,
+        removed: true,
+      },
+      sectionId: scope.sectionId,
+      courseId: scope.courseId,
+    });
   }
 
   return { rejectedItemIds, itemIdMappings };
@@ -428,6 +443,9 @@ async function saveResponse(
   requestedPhase: Phase,
   now: Date,
 ) {
+  if (!z.string().uuid().safeParse(cycleId).success) {
+    throw new SubmissionError("Form not found");
+  }
   const input = parseInput(rawInput);
 
   const cyclePeek = await db.query.formInstances.findFirst({
@@ -596,11 +614,15 @@ async function saveResponse(
           : eq(questionAnswers.responseId, responseId),
       );
 
+    // The first save fixes the response's section attribution. A later roster
+    // move must not make edits appear in a different section's audit history.
+    const responseSectionId = existing?.sectionId ?? attributedSectionId;
     const { rejectedItemIds, itemIdMappings } = await writeItems(
       tx,
       responseId,
       items,
       userId,
+      { sectionId: responseSectionId, courseId: cycle.courseId },
     );
 
     const [updated] = await tx
@@ -639,7 +661,7 @@ async function saveResponse(
         questionItems: items.questions.length,
         hasGeneralComment: items.comments.length > 0,
       },
-      sectionId: attributedSectionId,
+      sectionId: responseSectionId,
       courseId: cycle.courseId,
     });
 

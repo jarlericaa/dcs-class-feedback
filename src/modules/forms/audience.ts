@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { db, type DbOrTx } from "@/db";
 import {
   classSections,
@@ -105,6 +106,10 @@ export async function getInstanceAudience(
   dbx: DbOrTx,
   instanceId: string,
 ): Promise<string[]> {
+  // Route parameters are untrusted. Returning no audience makes all callers
+  // follow their normal not-found/authorization path without sending malformed
+  // text to PostgreSQL's UUID comparison.
+  if (!z.string().uuid().safeParse(instanceId).success) return [];
   const rows = await dbx.query.formInstanceSections.findMany({
     where: eq(formInstanceSections.instanceId, instanceId),
   });

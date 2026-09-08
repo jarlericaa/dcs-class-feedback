@@ -2,12 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courses } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { staffSectionTabGroups } from "@/components/layout/nav";
 import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
+import { loadStaffSection, sectionLabel } from "@/lib/staff-section";
 import {
   AccessDenied,
   Alert,
@@ -64,13 +67,24 @@ export default async function FormDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string; formId: string }>;
-  searchParams: Promise<{ ok?: string; error?: string; edit?: string }>;
+  searchParams: Promise<{
+    ok?: string;
+    error?: string;
+    edit?: string;
+    /** section context used by a templates-only assistant */
+    sectionId?: string;
+  }>;
 }) {
   const user = await requireUser();
   const { id: courseId, formId } = await params;
-  const { ok, error, edit } = await searchParams;
+  const { ok, error, edit, sectionId } = await searchParams;
   const path = `/teach/courses/${courseId}/forms/${formId}`;
 
+  /**
+   * The definition and delivery are different permissions. A section assistant
+   * with `manage_templates` may read and revise the definition, but cannot read
+   * or change occurrences and delivery unless they also hold course standing.
+   */
   let detail;
   try {
     detail = await getTemplateDetail(user.id, formId);
@@ -93,14 +107,48 @@ export default async function FormDetailPage({
     redirect(`/teach/courses/${detail.template.courseId}/forms/${formId}`);
   }
 
+  let instances: Awaited<ReturnType<typeof listInstancesForTemplate>> = [];
+  let canManageDelivery = false;
+  try {
+    instances = await listInstancesForTemplate(user.id, formId);
+    canManageDelivery = true;
+  } catch (err) {
+    // A templates-only assistant is allowed to stay on this page for the
+    // definition. The delivery/occurrence panels are omitted below; their
+    // mutations remain independently guarded by their services.
+    if (!(err instanceof AuthzError)) throw err;
+  }
+
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
-  const delivery = await getDeliveryForTemplate(formId);
-  const sections = await listAudienceOptions(user.id, courseId);
-  const instances = await listInstancesForTemplate(user.id, formId);
+  const delivery = canManageDelivery
+    ? await getDeliveryForTemplate(formId)
+    : null;
+  const sections = canManageDelivery
+    ? await listAudienceOptions(user.id, courseId)
+    : [];
   const audienceIds = delivery?.sections.map((s) => s.id) ?? [];
   const editingQuestions = edit === "questions";
+
+  // A section-scoped template manager gets a contextual strip and breadcrumbs
+  // when the link carries the section it came from. The definition permission
+  // itself was already checked above; this is only navigation context. Validate
+  // the query-string id before the section loader compares it with a UUID.
+  const safeSectionId =
+    sectionId && z.string().uuid().safeParse(sectionId).success
+      ? sectionId
+      : undefined;
+  const sectionContext = safeSectionId
+    ? await loadStaffSection(safeSectionId, "manageTemplates")
+    : null;
+  const hasSectionContext =
+    !canManageDelivery &&
+    sectionContext?.ok === true &&
+    sectionContext.course.id === courseId;
+  const sectionFormsPath = hasSectionContext
+    ? `/teach/sections/${safeSectionId}/forms`
+    : null;
 
   // --- server actions ------------------------------------------------------
 
@@ -174,14 +222,22 @@ export default async function FormDetailPage({
         parseStudentSection(formData),
       );
     } catch (err) {
-      redirect(back(courseId, formId, describe(err), "error"));
+      redirect(
+        withSectionContext(
+          back(courseId, formId, describe(err), "error"),
+          safeSectionId,
+        ),
+      );
     }
     revalidatePath(`/teach/courses/${courseId}/forms/${formId}`);
     redirect(
-      back(
-        courseId,
-        formId,
-        "Saved as a new version. Occurrences already generated keep their own questions.",
+      withSectionContext(
+        back(
+          courseId,
+          formId,
+          "Saved as a new version. Occurrences already generated keep their own questions.",
+        ),
+        safeSectionId,
       ),
     );
   }
@@ -248,23 +304,58 @@ export default async function FormDetailPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={await primaryNavFor(user, path)}
-      /* A form, its new-form page and one of its occurrences are all children
-         of Forms, not peers of it, so the strip marks Forms rather than going
-         blank. `activeHref` states that instead of lying about the path. */
-      tabGroups={await courseTabGroupsFor(user.id, courseId, path, {
-        activeHref: `/teach/courses/${courseId}`,
+      navGroups={await primaryNavFor(user, path, {
+        fallbackHref: sectionFormsPath
+          ? `/teach/sections/${safeSectionId}`
+          : undefined,
       })}
-      tabsLabel={course.code}
-      contextLabel={course.code}
+      /* Course staff see the course strip. A section-scoped template manager
+         stays in the section context, where the Forms doorway is real and the
+         delivery controls are not implied. */
+      tabGroups={
+        sectionFormsPath && sectionContext?.ok
+          ? staffSectionTabGroups(sectionContext.access, sectionFormsPath)
+          : canManageDelivery
+            ? await courseTabGroupsFor(user.id, courseId, path, {
+                activeHref: `/teach/courses/${courseId}`,
+              })
+            : undefined
+      }
+      tabsLabel={
+        sectionFormsPath && sectionContext?.ok
+          ? sectionLabel(course.code, sectionContext.section.title)
+          : canManageDelivery
+            ? course.code
+            : undefined
+      }
+      tabsMode={sectionFormsPath ? "menu" : undefined}
+      contextLabel={
+        sectionFormsPath && sectionContext?.ok
+          ? sectionLabel(course.code, sectionContext.section.title)
+          : canManageDelivery
+            ? course.code
+            : undefined
+      }
       breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { href: "/teach/courses", label: "My courses" },
-            { href: `/teach/courses/${courseId}`, label: course.code },
-            { label: detail.template.title },
-          ]}
-        />
+        sectionFormsPath && sectionContext?.ok ? (
+          <Breadcrumbs
+            items={[
+              {
+                href: sectionFormsPath,
+                label: sectionLabel(course.code, sectionContext.section.title),
+              },
+              { label: detail.template.title },
+            ]}
+          />
+        ) : canManageDelivery ? (
+          <Breadcrumbs
+            items={[
+              { href: "/teach/courses", label: "My courses" },
+              { href: `/teach/courses/${courseId}`, label: course.code },
+              { label: detail.template.title },
+            ]}
+          />
+        ) : undefined
       }
       title={detail.template.title}
       description={
@@ -280,9 +371,17 @@ export default async function FormDetailPage({
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
         {course.archivedAt && <ArchivedNotice courseCode={course.code} />}
+        {!canManageDelivery && (
+          <Alert variant="info" title="Definition access only">
+            You can edit this form&apos;s questions. Delivery settings and
+            occurrences are managed by a course instructor.
+          </Alert>
+        )}
 
-        <section className="notice">
-          <div className="notice__head">
+        {canManageDelivery && (
+          <>
+            <section className="notice">
+              <div className="notice__head">
             <div>
               <h2>Occurrences</h2>
             </div>
@@ -655,7 +754,9 @@ export default async function FormDetailPage({
               </form>
             </div>
           )}
-        </section>
+            </section>
+          </>
+        )}
 
         <section className="notice">
           <div className="notice__head">
@@ -665,7 +766,9 @@ export default async function FormDetailPage({
             {!editingQuestions && (
               <Link
                 className="button button--secondary button--small"
-                href={`/teach/courses/${courseId}/forms/${formId}?edit=questions`}
+                href={`/teach/courses/${courseId}/forms/${formId}?edit=questions${
+                  safeSectionId ? `&sectionId=${safeSectionId}` : ""
+                }`}
               >
                 Edit questions
               </Link>
@@ -799,6 +902,10 @@ function back(
   kind: "ok" | "error" = "ok",
 ): string {
   return `/teach/courses/${courseId}/forms/${formId}?${kind}=${encodeURIComponent(message)}`;
+}
+
+function withSectionContext(url: string, sectionId?: string): string {
+  return sectionId ? `${url}&sectionId=${encodeURIComponent(sectionId)}` : url;
 }
 
 function parseStudentSection(formData: FormData) {

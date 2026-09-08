@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courses } from "@/db/schema";
@@ -107,6 +108,13 @@ export default async function StudentFormPage({
     sectionTitle,
     timezone,
   } = current;
+  // `current` resolves this from the authorized audience, but keep the
+  // navigation boundary defensive: a corrupt value must not turn into a set of
+  // links to an arbitrary section path.
+  const safeAttributedSectionId = z.string().uuid().safeParse(attributedSectionId)
+    .success
+    ? attributedSectionId
+    : null;
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, instance.courseId),
   }))!;
@@ -116,13 +124,17 @@ export default async function StudentFormPage({
     /* A form instance is reached through the reader's class, but its URL says
        nothing about which one, so the page tells the rail. */
     navGroups: await primaryNavFor(user, `/forms/${instanceId}`, {
-      fallbackHref: `/sections/${attributedSectionId}`,
+      fallbackHref: safeAttributedSectionId
+        ? `/sections/${safeAttributedSectionId}`
+        : undefined,
     }),
     /* A form instance is what the section's Forms view leads to, not a peer of
        it, so the strip marks that tab rather than showing nothing selected. */
-    tabs: studentSectionTabs(attributedSectionId, `/forms/${instanceId}`, {
-      activeHref: `/sections/${attributedSectionId}`,
-    }),
+    tabs: safeAttributedSectionId
+      ? studentSectionTabs(safeAttributedSectionId, `/forms/${instanceId}`, {
+          activeHref: `/sections/${safeAttributedSectionId}`,
+        })
+      : undefined,
     tabsLabel: course.code,
     /* The course code is the identity. The section is not in the label: the
        student's action and this form are identical in every section it went to,
@@ -161,18 +173,22 @@ export default async function StudentFormPage({
               under your submissions — only you and the teaching team can see it.
             </p>
             <div className="row" style={{ marginTop: "var(--s5)" }}>
-              <Link
-                className="button button--primary"
-                href={`/sections/${attributedSectionId}/history`}
-              >
-                See my submissions
-              </Link>
-              <Link
-                className="button button--secondary"
-                href={`/sections/${attributedSectionId}/qa`}
-              >
-                Class Q&amp;A
-              </Link>
+              {safeAttributedSectionId && (
+                <>
+                  <Link
+                    className="button button--primary"
+                    href={`/sections/${safeAttributedSectionId}/history`}
+                  >
+                    See my submissions
+                  </Link>
+                  <Link
+                    className="button button--secondary"
+                    href={`/sections/${safeAttributedSectionId}/qa`}
+                  >
+                    Class Q&amp;A
+                  </Link>
+                </>
+              )}
             </div>
           </Notice>
         </div>

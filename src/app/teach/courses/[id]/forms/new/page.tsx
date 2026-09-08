@@ -2,12 +2,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courses } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
+import { staffSectionTabGroups } from "@/components/layout/nav";
 import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
+import {
+  loadStaffSection,
+  sectionLabel,
+  type StaffSectionContext,
+} from "@/lib/staff-section";
 import {
   AccessDenied,
   Alert,
@@ -45,17 +52,25 @@ export default async function NewFormPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; sectionId?: string }>;
 }) {
   const user = await requireUser();
   const { id: courseId } = await params;
-  const { error } = await searchParams;
+  const { error, sectionId } = await searchParams;
   const path = `/teach/courses/${courseId}/forms/new`;
+  // Navigation context must not reach UUID comparisons in the section loader.
+  const safeSectionId =
+    sectionId && z.string().uuid().safeParse(sectionId).success
+      ? sectionId
+      : undefined;
+  let templateSection: Extract<StaffSectionContext, { ok: true }> | null = null;
+  let templateOnly = false;
 
   try {
     await requireCourseStaff(db, user.id, courseId);
   } catch (err) {
-    if (err instanceof AuthzError) {
+    if (!(err instanceof AuthzError)) throw err;
+    if (!safeSectionId) {
       return (
         <AppShell
           user={toShellUser(user)}
@@ -67,23 +82,38 @@ export default async function NewFormPage({
         </AppShell>
       );
     }
-    throw err;
+    const candidate = await loadStaffSection(safeSectionId, "manageTemplates");
+    if (!candidate.ok || candidate.course.id !== courseId) {
+      return (
+        <AppShell
+          user={toShellUser(user)}
+          workspace="staff"
+          navGroups={await primaryNavFor(user, path)}
+          title="New form"
+        >
+          <AccessDenied what="this course's forms" />
+        </AppShell>
+      );
+    }
+    templateSection = candidate;
+    templateOnly = true;
   }
 
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
-  const sections = await listAudienceOptions(user.id, courseId);
+  const sections = templateOnly ? [] : await listAudienceOptions(user.id, courseId);
 
   async function createForm(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
 
-    const fail = (message: string) =>
-      redirect(
-        `/teach/courses/${courseId}/forms/new?error=${encodeURIComponent(message)}`,
-      );
+    const fail = (message: string) => {
+      const query = new URLSearchParams({ error: message });
+      if (templateOnly && safeSectionId) query.set("sectionId", safeSectionId);
+      redirect(`/teach/courses/${courseId}/forms/new?${query.toString()}`);
+    };
 
     let templateId: string;
     try {
@@ -100,6 +130,18 @@ export default async function NewFormPage({
     } catch (err) {
       fail(describe(err));
       return;
+    }
+
+    // A section assistant owns the definition only. Delivery is a separate
+    // course-level decision, so leave the new form unscheduled and return to the
+    // section-scoped forms doorway.
+    if (templateOnly) {
+      revalidatePath(`/teach/sections/${safeSectionId}/forms`);
+      redirect(
+        `/teach/courses/${courseId}/forms/${templateId}?sectionId=${safeSectionId}&ok=${encodeURIComponent(
+          "Form saved. A course instructor can decide when and where it goes out.",
+        )}`,
+      );
     }
 
     // The definition is saved. If the delivery configuration is rejected the
@@ -150,22 +192,50 @@ export default async function NewFormPage({
     <AppShell
       user={toShellUser(user)}
       workspace="staff"
-      navGroups={await primaryNavFor(user, path)}
-      /* A form, its new-form page and one of its occurrences are all children
-         of Forms, not peers of it, so the strip marks Forms rather than going
-         blank. `activeHref` states that instead of lying about the path. */
-      tabGroups={await courseTabGroupsFor(user.id, courseId, path, {
-        activeHref: `/teach/courses/${courseId}`,
+      navGroups={await primaryNavFor(user, path, {
+        fallbackHref: templateOnly ? `/teach/sections/${safeSectionId}` : undefined,
       })}
-      tabsLabel={course.code}
-      contextLabel={course.code}
+      /* Course staff see the course strip. A section-scoped template manager
+         stays in the section context, where the Forms doorway is real and
+         delivery controls are not implied. */
+      tabGroups={
+        templateOnly
+          ? staffSectionTabGroups(
+              templateSection!.access,
+              `/teach/sections/${safeSectionId}/forms`,
+            )
+          : await courseTabGroupsFor(user.id, courseId, path, {
+              activeHref: `/teach/courses/${courseId}`,
+            })
+      }
+      tabsLabel={
+        templateOnly
+          ? sectionLabel(course.code, templateSection!.section.title)
+          : course.code
+      }
+      tabsMode={templateOnly ? "menu" : undefined}
+      contextLabel={
+        templateOnly
+          ? sectionLabel(course.code, templateSection!.section.title)
+          : course.code
+      }
       breadcrumbs={
         <Breadcrumbs
-          items={[
-            { href: "/teach/courses", label: "My courses" },
-            { href: `/teach/courses/${courseId}`, label: course.code },
-            { label: "New form" },
-          ]}
+          items={
+            templateOnly
+              ? [
+                  {
+                    href: `/teach/sections/${safeSectionId}/forms`,
+                    label: sectionLabel(course.code, templateSection!.section.title),
+                  },
+                  { label: "New form" },
+                ]
+              : [
+                  { href: "/teach/courses", label: "My courses" },
+                  { href: `/teach/courses/${courseId}`, label: course.code },
+                  { label: "New form" },
+                ]
+          }
         />
       }
       title="New form"
@@ -173,7 +243,7 @@ export default async function NewFormPage({
       <div className="stack-4">
         {error && <Alert variant="error">{error}</Alert>}
 
-        {sections.length === 0 ? (
+        {!templateOnly && sections.length === 0 ? (
           <EmptyState
             title="No class lists yet"
             action={{
@@ -233,19 +303,32 @@ export default async function NewFormPage({
               </div>
             </section>
 
-            <section
-              className="notice notice--pad"
-              style={{ marginTop: "var(--s4)" }}
-            >
-              <DeliveryFields
-                sections={sections.map((s) => ({
-                  id: s.id,
-                  title: s.title,
-                  term: s.term,
-                }))}
-                courseCode={course.code}
-              />
-            </section>
+            {templateOnly ? (
+              <section
+                className="notice notice--pad"
+                style={{ marginTop: "var(--s4)" }}
+              >
+                <h2 className="panel-title">Delivery</h2>
+                <p className="muted" style={{ marginTop: "var(--s3)" }}>
+                  This saves the form questions only. A course instructor can
+                  decide which sections receive it and when it opens.
+                </p>
+              </section>
+            ) : (
+              <section
+                className="notice notice--pad"
+                style={{ marginTop: "var(--s4)" }}
+              >
+                <DeliveryFields
+                  sections={sections.map((s) => ({
+                    id: s.id,
+                    title: s.title,
+                    term: s.term,
+                  }))}
+                  courseCode={course.code}
+                />
+              </section>
+            )}
 
             <section
               className="notice notice--pad"
@@ -266,8 +349,15 @@ export default async function NewFormPage({
             </section>
 
             <p className="helper-text" style={{ marginTop: "var(--s4)" }}>
-              <Link className="link" href={`/teach/courses/${courseId}`}>
-                Cancel and go back to {course.code}
+              <Link
+                className="link"
+                href={
+                  templateOnly
+                    ? `/teach/sections/${safeSectionId}/forms`
+                    : `/teach/courses/${courseId}`
+                }
+              >
+                Cancel and go back to {templateOnly ? "Forms" : course.code}
               </Link>
             </p>
           </form>
