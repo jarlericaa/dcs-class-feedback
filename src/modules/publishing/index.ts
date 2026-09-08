@@ -9,6 +9,7 @@ import {
   questionAnswers,
   sourceLinks,
   studentSubmissionItems,
+  users,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import {
@@ -109,6 +110,7 @@ export async function draftPublicAnswer(
         entityType: "source_link",
         entityId: link!.id,
         after: { publicAnswerId: answer!.id, itemId: item.id },
+        sectionId: input.sectionId,
       });
 
       const merged = items.length > 1;
@@ -136,6 +138,7 @@ export async function draftPublicAnswer(
       action: "public_answer.drafted",
       entityType: "public_answer",
       entityId: answer!.id,
+      sectionId: input.sectionId,
       after: {
         sectionId: input.sectionId,
         sourceCount: items.length,
@@ -179,6 +182,7 @@ export async function rewordPublicQuestion(
       entityId: publicAnswerId,
       before: { publicQuestionText: answer.publicQuestionText },
       after: { publicQuestionText: newText },
+      sectionId: answer.sectionId,
     });
   });
 }
@@ -210,6 +214,7 @@ export async function updateAnswerBody(
       entityId: publicAnswerId,
       before: { answerBody: answer.answerBody },
       after: { answerBody },
+      sectionId: answer.sectionId,
     });
   });
 }
@@ -322,6 +327,7 @@ export async function publishNow(
       entityId: publicAnswerId,
       before: { state: answer.state },
       after: { state: "published" },
+      sectionId: answer.sectionId,
     });
   });
 }
@@ -369,6 +375,7 @@ export async function schedulePublication(
       entityType: "public_answer",
       entityId: publicAnswerId,
       after: { scheduledAt: scheduledAt.toISOString() },
+      sectionId: answer.sectionId,
     });
   });
 }
@@ -402,6 +409,7 @@ export async function cancelScheduledPublication(
       entityType: "public_answer",
       entityId: publicAnswerId,
       before: { scheduledAt: answer.scheduledAt?.toISOString() },
+      sectionId: answer.sectionId,
     });
   });
 }
@@ -538,9 +546,36 @@ export async function listSectionQa(
     where: and(...conditions),
     orderBy: desc(publicAnswers.publishedAt),
   });
-  // Anonymous projection — never include createdBy/source information. Group
-  // matching titles into one question thread while retaining every published
-  // answer under it.
+
+  /**
+   * Who answered, by display name.
+   *
+   * The ASKER stays anonymous — that is the promise this archive is built on,
+   * and nothing below adds a source link, an identity or a draft. The
+   * ANSWERER is a different person: a member of the teaching team putting
+   * their name to a public statement to the class. "Answered by the teaching
+   * team" left a class unable to tell which of four people had said it.
+   *
+   * `createdByUserId` is NOT NULL with a foreign key to `users`, so in practice
+   * a name is always available; the nullable return is defensive only, for a
+   * lookup that somehow misses. Callers must still handle null rather than
+   * asserting, because that constraint is the only thing making it unreachable.
+   */
+  const authorIds = [
+    ...new Set(
+      rows.map((r) => r.createdByUserId).filter((v): v is string => !!v),
+    ),
+  ];
+  const authorById = new Map(
+    (authorIds.length
+      ? await db.query.users.findMany({ where: inArray(users.id, authorIds) })
+      : []
+    ).map((u) => [u.id, u.displayName]),
+  );
+
+  // Anonymous projection for the asker — never include source information.
+  // Group matching titles into one question thread while retaining every
+  // published answer under it.
   const grouped = new Map<
     string,
     (typeof rows)[number][]
@@ -560,6 +595,10 @@ export async function listSectionQa(
         id: row.id,
         answer: row.answerBody,
         publishedAt: row.publishedAt,
+        /** the staff member who published it, or null when unattributed */
+        answeredByName: row.createdByUserId
+          ? (authorById.get(row.createdByUserId) ?? null)
+          : null,
       })),
       category: first.category ?? "misc",
       topicId: first.topicId,

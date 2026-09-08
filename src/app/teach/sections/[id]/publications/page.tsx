@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
@@ -369,7 +370,20 @@ export default async function PublicationsPage({
               {queue.published.map(({ answer, sourceCount }) => (
                 <li key={answer.id}>
                   <span className="data-list__main">
-                    <strong>{answer.publicQuestionText}</strong>
+                    {/* The question is the way to the answer. The row used to
+                        carry the title as inert bold text with the live/scheduled
+                        stamp as its only affordance — a badge that led nowhere,
+                        beside the one thing a reader actually wants to open.
+                        Same href the review feed uses, so "see it in the class
+                        Q&A" means one destination everywhere. */}
+                    <strong>
+                      <Link
+                        className="link"
+                        href={`/sections/${sectionId}/qa?selected=${answer.id}`}
+                      >
+                        {answer.publicQuestionText}
+                      </Link>
+                    </strong>
                     <MetaList
                       items={[
                         `Published ${formatDateTime(answer.publishedAt, section.timezone)}`,
@@ -379,6 +393,7 @@ export default async function PublicationsPage({
                       ]}
                     />
                   </span>
+                  {/* State only, no longer the row's target. */}
                   <Stamp tone="green">Live to this section</Stamp>
                 </li>
               ))}

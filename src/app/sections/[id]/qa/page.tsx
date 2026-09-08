@@ -34,11 +34,18 @@ import { getSectionWithCourse } from "@/modules/catalog";
  * nothing rendered here can reveal who asked.
  */
 
+/**
+ * When something was published, and nothing else.
+ *
+ * "Carried over from earlier semesters" was here too. It filtered on
+ * `sourceOrigin`, which is not a time at all, so it sat in a group called
+ * Published answering a different question from its two neighbours — and it
+ * duplicated the "Earlier semester" marker each affected row already carries.
+ */
 const TIME_FILTERS = [
   { key: "all", label: "Everything" },
   { key: "week", label: "Published this week" },
   { key: "month", label: "Published this month" },
-  { key: "legacy", label: "Carried over from earlier semesters" },
 ] as const;
 
 type TimeFilter = (typeof TIME_FILTERS)[number]["key"];
@@ -122,29 +129,25 @@ export default async function QaArchivePage({
   const filter = (TIME_FILTERS.find((f) => f.key === sp.filter)?.key ??
     "all") as TimeFilter;
   const now = Date.now();
-  const withinFilter = (publishedAt: Date | null, origin: string | null) => {
+  const withinFilter = (publishedAt: Date | null) => {
     const at = publishedAt?.getTime() ?? 0;
     switch (filter) {
       case "week":
         return now - at < 7 * 86_400_000;
       case "month":
         return now - at < 30 * 86_400_000;
-      case "legacy":
-        return origin === "legacy";
       default:
         return true;
     }
   };
 
-  const visible = entries.filter((entry) =>
-    withinFilter(entry.publishedAt, entry.sourceOrigin),
-  );
+  const visible = entries.filter((entry) => withinFilter(entry.publishedAt));
   const categoryCounts = new Map(
     QUESTION_CATEGORIES.map((category) => [category.slug as string, 0]),
   );
   let allCount = 0;
   for (const entry of allEntries) {
-    if (!withinFilter(entry.publishedAt, entry.sourceOrigin)) continue;
+    if (!withinFilter(entry.publishedAt)) continue;
     allCount += 1;
     if (entry.category && categoryCounts.has(entry.category)) {
       categoryCounts.set(
@@ -293,14 +296,20 @@ export default async function QaArchivePage({
       ) : (
         <article>
           <h2 className="object-title">{active.question}</h2>
-          {/* "Anonymous" is never used unqualified in this product
-              (CONTENT-VOICE P3): it would imply a guarantee the system does not
-              make. What is true is that classmates cannot see who asked. */}
+          {/*
+            "Anonymous", at the owner's instruction (issue #14) — CONTENT-VOICE
+            P3 previously forbade the bare word here on the grounds that it
+            implies a guarantee the system does not make, and that document now
+            records the decision instead of contradicting this page.
+
+            The publication timestamp is NOT repeated here: every answer below
+            carries its own, and a header stamp duplicated the one that belongs
+            to the thing it dates.
+          */}
           <MetaList
             className="qa-detail__meta"
             items={[
-              "Asked by a classmate, name not shown",
-              `Published ${formatDateTime(active.publishedAt, section.timezone)}`,
+              "Anonymous",
               active.sourceOrigin === "legacy"
                 ? "Carried over from an earlier semester"
                 : null,
@@ -318,8 +327,17 @@ export default async function QaArchivePage({
             ) : (
               active.answers.map((answer) => (
                 <section className="answer" key={answer.id}>
+                  {/* The person who answered, by name. "The teaching team" left
+                      a class unable to tell which of several people had made a
+                      public statement to them.
+
+                      The "Anonymous" arm is defensive, not a normal case:
+                      `public_answers.created_by_user_id` is NOT NULL with a
+                      foreign key, so every published answer has an author.
+                      Borrowing a name would be worse than admitting there is
+                      none, so a missing one is stated. */}
                   <p className="answer__by">
-                    Answered by the teaching team,{" "}
+                    Answered by {answer.answeredByName ?? "Anonymous"},{" "}
                     {formatDateTime(answer.publishedAt, section.timezone)}
                   </p>
                   <div className="doc">
@@ -329,12 +347,6 @@ export default async function QaArchivePage({
               ))
             )}
           </div>
-
-          {/* Anonymity, so it stays — but as one sentence, not three. */}
-          <p className="meta" style={{ marginTop: "var(--s7)" }}>
-            Staff wrote this wording for the whole class. The original message,
-            and who sent it, are never shown here.
-          </p>
         </article>
       )}
     </WorkspaceShell>
