@@ -20,3 +20,18 @@ postgres-data/
 
 # Visual QA references. Kept on disk for inspection, never committed.
 docs/ui-references/
+
+# agent tooling — installed per machine, never committed
+.agents/
+.claude/skills/
+.claude/settings.local.json
+.codex/
+.impeccable/
+.ccmux/
+.pi-subagents/
+agent/
+skills-lock.json
+.mcp.json
+
+# QA run output — regenerate with the scripts in scripts/qa
+docs/qa/
