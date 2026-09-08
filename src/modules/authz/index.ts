@@ -15,7 +15,7 @@ import { normalizeEmail } from "@/modules/identity/email";
 
 /**
  * Deny-by-default, resource-scoped authorization
- * (roles-and-permissions.md §1, architecture-proposal.md §5).
+ * (docs/domain/roles-and-permissions.md §1, docs/engineering/architecture-history.md §5).
  *
  * Every helper answers: does THIS user hold THIS capability on THIS resource?
  * Nothing grants ambient authority:
@@ -35,7 +35,7 @@ export class AuthzError extends Error {
 }
 
 /**
- * An archived course is read-only (project-specs.md §11).
+ * An archived course is read-only (docs/product/specification.md §11).
  *
  * 409 rather than 403: the actor DOES hold the capability, the resource is
  * simply frozen. Callers can therefore tell "you may not" apart from "not while
@@ -83,7 +83,7 @@ async function enforceArchiveRule(
 }
 
 /**
- * TA permission catalog (roles-and-permissions.md §2.3) = boolean columns on
+ * TA permission catalog (docs/domain/roles-and-permissions.md §2.3) = boolean columns on
  * section_staff. `manage_course_materials` is deliberately absent: course
  * material management is post-MVP.
  */
@@ -170,7 +170,7 @@ export async function requireCourseStaff(
 
 /**
  * Course OWNER only. Staff assignment and the TA permission catalog are the
- * class owner's call (roles-and-permissions.md §2.3), so course staff who are
+ * class owner's call (docs/domain/roles-and-permissions.md §2.3), so course staff who are
  * not the owner cannot escalate their own or anyone else's permissions.
  */
 export async function requireCourseOwner(
@@ -309,7 +309,7 @@ export async function requireNonTaSectionStaff(
 }
 
 /**
- * "Instructor" on a section, in the sense project-specs.md §4.1 uses the word:
+ * "Instructor" on a section, in the sense docs/product/specification.md §4.1 uses the word:
  * a teacher, a co-teacher, or course staff. Every instructor is equal; there is
  * no separate tier.
  *
@@ -327,7 +327,7 @@ export const requireInstructor = requireNonTaSectionStaff;
  * Both conditions matter: the permission says "this person works on validity",
  * the role says "this person may finalize it". A TA granted `markValidity`
  * therefore still cannot confirm an invalidation — which is exactly the
- * flag-versus-finalize split in project-specs.md §4.2.
+ * flag-versus-finalize split in docs/product/specification.md §4.2.
  */
 export async function requireInstructorSectionCapability(
   dbx: DbOrTx,
@@ -412,7 +412,7 @@ export async function requireEnrolledStudent(
 
 /**
  * The student who wrote a submission item — the only student who may read its
- * private thread or add a follow-up to it (project-specs.md §6.7).
+ * private thread or add a follow-up to it (docs/product/specification.md §6.7).
  *
  * Resolved through the roster email, so removing an address from every class
  * list revokes thread access without touching any data.

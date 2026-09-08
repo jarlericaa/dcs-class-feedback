@@ -12,7 +12,7 @@ import { questionDefinitionSchema, type QuestionDefinition } from "./questions";
 /**
  * Form definitions ("templates" is the historical table name).
  *
- * Definitions snapshot on apply (weekly-form-workflow.md §6):
+ * Definitions snapshot on apply (docs/domain/form-workflow.md §6):
  * - every save creates a NEW immutable TemplateVersion with its own question rows
  * - already-generated instances keep their snapshot; no version is ever mutated
  * - stableKey carries question identity across versions/snapshots for exports
@@ -25,7 +25,7 @@ import { questionDefinitionSchema, type QuestionDefinition } from "./questions";
  * ## Authorization
  *
  * A form belongs to the COURSE, but `manage_templates` is a per-SECTION flag —
- * roles-and-permissions.md §3 lists "Manage templates" as `C
+ * docs/domain/roles-and-permissions.md §3 lists "Manage templates" as `C
  * (manage_templates)`, delegable to a student assistant, and it is not in the
  * non-delegable table. Requiring course staff alone made the advertised
  * permission unusable: the flag could be granted, it opened the forms nav
@@ -71,7 +71,7 @@ async function insertVersionQuestions(
 
 /**
  * Per-version configuration for the student-originated part of the form
- * (project-specs.md §5.2). Snapshotted onto the version, so changing it later
+ * (docs/product/specification.md §5.2). Snapshotted onto the version, so changing it later
  * cannot alter a cycle that already collected answers.
  */
 export interface StudentSectionConfig {

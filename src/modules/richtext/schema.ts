@@ -2,7 +2,7 @@ import type { Schema } from "hast-util-sanitize";
 
 /**
  * The sanitize allowlist for all rich staff-authored content
- * (project-specs.md §5.2, §11).
+ * (docs/product/specification.md §5.2, §11).
  *
  * Written out explicitly rather than spread from `defaultSchema`, because a
  * default that gains a tag in a future release would silently widen what a

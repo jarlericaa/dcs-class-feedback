@@ -14,7 +14,7 @@ import {
 } from "@/modules/email/outbox";
 
 /**
- * DB-backed reconciliation poller (architecture-proposal.md §4).
+ * DB-backed reconciliation poller (docs/engineering/architecture-history.md §4).
  * One sweep = the whole scheduling surface, all idempotent:
  *  1. materialize upcoming cycles from active recurrence schedules
  *     (unique constraint prevents duplicates),

@@ -25,7 +25,7 @@ import { listInstancesForTemplate } from "@/modules/forms/instances";
  * A form belongs to the COURSE while the flag is granted per SECTION, and the
  * course-staff-only gate that used to guard these entry points made the
  * permission unusable: an owner could grant it, it opened the forms nav group,
- * and then every action behind it was refused. roles-and-permissions.md §3
+ * and then every action behind it was refused. docs/domain/roles-and-permissions.md §3
  * lists "Manage templates" as `C (manage_templates)` and does not put it in the
  * non-delegable table, so honouring it is the specified behaviour — the same
  * shape the course-level backlog already resolves with

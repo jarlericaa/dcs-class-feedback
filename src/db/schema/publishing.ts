@@ -40,7 +40,7 @@ const tsvector = customType<{ data: string; driverData: string }>({
  * Carries the reworded question text; the original student wording stays
  * immutable on the source StudentSubmissionItem. No identity fields exist here.
  *
- * Lifecycle (domain-model.md §3.6):
+ * Lifecycle (docs/domain/domain-model.md §3.6):
  *   draft → awaiting_approval → published → unpublished, with edits producing
  *   publicAnswerRevisions rather than overwriting history.
  */
@@ -68,7 +68,7 @@ export const publicAnswers = pgTable(
       .references(() => users.id),
     /** Makes drafting idempotent under a double-submit or a retry. */
     requestToken: text("request_token"),
-    // --- approval (project-specs.md §6.8 step 4) ---
+    // --- approval (docs/product/specification.md §6.8 step 4) ---
     submittedForApprovalAt: timestamp("submitted_for_approval_at", {
       withTimezone: true,
     }),
@@ -147,7 +147,7 @@ export const publicAnswers = pgTable(
 );
 
 /**
- * Version history for a published entry (project-specs.md §5.7, §6.8 step 8).
+ * Version history for a published entry (docs/product/specification.md §5.7, §6.8 step 8).
  * Holds the text as it was BEFORE the edit, so the current row is always the
  * live version and history reads backwards from it. Staff-only: the student
  * payload exposes only a last-updated timestamp.

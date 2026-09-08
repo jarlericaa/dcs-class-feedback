@@ -12,7 +12,7 @@ import {
 import { env } from "../src/env";
 
 /**
- * Student-number encryption backfill (project-specs.md §11).
+ * Student-number encryption backfill (docs/product/specification.md §11).
  *
  * Runs BETWEEN the migration that adds the sealed columns and the future
  * migration that drops the plaintext one. See docs/engineering/deployment.md.

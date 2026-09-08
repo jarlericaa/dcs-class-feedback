@@ -24,7 +24,7 @@ import { DEFAULT_STUDENT_SECTION } from "./templates";
 import { answerInputSchema, validateAnswers } from "./questions";
 
 /**
- * Submission lifecycle (project-specs.md §6.3, domain-model.md §3.1a):
+ * Submission lifecycle (docs/product/specification.md §6.3, docs/domain/domain-model.md §3.1a):
  *
  *   draft → submitted → (edited any number of times) → locked at the deadline
  *

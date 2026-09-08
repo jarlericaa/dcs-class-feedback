@@ -1,5 +1,5 @@
 /**
- * Email provider abstraction (project-specs.md §6.9).
+ * Email provider abstraction (docs/product/specification.md §6.9).
  *
  * Deliberately tiny: one method, no template rendering, no queueing. Queueing is
  * the outbox's job and templating is `templates.ts`'s job, so a provider can be

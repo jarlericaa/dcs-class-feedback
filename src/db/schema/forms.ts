@@ -95,7 +95,7 @@ export const templateVersions = pgTable(
     description: text("description"),
     /**
      * How many repeatable "Ask a Question" entries the form offers
-     * (project-specs.md §5.2). 0 disables the block entirely. Each non-empty
+     * (docs/product/specification.md §5.2). 0 disables the block entirely. Each non-empty
      * entry becomes its own immutable StudentSubmissionItem.
      */
     maxStudentQuestions: integer("max_student_questions").notNull().default(1),
@@ -293,7 +293,7 @@ export const formInstances = pgTable(
     bonusAssignmentSource: bonusAssignmentSource("bonus_assignment_source")
       .notNull()
       .default("auto"),
-    /** Per-occurrence window override (project-specs.md §6.2 step 4). */
+    /** Per-occurrence window override (docs/product/specification.md §6.2 step 4). */
     windowOverriddenByUserId: uuid("window_overridden_by_user_id").references(
       () => users.id,
     ),

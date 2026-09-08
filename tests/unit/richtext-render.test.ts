@@ -7,7 +7,7 @@ import {
 
 /**
  * The renderer is the only place HTML reaches a student's DOM, so these tests
- * are the security boundary for project-specs.md §11 ("rich content is sanitized
+ * are the security boundary for docs/product/specification.md §11 ("rich content is sanitized
  * to prevent script injection"). Each case is an attack that must fail closed.
  */
 describe("renderRichText — injection", () => {

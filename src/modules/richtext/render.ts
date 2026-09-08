@@ -21,7 +21,7 @@ export { richTextToPlain } from "./plain";
 
 /**
  * The ONE safe renderer for rich staff-authored content
- * (project-specs.md §5.2, §11).
+ * (docs/product/specification.md §5.2, §11).
  *
  * Server-only by construction (`server-only`), so a client component cannot
  * import it and no sanitizer or jsdom ever ships to the browser.

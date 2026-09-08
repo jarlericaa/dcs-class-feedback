@@ -14,7 +14,7 @@ import {
 import { enqueueValidityChanged } from "@/modules/email/outbox";
 
 /**
- * The three-state validity workflow (project-specs.md §6.5, domain-model.md §3.3).
+ * The three-state validity workflow (docs/product/specification.md §6.5, docs/domain/domain-model.md §3.3).
  *
  * The point of this module is the split between FLAGGING and FINALIZING:
  *

@@ -1,5 +1,5 @@
 /**
- * Offset pagination for staff lists (project-specs.md §12).
+ * Offset pagination for staff lists (docs/product/specification.md §12).
  *
  * Offset rather than keyset: every paginated list here is filterable and
  * sortable by the staff member, page numbers have to be linkable, and the page

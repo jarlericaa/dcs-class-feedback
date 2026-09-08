@@ -26,7 +26,7 @@ import {
 import { hasSequence, instanceLabel } from "@/modules/forms/instances";
 
 /**
- * Teacher review services (AGENTS.md §6.3, domain-model.md §3.2–3.5).
+ * Teacher review services (AGENTS.md §6.3, docs/domain/domain-model.md §3.2–3.5).
  * Review state, validity, and disposition are independent dimensions.
  * Everything staff-changing here is audited; nothing here is ever surfaced
  * to students directly (student projections live in publishing/history).
@@ -762,7 +762,7 @@ export async function setResponseReviewState(
  * The old single `setValidity(valid|invalid)` was deleted rather than kept as a
  * wrapper: it gated on the `markValidity` flag alone, so any caller that reached
  * for it would have handed a Student Assistant the power to finalize an
- * invalidation — exactly what project-specs.md §4.2 forbids. Leaving a bypass in
+ * invalidation — exactly what docs/product/specification.md §4.2 forbids. Leaving a bypass in
  * place "for convenience" is how that rule gets quietly broken later.
  */
 export {
@@ -859,7 +859,7 @@ export async function setItemReviewState(
 }
 
 /**
- * Staff decide this item will not be answered (domain-model.md §3.5).
+ * Staff decide this item will not be answered (docs/domain/domain-model.md §3.5).
  *
  * This is a REVIEW decision, not a message. The student is never told that a
  * decision was made: §3.5 is explicit that `No response` and `Undecided` never

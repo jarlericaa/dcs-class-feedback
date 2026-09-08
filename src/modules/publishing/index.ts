@@ -26,7 +26,7 @@ import { normalizePublicQuestionText } from "./dedupe";
 export { publishDueAnswers } from "./publish";
 
 /**
- * Public Q&A + source linking (public-qa-and-source-linking.md).
+ * Public Q&A + source linking (docs/domain/public-qa.md).
  * Invariants enforced here:
  * - the original student wording is NEVER touched; rewording lives on the
  *   PublicAnswer only;
@@ -609,7 +609,7 @@ export async function listSectionQa(
 }
 
 /**
- * Student submission history (public-qa-and-source-linking.md §6).
+ * Student submission history (docs/domain/public-qa.md §6).
  * Shows the student their own submissions, private responses, and — via the
  * internal source link — whether their question was publicly answered plus
  * the reworded public text. Never exposes validity, dispositions, drafts, or

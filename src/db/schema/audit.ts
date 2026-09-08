@@ -10,7 +10,7 @@ import { users } from "./identity";
 import { classSections, courses } from "./catalog";
 
 /**
- * Append-only audit log (domain-model.md §4). The application performs only
+ * Append-only audit log (docs/domain/domain-model.md §4). The application performs only
  * INSERTs on this table — no update or delete path exists anywhere.
  * Written in the same transaction as the audited change.
  * Staff/admin-visible only; never student-visible (Risk R6).

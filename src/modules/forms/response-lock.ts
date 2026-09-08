@@ -4,7 +4,7 @@ import { formResponseRevisions, formResponses, weeklyCycles } from "@/db/schema"
 import { writeAudit } from "@/modules/audit";
 
 /**
- * Deadline locking (project-specs.md §6.3 step 5: "On deadline, the latest
+ * Deadline locking (docs/product/specification.md §6.3 step 5: "On deadline, the latest
  * submitted version is locked").
  *
  * Locking is applied in the SAME transaction as the cycle's open→closed
@@ -69,7 +69,7 @@ export async function lockResponsesForCycle(
 /**
  * Reopening a cycle unlocks its responses so students can submit or edit again.
  *
- * This is the ONLY route to a post-deadline edit (open-decisions.md D5). It needs
+ * This is the ONLY route to a post-deadline edit (docs/decisions/open-decisions.md D5). It needs
  * `manageWeeklyCycles`, which the caller has already checked, and every unlock is
  * recorded per response.
  */

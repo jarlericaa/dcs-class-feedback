@@ -25,7 +25,7 @@ const envSchema = z.object({
     .default("development"),
 
   /**
-   * Student-number protection at rest (project-specs.md §11).
+   * Student-number protection at rest (docs/product/specification.md §11).
    * Two independent 32-byte base64 keys; see docs/engineering/security.md.
    * Dev/test fall back to fixed non-secret keys so the suite runs without setup;
    * production refuses to start without real ones (checked below).

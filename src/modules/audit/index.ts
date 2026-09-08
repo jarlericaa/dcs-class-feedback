@@ -122,7 +122,7 @@ function dayStart(
 }
 
 /**
- * Append-only audit log (domain-model.md §4). INSERT-only — the application
+ * Append-only audit log (docs/domain/domain-model.md §4). INSERT-only — the application
  * never updates or deletes audit rows. Call inside the same transaction as
  * the audited change so both commit together.
  */
@@ -332,7 +332,7 @@ async function sectionAuditScope(
     : or(explicitlyThisSection, courseLevel)!;
 }
 /**
- * Audit history for one section (roles-and-permissions.md §3: teachers may
+ * Audit history for one section (docs/domain/roles-and-permissions.md §3: teachers may
  * view audit history for their own resources).
  *
  * The audit table is intentionally generic — it stores entityType/entityId,

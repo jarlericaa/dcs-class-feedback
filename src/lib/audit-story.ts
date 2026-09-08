@@ -486,7 +486,7 @@ const PROSE_PATTERNS = [/body$/i, /^text$/i, /note$/i, /comment$/i, /message$/i]
  * already published to that entire class, and the student's original words are
  * immutable and never in this payload — rewording produces public text
  * alongside the original, it does not overwrite it
- * (public-qa-and-source-linking.md §2). Truncation still applies, so a long
+ * (docs/domain/public-qa.md §2). Truncation still applies, so a long
  * question does not flood the row.
  *
  * Listed explicitly so a future pattern cannot withhold it by accident.

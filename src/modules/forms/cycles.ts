@@ -503,7 +503,7 @@ export async function reopenCycle(actorUserId: string, instanceId: string) {
       courseId: instance.courseId,
       sectionId: instance.sectionId,
     });
-    // Reopening is the ONLY route to a post-deadline edit (open-decisions.md D5).
+    // Reopening is the ONLY route to a post-deadline edit (docs/decisions/open-decisions.md D5).
     // Unlocking here is what makes the reopen meaningful, and each unlock is
     // recorded per response.
     await unlockResponsesForCycle(
@@ -582,7 +582,7 @@ export async function restoreSkippedCycle(
 }
 
 /**
- * Override one occurrence's open/deadline window (project-specs.md §6.2 step 4:
+ * Override one occurrence's open/deadline window (docs/product/specification.md §6.2 step 4:
  * "Staff can pause, skip, or override a scheduled release").
  *
  * Refused once the occurrence has a real submission ANYWHERE in its audience:

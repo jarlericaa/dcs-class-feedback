@@ -26,7 +26,7 @@ import { buildEmail, type EmailEvent, type TemplateContext } from "./templates";
 import { getEmailProvider } from "./index";
 
 /**
- * Idempotent email outbox (project-specs.md §12: "safe retry behavior that does
+ * Idempotent email outbox (docs/product/specification.md §12: "safe retry behavior that does
  * not duplicate forms, answers, or credit" — the same applies to mail).
  *
  * Two guarantees:

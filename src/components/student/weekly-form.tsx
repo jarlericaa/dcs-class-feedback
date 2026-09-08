@@ -135,7 +135,7 @@ export function WeeklyForm({
   const generatedId = useId();
   const [nextQuestionIndex, setNextQuestionIndex] = useState(1);
 
-  // Repeatable question blocks + the single general comment (project-specs.md
+  // Repeatable question blocks + the single general comment (docs/product/specification.md
   // §5.2). Held in state so a failed server validation never loses typed text.
   const [items, setItems] = useState<StudentItemView[]>(() => {
     const existing = initialItems.filter((item) => item.kind === "question");

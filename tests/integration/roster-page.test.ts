@@ -248,7 +248,7 @@ describe("class-list filters run in SQL", () => {
  * characters — never the number itself. So SQL can match it exactly, through
  * the hash that identity is already keyed on, or by its last four. An arbitrary
  * substring has nothing to match against, and the fix for that would be storing
- * the number in clear, which project-specs.md §11 forbids.
+ * the number in clear, which docs/product/specification.md §11 forbids.
  */
 describe("student-number search, and its encrypted boundary", () => {
   beforeEach(async () => {

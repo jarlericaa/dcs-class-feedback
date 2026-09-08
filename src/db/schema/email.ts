@@ -14,7 +14,7 @@ import { classSections, courses } from "./catalog";
 import { users } from "./identity";
 
 /**
- * Transactional outbox for notifications (project-specs.md §6.9).
+ * Transactional outbox for notifications (docs/product/specification.md §6.9).
  *
  * Rows are enqueued INSIDE the transaction that made the domain change, so a
  * rolled-back publish can never leave a queued email, and a committed one can

@@ -54,7 +54,7 @@ import { env } from "@/env";
 
 /**
  * Catalog: courses, class sections, teaching staff, and the per-section TA
- * permission catalog (roles-and-permissions.md §2).
+ * permission catalog (docs/domain/roles-and-permissions.md §2).
  *
  * Authorization encoded here:
  * - creating a course needs the teacher capability (Open D3, provisional:
@@ -663,7 +663,7 @@ export interface RosterStats {
  * `202600001` are one lookup. What a reader loses is a partial like `2026` or
  * `00001`, which the in-memory version answered by searching decrypted text.
  * Restoring that would mean storing the number in clear, which is the one thing
- * project-specs.md §11 forbids — so it stays lost, and deliberately.
+ * docs/product/specification.md §11 forbids — so it stays lost, and deliberately.
  *
  * Ordering is total (name, then enrollment id) so a row cannot swap pages
  * between two requests.

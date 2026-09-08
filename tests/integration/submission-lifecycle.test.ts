@@ -45,7 +45,7 @@ const IN_WINDOW = new Date("2026-01-06T04:00:00Z");
 const AFTER_DEADLINE = new Date("2026-01-10T10:00:00Z");
 
 /**
- * project-specs.md §6.3 and §7 B3: draft → submit → edit → lock at the deadline,
+ * docs/product/specification.md §6.3 and §7 B3: draft → submit → edit → lock at the deadline,
  * with exactly one response per student per cycle and no second credit for an
  * edit.
  */

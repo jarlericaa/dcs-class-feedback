@@ -49,7 +49,7 @@ export const AUDIT_ACTIONS = [
   "item.review_state_changed",
   /**
    * Staff decided a question will not be answered, and the reversal of that.
-   * The student is never told either happened (domain-model.md §3.5), so the
+   * The student is never told either happened (docs/domain/domain-model.md §3.5), so the
    * audit log is the only record that a decision was taken at all.
    */
   "item.answer_declined",

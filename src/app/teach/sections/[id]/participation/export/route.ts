@@ -19,7 +19,7 @@ import {
  * download headers. It therefore adds no gate of its own, and every report
  * below is identity-bearing and audited (Risk R4). What it does NOT do is share
  * one gate: which one applies depends on the report, and the split is
- * deliberate (participation-rules.md §4, decision D17).
+ * deliberate (docs/domain/participation.md §4, decision D17).
  *
  * - `weekly_matrix`, `participants` and `detailed` — the three reports that
  *   existed when D17 was taken — require the delegable `export_participation`

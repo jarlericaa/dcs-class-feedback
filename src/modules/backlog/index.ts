@@ -18,7 +18,7 @@ import { getItemWithSection } from "@/modules/review";
 
 /**
  * Course-level question backlog + legacy import
- * (question-backlog.md, legacy-question-import.md).
+ * (docs/domain/question-backlog.md, docs/domain/legacy-question-import.md).
  * - the backlog belongs to the COURSE; exposure to a section is explicit
  * - legacy imports are ANONYMOUS BY DEFAULT; identity preserved only on
  *   explicit choice

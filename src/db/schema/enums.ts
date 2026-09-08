@@ -14,7 +14,7 @@ export const enrollmentStatus = pgEnum("enrollment_status", [
 
 /**
  * Normalized CRS enrollment status. The registrar's full code list is still
- * outstanding (project-specs.md §14), so anything unrecognized becomes
+ * outstanding (docs/product/specification.md §14), so anything unrecognized becomes
  * `unknown` and the row is flagged for staff review rather than guessed at.
  */
 export const crsEnrollmentStatus = pgEnum("crs_enrollment_status", [
@@ -113,7 +113,7 @@ export const questionCategory = pgEnum("question_category", [
   "misc",
 ]);
 
-// --- responses (independent state dimensions, per domain-model.md §3) ---
+// --- responses (independent state dimensions, per docs/domain/domain-model.md §3) ---
 /** The REVIEW dimension. Untouched by the draft/edit work — see responseLifecycle. */
 export const formResponseState = pgEnum("form_response_state", [
   "submitted",
@@ -123,7 +123,7 @@ export const formResponseState = pgEnum("form_response_state", [
 ]);
 
 /**
- * domain-model.md §3.1a. A new type rather than new values on
+ * docs/domain/domain-model.md §3.1a. A new type rather than new values on
  * `form_response_state`, because the two dimensions are independent and because
  * extending an existing enum would force another single-statement migration.
  */
@@ -153,7 +153,7 @@ export const participationValidity = pgEnum("participation_validity", [
 ]);
 
 /**
- * domain-model.md §3.3. Replaces the two-state `participation_validity`.
+ * docs/domain/domain-model.md §3.3. Replaces the two-state `participation_validity`.
  * `flagged` keeps participation credit (decision D15) — only an Instructor's
  * `invalid` removes it.
  */
@@ -181,7 +181,7 @@ export const submissionItemType = pgEnum("submission_item_type", [
 
 /**
  * Separates a triageable question from the form's single general comment
- * (project-specs.md §5.2). A general comment is never triaged and can never be
+ * (docs/product/specification.md §5.2). A general comment is never triaged and can never be
  * published as a Q&A entry.
  */
 export const submissionItemKind = pgEnum("submission_item_kind", [
@@ -208,7 +208,7 @@ export const responseDisposition = pgEnum("response_disposition", [
 
 // --- publishing ---
 /**
- * project-specs.md §10: `Draft → Awaiting Approval → Published → Updated/Unpublished`.
+ * docs/product/specification.md §10: `Draft → Awaiting Approval → Published → Updated/Unpublished`.
  *
  * `awaiting_approval` is the ONLY value ever added to an existing enum in this
  * schema, and it must be generated as its own migration file: drizzle's migrator
@@ -355,7 +355,7 @@ export const bonusAssignmentSource = pgEnum("bonus_assignment_source", [
   "staff_override",
 ]);
 
-// --- invalidation reasons (participation-rules.md §2.1; staff-only) ---
+// --- invalidation reasons (docs/domain/participation.md §2.1; staff-only) ---
 export const invalidationReason = pgEnum("invalidation_reason", [
   "spam",
   "abusive_content",

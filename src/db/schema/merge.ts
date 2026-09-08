@@ -20,7 +20,7 @@ import { backlogQuestions } from "./backlog";
 import { users } from "./identity";
 
 /**
- * Duplicate-question merging (project-specs.md §6.6, §7 D4).
+ * Duplicate-question merging (docs/product/specification.md §6.6, §7 D4).
  *
  * Why this exists alongside `source_links`, which already maps many items to one
  * public answer:

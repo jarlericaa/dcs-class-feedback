@@ -46,7 +46,7 @@ export const importBatches = pgTable(
     sourceKind: legacySourceKind("source_kind"),
     fileName: text("file_name"),
     /**
-     * Anonymous by default (legacy-question-import.md §3). Flipping this is a
+     * Anonymous by default (docs/domain/legacy-question-import.md §3). Flipping this is a
      * course-staff decision, not delegable to a TA permission flag.
      */
     preserveIdentity: boolean("preserve_identity").notNull().default(false),
@@ -90,7 +90,7 @@ export const legacyImportRows = pgTable(
     /**
      * Set only after an explicit staff choice, and only as a resolved roster
      * reference — never a free-text student number, so a legacy import cannot
-     * reintroduce plaintext identifiers (project-specs.md §11).
+     * reintroduce plaintext identifiers (docs/product/specification.md §11).
      */
     sourceStudentRecordId: uuid("source_student_record_id").references(
       () => studentRecords.id,
@@ -117,11 +117,11 @@ export const legacyImportRows = pgTable(
 
 /**
  * Course-level backlog question: only what the teaching team has CONFIRMED it
- * intends to answer (project-specs.md §5.6), not every unanswered submission.
+ * intends to answer (docs/product/specification.md §5.6), not every unanswered submission.
  *
  * Anonymous-by-default for legacy imports: identityPreserved=true and
  * sourceItemId only when a teacher explicitly chooses to preserve source
- * identity (legacy-question-import.md §3).
+ * identity (docs/domain/legacy-question-import.md §3).
  * Legacy/backlog items NEVER count toward participation.
  */
 export const backlogQuestions = pgTable(
@@ -188,7 +188,7 @@ export const backlogQuestions = pgTable(
 
 /**
  * A Student Assistant's recommendation to add or remove a backlog question,
- * plus the Instructor's decision (project-specs.md §6.6).
+ * plus the Instructor's decision (docs/product/specification.md §6.6).
  *
  * The two partial uniques below are what make a repeated `Will Answer` click
  * idempotent: only one pending recommendation can exist per target per kind.
@@ -249,7 +249,7 @@ export const backlogRecommendations = pgTable(
 
 /**
  * Explicit, per-section exposure of a backlog question. Nothing from the
- * backlog ever appears in a section automatically (question-backlog.md §5).
+ * backlog ever appears in a section automatically (docs/domain/question-backlog.md §5).
  */
 export const sectionBacklogVisibility = pgTable(
   "section_backlog_visibility",

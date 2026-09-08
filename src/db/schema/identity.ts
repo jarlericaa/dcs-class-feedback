@@ -63,7 +63,7 @@ export const studentRecords = pgTable(
      * Nullable only for rows imported before the email column existed.
      */
     rosterEmail: text("roster_email"),
-    // --- CRS roster fields (project-specs.md §6.1 step 5) ---
+    // --- CRS roster fields (docs/product/specification.md §6.1 step 5) ---
     familyName: text("family_name"),
     firstName: text("first_name"),
     /** lived / preferred name */

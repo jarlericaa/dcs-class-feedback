@@ -3,7 +3,7 @@ import { env } from "@/env";
 import type { EmailProvider, OutboundEmail } from "./provider";
 
 /**
- * SMTP adapter for production (project-specs.md §6.9).
+ * SMTP adapter for production (docs/product/specification.md §6.9).
  *
  * Everything comes from the environment; nothing about the institution's mail
  * setup is hard-coded. The transporter is created once and reused, so a batch of

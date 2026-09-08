@@ -200,7 +200,7 @@ describe("submission rules", () => {
   });
 
   /**
-   * project-specs.md §6.3 step 4 now allows editing until the deadline, so a
+   * docs/product/specification.md §6.3 step 4 now allows editing until the deadline, so a
    * second submit is an EDIT of the same response, not a duplicate. The rule that
    * matters — one response per student per cycle — is asserted directly.
    */

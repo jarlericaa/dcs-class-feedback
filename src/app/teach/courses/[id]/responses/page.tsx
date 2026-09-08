@@ -557,7 +557,7 @@ export default async function CourseResponsesPage({
   /**
    * Decide a question will not be answered.
    *
-   * The student is told nothing: domain-model.md §3.5 is explicit that `No
+   * The student is told nothing: docs/domain/domain-model.md §3.5 is explicit that `No
    * response` never surfaces, so their view stays "Submitted". Nothing is
    * deleted, the decision is audited, and the same control reverses it — which
    * is why it needs no confirmation step.

@@ -1,7 +1,7 @@
 import { env } from "@/env";
 
 /**
- * Email content builders (project-specs.md §6.9).
+ * Email content builders (docs/product/specification.md §6.9).
  *
  * The privacy rule — "emails must not expose private feedback content in their
  * subject line" — is enforced by the TYPE, not by discipline: `TemplateContext`

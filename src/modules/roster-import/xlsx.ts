@@ -19,7 +19,7 @@ import {
 } from "./types";
 
 /**
- * CRS-style .xlsx class-list parser (project-specs.md §6.1).
+ * CRS-style .xlsx class-list parser (docs/product/specification.md §6.1).
  *
  * The hard part is not reading cells, it is **not corrupting student numbers**.
  * A spreadsheet that stored `02312345` as a number has already destroyed the

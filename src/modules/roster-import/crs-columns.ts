@@ -3,7 +3,7 @@ import { emailDomain } from "@/modules/identity/email";
 import type { RowWarning } from "./types";
 
 /**
- * CRS class-list column recognition (project-specs.md §6.1).
+ * CRS class-list column recognition (docs/product/specification.md §6.1).
  *
  * Pure functions and configuration only: no I/O, no database, so the whole
  * mapping — including the email rules that decide who gets access — is unit
@@ -14,7 +14,7 @@ import type { RowWarning } from "./types";
  * Columns we refuse to map, ever.
  *
  * `Sex Assigned at Birth` is on the sample class list and is unnecessary for
- * this product (project-specs.md §6.1 step 6). It is excluded here — at the
+ * this product (docs/product/specification.md §6.1 step 6). It is excluded here — at the
  * mapping layer — rather than "just not read later", so there is no code path in
  * which its value reaches a row object, let alone the database.
  */
@@ -124,7 +124,7 @@ export type CrsStatus = "enrolled" | "not_enrolled" | "unknown";
  * CRS status code → normalized status.
  *
  * The registrar's complete code list is still outstanding
- * (project-specs.md §14), so this is deliberately conservative: only codes we
+ * (docs/product/specification.md §14), so this is deliberately conservative: only codes we
  * are confident about are mapped, and everything else becomes `unknown` and is
  * flagged for staff review. That is noisy but never silently enrolls or drops
  * somebody on a guess.

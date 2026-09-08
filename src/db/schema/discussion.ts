@@ -14,7 +14,7 @@ import { publicAnswers } from "./publishing";
 import { users } from "./identity";
 
 /**
- * Course-only reactions on a published entry (project-specs.md §8 P2).
+ * Course-only reactions on a published entry (docs/product/specification.md §8 P2).
  *
  * The user id is stored because a reaction must be toggleable by its owner and
  * because staff moderation needs attribution. It is never included in a

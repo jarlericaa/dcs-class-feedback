@@ -3,7 +3,7 @@ import type { formQuestions } from "@/db/schema";
 
 /**
  * Question definitions and authoritative server-side answer validation
- * (weekly-form-workflow.md §5). Options carry stable ids separate from labels;
+ * (docs/domain/form-workflow.md §5). Options carry stable ids separate from labels;
  * answers store BOTH ids and labels at submission time so exports stay stable
  * when labels change.
  */

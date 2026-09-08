@@ -8,7 +8,7 @@ import {
 import { env } from "@/env";
 
 /**
- * Student-number protection at rest (project-specs.md §11).
+ * Student-number protection at rest (docs/product/specification.md §11).
  *
  * Two independent derivations of the same plaintext:
  *

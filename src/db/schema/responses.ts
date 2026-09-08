@@ -30,7 +30,7 @@ import { classSections, lessonsTopics } from "./catalog";
 
 /**
  * One student's completed form instance. THREE independent state dimensions
- * (domain-model.md §3.1a/§3.2/§3.3):
+ * (docs/domain/domain-model.md §3.1a/§3.2/§3.3):
  *
  * - `lifecycle` — draft / submitted / locked
  * - `state`     — the staff review dimension
@@ -102,7 +102,7 @@ export const formResponses = pgTable(
       .defaultNow(),
   },
   (t) => [
-    // THE one-response-per-student-per-instance rule (weekly-form-workflow.md
+    // THE one-response-per-student-per-instance rule (docs/domain/form-workflow.md
     // §4). The section is not in this key on purpose — see sectionId above.
     uniqueIndex("one_response_per_cycle_student").on(
       t.cycleId,
@@ -166,7 +166,7 @@ export const formResponseRevisions = pgTable(
 );
 
 /**
- * Append-only validity timeline (domain-model.md §3.3). Insert-only, like
+ * Append-only validity timeline (docs/domain/domain-model.md §3.3). Insert-only, like
  * audit_events, but keyed per response so the review UI can show the open
  * flag's reason to the Instructor deciding on it, and so the student-visible
  * reason has a channel that is structurally separate from the staff note.
@@ -227,7 +227,7 @@ export const questionAnswers = pgTable(
      * { optionIds?: string[], optionLabels?: string[], scaleValue?: number,
      *   boolValue?: boolean, dateValue?: string, timeValue?: string }
      * Stores stable option ids AND labels at submission time so exports stay
-     * stable if labels are later edited (participation-rules.md §4.3).
+     * stable if labels are later edited (docs/domain/participation.md §4.3).
      */
     value: jsonb("value"),
     freeText: text("free_text"),
@@ -301,7 +301,7 @@ export const studentSubmissionItems = pgTable(
  * One message in the private thread on a submission item.
  *
  * Both directions live here: staff answers and the asking student's linked
- * follow-ups (project-specs.md §6.7). Readable only by the asker and authorized
+ * follow-ups (docs/product/specification.md §6.7). Readable only by the asker and authorized
  * course staff. Bodies never enter audit rows.
  */
 export const privateResponses = pgTable(

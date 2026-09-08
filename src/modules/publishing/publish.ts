@@ -4,7 +4,7 @@ import { publicAnswers } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 
 /**
- * Scheduled-publication executor (public-qa-and-source-linking.md §7.1).
+ * Scheduled-publication executor (docs/domain/public-qa.md §7.1).
  * Idempotent: the transition is state-guarded (`scheduled` → `published`
  * only), so re-runs and replays never double-publish. A failure leaves the
  * answer `scheduled` with publishFailed + reason, surfaced in-app for staff

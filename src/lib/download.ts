@@ -1,5 +1,5 @@
 /**
- * Headers for every export download (project-specs.md §11).
+ * Headers for every export download (docs/product/specification.md §11).
  *
  * Export bodies are identity- or grade-bearing and are generated in memory per
  * request — nothing is written to disk and nothing may be cached. `private` keeps

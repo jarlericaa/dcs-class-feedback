@@ -13,7 +13,7 @@ import { users } from "./identity";
 
 /**
  * A staff-authored summary/theme note on one teacher-created prompt
- * (project-specs.md §6.4). Human-written only — there is no AI summarization in
+ * (docs/product/specification.md §6.4). Human-written only — there is no AI summarization in
  * this product.
  *
  * Keyed by `form_questions.stable_key` rather than a question row id, because a

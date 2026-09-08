@@ -713,7 +713,7 @@ describe("one week's participation, filtered", () => {
   });
 
   it("keeps the NEWER identity-bearing exports instructor-only, flag and all", async () => {
-    // participation-rules.md §4: every export added after decision D17 —
+    // docs/domain/participation.md §4: every export added after decision D17 —
     // the filtered week CSV and both responder formats — is instructor-only,
     // and `export_participation` does not reach it. The assistant here holds
     // the flag, so a failure of this test means the flag was silently widened

@@ -31,7 +31,7 @@ export const courses = pgTable(
     active: boolean("active").notNull().default(true),
     /**
      * `archivedAt IS NOT NULL` is the authoritative read-only marker
-     * (project-specs.md §11). Enforced inside the authorization helpers, not by
+     * (docs/product/specification.md §11). Enforced inside the authorization helpers, not by
      * hiding controls: every require* helper refuses a write on an archived
      * course unless the caller explicitly opts in with `allowArchived`.
      */
@@ -53,7 +53,7 @@ export const courses = pgTable(
 );
 
 /**
- * A course-scoped long-exam bonus bucket (project-specs.md §6.5, decision D14).
+ * A course-scoped long-exam bonus bucket (docs/product/specification.md §6.5, decision D14).
  * Course-scoped rather than section-scoped so one "Long Exam 1" covers every
  * section of the course, survives a course clone, and gives an Instructor a
  * single cross-section export.
@@ -133,7 +133,7 @@ export const classSections = pgTable(
 
 /**
  * Staff membership on a section with the per-section TA permission catalog
- * (roles-and-permissions.md §2.3). Flags are independent, deny-by-default.
+ * (docs/domain/roles-and-permissions.md §2.3). Flags are independent, deny-by-default.
  * `manage_course_materials` is deliberately OMITTED — course-material
  * management is post-MVP; the flag is reserved and will be added by migration
  * if/when approved.
@@ -171,7 +171,7 @@ export const sectionStaff = pgTable(
     /**
      * A Student Assistant may FLAG a submission (reason required) but can never
      * finalize invalidation — finalizing additionally requires a non-TA section
-     * role, so holding `markValidity` is not enough (project-specs.md §4.2).
+     * role, so holding `markValidity` is not enough (docs/product/specification.md §4.2).
      */
     flagValidity: boolean("flag_validity").notNull().default(false),
     markValidity: boolean("mark_validity").notNull().default(false),
@@ -216,7 +216,7 @@ export const enrollments = pgTable(
     rosterName: text("roster_name").notNull(),
     sourceImportBatchId: uuid("source_import_batch_id"),
     lastImportBatchId: uuid("last_import_batch_id"),
-    // --- CRS snapshot for this section (project-specs.md §6.1 step 5) ---
+    // --- CRS snapshot for this section (docs/product/specification.md §6.1 step 5) ---
     /** The spreadsheet cell verbatim, so a mapping change can be re-derived. */
     crsStatusRaw: text("crs_status_raw"),
     crsStatus: crsEnrollmentStatus("crs_status").notNull().default("unknown"),

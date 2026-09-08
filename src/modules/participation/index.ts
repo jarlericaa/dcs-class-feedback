@@ -23,7 +23,7 @@ import { revealStudentNumber } from "@/modules/crypto/student-number";
 import { formatStudentNumber } from "@/lib/student-number";
 
 /**
- * Derived participation (participation-rules.md §3): there is NO stored
+ * Derived participation (docs/domain/participation.md §3): there is NO stored
  * participation table. A student participated in an occurrence iff a FormResponse
  * exists for (instance, student) with validity Valid.
  *
@@ -37,7 +37,7 @@ import { formatStudentNumber } from "@/lib/student-number";
  *
  * Every export here is identity-bearing, and every access is audited (Risk R4).
  * They do NOT all share one gate, and the split is deliberate
- * (participation-rules.md §4, decision D17):
+ * (docs/domain/participation.md §4, decision D17):
  *
  * - **`exportParticipation`**, the delegable TA flag, reaches the three reports
  *   that existed when D17 was taken: `weeklyMatrixCsv`, `participantListCsv`
@@ -99,7 +99,7 @@ export interface ParticipationMatrix {
  * Derivation primitive — deliberately unauthorized, like every other `derive*`
  * here. Callers authorize; this only computes.
  *
- * Credit rule (participation-rules.md §3): a response counts when its lifecycle
+ * Credit rule (docs/domain/participation.md §3): a response counts when its lifecycle
  * is `submitted` or `locked` (a draft is not a submission) AND its validity is
  * not `invalid` (so a `flagged` response still counts, because a flag is an
  * unconfirmed suspicion — decision D15).
@@ -901,7 +901,7 @@ async function cycleScope(
    * The two parts only mean something together: a question with no answer, or
    * an answer with no question, cannot name a set of students. Falling through
    * to the unfiltered branch would answer a narrowing request with EVERY
-   * enrolled student — the exact widening participation-rules.md §4.4 forbids,
+   * enrolled student — the exact widening docs/domain/participation.md §4.4 forbids,
    * and the one that matters most because the list is what a teacher then
    * contacts. `?question=…` alone is reachable by hand-editing the URL, by a
    * stale link, and by any future control that clears one select and not the
@@ -1009,7 +1009,7 @@ async function cycleParticipationAll(
  * froze `export_participation` as a delegable flag for the reports that already
  * existed and made every export added after it instructor-only, so a Student
  * Assistant holding the flag reads the dashboard above but does not take the
- * file away (participation-rules.md §4). The screen is gated on the flag; the
+ * file away (docs/domain/participation.md §4). The screen is gated on the flag; the
  * download is gated on the role.
  */
 export async function cycleParticipationCsv(
@@ -1162,7 +1162,7 @@ function responderSheet(
 /**
  * One-click responder list as CSV. Audited, and INSTRUCTOR-ONLY: it is one of
  * the exports added after decision D17, so `export_participation` does not
- * reach it (participation-rules.md §4.5). It carries a name, a UP email and a
+ * reach it (docs/domain/participation.md §4.5). It carries a name, a UP email and a
  * full student number per row — the widest identity payload of any export here.
  */
 export async function responderListCsv(
@@ -1185,7 +1185,7 @@ export async function responderListCsv(
  * export path ends up unprotected.
  *
  * Instructor-only, on the same footing as the CSV above: an XLSX variant is
- * explicitly named as instructor-only in participation-rules.md §4, and two
+ * explicitly named as instructor-only in docs/domain/participation.md §4, and two
  * formats of one report must never disagree about who may download it.
  */
 export async function responderListXlsx(
