@@ -15,7 +15,7 @@ import { env } from "../src/env";
  * Student-number encryption backfill (project-specs.md §11).
  *
  * Runs BETWEEN the migration that adds the sealed columns and the future
- * migration that drops the plaintext one. See docs/DEPLOYMENT.md.
+ * migration that drops the plaintext one. See docs/engineering/deployment.md.
  *
  *   npm run db:backfill:student-numbers -- [--dry-run] [--verify-only] [--rotate]
  *

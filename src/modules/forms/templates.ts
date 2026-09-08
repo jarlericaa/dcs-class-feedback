@@ -16,7 +16,7 @@ import { questionDefinitionSchema, type QuestionDefinition } from "./questions";
  * A definition owns the course, title, description, optional purpose label,
  * ownership, and archived state. It does NOT own a delivery pattern: weekly is
  * one of four delivery modes and lives on the schedule
- * (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §2.1).
+ * (docs/domain/forms-and-audiences.md §2.1).
  */
 
 async function insertVersionQuestions(

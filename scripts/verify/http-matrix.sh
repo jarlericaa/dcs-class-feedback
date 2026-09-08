@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual verification matrix (docs/CLAUDE_IMPLEMENTATION_REPORT.md §6).
+# Manual verification matrix for the staff and student routes.
 #
 # Drives the running app over HTTP as seeded users and asserts on the rendered
 # HTML, including the negative-authorization cases. Verification only: nothing

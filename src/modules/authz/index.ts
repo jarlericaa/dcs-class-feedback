@@ -23,7 +23,7 @@ import { normalizeEmail } from "@/modules/identity/email";
  * - Teachers act only on courses/sections where they are staff (Risk R5).
  * - TA capabilities are per-section flags (the permission catalog).
  * - Students act only where their normalized UP email is on a class list AND an
- *   active Enrollment exists (docs/student-identity.md).
+ *   active Enrollment exists (docs/domain/student-identity.md).
  */
 
 export class AuthzError extends Error {

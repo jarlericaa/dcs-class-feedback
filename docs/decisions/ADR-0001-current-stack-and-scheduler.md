@@ -37,7 +37,7 @@ layer for the first UI slices.
 - F#/Fable or SAFE-stack: **rejected.** D1 closed on 2026-08-03 — “Fable”
   referred to Claude tooling, not an implementation stack. No F# option is
   planned; the alternative is retained in
-  [architecture-history.md](../architecture-history.md) §3.2 for the record.
+  [engineering/architecture-history.md](../engineering/architecture-history.md) §3.2 for the record.
 - NestJS plus a separate React API/frontend: more operational and codebase
   complexity than this pilot requires.
 - pg-boss or another queue: possible later if workload, retry visibility, or

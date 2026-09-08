@@ -822,8 +822,7 @@ Hard rules. Each one is currently satisfied; breaking one is a regression.
 The first redesign fixed the visual language and left the **product** decisions
 underneath it wrong. A review of the running application found three classes of
 defect; the corrections are §3 (palette), §7a (hierarchy) and anti-patterns
-25–32. The full route-by-route list, with the reasoning for each, is
-[docs/UI-CORRECTION-LIST.md](docs/UI-CORRECTION-LIST.md).
+25–32.
 
 The three things that were actually wrong:
 
@@ -910,10 +909,9 @@ class.
 
 ## 14. Metadata, status, and asking for a term
 
-Three patterns added by the precision pass
-([docs/UI-PRECISION-PASS.md](docs/UI-PRECISION-PASS.md)). They exist because the
-first two passes fixed layout and colour and left the interface still *reading*
-as generated.
+Three patterns added by the precision pass. They exist because the first two
+passes fixed layout and colour and left the interface still *reading* as
+generated.
 
 ### Metadata is separate facts — `MetaList`
 

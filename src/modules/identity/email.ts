@@ -1,7 +1,7 @@
 import { env } from "@/env";
 
 /**
- * Email identity (docs/student-identity.md).
+ * Email identity (docs/domain/student-identity.md).
  *
  * The teacher-uploaded class list carries the student's UP email, and that email
  * — normalized, compared with exact equality — is the ONLY thing that resolves an

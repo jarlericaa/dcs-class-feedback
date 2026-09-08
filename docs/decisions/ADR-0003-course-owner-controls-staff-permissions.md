@@ -1,11 +1,11 @@
 # ADR-0003 — The course owner alone controls staff assignment and TA permissions
 
-**Status:** Accepted / provisional (depends on [Open D3](../open-decisions.md))
+**Status:** Accepted / provisional (depends on [Open D3](open-decisions.md))
 **Date:** 2026-08-02
 
 ## Context
 
-[roles-and-permissions.md](../roles-and-permissions.md) §2.3 states that TA
+[domain/roles-and-permissions.md](../domain/roles-and-permissions.md) §2.3 states that TA
 permissions are "configurable per class section, controlled by the class
 owner", and the permission→action matrix marks "assign staff / set TA
 permissions" as `Y (owner)` for teachers and `—` for TAs. Until this change
@@ -65,7 +65,7 @@ teacher/co-teacher/course-staff standing and refuses TAs.
 
 ## Follow-up
 
-- Owner sign-off on [Open D3](../open-decisions.md) (who grants the teacher
+- Owner sign-off on [Open D3](open-decisions.md) (who grants the teacher
   role). The implementation currently assumes a platform admin does.
 - Revisit if the institution needs course-owner transfer or departmental
   administration.

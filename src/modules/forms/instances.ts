@@ -41,7 +41,7 @@ import { parseDate, parseTime, zonedTimeToUtc } from "./timezone";
  * edits ONLY that occurrence's own question snapshot. The base definition version
  * and every other occurrence are different rows, so "Week 4 only" is a property
  * of the schema rather than of this service remembering to be careful
- * (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §5).
+ * (docs/domain/forms-and-audiences.md §5).
  */
 
 export class InstanceError extends Error {

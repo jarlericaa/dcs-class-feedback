@@ -46,7 +46,7 @@ export const templateVisibility = pgEnum("template_visibility", [
 export const recurrenceFrequency = pgEnum("recurrence_frequency", ["weekly"]);
 
 /**
- * How a form is delivered (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §3).
+ * How a form is delivered (docs/domain/forms-and-audiences.md §3).
  * Weekly is ONE mode, not the identity of a form.
  */
 export const formDeliveryMode = pgEnum("form_delivery_mode", [

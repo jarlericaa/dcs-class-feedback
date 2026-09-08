@@ -325,7 +325,7 @@ describe("delivery modes", () => {
   it("old per-section weekly data keeps generating, opening, closing, and accepting answers", async () => {
     // A schedule shaped like a pre-migration one: weekly, one section, no course
     // audience beyond it. This is the regression guard for the compatibility
-    // promise in docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §6.2.
+    // promise in docs/domain/forms-and-audiences.md §6.2.
     const { course, section, template } = await workspace();
     const schedule = await makeSchedule({
       courseId: course.id,

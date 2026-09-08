@@ -8,7 +8,7 @@ import { env } from "@/env";
 import { isAllowedEmailDomain, normalizeEmail } from "@/modules/identity/email";
 
 /**
- * Auth foundation (docs/student-identity.md §1):
+ * Auth foundation (docs/domain/student-identity.md §1):
  * - Google SSO restricted to authorized university domains (ALLOWED_EMAIL_DOMAINS).
  * - Signing in creates/updates a User row, keyed by the NORMALIZED email. Nothing
  *   else has to happen: whether that user is a student is answered later, by

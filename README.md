@@ -92,7 +92,7 @@ answers (failures flag the answer, staff retry). Run it via
 
 ## Decisions reflected in this implementation
 
-Status per [docs/open-decisions.md](docs/open-decisions.md), which is authoritative.
+Status per [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md), which is authoritative.
 
 **Closed** — implemented as described, no sign-off outstanding:
 
@@ -103,7 +103,7 @@ Status per [docs/open-decisions.md](docs/open-decisions.md), which is authoritat
 - **D10** roster re-import deactivates (never deletes) absent students.
 - **D1 / D11** TypeScript + Drizzle baseline ([ADR-0001](docs/decisions/ADR-0001-current-stack-and-scheduler.md)). The **scheduler is a reconciliation poller**; `pg-boss` was considered and rejected, not deferred.
 
-**Approved scope, partially or not yet delivered** — do not treat as missing scope, and check [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) before assuming either way:
+**Approved scope, partially or not yet delivered** — do not treat as missing scope, and check [docs/engineering/current-state.md](docs/engineering/current-state.md) before assuming either way:
 
 - **Approved, not built:** **D6 / `E2`** unpublish and restore — schema only; publishing is still effectively irreversible in the running app.
 - **Approved, partially built:** **`F1`** email notifications — *implemented* for form-opened, deadline reminders and validity changes on an idempotent outbox with reconciliation; the private-answer, public-answer-linked and approval enqueues exist but their triggering workflows are not wired.
@@ -120,8 +120,8 @@ Richer template/cycle editing UI + enforced edit-lock flow · backlog
 management UI (services exist) · merge/unmerge UI · Playwright e2e ·
 unpublish/restore UI (`E2`, approved) · bonus-period and student progress views
 (`C3`) · XLSX/PDF exports (`F2`) · course archive and clone (`F3`).
-[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the authority on what exists.
+[docs/engineering/current-state.md](docs/engineering/current-state.md) is the authority on what exists.
 
 Out of scope, not pending: AI features, course-material management, LMS
-integration ([docs/mvp-scope.md](docs/mvp-scope.md)). `pg-boss` is rejected, not
+integration ([docs/product/scope.md](docs/product/scope.md)). `pg-boss` is rejected, not
 queued — the reconciliation poller meets the same idempotency requirements.

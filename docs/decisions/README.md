@@ -1,7 +1,7 @@
 # Architecture Decision Records
 
 This directory records significant, durable technical choices. It is separate
-from [open-decisions.md](../open-decisions.md), which tracks owner questions
+from [open-decisions.md](open-decisions.md), which tracks owner questions
 that are unresolved or provisional.
 
 ## When to add an ADR

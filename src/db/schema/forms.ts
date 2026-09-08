@@ -30,7 +30,7 @@ import { users } from "./identity";
 
 /**
  * Forms: definitions, delivery configuration, audiences, and instances.
- * See docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md — that document owns the model.
+ * See docs/domain/forms-and-audiences.md — that document owns the model.
  *
  * Three distinct things, and the distinction is load-bearing:
  *
@@ -242,7 +242,7 @@ export const formScheduleSections = pgTable(
  * window, lifecycle state, and immutable question snapshot.
  *
  * Physical name `weekly_cycles` is historical (see
- * docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §6.1). Nothing user-facing says
+ * docs/domain/forms-and-audiences.md §6.1). Nothing user-facing says
  * "cycle", and `cycleIndex` is presented as a sequence number that only appears
  * when the delivery mode actually has one.
  *
@@ -345,7 +345,7 @@ export const weeklyCycles = formInstances;
  *
  * At least one row per instance is required. A CHECK cannot span tables, so the
  * rule is enforced by the three services that create instances and asserted by
- * integration tests (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §6.3).
+ * integration tests (docs/domain/forms-and-audiences.md §6.3).
  */
 export const formInstanceSections = pgTable(
   "form_instance_sections",

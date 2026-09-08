@@ -38,7 +38,7 @@ export {
 } from "./crs-columns";
 
 /**
- * Class-list import (docs/student-identity.md, project-specs.md §6.1).
+ * Class-list import (docs/domain/student-identity.md, docs/product/specification.md §6.1).
  *
  * Flow: parse (XLSX upload, or pasted CSV as a fallback) → editable preview
  * (create/enroll/reactivate/rename/deactivate + per-row warnings) → commit in a

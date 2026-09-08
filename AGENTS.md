@@ -3,14 +3,14 @@
 High-level guide for humans and AI coding agents working in this repository.
 
 > **Repository phase: full-scope implementation (owner-approved 2026-08-03).**
-> [docs/project-specs.md](docs/project-specs.md) is the acceptance target for Epics A–F plus the
+> [docs/product/specification.md](docs/product/specification.md) is the acceptance target for Epics A–F plus the
 > post-pilot stories `P1` (legacy import) and `P2` (reactions and moderated comments). Application
 > code lives under `src/` (see [README.md](README.md)). Where an older document conflicted with
-> `project-specs.md`, `project-specs.md` wins and the owning document has been corrected — see the
-> scope-expansion table in [docs/mvp-scope.md](docs/mvp-scope.md) and the resolved-decision table in
-> [docs/open-decisions.md](docs/open-decisions.md). See [§13 Rules for future coding agents](#13-rules-for-future-coding-agents).
+> `docs/product/specification.md`, `docs/product/specification.md` wins and the owning document has been corrected — see the
+> scope-expansion table in [docs/product/scope.md](docs/product/scope.md) and the resolved-decision table in
+> [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md). See [§13 Rules for future coding agents](#13-rules-for-future-coding-agents).
 >
-> **Label discipline:** across all docs, statements are tagged **[Confirmed]** (owner-stated), **[Recommended]** (proposed, not approved), **[Assumption]** (inferred), or **[Open]** (unresolved — see [docs/open-decisions.md](docs/open-decisions.md)). Recommendations are **never** treated as approved requirements.
+> **Label discipline:** across all docs, statements are tagged **[Confirmed]** (owner-stated), **[Recommended]** (proposed, not approved), **[Assumption]** (inferred), or **[Open]** (unresolved — see [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md)). Recommendations are **never** treated as approved requirements.
 
 ---
 
@@ -22,7 +22,7 @@ Each **class section** runs a recurring **weekly feedback form**. Students submi
 
 **Product thesis:** collection was never the problem — the old Google Forms flow collected fine. The pain was *everything after collection*: reviewing, answering, publishing anonymized answers, tracking participation, reusing templates, searching past Q&A, and preserving the link between a published answer and the original student submission. This platform owns that after-collection workflow.
 
-Full goals and background: [docs/product-requirements.md](docs/product-requirements.md).
+Full goals and background: [docs/product/requirements.md](docs/product/requirements.md).
 
 ### 1.1 The concepts this app is built around
 
@@ -48,10 +48,10 @@ Full goals and background: [docs/product-requirements.md](docs/product-requireme
 ## 2. Non-goals for the current phase
 
 The repository is **past** the documentation-only phase: the application is implemented under
-`src/`, and on 2026-08-03 the owner approved [docs/project-specs.md](docs/project-specs.md) as the
+`src/`, and on 2026-08-03 the owner approved [docs/product/specification.md](docs/product/specification.md) as the
 acceptance target for the full Epic A–F scope plus post-pilot stories `P1` and `P2`.
 
-Product-level scope is authoritative in [docs/mvp-scope.md](docs/mvp-scope.md), which now records
+Product-level scope is authoritative in [docs/product/scope.md](docs/product/scope.md), which now records
 that expansion. Still out of scope: student file attachments, question voting, public student
 identities, native mobile apps, Word exports, public access for unenrolled users, microservices,
 course-material management, and dedicated AI infrastructure. **All AI (`P3`) remains parked.**
@@ -82,17 +82,17 @@ flowchart LR
 |---|---|
 | **Student** | Signs in with an authorized university Google account; completes the weekly form per section; answers teacher questions; submits their own question/feedback; views their history, private replies, and whether their question was publicly answered; searches the class's anonymous Q&A archive. Cannot see other students' identities, validity decisions, drafts, notes, audit, or (MVP) participation totals. |
 | **Teacher** | Administers the courses/sections they own. Manages courses, sections, rosters, staff, TA permissions, schedules, templates, and questions; reviews responses; marks validity; sends private responses; drafts/rewords/publishes/schedules public answers; merges questions; manages the backlog and legacy imports; exports participation; views audit history. |
-| **Co-teacher / Co-instructor** | Holds **every** teacher capability on whatever they are assigned to — nothing about them is configurable (`project-specs.md` §4.1: "all instructors assigned to a course have equal permissions"). Assigned at one of two scopes: **course-wide** (every section, including ones added later) or one named class list. Only the course owner assigns either ([ADR-0004](docs/decisions/ADR-0004-course-wide-staff-standing.md)). |
+| **Co-teacher / Co-instructor** | Holds **every** teacher capability on whatever they are assigned to — nothing about them is configurable (`docs/product/specification.md` §4.1: "all instructors assigned to a course have equal permissions"). Assigned at one of two scopes: **course-wide** (every section, including ones added later) or one named class list. Only the course owner assigns either ([ADR-0004](docs/decisions/ADR-0004-course-wide-staff-standing.md)). |
 | **Student Assistant (TA)** | Holds a **per-section, configurable** subset of teacher capabilities (view identities, review, respond, draft/reword/publish/schedule, mark validity, export, manage cycles/templates/backlog). The class owner controls these flags. This catalog exists **only** at section scope — there is no course-wide Student Assistant. |
 | **Platform Administrator** | Selected accounts only. Platform-wide settings, user-access issues, account/system troubleshooting, platform-level audit access. Gains **no** automatic content access to arbitrary courses/sections. |
 
-Full role definitions, the TA permission catalog, and the permission→action matrix: [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
+Full role definitions, the TA permission catalog, and the permission→action matrix: [docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md).
 
 ---
 
 ## 4. Key concepts (rules that shape everything)
 
-- **The course owns forms; the section is who receives them.** Forms, backlog, lessons/topics, bonus periods, and (future) course materials live at the **course** level; students, staff, participation exports, and the public archive live at the **section** level. A form's **audience** is an explicit set of sections. See [docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md).
+- **The course owns forms; the section is who receives them.** Forms, backlog, lessons/topics, bonus periods, and (future) course materials live at the **course** level; students, staff, participation exports, and the public archive live at the **section** level. A form's **audience** is an explicit set of sections. See [docs/domain/forms-and-audiences.md](docs/domain/forms-and-audiences.md).
 - **Four delivery modes, of which weekly is one.** A delivery configuration (mode, audience, window controls, source form version) generates instances that **auto-open** on time — except `Open manually`, which only a person opens. Generation and open/close are **idempotent** with a **reconciliation poller** backstop.
 - **One submission per student per form instance**, enforced by a uniqueness constraint on `(instance, student record)`. The section a response is attributed to is recorded separately and is deliberately **not** in that key, so a student in two targeted sections cannot produce two responses. A student may save a draft and **edit that same response until the deadline**; at the deadline the latest submitted version locks. No late submission, no late edit. An edit never mints a second participation credit.
 - **Forms snapshot on generate.** Generating an instance copies the form's questions into it; later edits to the form create a new version and never mutate an already-generated instance. **One occurrence's questions can be varied on their own** — the base form and every other occurrence are untouched.
@@ -130,7 +130,7 @@ flowchart TB
 
 Approved direction **[Confirmed — D1 closed 2026-08-03, ADR-0001]**: a **modular monolith** on **PostgreSQL**, **Google OAuth**, **role/resource-based authorization**, **database-backed scheduling** (no message broker), **CSV import/export**, **audit logging**, **Docker-based development**, and **automated testing**. Explicitly avoided: microservices, message brokers, separate databases, event-driven infra, dedicated vector DBs, standalone AI services.
 
-The concrete TypeScript stack is **[Implemented]**: Next.js (App Router) + Drizzle + Auth.js + Zod, with a database-backed reconciliation poller. **`pg-boss` was considered and rejected** — ADR-0001 says not to add it, or Redis, or a broker, for the current build. [docs/architecture-history.md](docs/architecture-history.md) is the historical record of the alternatives weighed; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes what actually runs. Module boundaries: identity · catalog · forms · review & publishing · backlog & import · participation & export · audit · scheduling.
+The concrete TypeScript stack is **[Implemented]**: Next.js (App Router) + Drizzle + Auth.js + Zod, with a database-backed reconciliation poller. **`pg-boss` was considered and rejected** — ADR-0001 says not to add it, or Redis, or a broker, for the current build. [docs/engineering/architecture-history.md](docs/engineering/architecture-history.md) is the historical record of the alternatives weighed; [docs/engineering/architecture.md](docs/engineering/architecture.md) describes what actually runs. Module boundaries: identity · catalog · forms · review & publishing · backlog & import · participation & export · audit · scheduling.
 
 ---
 
@@ -143,7 +143,7 @@ These diagrams convey the **product**, not an implementation contract.
 **[Confirmed 2026-08-07]** The class list carries the student's **UP email**, and that email —
 normalized and compared with exact equality — is the only thing that makes an account a student.
 No name similarity, no student-number claim, no manual confirmation. See
-[docs/student-identity.md](docs/student-identity.md).
+[docs/domain/student-identity.md](docs/domain/student-identity.md).
 
 ```mermaid
 sequenceDiagram
@@ -251,13 +251,13 @@ flowchart TD
   M1 & M2 & M3 --> Staff["Staff-only, identity-bearing, access audited"]
 ```
 
-Details: [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md), [docs/public-qa-and-source-linking.md](docs/public-qa-and-source-linking.md), [docs/question-backlog.md](docs/question-backlog.md), [docs/legacy-question-import.md](docs/legacy-question-import.md), [docs/participation-rules.md](docs/participation-rules.md).
+Details: [docs/domain/form-workflow.md](docs/domain/form-workflow.md), [docs/domain/public-qa.md](docs/domain/public-qa.md), [docs/domain/question-backlog.md](docs/domain/question-backlog.md), [docs/domain/legacy-question-import.md](docs/domain/legacy-question-import.md), [docs/domain/participation.md](docs/domain/participation.md).
 
 ---
 
 ## 7. State models
 
-**Design principle: avoid one giant status field.** Each concern is an **independent dimension** (a form response, for example, carries *both* a review state and a validity state, which change independently). Full transition tables, invalid combinations, and student-visible projections: [docs/domain-model.md](docs/domain-model.md#3-state-models).
+**Design principle: avoid one giant status field.** Each concern is an **independent dimension** (a form response, for example, carries *both* a review state and a validity state, which change independently). Full transition tables, invalid combinations, and student-visible projections: [docs/domain/domain-model.md](docs/domain/domain-model.md#3-state-models).
 
 | Dimension | States |
 |---|---|
@@ -276,7 +276,7 @@ Details: [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md), [docs/pub
 
 ## 8. Data model summary
 
-Conceptual entities only — **no SQL, no migrations.** Full field lists and relationships: [docs/domain-model.md](docs/domain-model.md).
+Conceptual entities only — **no SQL, no migrations.** Full field lists and relationships: [docs/domain/domain-model.md](docs/domain/domain-model.md).
 
 ```mermaid
 erDiagram
@@ -320,7 +320,7 @@ Core entities: **User · StudentRecord · Course · CourseStaff · ClassSection 
 
 ## 9. Privacy, security, and audit rules
 
-These are invariants. Treat them as hard constraints when implementation eventually begins. Full risk register: [docs/product-requirements.md](docs/product-requirements.md#7-security--privacy-risk-register).
+These are invariants. Treat them as hard constraints when implementation eventually begins. Full risk register: [docs/product/requirements.md](docs/product/requirements.md#7-security--privacy-risk-register).
 
 - **Students must not see other students' identities.**
 - **Public Q&A is anonymous to students** — the asker is never revealed or safely implied.
@@ -328,13 +328,13 @@ These are invariants. Treat them as hard constraints when implementation eventua
 - **Public reworded questions stay internally source-linked** to their originating submission(s) so the asker sees "Answered" without exposing identity to others.
 - **Student identity is the UP email, and only the UP email** — exact equality after trim + lowercase, unique across student records, enforced in the database. A full name is a label and is never an identity key. An email that is missing, malformed, off an allowed domain, duplicated in one file, or already held by another record blocks its class-list row rather than being guessed at.
 - **Small-class anonymity failure is a real risk** — a single asker or a highly specific/personal question can remain identifiable; rewording must strip identifying context and the publish UI warns before publishing such questions.
-- **Identity-bearing exports are staff-only** and access is audited. Exports added after 2026-08-03 are Instructor-only (see [docs/roles-and-permissions.md](docs/roles-and-permissions.md) and decision D17).
+- **Identity-bearing exports are staff-only** and access is audited. Exports added after 2026-08-03 are Instructor-only (see [docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md) and decision D17).
 - **Authorization is deny-by-default and resource-scoped** — teachers get no access to unrelated courses/sections/students. An **archived** course is read-only, enforced inside the authorization helpers rather than by hiding controls.
 - **Students see their own** submission validity, student-visible invalidity reason, and bonus progress. Students **never see** anyone else's validity, that a submission was *flagged*, internal invalidation reasons or staff notes, no-response/`Will Not Answer` decisions, drafts, drafts awaiting approval, rejected drafts, scheduled or unpublished answers, source links, staff-only revision metadata, another commenter's identity, or audit records.
 - **Student numbers are protected at rest** — AES-256-GCM ciphertext plus a keyed HMAC lookup hash for uniqueness and lookups; full plaintext only behind `view_student_identities`.
 - **All rich content is sanitized by one shared server-side renderer.** No arbitrary HTML, no script execution, `https`-only images, no `data:` URLs. Student-authored text is never rendered as markup.
 - **Audit logs are required** for important actions (actor, action, timestamp, affected entity, before/after values).
-- **AI is post-MVP** and must **never** receive student PII or automatically send/publish anything; a human approves all AI output. See [docs/ai-future-plan.md](docs/ai-future-plan.md).
+- **AI is post-MVP** and must **never** receive student PII or automatically send/publish anything; a human approves all AI output. See [docs/product/ai-future-plan.md](docs/product/ai-future-plan.md).
 
 ---
 
@@ -342,42 +342,42 @@ These are invariants. Treat them as hard constraints when implementation eventua
 
 Read the first three, then by area. Each concept has a single owning document; others link rather than restate.
 
-1. [docs/product-requirements.md](docs/product-requirements.md) — master requirements, assumptions, risk register.
-2. [docs/mvp-scope.md](docs/mvp-scope.md) — MVP / post-MVP / out-of-scope boundary.
-3. [docs/domain-model.md](docs/domain-model.md) — entities, relationships, **all state models**, audit shape.
-4. [docs/roles-and-permissions.md](docs/roles-and-permissions.md) — roles, authorization model, TA permission catalog.
-5. [docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md) — **course-level forms, audiences, delivery modes, per-occurrence customization.**
-6. [docs/weekly-form-workflow.md](docs/weekly-form-workflow.md) — form/question schema, question types, validation, submission flow.
-6. [docs/participation-rules.md](docs/participation-rules.md) — validity, derivation, CSV exports.
-7. [docs/student-identity.md](docs/student-identity.md) — SSO, UP-email student access, roster import.
-8. [docs/public-qa-and-source-linking.md](docs/public-qa-and-source-linking.md) — private/public responses, rewording, source links, anonymity, scheduling, archive, student history.
-9. [docs/question-backlog.md](docs/question-backlog.md) — course-level backlog.
-10. [docs/legacy-question-import.md](docs/legacy-question-import.md) — legacy import, anonymous-by-default.
-11. [docs/ai-future-plan.md](docs/ai-future-plan.md) — post-MVP AI direction and constraints.
-12. [docs/architecture-history.md](docs/architecture-history.md) — **historical**: the alternatives weighed before the current stack was adopted, and why each was rejected. Current architecture is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-13. [docs/open-decisions.md](docs/open-decisions.md) — **read before implementing.**
+1. [docs/product/requirements.md](docs/product/requirements.md) — master requirements, assumptions, risk register.
+2. [docs/product/scope.md](docs/product/scope.md) — MVP / post-MVP / out-of-scope boundary.
+3. [docs/domain/domain-model.md](docs/domain/domain-model.md) — entities, relationships, **all state models**, audit shape.
+4. [docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md) — roles, authorization model, TA permission catalog.
+5. [docs/domain/forms-and-audiences.md](docs/domain/forms-and-audiences.md) — **course-level forms, audiences, delivery modes, per-occurrence customization.**
+6. [docs/domain/form-workflow.md](docs/domain/form-workflow.md) — form/question schema, question types, validation, submission flow.
+6. [docs/domain/participation.md](docs/domain/participation.md) — validity, derivation, CSV exports.
+7. [docs/domain/student-identity.md](docs/domain/student-identity.md) — SSO, UP-email student access, roster import.
+8. [docs/domain/public-qa.md](docs/domain/public-qa.md) — private/public responses, rewording, source links, anonymity, scheduling, archive, student history.
+9. [docs/domain/question-backlog.md](docs/domain/question-backlog.md) — course-level backlog.
+10. [docs/domain/legacy-question-import.md](docs/domain/legacy-question-import.md) — legacy import, anonymous-by-default.
+11. [docs/product/ai-future-plan.md](docs/product/ai-future-plan.md) — post-MVP AI direction and constraints.
+12. [docs/engineering/architecture-history.md](docs/engineering/architecture-history.md) — **historical**: the alternatives weighed before the current stack was adopted, and why each was rejected. Current architecture is [docs/engineering/architecture.md](docs/engineering/architecture.md).
+13. [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md) — **read before implementing.**
 
 ---
 
 ## 11. Deferred and open decisions
 
-**The stack is settled and most product rules are now closed.** The register — question · options · trade-offs · status — is [docs/open-decisions.md](docs/open-decisions.md), which is authoritative; this is a summary.
+**The stack is settled and most product rules are now closed.** The register — question · options · trade-offs · status — is [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md), which is authoritative; this is a summary.
 
 **Closed or removed** (do not reopen to start work):
 
 - **D1 — "Fable" meaning: CLOSED 2026-08-03.** It referred to Claude tooling, not an F#/Fable stack. TypeScript baseline approved ([ADR-0001](docs/decisions/ADR-0001-current-stack-and-scheduler.md)).
-- **D2 — account-match policy: REMOVED 2026-08-07** by **D23**. There is no name matching, so there is nothing to confirm ([docs/student-identity.md](docs/student-identity.md)).
+- **D2 — account-match policy: REMOVED 2026-08-07** by **D23**. There is no name matching, so there is nothing to confirm ([docs/domain/student-identity.md](docs/domain/student-identity.md)).
 - **D7 — timezone: CLOSED 2026-08-03.** One institution timezone, stored per section, per-section overrides deferred. One operational step remains, not a decision: confirm the configured `INSTITUTION_TIMEZONE` before production if the institution is not on `Asia/Manila`.
-- Also closed: **D4** edit lock, **D5** grace/reopen, **D6** unpublish (**approved**, but not yet built — [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) `E2`), **D8** merge scope, **D10** deactivated-student access, **D11** ORM (Drizzle); **D9** join code removed with D2.
+- Also closed: **D4** edit lock, **D5** grace/reopen, **D6** unpublish (**approved**, but not yet built — [docs/engineering/current-state.md](docs/engineering/current-state.md) `E2`), **D8** merge scope, **D10** deactivated-student access, **D11** ORM (Drizzle); **D9** join code removed with D2.
 
 **Still open** — check before implementing in these areas:
 
 - **[Open D3]** who grants the Teacher role · **[Open D13]** data retention · **[Open D24]** staff invitations for an address with no account.
 - Conditional: **D12** deployment target (low-stakes deferral) · **D22** per-section windows for one shared form.
 
-**Still deferred / out of scope:** all AI features (`P3`), course-material management, advanced analytics, LMS integration, student file attachments, native mobile apps, public access for unenrolled users. [docs/mvp-scope.md](docs/mvp-scope.md) owns this boundary.
+**Still deferred / out of scope:** all AI features (`P3`), course-material management, advanced analytics, LMS integration, student file attachments, native mobile apps, public access for unenrolled users. [docs/product/scope.md](docs/product/scope.md) owns this boundary.
 
-**No longer deferred** — promoted into approved scope by `project-specs.md` (see the scope-expansion table in [docs/mvp-scope.md](docs/mvp-scope.md)), so do not treat them as post-MVP. Approval is not the same as being built; [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the authority on what runs:
+**No longer deferred** — promoted into approved scope by `docs/product/specification.md` (see the scope-expansion table in [docs/product/scope.md](docs/product/scope.md)), so do not treat them as post-MVP. Approval is not the same as being built; [docs/engineering/current-state.md](docs/engineering/current-state.md) is the authority on what runs:
 
 - **Email notifications** (`F1`) — **[Implemented]** for form-opened, deadline reminders, and validity changes, on an idempotent outbox with reconciliation. The private-answer, public-answer-linked and approval enqueues exist but their triggering workflows are **not wired** yet.
 - **Student-facing participation** (`C3`, bonus periods and progress views) — approved, **schema only**. Students still see no participation totals in the running app.
@@ -388,29 +388,29 @@ Read the first three, then by area. Each concept has a single owning document; o
 
 ## 12. Where to go from here
 
-- **Understand the product:** start at [docs/product-requirements.md](docs/product-requirements.md) and [docs/mvp-scope.md](docs/mvp-scope.md).
-- **Understand the model:** [docs/domain-model.md](docs/domain-model.md) (entities + state) and [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
-- **Before any implementation:** read [docs/open-decisions.md](docs/open-decisions.md). D1, D2 and D7 no longer need sign-off — they are closed or removed (§11). What still does: **D3** (teacher-role granting), **D13** (data retention, which gates real student data), and **D24** (staff invitations).
-- **The implementation exists.** [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the factual snapshot and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes what runs; [docs/architecture-history.md](docs/architecture-history.md) is the historical record, kept for its rejected alternatives.
+- **Understand the product:** start at [docs/product/requirements.md](docs/product/requirements.md) and [docs/product/scope.md](docs/product/scope.md).
+- **Understand the model:** [docs/domain/domain-model.md](docs/domain/domain-model.md) (entities + state) and [docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md).
+- **Before any implementation:** read [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md). D1, D2 and D7 no longer need sign-off — they are closed or removed (§11). What still does: **D3** (teacher-role granting), **D13** (data retention, which gates real student data), and **D24** (staff invitations).
+- **The implementation exists.** [docs/engineering/current-state.md](docs/engineering/current-state.md) is the factual snapshot and [docs/engineering/architecture.md](docs/engineering/architecture.md) describes what runs; [docs/engineering/architecture-history.md](docs/engineering/architecture-history.md) is the historical record, kept for its rejected alternatives.
 
 ---
 
 ## 13. Rules for future coding agents
 
-- **This repo contains a working application.** [docs/project-specs.md](docs/project-specs.md) is the
-  acceptance target; [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the factual snapshot.
+- **This repo contains a working application.** [docs/product/specification.md](docs/product/specification.md) is the
+  acceptance target; [docs/engineering/current-state.md](docs/engineering/current-state.md) is the factual snapshot.
 - **Preserve the architecture:** Next.js App Router + Drizzle/PostgreSQL + Auth.js modular monolith.
   Do not introduce a second application, a different framework, or microservices.
 - **Do not add dependencies, migrations, or new top-level surface area** unless explicitly requested.
 - **Never widen a permission by adding a boolean flag** where the specification says a capability is
-  non-delegable — see the non-delegable table in [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
+  non-delegable — see the non-delegable table in [docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md).
 - **Never render student-authored text as markup**, and never add a second
   `dangerouslySetInnerHTML`: the only sanctioned one lives in `src/components/rich-text.tsx`.
 - **Every new list is paginated, every new mutation is audited in the same transaction, and every
   new read and write is authorized** by a resource-scoped `require*` helper.
 - **Do not silently promote recommendations into confirmed requirements** — keep the [Confirmed]/[Recommended]/[Assumption]/[Open] labels intact.
-- **Always check [docs/open-decisions.md](docs/open-decisions.md) before implementation work.** If a relevant decision is marked "wait for owner approval," stop and surface it rather than guessing.
-- **Preserve the scope boundary** in [docs/mvp-scope.md](docs/mvp-scope.md); do not pull a deferred item in on your own. `P3` (AI) stays parked.
+- **Always check [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md) before implementation work.** If a relevant decision is marked "wait for owner approval," stop and surface it rather than guessing.
+- **Preserve the scope boundary** in [docs/product/scope.md](docs/product/scope.md); do not pull a deferred item in on your own. `P3` (AI) stays parked.
 - **Prefer small, reviewable changes.**
 - **Keep docs cross-linked** — one owning doc per concept; link instead of duplicating.
 - **When unsure, document the uncertainty** as an open decision instead of inventing a business rule.

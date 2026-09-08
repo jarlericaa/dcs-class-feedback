@@ -1,13 +1,13 @@
 # ADR-0004 — Course-wide staff standing is an owner-granted, Instructor-only tier
 
-**Status:** Accepted / provisional (extends [ADR-0003](ADR-0003-course-owner-controls-staff-permissions.md); depends on [Open D3](../open-decisions.md))
+**Status:** Accepted / provisional (extends [ADR-0003](ADR-0003-course-owner-controls-staff-permissions.md); depends on [Open D3](open-decisions.md))
 **Date:** 2026-09-06
 
 ## Context
 
 `CS 33` is a course with several lecture and lab sections under it. Two tiers of
 staff standing already existed in the schema and in
-[roles-and-permissions.md](../roles-and-permissions.md):
+[domain/roles-and-permissions.md](../domain/roles-and-permissions.md):
 
 - a `course_staff` row (or being `courses.owner_user_id`), which
   `requireSectionStaff` admits **before** it looks at any section row — so it is
@@ -114,12 +114,12 @@ denormalized `courseId` set and a shared batch id in metadata:
   permission set, several people per action, with a course-wide/per-section
   scope choice on the course Teaching team page and a section-locked variant on
   section setup. This ADR settled the model it was designed against.
-- Owner sign-off on [Open D3](../open-decisions.md) (who grants the teacher
+- Owner sign-off on [Open D3](open-decisions.md) (who grants the teacher
   role) still stands open, and now also governs how a non-teacher grantee is
   expected to be provisioned.
 - Whether an invitation/pending-account flow should exist is unresolved and
   deliberately not decided here.
-- The product documents ([roles-and-permissions.md](../roles-and-permissions.md)
-  §2.5 and [domain-model.md](../domain-model.md) `CourseStaff` / `SectionStaff`)
+- The product documents ([domain/roles-and-permissions.md](../domain/roles-and-permissions.md)
+  §2.5 and [domain/domain-model.md](../domain/domain-model.md) `CourseStaff` / `SectionStaff`)
   **have been updated** to describe the two tiers, so they — not this ADR — are
   now the reference for the model.

@@ -26,7 +26,7 @@ import {
 import { parseDate, parseTime, zonedTimeToUtc } from "./timezone";
 
 /**
- * Delivery configuration for a form (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §3).
+ * Delivery configuration for a form (docs/domain/forms-and-audiences.md §3).
  *
  * A delivery configuration belongs to a COURSE and names an explicit audience.
  * Reconfiguring deactivates the previous one instead of mutating it, so instances

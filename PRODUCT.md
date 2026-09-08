@@ -6,7 +6,7 @@
 > not override): **[Confirmed]** = owner-stated, **[Implemented]** = evidenced by
 > the repository, **[Recommended]** = proposed but not approved, **[Assumption]** =
 > inferred and needs validation, **[Open]** = unresolved (see
-> [docs/open-decisions.md](docs/open-decisions.md)). A recommendation is never a
+> [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md)). A recommendation is never a
 > requirement. Design work must respect these labels: do not harden a
 > [Recommended] or [Open] item into product truth without owner sign-off.
 
@@ -14,7 +14,7 @@
 
 web
 
-Native mobile apps are an explicit non-goal ([docs/mvp-scope.md](docs/mvp-scope.md)).
+Native mobile apps are an explicit non-goal ([docs/product/scope.md](docs/product/scope.md)).
 Students will nonetheless submit on phones during or right after class, so mobile
 web is a primary case, not a fallback. **[Confirmed]** non-goal; **[Assumption]**
 on phone-heavy student usage.
@@ -22,7 +22,7 @@ on phone-heavy student usage.
 ## Users
 
 **[Confirmed]** Four roles, fully specified in
-[docs/roles-and-permissions.md](docs/roles-and-permissions.md).
+[docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md).
 
 - **Students** — enrolled in one or more class sections. Job: complete one weekly
   feedback form per section, raise a question or concern they may not want to ask
@@ -37,7 +37,7 @@ on phone-heavy student usage.
   class, and know what still needs attention. They are the administrator of their
   own courses: rosters, schedules, templates, staff, backlog, exports.
 - **Co-teachers / co-instructors** — hold **every** teacher capability on what
-  they are assigned to; there is no subset for them. `project-specs.md` §4.1
+  they are assigned to; there is no subset for them. `docs/product/specification.md` §4.1
   and story A2 confirm it: "all instructors assigned to a course have equal
   permissions." They are assigned at one of two scopes — course-wide, which
   covers every section including ones added later, or a named class list. Only
@@ -111,7 +111,7 @@ destroyed by rewording or merging**.
   stored roster email equals their normalized email, exactly. There is no
   claiming step and no teacher confirmation. A full name is a label and is never
   an identity key. **[Confirmed 2026-08-07]** — this replaced name matching
-  outright; see [docs/student-identity.md](docs/student-identity.md).
+  outright; see [docs/domain/student-identity.md](docs/domain/student-identity.md).
 - **A teacher who mistypes an email gives the wrong person a class.** The risk did
   not disappear with name matching, it moved into the import — where the file is
   checked before commit, bad rows are refused rather than guessed at, and every
@@ -127,7 +127,7 @@ destroyed by rewording or merging**.
 
 ## Capabilities and Constraints
 
-**Confirmed MVP surface** (full boundary in [docs/mvp-scope.md](docs/mvp-scope.md)):
+**Confirmed MVP surface** (full boundary in [docs/product/scope.md](docs/product/scope.md)):
 Google SSO limited to approved university domains; exact normalized UP-email
 student access; courses and sections; roster import with validation,
 column mapping, duplicate detection, preview, row-level errors, summary, safe
@@ -165,11 +165,11 @@ users; per-staff task assignment of submissions. Unpublishing is **approved**
 (decision **D6**, closed 2026-08-03): Instructor-only, reason required, audited,
 reversible by restore, and an unpublished entry leaves both the class archive and
 the linked asker's history (**D16**). It is **not built yet** —
-[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) E2 is `schema only` — so it is
+[docs/engineering/current-state.md](docs/engineering/current-state.md) E2 is `schema only` — so it is
 pending work, not a non-goal.
 
 **PDF exports are likewise no longer a non-goal**: the scope-expansion table in
-[docs/mvp-scope.md](docs/mvp-scope.md) records XLSX and PDF exports as
+[docs/product/scope.md](docs/product/scope.md) records XLSX and PDF exports as
 **approved** (`C1`, `F2`). They are **not built** — `C1` is `missing` and `F2` is
 `partial` (three identity-bearing CSVs only). **Word** export stays out of
 scope. Course-material *management* is post-MVP; only the data model
@@ -193,16 +193,14 @@ management UI, Playwright e2e coverage.
   a hard deadline; overstated or playful copy in those moments reads as untrustworthy.
   Never imply an anonymity guarantee stronger than the system actually provides.
 - **Anti-reference:** Ed Discussion, Piazza, and Slido are studied for interaction
-  patterns in [docs/ED_DISCUSSION_REFERENCE_PACK.md](docs/ED_DISCUSSION_REFERENCE_PACK.md)
-  and [docs/DESIGN-RESEARCH.md](docs/DESIGN-RESEARCH.md). Their logos, brand
+  patterns in [docs/design/research.md](docs/design/research.md). Their logos, brand
   identity, exact copy, proprietary assets, and layouts must not be copied. The
   result must read as Class Feedback Platform, not as one of those with the logo
   removed. **[Confirmed]**
-- The palette and visual direction in
-  [docs/UX-DESIGN-BRIEF.md](docs/UX-DESIGN-BRIEF.md) are **[Recommended]**, not an
-  approved brand. `src/app/globals.css` is the incumbent implementation and the
-  current de facto authority; whether to preserve or replace it is a design
-  decision, not a product fact, and is out of scope for this file.
+- The palette and visual direction in [DESIGN.md](DESIGN.md) are a design
+  authority, not an approved institutional brand. Whether to preserve or replace
+  them is a design decision, not a product fact, and is out of scope for this
+  file.
 
 ## Evidence on Hand
 
@@ -222,13 +220,13 @@ management UI, Playwright e2e coverage.
   already accepts. What the importer *does* define: the identity fields it maps
   are **student number, full name and the normalized UP email** — the email
   being the access key (**D23**,
-  [docs/student-identity.md](docs/student-identity.md)) — alongside
+  [docs/domain/student-identity.md](docs/domain/student-identity.md)) — alongside
   family/first/middle name, lived name, preferred pronoun, program, enrollment
   status and enlistment date. Each is matched against a list of accepted header
   spellings rather than one fixed name, and headers naming sex or gender are
   refused on principle. Acceptance rules are owned by
-  [docs/project-specs.md](docs/project-specs.md) §6.1 and
-  [docs/student-identity.md](docs/student-identity.md). No logo or illustration
+  [docs/product/specification.md](docs/product/specification.md) §6.1 and
+  [docs/domain/student-identity.md](docs/domain/student-identity.md). No logo or illustration
   assets exist yet.
 
 ## Product Principles

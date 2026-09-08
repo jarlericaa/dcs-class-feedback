@@ -46,7 +46,7 @@ export const studentRecords = pgTable(
      * DEPRECATED plaintext column, kept nullable only so the encryption
      * backfill has a source to read. `scripts/backfill-student-numbers.ts`
      * populates the three columns below and then verifies; the column is
-     * dropped by the following migration. See docs/DEPLOYMENT.md.
+     * dropped by the following migration. See docs/engineering/deployment.md.
      */
     studentNumber: text("student_number"),
     /** AES-256-GCM, AAD-bound to this row's id (src/modules/crypto). */

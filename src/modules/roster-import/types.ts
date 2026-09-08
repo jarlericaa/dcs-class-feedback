@@ -13,7 +13,7 @@ export type RowWarning =
   | { code: "not_enrolled_status"; raw: string }
   | { code: "missing_required"; field: string }
   | { code: "conflicting_existing_record"; field: string; existing: string }
-  // --- email identity (docs/student-identity.md) ---
+  // --- email identity (docs/domain/student-identity.md) ---
   | { code: "missing_email" }
   | { code: "invalid_email" }
   | { code: "disallowed_email_domain"; domain: string }

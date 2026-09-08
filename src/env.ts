@@ -26,7 +26,7 @@ const envSchema = z.object({
 
   /**
    * Student-number protection at rest (project-specs.md §11).
-   * Two independent 32-byte base64 keys; see docs/SECURITY.md.
+   * Two independent 32-byte base64 keys; see docs/engineering/security.md.
    * Dev/test fall back to fixed non-secret keys so the suite runs without setup;
    * production refuses to start without real ones (checked below).
    */
@@ -105,7 +105,7 @@ export const env = {
    * Allowed university email domains, lowercased. Empty list = reject all
    * sign-ins. This is also the list a class-list email must be on before it can
    * be imported, because an address that can never sign in can never be a
-   * student (docs/student-identity.md).
+   * student (docs/domain/student-identity.md).
    */
   allowedEmailDomains: parsed.ALLOWED_EMAIL_DOMAINS.split(",")
     .map((d) => d.trim().toLowerCase())

@@ -23,7 +23,7 @@ import {
  * A form instance's audience is the set of rows in `formInstanceSections` —
  * never the page a teacher happens to be on, never a single denormalized column.
  * `formInstances.sectionId` is a legacy anchor and is deliberately NOT consulted
- * here (docs/FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §2.2).
+ * here (docs/domain/forms-and-audiences.md §2.2).
  *
  * The three rules this module exists to enforce:
  *

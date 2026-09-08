@@ -19,7 +19,7 @@ import { commitRosterImport, parseRosterCsv } from "@/modules/roster-import";
 
 /**
  * Student identity is exact normalized UP-email matching against the
- * teacher-uploaded class list (docs/student-identity.md). These tests are the
+ * teacher-uploaded class list (docs/domain/student-identity.md). These tests are the
  * executable form of that rule: what it grants, what it refuses, and the things
  * it must NOT consider — above all, the name.
  */

@@ -43,6 +43,6 @@ not need comments, reactions, voting, or open peer threads for this workflow.
 
 ## References
 
-- [Public Q&A and source linking](../public-qa-and-source-linking.md)
-- [Security and privacy](../SECURITY.md)
-- [Project context](../../PROJECT_CONTEXT.md)
+- [Public Q&A and source linking](../domain/public-qa.md)
+- [Security and privacy](../engineering/security.md)
+- [Documentation index](../README.md)
