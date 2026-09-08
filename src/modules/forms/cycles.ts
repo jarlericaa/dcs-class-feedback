@@ -462,6 +462,7 @@ export async function closeDueCycles(now: Date): Promise<number> {
         tx,
         instance.id,
         now,
+        instance.courseId,
         instance.sectionId ?? undefined,
       );
       closed += 1;
@@ -510,6 +511,7 @@ export async function reopenCycle(actorUserId: string, instanceId: string) {
       instanceId,
       actorUserId,
       new Date(),
+      instance.courseId,
       instance.sectionId ?? undefined,
     );
   });

@@ -1187,6 +1187,7 @@ export async function closeInstanceNow(
       tx,
       instanceId,
       now,
+      instance.courseId,
       instance.sectionId ?? undefined,
     );
   });

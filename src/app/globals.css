@@ -1415,6 +1415,70 @@ kbd {
   border: 0;
 }
 
+/**
+ * What changed, by named field (GitHub issue #16).
+ *
+ * A definition list, because that is what it is: a field and its transition.
+ * The two values sit on one line with an arrow between them, so a reader scans
+ * the arrows down the entry rather than reading each pair as a sentence — and
+ * the arrow is `aria-hidden` in the markup with the words "changed to" beside
+ * it, since a screen reader cannot say a glyph.
+ *
+ * The old value is quieter than the new one. Both are present, but the thing a
+ * reader came for is what it is NOW.
+ */
+.audit-diff {
+  display: grid;
+  gap: 2px;
+  margin: var(--s2) 0 0;
+  font-size: 12px;
+}
+.audit-diff__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+.audit-diff dt {
+  color: var(--ink-muted);
+  font-weight: 600;
+  min-width: 8rem;
+}
+.audit-diff dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.audit-diff__from {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--rule-strong);
+}
+.audit-diff__to {
+  color: var(--ink);
+}
+
+/* The raw payload, folded away. Needed perhaps once a term, and it must not be
+   what a reader reads past to reach the next entry. */
+.audit-raw {
+  margin-top: var(--s2);
+}
+.audit-raw > summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.audit-raw > summary:hover {
+  color: var(--ink-soft);
+}
+/* Said inside the disclosure, not outside it: a warning a reader has to read
+   before opening would be a warning they learn to skip. */
+.audit-raw__note {
+  margin: var(--s2) 0 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
 /* A raw before/after payload in the audit log. Data, so monospace is earned. */
 .code-block {
   margin: 6px 0 0;

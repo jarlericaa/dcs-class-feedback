@@ -53,6 +53,7 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
           entityType: "public_answer",
           entityId: answer.id,
           metadata: { scheduled: true, ...(late ? { late: true } : {}) },
+          sectionId: answer.sectionId,
         });
         published += 1;
       });
@@ -73,6 +74,7 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
         entityType: "public_answer",
         entityId: answer.id,
         metadata: { reason },
+        sectionId: answer.sectionId,
       });
     }
   }

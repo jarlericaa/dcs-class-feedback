@@ -10,6 +10,8 @@ import {
 } from "./fixtures";
 import {
   auditEvents,
+  enrollments,
+  formInstanceSections,
   formInstances,
   formQuestions,
   privateResponses,
@@ -194,7 +196,7 @@ describe("draft → submit → edit → deadline lock", () => {
   });
 
   it("locks at the deadline, in the same transaction as the close", async () => {
-    const { section, cycle, question, student } = await openCycle();
+    const { course, section, cycle, question, student } = await openCycle();
     await submitResponse(
       student.user.id,
       cycle.id,
@@ -215,6 +217,11 @@ describe("draft → submit → edit → deadline lock", () => {
         AFTER_DEADLINE,
       ),
     ).rejects.toBeInstanceOf(ResponseLockedError);
+
+    const lockAudit = await db.query.auditEvents.findFirst({
+      where: eq(auditEvents.action, "response.locked"),
+    });
+    expect(lockAudit?.courseId).toBe(course.id);
 
     // Credit survives locking.
     const matrix = await deriveParticipation(section.id);
@@ -481,7 +488,7 @@ describe("repeatable questions and the general comment", () => {
   });
 
   it("editing an untouched item preserves the original wording as a withdrawn row", async () => {
-    const { teacher, cycle, question, student } = await openCycle();
+    const { course, teacher, section, cycle, question, student } = await openCycle();
     const submitted = await submitResponse(
       student.user.id,
       cycle.id,
@@ -492,6 +499,18 @@ describe("repeatable questions and the general comment", () => {
       IN_WINDOW,
     );
     const originalId = submitted.studentItemId!;
+
+    // Move the student to another audience section after the first save. The
+    // response's original attribution must remain the audit scope for edits.
+    const movedSection = await makeSection(course.id);
+    await db.insert(formInstanceSections).values({
+      instanceId: cycle.id,
+      sectionId: movedSection.id,
+    });
+    await db
+      .update(enrollments)
+      .set({ sectionId: movedSection.id })
+      .where(eq(enrollments.studentRecordId, student.record.id));
 
     const edited = await editSubmittedResponse(
       student.user.id,
@@ -553,6 +572,12 @@ describe("repeatable questions and the general comment", () => {
     });
     expect(live).toHaveLength(1);
     expect(live[0]!.originalText).toBe("revised wording");
+
+    const withdrawalAudit = await db.query.auditEvents.findFirst({
+      where: eq(auditEvents.action, "response.item_withdrawn"),
+    });
+    expect(withdrawalAudit?.courseId).toBe(course.id);
+    expect(withdrawalAudit?.sectionId).toBe(section.id);
   });
 
   it("refuses to replace an item staff have already replied to", async () => {
@@ -593,6 +618,35 @@ describe("repeatable questions and the general comment", () => {
     }))!;
     expect(item.originalText).toBe("answered already");
     expect(item.withdrawnAt).toBeNull();
+  });
+
+  it("audits removing an untouched item with its response scope", async () => {
+    const { course, section, cycle, question, student } = await openCycle({
+      maxStudentQuestions: 2,
+    });
+    const submitted = await submitResponse(
+      student.user.id,
+      cycle.id,
+      {
+        answers: [{ questionId: question.id, text: "ok" }],
+        items: [{ clientKey: "q1", kind: "question", text: "remove me" }],
+      },
+      IN_WINDOW,
+    );
+
+    await editSubmittedResponse(
+      student.user.id,
+      cycle.id,
+      { answers: [{ questionId: question.id, text: "ok" }], items: [] },
+      new Date(IN_WINDOW.getTime() + 60_000),
+    );
+
+    const withdrawalAudit = await db.query.auditEvents.findFirst({
+      where: eq(auditEvents.action, "response.item_withdrawn"),
+    });
+    expect(withdrawalAudit?.entityId).toBe(submitted.studentItemId);
+    expect(withdrawalAudit?.courseId).toBe(course.id);
+    expect(withdrawalAudit?.sectionId).toBe(section.id);
   });
 
   it("hides withdrawn items from the staff review queue", async () => {

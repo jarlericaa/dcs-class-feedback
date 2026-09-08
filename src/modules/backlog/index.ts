@@ -136,6 +136,9 @@ export async function copyOrMoveToBacklog(
         itemId,
         preserveSource: opts.preserveSource ?? false,
       },
+      // The backlog belongs to the course, and a backlog_question id is
+      // reachable from no section — the scope has to be recorded here.
+      courseId,
     });
     return question!;
   });
@@ -221,6 +224,9 @@ export async function importLegacyEntries(
       entityType: "import_batch",
       entityId: batch!.id,
       after: { imported: valid.length, errored: errors.length },
+      // A legacy batch carries a course and no section, so unlike a roster
+      // batch it is not reachable from the section fan-out.
+      courseId,
     });
     return { importBatchId: batch!.id, created, errors };
   });
@@ -274,6 +280,7 @@ export async function setBacklogState(
       entityId: backlogQuestionId,
       before: { state: question.state },
       after: { state },
+      courseId: question.courseId,
     });
   });
 }
@@ -316,6 +323,10 @@ export async function makeVisibleToSection(
         entityType: "backlog_question",
         entityId: backlogQuestionId,
         after: { sectionId },
+        // This one act names a single section, so it is scoped to that section
+        // rather than to the course: the other sections were not exposed.
+        sectionId,
+        courseId: question.courseId,
       });
     }
   });
@@ -386,6 +397,7 @@ export async function draftFromBacklog(
       entityType: "public_answer",
       entityId: answer!.id,
       after: { fromBacklog: backlogQuestionId, sectionId },
+      sectionId,
     });
     await writeAudit(tx, {
       actorUserId,
@@ -393,6 +405,7 @@ export async function draftFromBacklog(
       entityType: "source_link",
       entityId: link!.id,
       after: { publicAnswerId: answer!.id, backlogQuestionId },
+      sectionId,
     });
     return answer!;
   });

@@ -12,6 +12,14 @@ import { demoteHeadings, hardenImages, hardenLinks } from "./harden";
 import { KATEX_OPTIONS, SAFE_SCHEMA } from "./schema";
 
 /**
+ * Re-exported so every existing `from "@/modules/richtext/render"` keeps
+ * working. It lives in `./plain` because it needs none of this file's
+ * dependencies — and because this file is `server-only`, which made a pure
+ * string helper unusable from a script.
+ */
+export { richTextToPlain } from "./plain";
+
+/**
  * The ONE safe renderer for rich staff-authored content
  * (project-specs.md §5.2, §11).
  *
@@ -101,29 +109,4 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-/**
- * Plain-text projection, for exports, emails, `aria-label`s and previews.
- *
- * Strips markdown syntax rather than rendering and un-rendering, so it is safe to
- * use in contexts that must never contain markup at all.
- */
-export function richTextToPlain(source: string | null | undefined): string {
-  if (!source) return "";
-  return source
-    .replace(/```[\s\S]*?```/g, " [code] ")
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\$\$[\s\S]*?\$\$/g, " [math] ")
-    .replace(/\$[^$\n]*\$/g, " [math] ")
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    // Markdown may embed literal HTML. The plain projection is used in contexts
-    // that must contain no markup at all (email bodies, CSV cells, aria labels),
-    // so tags are removed rather than escaped.
-    .replace(/<[^>]*>/g, " ")
-    .replace(/[*_~>]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
 }

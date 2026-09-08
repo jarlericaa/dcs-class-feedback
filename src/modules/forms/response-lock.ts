@@ -18,6 +18,7 @@ export async function lockResponsesForCycle(
   dbx: DbOrTx,
   cycleId: string,
   now: Date,
+  courseId: string,
   sectionId?: string,
 ): Promise<number> {
   const locked = await dbx
@@ -57,6 +58,7 @@ export async function lockResponsesForCycle(
       entityId: cycleId,
       metadata: { lockedCount: locked.length },
       sectionId: sectionId ?? null,
+      courseId,
     });
   }
   // Drafts are deliberately left as drafts: an unsubmitted draft in a closed
@@ -76,6 +78,7 @@ export async function unlockResponsesForCycle(
   cycleId: string,
   actorUserId: string,
   now: Date,
+  courseId: string,
   sectionId?: string,
 ): Promise<number> {
   const unlocked = await dbx
@@ -111,6 +114,7 @@ export async function unlockResponsesForCycle(
       entityId: cycleId,
       metadata: { unlockedCount: unlocked.length },
       sectionId: sectionId ?? null,
+      courseId,
     });
   }
   return unlocked.length;
@@ -130,7 +134,13 @@ export async function lockDueResponses(now: Date = new Date()): Promise<number> 
   let total = 0;
   for (const cycle of due) {
     total += await db.transaction((tx) =>
-      lockResponsesForCycle(tx, cycle.id, now, cycle.sectionId ?? undefined),
+      lockResponsesForCycle(
+        tx,
+        cycle.id,
+        now,
+        cycle.courseId,
+        cycle.sectionId ?? undefined,
+      ),
     );
   }
   return total;
