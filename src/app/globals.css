@@ -2165,6 +2165,16 @@ kbd {
      how much room a row actually has. */
   container-type: inline-size;
 }
+/* How much of the week this reader has not read yet. Quieter than the
+   still-needs-a-reply figure beside it: unread is a reading position, not
+   outstanding work. */
+.feedbar__unread {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.feedbar__status form {
+  display: contents;
+}
 
 /**
  * One post: one student, one occurrence. Flat paper squared to the board, like
@@ -2224,11 +2234,31 @@ kbd {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.post--invalid {
+  background: var(--paper-quiet);
+}
+/**
+ * Not read yet, by THIS reader.
+ *
+ * A left edge rather than a fill or a weight change: the amber edge is already
+ * the column's language for "this one is on you" (see `.post--waiting`), and a
+ * tinted background would fight the one `.post--invalid` uses to say something
+ * far more consequential. Where a post is both unread and waiting, waiting
+ * wins the edge — it is the stronger claim — so this rule comes first and is
+ * overridden below.
+ */
+.post--unread {
+  border-left-color: var(--rule-ink);
+}
+/* Waiting outranks unread on the edge: "somebody is owed a reply" is a
+   stronger claim on a reader than "you have not read this yet". */
 .post--waiting {
   border-left-color: var(--amber);
 }
-.post--invalid {
-  background: var(--paper-quiet);
+.post--unread .post__who {
+  /* The name carries the weight, the way an unread row does in a mail client.
+     Nothing is hidden and nothing moves: only the ink changes. */
+  color: var(--ink);
 }
 .post__mark {
   grid-column: 1;
@@ -2262,9 +2292,96 @@ kbd {
 /* The form answers now sit above, so every question is separated from what
    precedes it — not only from a sibling question. */
 .post__item {
-  margin-top: var(--s4);
-  padding-top: var(--s4);
+  margin-top: var(--s5);
+  padding-top: var(--s5);
   border-top: 1px solid var(--rule);
+}
+
+/**
+ * The question, above the answer to it.
+ *
+ * Three levels, and they have to be tellable apart at a glance: the PROMPT
+ * (what was asked), its HELP TEXT (smaller, quieter), and the ANSWER (the
+ * student's own words, in the serif, behind a rule). The prompt is set in the
+ * same register the student read it in — it is a person's writing, not the
+ * system speaking — one step down in size so that in a column of thirty posts
+ * the answer stays the thing the eye lands on.
+ */
+.post__ask {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+}
+.post__prompt {
+  min-width: 0;
+  max-width: 68ch;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.post__askdesc {
+  margin-bottom: var(--s2);
+  max-width: 68ch;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.post__askdesc .rich-text {
+  font-size: 12px;
+}
+/* Asked, and left empty. Stated rather than drawn as a gap: an absent row is
+   indistinguishable from a rendering fault. */
+.post__blank {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/**
+ * A long answer, collapsed to its opening lines.
+ *
+ * `-webkit-line-clamp` with the legacy box model is still the only way to clamp
+ * at a line count in every browser this app targets; the standard `line-clamp`
+ * is listed beside it so the rule follows the property once support lands.
+ * Applied only once the toggle exists (see `LongText`), so nothing is ever
+ * hidden from a reader whose JavaScript has not run.
+ */
+.longtext {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+}
+.post__words--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  line-clamp: 8;
+  overflow: hidden;
+}
+.longtext__toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.longtext__toggle:hover {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.longtext__toggle:focus-visible {
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .longtext__toggle {
+    min-height: 44px;
+  }
 }
 /* The student's own words. Document register, because a person wrote them, and
    a rule down the side so they cannot be mistaken for the platform speaking. */
@@ -2346,6 +2463,14 @@ kbd {
 @container (max-width: 720px) {
   .post {
     grid-template-columns: 34px minmax(0, 1fr);
+    /* The side padding buys nothing once the row is this narrow; the reading
+       measure does. */
+    padding: var(--s5) var(--s4);
+  }
+  /* A rule plus an indent costs three characters a line at this width, and the
+     serif register already says whose words these are. */
+  .post__words {
+    padding-left: var(--s3);
   }
   /* Under the name, not above it: the person is what the row is about, and a
      date arriving first reads as a log entry rather than as somebody's week. */

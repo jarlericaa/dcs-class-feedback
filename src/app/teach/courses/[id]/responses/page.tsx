@@ -34,6 +34,9 @@ import {
   IconPublic,
   IconSearch,
 } from "@/components/ui/icons";
+import { PreRenderedRichText } from "@/components/rich-text-client";
+import { LongText } from "@/components/ui/long-text";
+import { renderRichText, richTextToPlain } from "@/modules/richtext/render";
 import { PublicAnswerComposer } from "@/components/staff/public-answer-composer";
 import {
   confirmFlag,
@@ -43,6 +46,10 @@ import {
   getCourseReviewQueue,
   getValidityHistory,
   invalidateSubmission,
+  listReadResponseIds,
+  markResponseRead,
+  markResponsesRead,
+  markResponseUnread,
   rejectFlag,
   restoreSubmission,
   type ReviewFilter,
@@ -97,6 +104,26 @@ const FILTERS: { key: ReviewFilter; label: string }[] = [
 ];
 
 /**
+ * Read state, a SECOND and independent dimension (GitHub issue #6).
+ *
+ * Not folded into the filter above, because the two answer different
+ * questions: "what still needs work" is about the submission, "what have I not
+ * read" is about this reader. A response can be answered and unread (a
+ * colleague dealt with it) or unanswered and read (you read it and moved on),
+ * and one control could not express either.
+ *
+ * Read/unread rather than seen/unseen in the copy. The issue borrows
+ * Messenger's word; what a teacher does with a response is READ it, and
+ * "seen" in a product that also promises anonymity invites the wrong reading.
+ */
+const READ_FILTERS = [
+  { key: "all", label: "Read and unread" },
+  { key: "unread", label: "Unread only" },
+] as const;
+
+type ReadFilter = (typeof READ_FILTERS)[number]["key"];
+
+/**
  * Internal validity reasons. These are the staff vocabulary and are NEVER shown
  * to a student; when a decision removes credit, the student sees only the
  * separate `studentVisibleReason` a human types.
@@ -134,6 +161,8 @@ export default async function CourseResponsesPage({
     cycle?: string;
     /** one class section, when the reader has more than one */
     section?: string;
+    /** read state: everything, or only what this reader has not read */
+    seen?: string;
     category?: string;
     q?: string;
     /** the post an action just finished on, so the reader lands back on it */
@@ -150,6 +179,8 @@ export default async function CourseResponsesPage({
 
   const filter = (FILTERS.find((f) => f.key === sp.filter)?.key ??
     "all") as ReviewFilter;
+  const readFilter = (READ_FILTERS.find((f) => f.key === sp.seen)?.key ??
+    "all") as ReadFilter;
 
   let queue;
   try {
@@ -221,6 +252,21 @@ export default async function CourseResponsesPage({
 
   const reviewedThisSession = await readReviewedThisSession();
 
+  /**
+   * Which of this week's responses this reader has already read.
+   *
+   * One query for the whole occurrence, resolved before any filtering so the
+   * unread COUNT describes the week rather than whatever is on screen. The ids
+   * handed over have already been scoped to the reader's own sections by
+   * `getCourseReviewQueue`.
+   */
+  const readIds = await listReadResponseIds(
+    user.id,
+    rows.map((row) => row.response.id),
+  );
+  const isUnread = (row: QueueRow) => !readIds.has(row.response.id);
+  const unreadInScope = rows.filter(isUnread).length;
+
   // Category and free-text narrowing happen here rather than in the service:
   // both are presentation filters over an already-authorized result set.
   const term = sp.q?.trim().toLowerCase();
@@ -246,11 +292,40 @@ export default async function CourseResponsesPage({
   };
 
   const submittedAt = (row: QueueRow) => row.response.submittedAt ?? new Date(0);
+  /**
+   * Unread first, then oldest first inside each group.
+   *
+   * "Resume where you left off" is the whole request, and ordering delivers it
+   * without hiding anything: what you have not read leads the column, and what
+   * you have is still there below it. Oldest-first survives INSIDE the unread
+   * group, which is where the fairness argument actually bites — reverse
+   * chronology would keep starving whoever asked earliest.
+   *
+   * Seen rows are NOT filtered out by default, though the issue offers that as
+   * an alternative. Hiding two thirds of a week on arrival makes "where did the
+   * rest go?" the first question a teacher asks, and puts the number on this
+   * page at odds with the count in the navigation. The Unread-only filter is
+   * one click away for anyone who wants it, and it is in the URL.
+   *
+   * The order is computed once per render, so nothing moves under the cursor
+   * while a reader works down the column; marking something read reorders on
+   * the NEXT navigation, and the `at` anchor carries them back to the post they
+   * acted on.
+   */
   const visible = rows
     .filter(
-      (row) => matchesSearch(row) && matchesCategory(row) && matchesFilter(row),
+      (row) =>
+        matchesSearch(row) &&
+        matchesCategory(row) &&
+        matchesFilter(row) &&
+        (readFilter === "all" || isUnread(row)),
     )
-    .sort((a, b) => submittedAt(a).getTime() - submittedAt(b).getTime());
+    .sort((a, b) => {
+      const unread = Number(isUnread(b)) - Number(isUnread(a));
+      if (unread !== 0) return unread;
+      return submittedAt(a).getTime() - submittedAt(b).getTime();
+    });
+  const unreadVisibleIds = visible.filter(isUnread).map((row) => row.response.id);
 
   const nextWaiting = visible.find(
     (row) => needsReply(row) && !reviewedThisSession.has(row.response.id),
@@ -258,6 +333,34 @@ export default async function CourseResponsesPage({
   const waitingCount = visible.filter(
     (row) => needsReply(row) && !reviewedThisSession.has(row.response.id),
   ).length;
+
+  /**
+   * The occurrence's question prompts and help text, rendered ONCE.
+   *
+   * These are staff-authored rich text — the same Markdown, code and LaTeX the
+   * student was shown — and the review view used to print them as raw strings,
+   * so a prompt reading `How confident are you about $\\int x^3\\,dx$?` reached a
+   * teacher as literal dollar signs. Rendered here, keyed by question id,
+   * because every post in the week shares one snapshot: N distinct prompts, not
+   * N x students. `renderRichText` is the single sanctioned renderer and it
+   * memoizes on the source as well.
+   */
+  const questionHtml = new Map<
+    string,
+    { prompt: string; description: string; plain: string }
+  >();
+  for (const row of visible) {
+    for (const answer of row.answers) {
+      if (questionHtml.has(answer.questionId)) continue;
+      questionHtml.set(answer.questionId, {
+        prompt: await renderRichText(answer.prompt),
+        description: await renderRichText(answer.description),
+        /* Markup stripped, never rendered: this one goes into a compact label
+           and a `title`, both of which must be plain text. */
+        plain: richTextToPlain(answer.prompt) || answer.prompt,
+      });
+    }
+  }
 
   // Validity history only where a flag is actually pending — usually none, and
   // reading it for every post would be one query per row for nothing.
@@ -315,6 +418,7 @@ export default async function CourseResponsesPage({
       filter,
       cycle: currentCycleId,
       section: sp.section,
+      seen: readFilter === "all" ? undefined : readFilter,
       category: sp.category,
       q: sp.q,
     }).filter((entry): entry is [string, string] => !!entry[1]),
@@ -333,6 +437,10 @@ export default async function CourseResponsesPage({
       note: String(formData.get("note") ?? "") || undefined,
     });
     await markReviewedThisSession(responseId);
+    /* Resolving a post means having read it. Persisted as well as marked for
+       this sitting: the session cookie keeps the post in place under "needs a
+       reply", the row keeps it out of the unread pile tomorrow. */
+    await markResponseRead(uid, responseId, "resolved");
     revalidatePath(path);
     {
       const back = new URLSearchParams(backQuery);
@@ -352,6 +460,10 @@ export default async function CourseResponsesPage({
       note: String(formData.get("note") ?? "") || undefined,
     });
     await markReviewedThisSession(responseId);
+    /* Resolving a post means having read it. Persisted as well as marked for
+       this sitting: the session cookie keeps the post in place under "needs a
+       reply", the row keeps it out of the unread pile tomorrow. */
+    await markResponseRead(uid, responseId, "resolved");
     revalidatePath(path);
     {
       const back = new URLSearchParams(backQuery);
@@ -387,6 +499,10 @@ export default async function CourseResponsesPage({
       note: String(formData.get("note") ?? "") || undefined,
     });
     await markReviewedThisSession(responseId);
+    /* Resolving a post means having read it. Persisted as well as marked for
+       this sitting: the session cookie keeps the post in place under "needs a
+       reply", the row keeps it out of the unread pile tomorrow. */
+    await markResponseRead(uid, responseId, "resolved");
     revalidatePath(path);
     {
       const back = new URLSearchParams(backQuery);
@@ -424,6 +540,10 @@ export default async function CourseResponsesPage({
     }
     await createPrivateResponse(uid, String(formData.get("itemId")), body);
     await markReviewedThisSession(responseId);
+    /* Resolving a post means having read it. Persisted as well as marked for
+       this sitting: the session cookie keeps the post in place under "needs a
+       reply", the row keeps it out of the unread pile tomorrow. */
+    await markResponseRead(uid, responseId, "resolved");
     revalidatePath(path);
     const sent = new URLSearchParams(backQuery);
     sent.set(
@@ -451,8 +571,15 @@ export default async function CourseResponsesPage({
     await declineToAnswer(uid, String(formData.get("itemId")), { undo });
     // Putting it back means putting it back: the "done" mark goes too, or the
     // post stays stamped and the count never recovers.
-    if (undo) await unmarkReviewedThisSession(responseId);
-    else await markReviewedThisSession(responseId);
+    if (undo) {
+      await unmarkReviewedThisSession(responseId);
+      /* Putting a question back in the queue does NOT make it unread: the
+         reader has plainly read it. Only the "done in this sitting" mark is
+         reversed, which is what the undo is about. */
+    } else {
+      await markReviewedThisSession(responseId);
+      await markResponseRead(uid, responseId, "resolved");
+    }
     revalidatePath(path);
     const q = new URLSearchParams(backQuery);
     q.set(
@@ -463,6 +590,85 @@ export default async function CourseResponsesPage({
     );
     q.set("at", responseId);
     redirect(`${path}?${q.toString()}`);
+  }
+
+  /**
+   * Read state, the three deliberate moves (GitHub issue #6).
+   *
+   * All three re-authorize inside the service on the response's OWN section, so
+   * a forged id from a course this reader does not staff is refused rather than
+   * written. Each lands back on the post it acted on, for the same reason every
+   * other action here does.
+   */
+  async function markRead(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    const responseId = String(formData.get("responseId"));
+    await markResponseRead(uid, responseId, "explicit");
+    revalidatePath(path);
+    {
+      const back = new URLSearchParams(backQuery);
+      back.set("at", responseId);
+      redirect(`${path}?${back.toString()}`);
+    }
+  }
+
+  async function markUnread(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    const responseId = String(formData.get("responseId"));
+    await markResponseUnread(uid, responseId);
+    revalidatePath(path);
+    {
+      const back = new URLSearchParams(backQuery);
+      back.set("at", responseId);
+      redirect(`${path}?${back.toString()}`);
+    }
+  }
+
+  /**
+   * Clear the pile in front of the reader.
+   *
+   * Marks exactly what the current filters SHOW, not the whole week: a control
+   * that silently reached past the screen would be a way to lose a week's
+   * queue by accident. The ids are carried in the form and re-authorized one
+   * section at a time by the service.
+   */
+  async function markAllRead(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    const ids = String(formData.get("ids") ?? "")
+      .split(",")
+      .filter(Boolean);
+    /* The service REFUSES an oversized id list rather than marking part of it,
+       and a refusal belongs on this page as a sentence — not as an error
+       boundary. Only the call is guarded: a `redirect()` throws a control-flow
+       signal that must not be swallowed. */
+    let marked: number;
+    try {
+      marked = await markResponsesRead(uid, ids);
+    } catch (err) {
+      const failed = new URLSearchParams(backQuery);
+      failed.set(
+        "error",
+        err instanceof Error
+          ? err.message
+          : "Those responses could not be marked as read.",
+      );
+      redirect(`${path}?${failed.toString()}`);
+    }
+    revalidatePath(path);
+    const done = new URLSearchParams(backQuery);
+    done.set(
+      "ok",
+      marked! === 0
+        ? "Nothing left to mark."
+        : `${marked!} ${marked! === 1 ? "response" : "responses"} marked as read. Only you see this.`,
+    );
+    redirect(`${path}?${done.toString()}`);
   }
 
   async function draftOrPublish(formData: FormData) {
@@ -542,6 +748,10 @@ export default async function CourseResponsesPage({
       }
     }
     await markReviewedThisSession(responseId);
+    /* Resolving a post means having read it. Persisted as well as marked for
+       this sitting: the session cookie keeps the post in place under "needs a
+       reply", the row keeps it out of the unread pile tomorrow. */
+    await markResponseRead(uid, responseId, "resolved");
     revalidatePath(path);
     const done = new URLSearchParams(backQuery);
     done.set(
@@ -661,6 +871,25 @@ export default async function CourseResponsesPage({
             ))}
           </AutoSubmitSelect>
 
+          {/* Read state, this reader's own. Offered whenever there is anything
+              to read: the count is what says how much of the week is left. */}
+          {counts.total > 0 && (
+            <AutoSubmitSelect
+              id="feed-seen"
+              name="seen"
+              defaultValue={readFilter}
+              label="Read"
+            >
+              {READ_FILTERS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.key === "all"
+                    ? `${f.label} (${counts.total})`
+                    : `${f.label} (${unreadInScope})`}
+                </option>
+              ))}
+            </AutoSubmitSelect>
+          )}
+
           {/* Only when the reader actually has more than one: a control with a
               single option is noise. */}
           {sections.length > 1 && (
@@ -685,11 +914,22 @@ export default async function CourseResponsesPage({
           </div>
         </form>
 
-        <p className="feedbar__status">
+        {/* A `div`, not a `p`: it carries the mark-all form, and a form inside
+            a paragraph is invalid markup that browsers silently repair by
+            moving it out. */}
+        <div className="feedbar__status">
           <span>
             <strong>{visible.length}</strong>{" "}
             {visible.length === 1 ? "response" : "responses"} shown
           </span>
+          {/* How much of the week is left to READ, which is a different
+              question from how much is left to answer — and the one a reader
+              coming back to a half-finished column is asking. */}
+          {unreadInScope > 0 && (
+            <span className="feedbar__unread">
+              {unreadInScope} unread
+            </span>
+          )}
           {waitingCount > 0 ? (
             <>
               <span className="feedbar__waiting">
@@ -705,18 +945,58 @@ export default async function CourseResponsesPage({
           ) : (
             <span>Nothing here is waiting on you.</span>
           )}
-        </p>
+          {/* Clears what is on screen, not the whole term. Outside the GET
+              form above, because nesting forms is invalid and the inner one is
+              dropped. */}
+          {unreadVisibleIds.length > 0 && (
+            <form action={markAllRead}>
+              <input
+                type="hidden"
+                name="ids"
+                value={unreadVisibleIds.join(",")}
+              />
+              <button
+                className="button button--quiet button--small feedbar__markall"
+                type="submit"
+              >
+                Mark {unreadVisibleIds.length} as read
+              </button>
+            </form>
+          )}
+        </div>
       </div>
 
       {visible.length === 0 ? (
         <EmptyState
           title={
-            counts.total === 0 ? "No responses yet" : "Nothing matches these filters"
+            counts.total === 0
+              ? "No responses yet"
+              : /* Reaching the bottom of the unread pile is FINISHING, not a
+                   failed search, and it should read like it. */
+                readFilter === "unread" && unreadInScope === 0
+                ? "You have read all of these"
+                : "Nothing matches these filters"
+          }
+          action={
+            readFilter === "unread" && unreadInScope === 0
+              ? {
+                  href: `${path}?${new URLSearchParams(
+                    Object.entries({
+                      filter,
+                      cycle: currentCycleId,
+                      section: sp.section,
+                    }).filter((e): e is [string, string] => !!e[1]),
+                  ).toString()}`,
+                  label: "Show everything again",
+                }
+              : undefined
           }
         >
           {counts.total === 0
             ? undefined
-            : "Try another form, a wider filter, or clear the search."}
+            : readFilter === "unread" && unreadInScope === 0
+              ? `All ${counts.total} of this form's responses are marked as read for your account. Nobody else's view changed.`
+              : "Try another form, a wider filter, or clear the search."}
         </EmptyState>
       ) : (
         <div className="feed">
@@ -724,6 +1004,7 @@ export default async function CourseResponsesPage({
             const sectionId = row.response.sectionId;
             const timezone = timezoneOf(sectionId);
             const doneNow = reviewedThisSession.has(row.response.id);
+            const unread = isUnread(row);
             const waiting = needsReply(row);
             const section = sections.find((s) => s.id === sectionId);
             const flagEvent = flagEvents.get(row.response.id) ?? null;
@@ -733,7 +1014,7 @@ export default async function CourseResponsesPage({
               <article
                 className={`post ${waiting && !doneNow ? "post--waiting" : ""} ${
                   row.response.validity === "invalid" ? "post--invalid" : ""
-                }`}
+                } ${unread ? "post--unread" : ""}`}
                 key={row.response.id}
                 id={`r-${row.response.id}`}
               >
@@ -761,6 +1042,11 @@ export default async function CourseResponsesPage({
                       validity={row.response.validity as "flagged" | "invalid"}
                     />
                   )}
+                  {/* This reader's own marker, and only theirs — a colleague
+                      reading the same post sees their own state. Never shown
+                      to the student: whether staff have opened a submission is
+                      not a promise this product makes. */}
+                  {unread && <Stamp tone="amber">Unread</Stamp>}
                 </div>
 
                 <div className="post__ident">
@@ -777,11 +1063,10 @@ export default async function CourseResponsesPage({
 
                 <div className="post__content">
 
-                {/* Measurements first — they compare across the page, so they
-                    stay visible and aligned. Then anything the student wrote,
-                    in their own register, before the question they raised. */}
-                <Measurements answers={row.answers} />
-                <WrittenAnswers answers={row.answers} />
+                {/* The form, as the form asks it: every question this
+                    occurrence actually put to the student, in its authored
+                    order, answered or not. */}
+                <FormAnswers answers={row.answers} rendered={questionHtml} />
 
                 {row.items.length === 0 ? (
                   /* They answered the form and asked nothing. There is no reply
@@ -1080,27 +1365,51 @@ export default async function CourseResponsesPage({
                   })
                 )}
 
-                {/* Validity last, and folded. It removes a student's
-                    participation credit, so it must never sit beside Reply
-                    where one slip costs someone their week. */}
-                <ResponseValidity
-                  responseId={row.response.id}
-                  validity={row.response.validity}
-                  canMark={canOn(sectionId, "markValidity")}
-                  canFlag={canOn(sectionId, "flagValidity")}
-                  isInstructor={isInstructorOn(sectionId)}
-                  studentNumber={row.student?.studentNumber}
-                  flagLine={
-                    flagEvent
-                      ? `${flagEvent.actorName}: ${(flagEvent.reason ?? "no reason given").replace(/_/g, " ")}${flagEvent.staffNote ? ` — ${flagEvent.staffNote}` : ""}`
-                      : undefined
-                  }
-                  onFlag={flag}
-                  onConfirm={confirmFlagged}
-                  onDismiss={dismissFlag}
-                  onInvalidate={invalidate}
-                  onRestore={restoreValid}
-                />
+                {/* The foot of the post: where this reader marks their own
+                    place, and where the one destructive control is folded
+                    away. Both are about the response as a whole rather than
+                    about any one question in it. */}
+                <div className="post__foot">
+                  {/* Read state is per reader and reversible in one press, so
+                      it needs no confirmation — and it says who can see it,
+                      because a control on someone else's submission had
+                      better be clear that it is not about them. */}
+                  <form action={unread ? markRead : markUnread}>
+                    <input
+                      type="hidden"
+                      name="responseId"
+                      value={row.response.id}
+                    />
+                    <button
+                      className="button button--quiet button--small"
+                      type="submit"
+                    >
+                      {unread ? "Mark as read" : "Mark as unread"}
+                    </button>
+                  </form>
+
+                  {/* Validity last, and folded. It removes a student's
+                      participation credit, so it must never sit beside Reply
+                      where one slip costs someone their week. */}
+                  <ResponseValidity
+                    responseId={row.response.id}
+                    validity={row.response.validity}
+                    canMark={canOn(sectionId, "markValidity")}
+                    canFlag={canOn(sectionId, "flagValidity")}
+                    isInstructor={isInstructorOn(sectionId)}
+                    studentNumber={row.student?.studentNumber}
+                    flagLine={
+                      flagEvent
+                        ? `${flagEvent.actorName}: ${(flagEvent.reason ?? "no reason given").replace(/_/g, " ")}${flagEvent.staffNote ? ` — ${flagEvent.staffNote}` : ""}`
+                        : undefined
+                    }
+                    onFlag={flag}
+                    onConfirm={confirmFlagged}
+                    onDismiss={dismissFlag}
+                    onInvalidate={invalidate}
+                    onRestore={restoreValid}
+                  />
+                </div>
                 </div>
               </article>
             );
@@ -1112,6 +1421,7 @@ export default async function CourseResponsesPage({
           <p className="feed__end">
             That is all {visible.length}{" "}
             {visible.length === 1 ? "response" : "responses"}
+            {readFilter === "unread" ? " you had not read" : ""}
             {currentCycle ? ` for ${currentCycle.label}` : ""}.{" "}
             {waitingCount > 0
               ? `${waitingCount} still ${waitingCount === 1 ? "needs" : "need"} a reply.`
@@ -1124,42 +1434,127 @@ export default async function CourseResponsesPage({
 }
 
 /**
- * The form answers, split by what they actually are.
+ * The occurrence's own questions, and this student's answers to them.
  *
- * "Form answers" was one collapsed block holding two unrelated things, and it
- * served neither. A scale or a choice is a MEASUREMENT: its value is in the
- * comparison across students, which a per-row disclosure makes impossible —
- * thirty doors, and the numbers still never line up. A written answer is
- * AUTHORED PROSE, the same student writing in the same voice as the question
- * they raised themselves; filing it as metadata was a schema distinction
- * showing through into the reading.
+ * Driven entirely by the form's SNAPSHOT: `getCourseReviewQueue` reads
+ * `form_questions` for this response's occurrence ordered by `displayOrder`,
+ * so what appears here is whatever was actually authored for that week — its
+ * real prompts, its real types, its real order, including a per-occurrence
+ * customization that differs from the base form. Nothing about the question set
+ * is assumed by this page.
  *
- * So the measurements come out and stay out, aligned down the page. The prose
- * goes where the student's other words are. Nothing is left to hide.
+ * Authored order is kept, and that is a correction. Every measurement used to
+ * be hoisted above every written answer, which read the form back to a teacher
+ * in an order they had never written. Runs of adjacent measurements are still
+ * grouped into one aligned block — that is what makes a scale comparable down
+ * the page — but a group never jumps a question that came before it.
+ *
+ * A scale or a choice is a MEASUREMENT: its value is in the comparison across
+ * students, so it stays compact and aligned. A written answer is AUTHORED
+ * PROSE, the same student writing in the same voice as the question they raised
+ * themselves, so it is set as a quotation. The split follows the question's
+ * TYPE, not whether a value happens to be free text — which is what used to
+ * file an unanswered paragraph question as a measurement.
  */
 
-/** How many meters stay visible before the rest go behind a count. */
+/** How many measurements in one run stay visible before the rest go behind a count. */
 const MEASUREMENTS_SHOWN = 3;
 
+/**
+ * The two question types whose answer is prose a person wrote. Everything else
+ * — scale, choice, checkboxes, dropdown, yes/no, date, time — measures.
+ */
+const PROSE_TYPES = new Set(["short_answer", "paragraph"]);
+
 interface AnswerRow {
+  questionId: string;
   prompt: string;
+  description: string | null;
   type: string;
+  required: boolean;
+  displayOrder: number;
   scale: unknown;
+  /** false when the form asked and the student left it blank */
+  answered: boolean;
   value: unknown;
   freeText: string | null;
 }
 
-function Measurements({ answers }: { answers: AnswerRow[] }) {
-  const measured = answers
-    .filter((a) => !a.freeText)
-    .map((a) => ({
-      label: shortPrompt(a.prompt),
-      prompt: a.prompt,
-      text: compactValue(a),
-      scale: scaleOf(a),
-    }))
-    .filter((m): m is typeof m & { text: string } => !!m.text);
-  if (measured.length === 0) return null;
+/** Prompt and help text, already through the one sanctioned renderer. */
+type RenderedQuestions = Map<
+  string,
+  { prompt: string; description: string; plain: string }
+>;
+
+function FormAnswers({
+  answers,
+  rendered,
+}: {
+  answers: AnswerRow[];
+  rendered: RenderedQuestions;
+}) {
+  if (answers.length === 0) return null;
+
+  // One pass in authored order, collecting adjacent measurements together so
+  // they can be drawn as one aligned block without reordering anything.
+  const blocks: (
+    | { kind: "meters"; rows: AnswerRow[] }
+    | { kind: "prose"; row: AnswerRow }
+  )[] = [];
+  for (const row of answers) {
+    if (PROSE_TYPES.has(row.type)) {
+      blocks.push({ kind: "prose", row });
+      continue;
+    }
+    const last = blocks[blocks.length - 1];
+    if (last?.kind === "meters") last.rows.push(row);
+    else blocks.push({ kind: "meters", rows: [row] });
+  }
+
+  return (
+    <>
+      {blocks.map((block, index) =>
+        block.kind === "meters" ? (
+          <Measurements
+            key={`m-${index}`}
+            rows={block.rows}
+            rendered={rendered}
+          />
+        ) : (
+          <WrittenAnswer
+            key={block.row.questionId}
+            row={block.row}
+            rendered={rendered}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
+function Measurements({
+  rows,
+  rendered,
+}: {
+  rows: AnswerRow[];
+  rendered: RenderedQuestions;
+}) {
+  const measured = rows.map((row) => {
+    const meta = rendered.get(row.questionId);
+    return {
+      // Plain text, never markup: this is the visible question label.
+      label: promptLabel(meta?.plain ?? row.prompt),
+      /**
+       * `blank` and "no printable value" are different facts, and conflating
+       * them would put "Not answered" under a question the student did answer.
+       * Every measurement type `validateAnswers` accepts produces a printable
+       * value, so the second arm is defensive — but it must not lie.
+       */
+      blank: !row.answered,
+      text: row.answered ? compactValue(row) : null,
+      scale: row.answered ? scaleOf(row) : null,
+    };
+  });
 
   const shown = measured.slice(0, MEASUREMENTS_SHOWN);
   const rest = measured.slice(MEASUREMENTS_SHOWN);
@@ -1171,9 +1566,9 @@ function Measurements({ answers }: { answers: AnswerRow[] }) {
           <Meter key={i} {...m} />
         ))}
       </ul>
-      {/* A form can carry a dozen questions. The first few earn their place in
-          every row; the rest wait behind a count rather than making the header
-          taller than the answer underneath it. */}
+      {/* A form can carry a dozen questions. The first few stay visible in each
+          compact block; the rest wait behind a count so a long form does not
+          make every response unnecessarily tall. */}
       {rest.length > 0 && (
         <details className="meters__more">
           <summary>{rest.length} more</summary>
@@ -1198,34 +1593,47 @@ function Measurements({ answers }: { answers: AnswerRow[] }) {
  *
  * The cells are `aria-hidden`; the accessible name carries the same fact in
  * text, because a row of filled boxes is not something to read out.
+ *
+ * `blank` means the form ASKED and the student left it blank. Saying so is the
+ * point: a dropped row made a skipped question indistinguishable from one this
+ * form never contained.
  */
 function Meter({
   label,
-  prompt,
   text,
   scale,
+  blank,
 }: {
   label: string;
-  prompt: string;
-  text: string;
+  text: string | null;
   scale: { min: number; max: number; value: number } | null;
+  blank: boolean;
 }) {
   return (
-    <li className="meter" title={`${prompt}: ${text}`}>
+    <li className="meter">
       <span className="meter__label">{label}</span>
-      {scale && (
-        <span className="meter__cells" aria-hidden="true">
-          {Array.from({ length: scale.max - scale.min + 1 }, (_, i) => (
-            <span
-              key={i}
-              className={`meter__cell ${
-                scale.min + i <= scale.value ? "meter__cell--on" : ""
-              }`}
-            />
-          ))}
-        </span>
-      )}
-      <span className="meter__value">{text}</span>
+      <span className="meter__separator" aria-hidden="true">
+        —
+      </span>
+      <span className="meter__answer">
+        {scale && (
+          <span className="meter__cells" aria-hidden="true">
+            {Array.from({ length: scale.max - scale.min + 1 }, (_, i) => (
+              <span
+                key={i}
+                className={`meter__cell ${
+                  scale.min + i <= scale.value ? "meter__cell--on" : ""
+                }`}
+              />
+            ))}
+          </span>
+        )}
+        {blank ? (
+          <span className="meter__value meter__value--blank">Not answered</span>
+        ) : (
+          <span className="meter__value">{text ?? "Answered"}</span>
+        )}
+      </span>
     </li>
   );
 }
@@ -1249,47 +1657,70 @@ function scaleOf(
 }
 
 /**
- * A written form answer, in the same shape as a question the student raised.
+ * A written form answer, under the question that prompted it.
  *
- * Because it is the same thing: a person writing prose. The only difference is
- * what prompted it, which is exactly what the label says. It carries no stamp
- * and no actions — there is nothing here to answer, only something to read
- * before answering what is below it.
+ * The prompt is rendered through the one sanctioned renderer, in the register
+ * the student saw it in — a teacher reviewing an answer to a formula needs to
+ * read the formula, not its source. The answer beneath it is the student's own
+ * words, quoted, and a long one collapses so that one essay cannot bury the
+ * twenty-nine responses after it.
+ *
+ * It carries no stamp and no actions: there is nothing here to answer, only
+ * something to read before answering what is below it.
  */
-function WrittenAnswers({ answers }: { answers: AnswerRow[] }) {
-  const written = answers.filter((a) => a.freeText);
-  if (written.length === 0) return null;
+function WrittenAnswer({
+  row,
+  rendered,
+}: {
+  row: AnswerRow;
+  rendered: RenderedQuestions;
+}) {
+  const meta = rendered.get(row.questionId);
   return (
-    <>
-      {written.map((answer, index) => (
-        <section className="post__item" key={index}>
-          <p className="post__itemmeta">
-            <span>{answer.prompt}</span>
-          </p>
-          <blockquote className="post__words">{answer.freeText}</blockquote>
-        </section>
-      ))}
-    </>
+    <section className="post__item">
+      <div className="post__ask">
+        <div className="post__prompt">
+          {meta?.prompt ? (
+            <PreRenderedRichText
+              html={meta.prompt}
+              className="rich-text--inline"
+            />
+          ) : (
+            row.prompt
+          )}
+        </div>
+        {!row.answered && <Stamp tone="neutral">Not answered</Stamp>}
+      </div>
+      {meta?.description && (
+        <div className="post__askdesc">
+          <PreRenderedRichText html={meta.description} />
+        </div>
+      )}
+      {row.answered ? (
+        <LongText text={row.freeText ?? ""} />
+      ) : (
+        <p className="post__blank">
+          {row.required
+            ? "Left blank, though the form required it."
+            : "The student left this optional question blank."}
+        </p>
+      )}
+    </section>
   );
 }
 
-/**
- * A prompt short enough to sit in a scannable row without becoming a sentence.
- *
- * Cut on a word, never through one: "How difficult was the l…" could be the lab
- * or the lecture, and a label that cannot be told apart from its neighbour has
- * stopped being a label. The full prompt stays in the meter's `title` either
- * way, so nothing is actually lost — only deferred.
- */
-function shortPrompt(prompt: string): string {
-  const clean = prompt.replace(/[?:]\s*$/, "").trim();
-  if (clean.length <= 32) return clean;
-  const cut = clean.slice(0, 32);
-  const lastSpace = cut.lastIndexOf(" ");
-  return `${(lastSpace > 12 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+/** Keep the full question visible so a label never depends on hover or focus. */
+function promptLabel(prompt: string): string {
+  return prompt.replace(/[?:]\s*$/, "").trim();
 }
 
-/** The answer as one readable token, or null when it cannot honestly be one. */
+/**
+ * The answer as one readable token, or null when it cannot honestly be one.
+ *
+ * Null also means "asked and not answered" once the caller has checked
+ * `answered`; both render as words rather than as an empty cell, because a gap
+ * in a column of numbers reads as a rendering fault.
+ */
 function compactValue(answer: { scale: unknown; value: unknown }): string | null {
   const value = (answer.value ?? {}) as {
     optionLabels?: string[];

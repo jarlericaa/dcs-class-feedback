@@ -337,3 +337,50 @@ export const privateResponses = pgTable(
     ),
   ],
 );
+
+/**
+ * Which responses one reader has already read (GitHub issue #6).
+ *
+ * PER READER, and that is the design rather than an implementation shortcut. A
+ * shared "seen" marker would let a student assistant's skim hide a submission
+ * from the instructor who still has to decide on it — the queue would empty
+ * without anyone having answered anything. One row per (response, reader) makes
+ * that structurally impossible.
+ *
+ * A read marker is not a fact about the STUDENT: it records nothing about their
+ * submission, changes no validity, no participation credit and no publication,
+ * and is never projected into any student-facing read model. It is one staff
+ * member's bookkeeping about their own afternoon.
+ *
+ * Distinct from `src/lib/reviewed-session.ts`, which answers a different
+ * question — "did I act on this in THIS sitting?" — and is deliberately a
+ * session cookie that expires with the browser. This table answers "have I read
+ * it, ever, on any device", which is what has to survive a reload.
+ *
+ * Rows cascade with the response: a deleted response has nothing left to have
+ * been read. `read_at` is kept rather than being implied by the row's existence,
+ * so "unread since Monday" stays answerable without a schema change.
+ */
+export const responseReads = pgTable(
+  "response_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    responseId: uuid("response_id")
+      .notNull()
+      .references(() => formResponses.id, { onDelete: "cascade" }),
+    readerUserId: uuid("reader_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // The identity of the fact: one reader has read one response once. Marking
+    // twice must not accumulate rows, so the service upserts onto this.
+    uniqueIndex("response_reads_reader_unique").on(t.responseId, t.readerUserId),
+    // The read path is always "which of THESE responses have I read", so the
+    // reader leads the index.
+    index("response_reads_reader_idx").on(t.readerUserId, t.responseId),
+  ],
+);

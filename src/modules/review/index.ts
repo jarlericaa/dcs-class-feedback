@@ -58,6 +58,21 @@ async function getItemWithSection(itemId: string) {
 export { getItemWithSection };
 
 /**
+ * Per-reader read state, so a reader can resume where they left off
+ * (GitHub issue #6). Kept in its own module because it is about the READER,
+ * not about the submission.
+ */
+export {
+  countUnread,
+  listReadResponseIds,
+  markResponseRead,
+  markResponsesRead,
+  markResponseUnread,
+  MAX_MARK_READ_IDS,
+  type ReadSource,
+} from "./reads";
+
+/**
  * Submissions for a section (optionally one instance), for the review dashboard.
  * Identity is masked unless the actor holds viewStudentIdentities (teachers
  * and co-teachers always do; TAs only via the flag).
@@ -400,8 +415,11 @@ async function reviewQueue(
    * classmate's follow-up for a colleague's answer, and leaves "who already
    * dealt with this" unanswerable in a shared course.
    *
-   * Staff names are staff-facing only. The student's own view stays "your
-   * teaching team" — see the history page.
+   * A student's own history still attributes a PRIVATE reply to "your teaching
+   * team" rather than to a person — see the history page. The one place a staff
+   * name reaches a student is the byline of a PUBLISHED public answer, which
+   * the owner asked for in issue #14: a public statement to the whole class is
+   * signed. Nothing else here is student-facing.
    */
   const authorIds = [
     ...new Set([
@@ -485,22 +503,41 @@ async function reviewQueue(
       (i) => i.item.kind !== "general_comment" && !i.settled,
     );
     const instance = cycleById.get(response.cycleId) ?? null;
+    /**
+     * The occurrence's OWN question snapshot, in its authored order.
+     *
+     * `cycleQuestions` was read `orderBy displayOrder` and is filtered to this
+     * response's own occurrence, so a per-occurrence customization shows the
+     * questions that occurrence actually asked — never the base form's, and
+     * never another week's.
+     */
     const asked = cycleQuestions.filter((q) => q.cycleId === response.cycleId);
     const given = formAnswers.filter((a) => a.responseId === response.id);
-    const answerRows = asked
-      .map((question) => {
-        const answer = given.find((a) => a.questionId === question.id);
-        return answer
-          ? {
-              prompt: question.prompt,
-              type: question.type,
-              scale: question.scale,
-              value: answer.value,
-              freeText: answer.freeText,
-            }
-          : null;
-      })
-      .filter((a): a is NonNullable<typeof a> => !!a);
+    /**
+     * One row per question ASKED, answered or not.
+     *
+     * Unanswered rows used to be dropped here, which made a question the
+     * student skipped indistinguishable from one the form never asked. Only
+     * optional questions can be in that state — the server refuses a
+     * submission missing a required answer — but "they left it blank" is a
+     * fact a reader is entitled to, and a count alone could not say which one.
+     */
+    const answerRows = asked.map((question) => {
+      const answer = given.find((a) => a.questionId === question.id);
+      return {
+        questionId: question.id,
+        prompt: question.prompt,
+        /** staff-authored help text, rich like the prompt */
+        description: question.description,
+        type: question.type,
+        required: question.required,
+        displayOrder: question.displayOrder,
+        scale: question.scale,
+        answered: !!answer,
+        value: answer?.value ?? null,
+        freeText: answer?.freeText ?? null,
+      };
+    });
     return {
       response: {
         id: response.id,
@@ -523,9 +560,13 @@ async function reviewQueue(
         instance && hasSequence(instance) ? instanceLabel(instance) : null,
       items: responseItems,
       outstanding,
-      /** the teacher's own form questions and this student's answers to them */
+      /**
+       * The teacher's own form questions and this student's answers to them,
+       * in the order the form asks them. Every asked question is present.
+       */
       answers: answerRows,
-      unansweredCount: asked.length - answerRows.length,
+      /** asked and left blank — necessarily an optional question */
+      unansweredCount: answerRows.filter((a) => !a.answered).length,
       answered,
     };
   });
@@ -709,6 +750,7 @@ export async function setResponseReviewState(
       entityId: responseId,
       before: { state: response.state },
       after: { state },
+      sectionId: response.sectionId,
     });
   });
 }
@@ -779,6 +821,7 @@ export async function correctItemTypeCategory(
     await writeAudit(tx, {
       actorUserId,
       action: "item.type_category_corrected",
+      sectionId,
       entityType: "student_submission_item",
       entityId: itemId,
       before: {
@@ -806,6 +849,7 @@ export async function setItemReviewState(
     await writeAudit(tx, {
       actorUserId,
       action: "item.review_state_changed",
+      sectionId,
       entityType: "student_submission_item",
       entityId: itemId,
       before: { reviewState: item.reviewState },
@@ -856,6 +900,7 @@ export async function declineToAnswer(
     await writeAudit(tx, {
       actorUserId,
       action: opts.undo ? "item.answer_declined_undone" : "item.answer_declined",
+      sectionId,
       entityType: "student_submission_item",
       entityId: itemId,
       before: { disposition: item.disposition, reviewState: item.reviewState },
@@ -903,6 +948,7 @@ export async function createPrivateResponse(
       entityType: "private_response",
       entityId: created!.id,
       after: { itemId },
+      sectionId,
     });
     return created!;
   });
