@@ -1137,7 +1137,7 @@ kbd {
   min-width: 0;
 }
 .options__number {
-  color: var(--ink-faint);
+  color: var(--ink-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -2187,6 +2187,16 @@ kbd {
   color: var(--amber-deep);
   font-weight: 600;
 }
+/* How much of the week this reader has not read yet. Quieter than the
+   still-needs-a-reply figure beside it: unread is a reading position, not
+   outstanding work. */
+.feedbar__unread {
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.feedbar__status form {
+  display: contents;
+}
 
 /**
  * One sheet, ruled between rows — not a stack of cards.
@@ -2204,16 +2214,6 @@ kbd {
      how much room a row actually has. */
   container-type: inline-size;
 }
-/* How much of the week this reader has not read yet. Quieter than the
-   still-needs-a-reply figure beside it: unread is a reading position, not
-   outstanding work. */
-.feedbar__unread {
-  color: var(--ink-soft);
-  font-variant-numeric: tabular-nums;
-}
-.feedbar__status form {
-  display: contents;
-}
 
 /**
  * One post: one student, one occurrence. Flat paper squared to the board, like
@@ -2229,7 +2229,13 @@ kbd {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
   gap: 2px var(--s4);
-  padding: var(--s5);
+  /* Roomier vertically than horizontally, and deliberately so. A column read
+     in bulk was reported as cramped: the hairline said where one student ended,
+     but nothing gave the reading room to breathe, so thirty responses ran
+     together into one wall. The rule stays a hairline — thirty bordered cards
+     would be thirty containers competing with the words — and the SPACE does
+     the separating instead. */
+  padding: var(--s6) var(--s5);
   /* Set on every post so the amber marker changes colour, not geometry: a
      border that only existed while something was waiting would shift the whole
      column sideways by its rule width per answered row. */
@@ -2426,13 +2432,21 @@ kbd {
    a rule down the side so they cannot be mistaken for the platform speaking. */
 .post__words {
   margin: 0;
-  padding-left: var(--s3);
+  padding-left: var(--s4);
   border-left: 1px solid var(--rule-strong);
+  /* A measure, not the container's full width. Past roughly 70 characters the
+     eye loses the line it is returning to, which is the difference between
+     reading thirty answers and skimming them. Matches the 68ch the student's
+     own form uses for the same text. */
+  max-width: 68ch;
   color: var(--ink);
   font-family: var(--serif);
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.6;
   overflow-wrap: anywhere;
+  /* A pasted list or a stanza keeps its breaks: collapsing them turned a
+     student's structure into one paragraph. */
+  white-space: pre-wrap;
 }
 /* Above the words it describes, so it reads as a label rather than a caption. */
 .post__itemmeta {
@@ -2655,17 +2669,18 @@ kbd {
 /* --- the measurements ------------------------------------------------------ */
 
 /**
- * What every student was asked, answered in numbers — always visible, and in
- * the same place on every row so a reader can compare down the page instead of
- * opening thirty disclosures and still not being able to line them up.
+ * Compact answers, kept in the form's authored order. Adjacent measurements
+ * share an aligned block, while each row's rule keeps one question's answer
+ * distinct from the next.
  */
 .meters {
-  margin-top: var(--s3);
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--rule);
 }
 .meters__list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s2) var(--s5);
+  display: grid;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2711,6 +2726,7 @@ kbd {
   gap: 2px;
 }
 .meter__cell {
+  flex: 0 0 6px;
   width: 6px;
   height: 12px;
   /* Square, like every other mark in this system. DESIGN.md §5 keeps radius for
@@ -4617,6 +4633,9 @@ kbd {
 /* A labelled count. Never colour alone: the number and its noun are the signal,
    and the attention tone only adds to them. */
 .tally {
+  /* A phrase, not a paragraph: it sits in a panel head beside a heading, so it
+     carries no block margin of its own. */
+  margin: 0;
   color: var(--ink-muted);
   font-size: 13px;
 }
