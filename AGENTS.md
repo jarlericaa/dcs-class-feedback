@@ -64,7 +64,8 @@ course-material management, and dedicated AI infrastructure. **All AI (`P3`) rem
 flowchart LR
   Student([Student])
   Teacher([Teacher])
-  TA([Teaching Assistant / Co-Teacher])
+  TA([Student Assistant])
+  Co([Co-teacher / Co-instructor])
   Admin([Platform Administrator])
   App[[Class Feedback Platform]]
   Google[("Google SSO<br/>university accounts")]
@@ -72,6 +73,7 @@ flowchart LR
   Student -->|"submits weekly form, reads private replies + public archive"| App
   Teacher -->|"owns courses/sections, reviews, answers, publishes"| App
   TA -->|"per-section configurable subset of teacher actions"| App
+  Co -->|"full teacher capability on the course or sections assigned"| App
   Admin -->|"platform settings, access, troubleshooting"| App
   App --- Google
 ```
@@ -80,7 +82,8 @@ flowchart LR
 |---|---|
 | **Student** | Signs in with an authorized university Google account; completes the weekly form per section; answers teacher questions; submits their own question/feedback; views their history, private replies, and whether their question was publicly answered; searches the class's anonymous Q&A archive. Cannot see other students' identities, validity decisions, drafts, notes, audit, or (MVP) participation totals. |
 | **Teacher** | Administers the courses/sections they own. Manages courses, sections, rosters, staff, TA permissions, schedules, templates, and questions; reviews responses; marks validity; sends private responses; drafts/rewords/publishes/schedules public answers; merges questions; manages the backlog and legacy imports; exports participation; views audit history. |
-| **Teaching Assistant / Co-Teacher** | Holds a **per-section, configurable** subset of teacher capabilities (view identities, review, respond, draft/reword/publish/schedule, mark validity, export, manage cycles/templates/backlog). The class owner controls these flags. |
+| **Co-teacher / Co-instructor** | Holds **every** teacher capability on whatever they are assigned to — nothing about them is configurable (`project-specs.md` §4.1: "all instructors assigned to a course have equal permissions"). Assigned at one of two scopes: **course-wide** (every section, including ones added later) or one named class list. Only the course owner assigns either ([ADR-0004](docs/decisions/ADR-0004-course-wide-staff-standing.md)). |
+| **Student Assistant (TA)** | Holds a **per-section, configurable** subset of teacher capabilities (view identities, review, respond, draft/reword/publish/schedule, mark validity, export, manage cycles/templates/backlog). The class owner controls these flags. This catalog exists **only** at section scope — there is no course-wide Student Assistant. |
 | **Platform Administrator** | Selected accounts only. Platform-wide settings, user-access issues, account/system troubleshooting, platform-level audit access. Gains **no** automatic content access to arbitrary courses/sections. |
 
 Full role definitions, the TA permission catalog, and the permission→action matrix: [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
@@ -103,11 +106,11 @@ Full role definitions, the TA permission catalog, and the permission→action ma
 
 ## 5. System architecture at a glance
 
-Conceptual only. The stack is a **recommendation pending owner approval** and is **gated by the "Fable" clarification** ([Open D1](docs/open-decisions.md) — is "Fable" the Claude Fable tooling, or a desired F#/Fable implementation stack?). **Do not treat the stack as final.**
+Conceptual only — the diagram is a map, not a contract. The stack itself is **settled**: **D1 closed 2026-08-03** ("Fable" referred to Claude tooling), and the Next.js + Drizzle + Auth.js TypeScript monolith is the approved implementation, recorded in [ADR-0001](docs/decisions/ADR-0001-current-stack-and-scheduler.md). Do not reopen it to start new work.
 
 ```mermaid
 flowchart TB
-  subgraph App["Modular monolith (recommended, not final)"]
+  subgraph App["Modular monolith (approved — ADR-0001)"]
     direction TB
     web["Web + server<br/>UI, routes, server-side validation"]
     authz["Authorization layer<br/>role + resource scoped, deny-by-default"]
@@ -125,9 +128,9 @@ flowchart TB
   web --> google
 ```
 
-Recommended direction **[Recommended, pending approval + Open D1]**: a **modular monolith** on **PostgreSQL**, **Google OAuth**, **role/resource-based authorization**, **database-backed scheduling** (no message broker), **CSV import/export**, **audit logging**, **Docker-based development**, and **automated testing**. Explicitly avoided: microservices, message brokers, separate databases, event-driven infra, dedicated vector DBs, standalone AI services.
+Approved direction **[Confirmed — D1 closed 2026-08-03, ADR-0001]**: a **modular monolith** on **PostgreSQL**, **Google OAuth**, **role/resource-based authorization**, **database-backed scheduling** (no message broker), **CSV import/export**, **audit logging**, **Docker-based development**, and **automated testing**. Explicitly avoided: microservices, message brokers, separate databases, event-driven infra, dedicated vector DBs, standalone AI services.
 
-The concrete TypeScript stack (Next.js + Drizzle + Auth.js + pg-boss + Zod) is a recommendation only — see [docs/architecture-proposal.md](docs/architecture-proposal.md). Module boundaries: identity & matching · catalog · forms · review & publishing · backlog & import · participation & export · audit.
+The concrete TypeScript stack is **[Implemented]**: Next.js (App Router) + Drizzle + Auth.js + Zod, with a database-backed reconciliation poller. **`pg-boss` was considered and rejected** — ADR-0001 says not to add it, or Redis, or a broker, for the current build. [docs/architecture-history.md](docs/architecture-history.md) is the historical record of the alternatives weighed; [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes what actually runs. Module boundaries: identity · catalog · forms · review & publishing · backlog & import · participation & export · audit · scheduling.
 
 ---
 
@@ -351,21 +354,35 @@ Read the first three, then by area. Each concept has a single owning document; o
 9. [docs/question-backlog.md](docs/question-backlog.md) — course-level backlog.
 10. [docs/legacy-question-import.md](docs/legacy-question-import.md) — legacy import, anonymous-by-default.
 11. [docs/ai-future-plan.md](docs/ai-future-plan.md) — post-MVP AI direction and constraints.
-12. [docs/architecture-proposal.md](docs/architecture-proposal.md) — recommended (not approved) stack and design.
+12. [docs/architecture-history.md](docs/architecture-history.md) — **historical**: the alternatives weighed before the current stack was adopted, and why each was rejected. Current architecture is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 13. [docs/open-decisions.md](docs/open-decisions.md) — **read before implementing.**
 
 ---
 
 ## 11. Deferred and open decisions
 
-The stack and several product rules are unresolved. The full list (question · options · trade-offs · recommendation · wait-for-approval) is in [docs/open-decisions.md](docs/open-decisions.md). The load-bearing ones:
+**The stack is settled and most product rules are now closed.** The register — question · options · trade-offs · status — is [docs/open-decisions.md](docs/open-decisions.md), which is authoritative; this is a summary.
 
-- **D1 — "Fable" meaning.** Claude Fable tooling vs an F#/Fable implementation stack. **Gates the entire stack.** TypeScript is presented as the current recommendation only.
-- **D6 — unpublish support** (post-MVP; `Unpublished` state reserved only).
-- **D7 — timezone** (institution-wide value needed).
-- Others: teacher-role granting, edit-lock after first submission, grace/reopen, merge scope, join-code extra factor, deactivated-student access, ORM choice, deployment target, data retention.
+**Closed or removed** (do not reopen to start work):
 
-Deferred features (post-MVP): notifications, all AI features, course-material management, student-facing participation totals, advanced analytics, LMS integration, automated legacy-file parsing. See [docs/mvp-scope.md](docs/mvp-scope.md).
+- **D1 — "Fable" meaning: CLOSED 2026-08-03.** It referred to Claude tooling, not an F#/Fable stack. TypeScript baseline approved ([ADR-0001](docs/decisions/ADR-0001-current-stack-and-scheduler.md)).
+- **D2 — account-match policy: REMOVED 2026-08-07** by **D23**. There is no name matching, so there is nothing to confirm ([docs/student-identity.md](docs/student-identity.md)).
+- **D7 — timezone: CLOSED 2026-08-03.** One institution timezone, stored per section, per-section overrides deferred. One operational step remains, not a decision: confirm the configured `INSTITUTION_TIMEZONE` before production if the institution is not on `Asia/Manila`.
+- Also closed: **D4** edit lock, **D5** grace/reopen, **D6** unpublish (**approved**, but not yet built — [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) `E2`), **D8** merge scope, **D10** deactivated-student access, **D11** ORM (Drizzle); **D9** join code removed with D2.
+
+**Still open** — check before implementing in these areas:
+
+- **[Open D3]** who grants the Teacher role · **[Open D13]** data retention · **[Open D24]** staff invitations for an address with no account.
+- Conditional: **D12** deployment target (low-stakes deferral) · **D22** per-section windows for one shared form.
+
+**Still deferred / out of scope:** all AI features (`P3`), course-material management, advanced analytics, LMS integration, student file attachments, native mobile apps, public access for unenrolled users. [docs/mvp-scope.md](docs/mvp-scope.md) owns this boundary.
+
+**No longer deferred** — promoted into approved scope by `project-specs.md` (see the scope-expansion table in [docs/mvp-scope.md](docs/mvp-scope.md)), so do not treat them as post-MVP. Approval is not the same as being built; [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the authority on what runs:
+
+- **Email notifications** (`F1`) — **[Implemented]** for form-opened, deadline reminders, and validity changes, on an idempotent outbox with reconciliation. The private-answer, public-answer-linked and approval enqueues exist but their triggering workflows are **not wired** yet.
+- **Student-facing participation** (`C3`, bonus periods and progress views) — approved, **schema only**. Students still see no participation totals in the running app.
+- **Legacy Typst / XLSX parsing** (`P1`) — approved, **partial**: paste-only anonymous import today, with staged-row schema in place.
+
 
 ---
 
@@ -373,8 +390,8 @@ Deferred features (post-MVP): notifications, all AI features, course-material ma
 
 - **Understand the product:** start at [docs/product-requirements.md](docs/product-requirements.md) and [docs/mvp-scope.md](docs/mvp-scope.md).
 - **Understand the model:** [docs/domain-model.md](docs/domain-model.md) (entities + state) and [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
-- **Before any implementation:** read [docs/open-decisions.md](docs/open-decisions.md) and get owner sign-off on D1 (stack/"Fable"), D2 (matching), and D7 (timezone) first.
-- **When implementation is approved:** [docs/architecture-proposal.md](docs/architecture-proposal.md) proposes module boundaries, scheduling, authorization, audit, and CSV design to build from — none of it is code yet.
+- **Before any implementation:** read [docs/open-decisions.md](docs/open-decisions.md). D1, D2 and D7 no longer need sign-off — they are closed or removed (§11). What still does: **D3** (teacher-role granting), **D13** (data retention, which gates real student data), and **D24** (staff invitations).
+- **The implementation exists.** [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the factual snapshot and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes what runs; [docs/architecture-history.md](docs/architecture-history.md) is the historical record, kept for its rejected alternatives.
 
 ---
 

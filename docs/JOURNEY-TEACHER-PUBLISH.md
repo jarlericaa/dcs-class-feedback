@@ -3,7 +3,10 @@
 **Status:** **[Recommended]** flow redesign. Audit of the implemented flow plus
 proposed changes. No scope change: every proposal alters an existing MVP
 surface. Nothing from [mvp-scope.md](mvp-scope.md) §2/§3 is promoted — in
-particular this does **not** propose unpublish (**[Open D6]**) or a merge UI.
+particular this does **not** propose building unpublish or a merge UI. (Unpublish
+is **approved** — decision **D6**, closed 2026-08-03 — but unbuilt
+([CURRENT_STATE.md](CURRENT_STATE.md) E2); this audit is sized for the app as it
+runs today, without it.)
 **Owns:** the staff journey from reviewing a student item to a published
 anonymous public answer — rewording, the anonymity check, acknowledgment,
 publish, and schedule.
@@ -15,8 +18,9 @@ publish, and schedule.
 [modules/publishing/index.ts](../src/modules/publishing/index.ts).
 
 **Companions:** [INTENT-CONTEXT.md](INTENT-CONTEXT.md) ·
-[JOURNEY-STUDENT-SUBMIT.md](JOURNEY-STUDENT-SUBMIT.md) (the other irreversible
-flow) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) (owns
+[JOURNEY-STUDENT-SUBMIT.md](JOURNEY-STUDENT-SUBMIT.md) (the other one-way
+moment — a student's answers stay editable until the deadline, but their
+free-text item reaches staff on submit and cannot be unsent) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) (owns
 the rules audited here).
 
 ---
@@ -25,9 +29,13 @@ the rules audited here).
 
 A teacher works a week's submissions and decides, per student item: reply
 privately, publish to the class anonymously, both, or neither. Publishing is the
-only irreversible act in the product — there is no unpublish in MVP
-(**[Open D6]**), and once the class has read a question that identifies its
-asker, nothing can retract that.
+only irreversible act in the product as it runs today: unpublish is **approved**
+(**D6**, closed 2026-08-03 — Instructor-only, reason required, audited,
+reversible by restore, and it removes the entry from the class archive *and* the
+linked asker's history, **D16**) but is **not built**
+([CURRENT_STATE.md](CURRENT_STATE.md) E2 is `schema only`). And once the class
+has read a question that identifies its asker, no unpublish retracts that — the
+feature would remove an entry, not a memory.
 
 **The decision being made is one question: is this safe to publish?** Every
 other staff action is additive and audited. This one is not. So the design
@@ -117,7 +125,7 @@ strong part of this flow:
   ([review/page.tsx:225-229](../src/app/teach/sections/[id]/review/page.tsx#L225-L229)).
 
 The findings below are all in the **interface layer**, which is precisely where
-[INTENT-CONTEXT.md](INTENT-CONTEXT.md) §1.3 predicted the exposure risk would sit.
+[INTENT-CONTEXT.md](INTENT-CONTEXT.md) §1.4 predicted the exposure risk would sit.
 
 ---
 
@@ -401,7 +409,7 @@ found three things. The audit entry should be able to mean something.
 | Preview | Inline expansion, not a modal — the teacher needs the original and the flags visible while judging. Uses the archive's own render path so it cannot drift from reality. |
 | Errors | `useActionState`, values held client-side, inline messages — the pattern already proven in [weekly-form.tsx](../src/components/student/weekly-form.tsx). Stop redirecting on failure. |
 | Publish confirmation | None beyond the above. The preview *is* the confirmation; a dialog on top of it would be the ceremony that trains dismissal. |
-| Undo | None, and none proposed — unpublish is **[Open D6]** and out of scope. This is exactly why the pre-publish moment carries the weight. |
+| Undo | None in the running app, and none proposed here. Unpublish is approved (**D6**) but unbuilt (E2); even shipped it would not undo what the class already read. This is exactly why the pre-publish moment carries the weight. |
 | Motion | Feedback only, 200–300 ms: preview expand, flag appearance. Respect `prefers-reduced-motion`. |
 
 `/include` audits the live-region behaviour and the disabled-acknowledgment
@@ -440,11 +448,17 @@ treats more publishing as better.
    decision on whether granting one should surface the other's absence —
    [roles-and-permissions.md](roles-and-permissions.md) §2.3 already
    **[Recommended]** that capability implications be surfaced to the owner.
-3. **[Open D6]** unpublish. Everything above is sized for "irreversible". If
-   unpublish ever ships, the friction should be revisited, not kept out of habit.
-4. **[Open D8]** merge scope — F4's fix assumes single-source is the normal case.
-   If merge UI ships, source count becomes discriminating again and the ambient
-   line should move back into the flag channel.
+3. **D6 unpublish — approved, unbuilt.** Everything above is sized for the app
+   as it runs, where publishing cannot be undone. When unpublish ships
+   ([CURRENT_STATE.md](CURRENT_STATE.md) E2), the friction should be revisited
+   rather than kept out of habit — but only the *recovery* story changes, not
+   the disclosure one.
+4. **D8 merge scope — closed 2026-08-03** (within a section, may span cycles;
+   cross-section reuse goes through the course backlog). The merge **UI** is
+   still unbuilt ([CURRENT_STATE.md](CURRENT_STATE.md) D3), so F4's fix still
+   assumes single-source is the normal case. When that UI ships, source count
+   becomes discriminating again and the ambient line should move back into the
+   flag channel.
 
 **Handoffs:**
 

@@ -62,7 +62,7 @@ Before exposing a pilot section:
       account;
 - [ ] verify that public Q&A contains no source identity or private wording;
 - [ ] verify database backups and a restore test;
-- [ ] define retention and deactivated-student access before real use;
+- [ ] define **data retention** before real use (**[Open D13]**); deactivated-student access is already settled — **D10** closed 2026-08-03: the enrolment is deactivated, the student's own history stays readable, and no data is deleted;
 - [ ] record the deployment decision in docs/decisions/.
 
 ## Release sequence

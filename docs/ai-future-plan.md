@@ -53,4 +53,4 @@ No AI is built, but a few cheap modeling choices keep the door open without addi
 
 ## 8. Related documents
 
-[mvp-scope.md](mvp-scope.md) · [domain-model.md](domain-model.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-proposal.md](architecture-proposal.md) · [product-requirements.md](product-requirements.md)
+[mvp-scope.md](mvp-scope.md) · [domain-model.md](domain-model.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-history.md](architecture-history.md) · [product-requirements.md](product-requirements.md)

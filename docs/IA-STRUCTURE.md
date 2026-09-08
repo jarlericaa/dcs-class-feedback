@@ -29,7 +29,7 @@ conventions, and the Q&A archive's browse/search strategy.
 >       │     └── One occurrence      → …/instances/[instanceId]  "Customize Week 4"
 >       ├── Responses  (/responses)              ONE inbox per course, filterable by form,
 >       │                                        occurrence and **section**
->       └── Class lists & access  (/sections)    rosters, matches, staff, section details
+>       └── Class lists & access  (/sections)    rosters, staff & access, section details
 > ```
 >
 > Students reach a **form**, not a section: `/forms/[id]`. `/sections/[id]`
@@ -508,8 +508,10 @@ structure.
    toward the catch-all. Measurable from week one of the pilot: category
    distribution on real submissions. If `misc` dominates, the taxonomy needs an
    owner conversation, not a design fix.
-4. **[Open D10]** dropped-student access affects whether a deactivated student
-   keeps an archive destination in their nav at all.
+4. **D10 — closed 2026-08-03**: a dropped student's enrolment is deactivated and
+   their own history stays readable; no data is deleted. Whether a deactivated
+   student keeps an archive destination in their nav is still an open *design*
+   question, but it is no longer gated on the decision.
 
 **Handoffs:**
 

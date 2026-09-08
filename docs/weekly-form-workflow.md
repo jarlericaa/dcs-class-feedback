@@ -7,7 +7,7 @@
 > [FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md)** —
 > this document links there rather than restating them. State definitions live in
 > [domain-model.md](domain-model.md#3-state-models); scheduling infrastructure in
-> [architecture-proposal.md](architecture-proposal.md#scheduling).
+> [architecture-history.md](architecture-history.md#scheduling).
 > Label key as in [product-requirements.md](product-requirements.md).
 
 ## 1. Delivery configuration **[Confirmed]**
@@ -31,9 +31,12 @@ section.
 A shared instance has **one** window. Sections in different timezones are refused
 rather than silently resolved; per-section windows are [D22](open-decisions.md).
 
-Timezone: **[Recommended]** institution timezone by default; per-section override
-is [Open D7](open-decisions.md). All open/deadline/schedule times are stored and
-evaluated in that timezone.
+Timezone: **[Confirmed]** institution timezone, stored on each section —
+**D7** closed 2026-08-03, with per-section overrides deferred
+([open-decisions.md](open-decisions.md)). All open/deadline/schedule times are
+stored and evaluated in that timezone.
+
+<a id="2-instance-generation--auto-open"></a>
 
 ## 2. Instance generation & auto-open **[Confirmed]**
 
@@ -67,7 +70,7 @@ AI-generated content.
 
 - The open/close transitions are **idempotent** (guarded by the instance's current state and timestamps).
 - If the scheduler is down at an open-at or deadline moment, a **reconciliation poller** on restart scans for instances past their open-at but still `Scheduled` (opens them, flagged **late** in audit) and past their deadline but still `Open` (closes them). No duplicate opens occur because transitions check current state.
-- Duplicate-prevention and reconciliation are shared infrastructure with scheduled publication — see [architecture-proposal.md](architecture-proposal.md#scheduling).
+- Duplicate-prevention and reconciliation are shared infrastructure with scheduled publication — see [architecture-history.md](architecture-history.md#scheduling).
 
 ## 3. Preview, modify, and the edit-lock rule
 
@@ -135,6 +138,8 @@ A `FormResponse` contains: student identity, form instance, attribution section,
   excluded from the Question Inbox and can never be published as a Q&A entry.
 - Submitting more question entries than the template allows, or omitting a required general
   comment, is refused server-side regardless of what the client posts.
+
+<a id="5-teacher-created-questions--dynamic-form-schema"></a>
 
 ## 5. Teacher-created questions & dynamic form schema **[Confirmed]**
 
@@ -215,7 +220,7 @@ Each weekly form always lets a student submit their own question, feedback, conc
 ## 9. Open decisions affecting this workflow
 
 - [D5] Grace period / reopen policy — closed: hard deadline, audited reopen.
-- [Open D7] Timezone (institution vs per-section).
+- [D7] Timezone (institution vs per-section) — closed: one institution timezone, per-section overrides deferred; confirm the configured value before production.
 - [D8] Whether merge may span occurrences within a section — closed: yes.
 - [D21] Physical rename of the `weekly_cycles` table.
 - [Open D22] Per-section windows for one shared form.
@@ -224,4 +229,4 @@ See [open-decisions.md](open-decisions.md).
 
 ## 10. Related documents
 
-[FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md) · [domain-model.md](domain-model.md) · [participation-rules.md](participation-rules.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-proposal.md](architecture-proposal.md) · [open-decisions.md](open-decisions.md)
+[FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md) · [domain-model.md](domain-model.md) · [participation-rules.md](participation-rules.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-history.md](architecture-history.md) · [open-decisions.md](open-decisions.md)

@@ -90,23 +90,38 @@ answers (failures flag the answer, staff retry). Run it via
 `npm run scheduler:dev` or an external cron hitting
 `POST /api/internal/scheduler/tick` with header `x-scheduler-secret`.
 
-## Provisional decisions in this implementation
+## Decisions reflected in this implementation
 
-Marked **provisional** pending owner sign-off (see
-[docs/open-decisions.md](docs/open-decisions.md)):
+Status per [docs/open-decisions.md](docs/open-decisions.md), which is authoritative.
 
-- **D3** platform admin grants the Teacher role (`users.isTeacher`); teachers self-serve courses/sections.
-- **D4** structural edit-lock after first submission (helper `cycleHasSubmissions`; full edit UI not built yet).
-- **D5** hard deadline, no grace; staff reopen is audited.
-- **D7** timezone `Asia/Manila` via `INSTITUTION_TIMEZONE` (owner-confirmed value).
+**Closed** — implemented as described, no sign-off outstanding:
+
+- **D4** structural edit-lock once a cycle has a non-draft response (helper `cycleHasSubmissions`; full edit UI not built yet).
+- **D5** hard deadline, no grace; the audited `reopenCycle` is the staff escape hatch.
+- **D7** one institution timezone, `Asia/Manila` via `INSTITUTION_TIMEZONE`, stored per section. Confirm the configured value before production if the institution differs — an operational step, not an open decision.
 - **D8** merge within one section, across cycles.
 - **D10** roster re-import deactivates (never deletes) absent students.
-- **Scheduler**: reconciliation poller instead of pg-boss for this pass.
+- **D1 / D11** TypeScript + Drizzle baseline ([ADR-0001](docs/decisions/ADR-0001-current-stack-and-scheduler.md)). The **scheduler is a reconciliation poller**; `pg-boss` was considered and rejected, not deferred.
+
+**Approved scope, partially or not yet delivered** — do not treat as missing scope, and check [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) before assuming either way:
+
+- **Approved, not built:** **D6 / `E2`** unpublish and restore — schema only; publishing is still effectively irreversible in the running app.
+- **Approved, partially built:** **`F1`** email notifications — *implemented* for form-opened, deadline reminders and validity changes on an idempotent outbox with reconciliation; the private-answer, public-answer-linked and approval enqueues exist but their triggering workflows are not wired.
+- **Approved, partially built:** **`P1`** legacy Typst/XLSX parsing — paste-only anonymous import works today; the staged-row schema exists, full Typst/XLSX parsing does not.
+
+**Still open** — sign-off outstanding:
+
+- **D3** who grants the Teacher role. This implementation assumes a platform admin does (`users.isTeacher`); teachers self-serve courses/sections thereafter.
+- **D13** data retention · **D24** staff invitations for an address with no account.
 
 ## Remaining work (not in this foundation pass)
 
-pg-boss job queue (docs' recommended queue; the poller meets the same
-idempotency requirements meanwhile) · richer template/cycle editing UI +
-enforced edit-lock flow · backlog management UI (services exist) ·
-Playwright e2e · notifications, AI features, unpublish, course-material
-management (post-MVP by scope).
+Richer template/cycle editing UI + enforced edit-lock flow · backlog
+management UI (services exist) · merge/unmerge UI · Playwright e2e ·
+unpublish/restore UI (`E2`, approved) · bonus-period and student progress views
+(`C3`) · XLSX/PDF exports (`F2`) · course archive and clone (`F3`).
+[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) is the authority on what exists.
+
+Out of scope, not pending: AI features, course-material management, LMS
+integration ([docs/mvp-scope.md](docs/mvp-scope.md)). `pg-boss` is rejected, not
+queued — the reconciliation poller meets the same idempotency requirements.

@@ -27,7 +27,7 @@ out-of-band moment where they tell students to sign in.
 `/teach/courses/[id]/templates` —
 [courses/page.tsx](../src/app/teach/courses/page.tsx),
 [setup/page.tsx](../src/app/teach/sections/[id]/setup/page.tsx),
-[roster-import.tsx](../src/components/staff/roster-import.tsx),
+[roster-import-dialog.tsx](../src/components/staff/roster-import-dialog.tsx),
 [nav.ts](../src/components/layout/nav.ts),
 [modules/scheduling/index.ts](../src/modules/scheduling/index.ts).
 
@@ -41,8 +41,9 @@ journey's ordering failure is what causes that one's P0 ·
 
 A teacher who has never used this product has to get from an empty account to a
 section that can safely receive students. That takes six steps across five
-routes: create a course, create a section, import the registrar roster, confirm
-check the class list linked every UP email, create a template, set a recurring schedule.
+routes: create a course, create a section, import the registrar roster, check
+the class list linked every UP email, create a template, set a recurring
+schedule.
 
 **The headline is not that these screens are bad. Most of them are good.** The
 roster importer is the best-built screen in the product. The finding is that
@@ -120,15 +121,19 @@ column.
 
 **What is already right, and should not be touched:**
 
-- **The roster importer.** Paste → preview → confirm, with per-row action badges
-  that carry real distinctions — `create`, `enroll_existing`, `reactivate`,
-  `update_name`, `name_diff_locked`, `unchanged`
-  ([roster-import.tsx:44-52](../src/components/staff/roster-import.tsx#L44-L52)) —
-  a skipped-rows warning, a provenance field (*"Where did this list come from?"*),
-  and an explanation of why a confirmed student's canonical name is locked. It
-  also re-derives the plan inside the commit transaction so a stale preview
-  cannot apply the wrong thing ([roster-import.tsx:14-15](../src/components/staff/roster-import.tsx#L14-L15)).
-  This screen is better than most commercial CSV importers.
+- **The roster importer's judgement about each row.** What this document
+  praised was the per-row distinctions the planner draws — `create`,
+  `enroll_existing`, `reactivate`, `update_name`, `unchanged`, `blocked` — and
+  its refusal to guess at an email it cannot trust. All of that is intact in
+  [src/modules/roster-import/index.ts](../src/modules/roster-import/index.ts),
+  and the commit still re-derives the whole plan inside its own transaction so
+  nothing stale can apply the wrong thing.
+
+  **Superseded 2026-09-07 (GitHub issue #12):** the *screen* described here — an
+  editable preview walked through before confirming, with an `.xlsx` upload —
+  is gone. The class list imports a CSV in one step and then reports the
+  outcome, including which file lines were refused and which students are now
+  dropped. See [student-identity.md](student-identity.md) §5.
 - **The template→schedule dependency is surfaced properly.** No template yields an
   empty state with title, body, and an action pointing at template creation
   ([setup/page.tsx:384-394](../src/app/teach/sections/[id]/setup/page.tsx#L384-L394)),
@@ -333,8 +338,11 @@ At the moment of risk — schedule saved while roster is empty:                 
   matches how sections get set up in a real term.
 - **Blocking the schedule on an empty roster.** Configuring before the registrar
   file arrives is legitimate. The defect is silence, not permissiveness.
-- **Notifications** (post-MVP, **[Confirmed]**) and **auto-confirm**
-  (**[Open D2]**).
+- **Notifications for setup readiness.** Email notifications (`F1`) are approved and built for form-opened, deadline reminders and validity changes — but nothing notifies a teacher about an unimported roster, so this journey's problem is unaddressed by them.
+- ~~**auto-confirm** (**[Open D2]**)~~ — **not applicable.** D2 was removed on
+  2026-08-07 with the name-matching workflow it belonged to; there is nothing to
+  auto-confirm because there is no match to confirm (**D23**,
+  [student-identity.md](student-identity.md)).
 
 ---
 
@@ -356,11 +364,21 @@ is entirely in the teacher's hands to clear.
 
 > **Import the class list before you tell students to sign in.**
 >
-> Students are matched to the class list by name. A student who signs in before
-> the list is imported cannot be matched, and cannot submit until a teacher links
-> their account by hand.
+> A student gets access when their UP email is on this class list — nothing else
+> grants it. A student who signs in before the list is imported is told they have
+> no classes yet. Importing fixes it on their next page load; they do not sign in
+> again and nobody has to link anything.
 >
 > [Import the class list]
+
+> **Corrected against decision D23 (2026-08-07).** This copy originally said
+> students are matched *by name* and that a teacher links accounts *by hand* —
+> both describe the removed matching workflow. Access is exact normalized
+> UP-email equality against the class list
+> ([student-identity.md](student-identity.md)). The finding it serves is
+> unchanged: importing late still strands students, and the notice still belongs
+> at the moment of risk. What changed is that the fix is now entirely the
+> teacher's, with no queue to work through.
 
 Written to be *causal* rather than procedural. "Do this first" is ignorable;
 "here is what breaks" is not. It also names the actual mechanism, which is the
@@ -420,8 +438,8 @@ nothing and costs them their typing.
 
 | Concern | Spec |
 |---|---|
-| `sectionReadiness` | Derived per section: roster count, template existence, active schedule, pending-match count. All four are existing queries. Compute alongside `staffSectionAttention` on the dashboard, and on the course list. |
-| Cost | Four cheap counts per staff section on two pages. Follows the existing `Promise.all` fan-out in [page.tsx:84-90](../src/app/page.tsx#L84-L90). Measure before caching. |
+| `sectionReadiness` | Derived per section: roster count, template existence, active schedule. All three are existing queries. Compute alongside `staffSectionAttention` on the dashboard, and on the course list. (A fourth input, a pending-match count, was proposed here before decision **D23** removed account matching; there is no such query and no such state — see §5 and [student-identity.md](student-identity.md).) |
+| Cost | Three cheap counts per staff section on two pages. Follows the existing `Promise.all` fan-out in [page.tsx:84-90](../src/app/page.tsx#L84-L90). Measure before caching. |
 | Failure of a readiness query | Return null and render nothing, matching `staffSectionAttention`'s existing behaviour ([page.tsx:48-56](../src/app/page.tsx#L48-L56)). Never a partial or misleading badge. |
 | Nav reordering | Same `staffSectionNav` function, one branch on readiness. Permission filtering unchanged — readiness never grants a destination a permission would deny. |
 | The risk notice | Persistent on the setup page while the roster is empty and a schedule is active. Not dismissible: the condition *is* the risk, so it should clear by being fixed, not by being closed. |
@@ -489,8 +507,11 @@ acquisition event.
 3. **Do the three readiness items match what teachers actually consider "ready"?**
    Roster, template, schedule is a code-derived list. A teacher might reasonably
    also want the first cycle previewed. Activity #3 answers it.
-4. **[Open D10]** dropped-student re-import behaviour affects roster status
-   messaging once a term is under way; F2's populated copy assumes a first import.
+4. **D10 — closed 2026-08-03.** A dropped student's enrolment is deactivated and
+   their own history stays readable; no data is deleted. Dropped-student
+   re-import behaviour still affects roster status messaging once a term is under
+   way, and F2's populated copy assumes a first import — so the copy question is
+   live even though the decision is not.
 
 **Handoffs:**
 

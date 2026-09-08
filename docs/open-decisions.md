@@ -16,7 +16,7 @@
 > | D2 | **Superseded and REMOVED 2026-08-07** — see the block below. Name matching no longer exists, so neither does the question. |
 > | D4 | **Closed — (a).** Structural edits lock once a cycle has a non-draft response; per-occurrence open/deadline overrides are allowed and audited. |
 > | D5 | **Closed — (a) hard deadline, no grace.** `reopenCycle` remains the audited teacher escape hatch and now also unlocks locked responses (`manage_weekly_cycles`). |
-> | D6 | **Closed — unpublish is APPROVED and implemented.** Unpublishing is audited and reversible via restore. An unpublished entry leaves the class archive *and* the linked asker's history. |
+> | D6 | **Closed — unpublish is APPROVED.** Instructor-only, reason required, audited, and reversible via restore. An unpublished entry leaves the class archive *and* the linked asker's history (D16). **Approved, not yet built** — [CURRENT_STATE.md](CURRENT_STATE.md) E2 is `schema only`. |
 > | D7 | **Closed — single institution timezone,** repository default `Asia/Manila`, stored per section and used consistently. |
 > | D8 | **Closed — (a).** Merge is within a section and may span cycles; cross-section reuse goes through the course backlog. Merging never alters per-cycle participation. |
 > | D10 | **Closed — (a).** A dropped student's enrollment is deactivated and their own history stays readable; no data is deleted. |
@@ -57,12 +57,12 @@
 - **Question:** Does "using Fable" refer to the Claude Fable model/tooling, or does the owner want the implementation stack to use F#/Fable?
 - **Options:** (a) Claude tooling only → keep TypeScript recommendation; (b) F#/Fable stack → change/extend the architecture to an F# option (e.g. SAFE-stack).
 - **Trade-offs:** TS = larger help/hiring pool, strong Claude Code familiarity; F#/Fable = owner preference if intended, but steeper learning curve and smaller ecosystem for a student team.
-- **Current working choice:** Continue the existing TypeScript implementation.
-  This remains conditional only if the owner intended an F#/Fable application
-  stack rather than a coding tool/model reference. See
-  [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md).
-- **Wait for owner approval?** **Only if F#/Fable is intended.** Otherwise this
-  decision can be closed as “TypeScript baseline.”
+- **Status: CLOSED 2026-08-03 — (a) TypeScript baseline.** “Fable” referred to
+  Claude tooling, not an F#/Fable implementation stack, so the condition that
+  gated this never applied. The Next.js + Drizzle + Auth.js monolith is the
+  approved implementation, recorded in
+  [ADR-0001](decisions/ADR-0001-current-stack-and-scheduler.md). Nothing here
+  awaits approval; see also [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md).
 
 ## D2. Account-match auto-confirm policy — **REMOVED, not deferred**
 
@@ -92,16 +92,20 @@
 - **Question:** What exactly is restricted once ≥1 student submits a cycle?
 - **Options:** (a) lock structural edits (add/remove/retype questions, required flags, choices), allow audited cosmetic text fixes; (b) lock everything; (c) allow all with warnings.
 - **Trade-offs:** (a) balances data integrity with fixing typos; (b) safest but rigid; (c) risks invalidating collected answers.
-- **Recommended choice:** (a). See [weekly-form-workflow.md](weekly-form-workflow.md#3-preview-modify-and-the-edit-lock-rule).
-- **Wait for owner approval?** Recommended yes (data-integrity policy).
+- **Status: CLOSED 2026-08-03 — (a).** Structural edits lock once a cycle has a
+  non-draft response; per-occurrence open/deadline overrides remain allowed and
+  audited. See [weekly-form-workflow.md](weekly-form-workflow.md#3-preview-modify-and-the-edit-lock-rule).
 
 ## D5. Grace period / cycle reopen policy
 
 - **Question:** Any grace period after deadline, and rules for reopening a closed cycle?
 - **Options:** (a) hard deadline, no grace; teacher can reopen (audited); (b) fixed grace window; (c) per-section configurable grace.
 - **Trade-offs:** (a) simple, predictable; (b)/(c) more flexible, more complexity and participation edge cases.
-- **Recommended choice:** (a). See [weekly-form-workflow.md](weekly-form-workflow.md).
-- **Wait for owner approval?** **Yes.**
+- **Status: CLOSED 2026-08-03 — (a) hard deadline, no grace.** `reopenCycle`
+  remains the audited teacher escape hatch and also unlocks locked responses
+  (`manage_weekly_cycles`). It is discretionary staff recovery, not a student
+  entitlement, so student-facing copy names the path without promising it. See
+  [weekly-form-workflow.md](weekly-form-workflow.md).
 
 ## D6. Unpublish support
 
@@ -113,25 +117,33 @@
   Instructor-only, requires a reason, is audited, and is reversible via restore. An unpublished
   entry leaves both the class archive and the linked asker's history (D16). See
   [public-qa-and-source-linking.md](public-qa-and-source-linking.md).
+- **Approved, not yet built.** The decision is settled; the service and UI are
+  not implemented — [CURRENT_STATE.md](CURRENT_STATE.md) `E2` is `schema only`.
+  Publishing is therefore still effectively irreversible in the running app.
 
 ## D7. Timezone: institution-wide vs per-section
 
 - **Question:** One institution timezone, or per-section override?
 - **Options:** (a) single institution timezone (MVP); (b) per-section override.
 - **Trade-offs:** (a) simplest and correct for one campus; (b) needed only for multi-timezone offerings.
-- **Current working choice:** (a) single institution timezone for MVP; the
-  repository default is `Asia/Manila`. Confirm the value before production and
-  defer per-section overrides.
-- **Wait for owner approval?** **Yes before pilot/production** if the institution
-  uses a different timezone.
+- **Status: CLOSED 2026-08-03 — (a) single institution timezone.** Stored on
+  each section and used consistently; per-section overrides are **deferred**. The
+  repository default is `Asia/Manila`.
+- **Residual operational step, not an open decision:** confirm the configured
+  value before pilot/production if the institution does not run on `Asia/Manila`.
+  That is a deployment check on `INSTITUTION_TIMEZONE`; the model itself is
+  settled and needs no further approval.
 
 ## D8. Merge scope
 
 - **Question:** May a merged public answer combine submissions across cycles (and only within a section)?
 - **Options:** (a) within a section, across cycles allowed; (b) within a single cycle only; (c) across sections (via backlog).
 - **Trade-offs:** (a) practical for recurring questions, must preserve per-cycle participation; (b) most restrictive; (c) already covered by course backlog.
-- **Recommended choice:** (a) within a section, across cycles; cross-section handled via the course backlog. See [public-qa-and-source-linking.md](public-qa-and-source-linking.md#5-merging-multiple-submissions).
-- **Wait for owner approval?** Recommended yes.
+- **Status: CLOSED 2026-08-03 — (a).** Merge is within a section and **may span
+  cycles**; cross-section reuse goes through the course backlog. Merging never
+  alters per-cycle participation. The merge **UI** is a separate, unbuilt item
+  ([CURRENT_STATE.md](CURRENT_STATE.md) `D3`). See
+  [public-qa-and-source-linking.md](public-qa-and-source-linking.md#5-merging-multiple-submissions).
 
 ## D9. Section join code / verification token as extra matching factor — **REMOVED**
 
@@ -146,18 +158,20 @@
 - **Question:** When a student is dropped from a re-imported roster, what access remains?
 - **Options:** (a) deactivate enrollment, keep read-only history; (b) deactivate and revoke access; (c) keep active.
 - **Trade-offs:** (a) preserves data + student's own history; (b) cleaner cutoff; (c) wrong (they left).
-- **Recommended choice:** (a) — never delete data (matches "no silent overwrite"). See [student-identity.md](student-identity.md#74-safety-rules).
-- **Wait for owner approval?** **Yes.**
+- **Status: CLOSED 2026-08-03 — (a).** A dropped student's enrolment is
+  deactivated and their own history stays readable; no data is deleted, matching
+  the "no silent overwrite" rule. See
+  [student-identity.md](student-identity.md#74-safety-rules).
 
 ## D11. ORM: Drizzle vs Prisma
 
 - **Question:** Which ORM if the recommended Drizzle is not preferred?
 - **Options:** (a) Drizzle (recommended); (b) Prisma.
-- **Trade-offs:** Drizzle = SQL-transparent, teaches DB concepts; Prisma = higher-level, faster start, hides SQL. See [architecture-proposal.md](architecture-proposal.md#31-prisma-vs-drizzle-the-orm-decision).
-- **Current working choice:** (a) Drizzle; it is already the repository's ORM
-  and migration source of truth.
-- **Wait for owner approval?** Only if the team wants to replace Drizzle with
-  Prisma; do not reopen this merely to start the UI.
+- **Trade-offs:** Drizzle = SQL-transparent, teaches DB concepts; Prisma = higher-level, faster start, hides SQL. See [architecture-history.md](architecture-history.md#31-prisma-vs-drizzle-the-orm-decision).
+- **Status: CLOSED 2026-08-03 — (a) Drizzle.** It is the repository's ORM and
+  migration source of truth. Replacing it with Prisma would be a **new**
+  decision with a migration cost, not a reopening of this one — and never a
+  prerequisite for starting UI work.
 
 ## D12. Deployment target
 
@@ -191,8 +205,16 @@
 - **Recommended choice:** Archive in place for MVP; define a retention policy with the institution before launch.
 - **Wait for owner approval?** **Yes** (institutional/legal input needed).
 
+## D24. Staff invitations for an address with no account
+
+- **Question:** When staff are added by email and one address has no account yet, should the platform invite that person or hold a pending grant, instead of refusing the address?
+- **Options:** (a) refuse the address by name and tell the owner the person must sign in once first — **the current behaviour**; (b) write a pending staff row that activates on that person's first sign-in; (c) send an email invitation that provisions the account.
+- **Trade-offs:** (a) never provisions access for an address nobody has proven they control, and keeps one rule for staff and students alike — the account exists, or it does not. Its cost is a two-step dance when a new assistant has not logged in yet. (b) and (c) remove that friction but add an account-provisioning path, a pending state that must be shown, expired, and audited, and a window in which a mistyped address holds a real grant. (c) additionally makes the platform an email sender to non-members.
+- **Current working choice:** (a). Refusal is per address, with the reason stated (`no_account` / `inactive_account`), and the whole request is refused atomically so a typo grants nobody anything. This follows [ADR-0003](decisions/ADR-0003-course-owner-controls-staff-permissions.md) §3, which decided the same thing for section assignment, and is restated in [ADR-0004](decisions/ADR-0004-course-wide-staff-standing.md) for course-wide standing.
+- **Wait for owner approval?** **Yes** before building (b) or (c). Raised as item 1 of issue #17 and deliberately not resolved there.
+
 ---
 
 ## Related documents
 
-[product-requirements.md](product-requirements.md) · [student-identity.md](student-identity.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-proposal.md](architecture-proposal.md) · [mvp-scope.md](mvp-scope.md)
+[product-requirements.md](product-requirements.md) · [student-identity.md](student-identity.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [architecture-history.md](architecture-history.md) · [mvp-scope.md](mvp-scope.md)

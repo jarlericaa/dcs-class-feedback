@@ -21,9 +21,9 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 ### Academic structure
 
 - **Course** — reusable course. Fields: title, code, owner → User, active flag. Owns templates, backlog, lessons/topics, (future) course materials.
-- **CourseStaff** — a teacher authorized on a Course. Fields: → Course, → User, course role.
-- **ClassSection** — an offering of a Course. Fields: → Course, term/semester label, title, timezone (default from institution; per-section override is [Open D7](open-decisions.md)), active flag.
-- **SectionStaff** — staff membership on a section with per-section permission flags (the TA permission catalog). Fields: → ClassSection, → User, role (teacher/TA/co-teacher), permission flag set. See [roles-and-permissions.md](roles-and-permissions.md).
+- **CourseStaff** — a teacher authorized on a Course. Fields: → Course, → User, course role (`teacher` / `co_teacher`). A row is **course-wide standing**: full Instructor capability on *every* ClassSection of that Course, including sections created later, with no permission flags to narrow it. Unique on `(Course, User)`. Only the course owner may create or delete one, and the owner's own standing comes from `Course.owner` rather than a row, so it cannot be deleted. Removing a row leaves any separate SectionStaff row intact. See [roles-and-permissions.md §2.5](roles-and-permissions.md#25-where-staff-standing-comes-from-two-tiers) and [ADR-0004](decisions/ADR-0004-course-wide-staff-standing.md).
+- **ClassSection** — an offering of a Course. Fields: → Course, term/semester label, title, timezone (default from institution; per-section override **deferred** — D7 closed 2026-08-03, [open-decisions.md](open-decisions.md)), active flag.
+- **SectionStaff** — staff membership on a section with per-section permission flags (the TA permission catalog). Fields: → ClassSection, → User, role (teacher/TA/co-teacher), permission flag set. Unique on `(ClassSection, User)`. This is the **only** tier that carries the permission catalog, so a Student Assistant is always scoped to named sections: someone assisting 3 of 8 sections holds three rows, granted in one action but auditable per section. See [roles-and-permissions.md](roles-and-permissions.md).
 - **Enrollment** — a StudentRecord's membership in a ClassSection. Fields: → ClassSection, → StudentRecord, status (active/deactivated), source → ImportBatch. A student may appear in multiple sections **[Assumption A1]**.
 
 ### Forms & templates
@@ -42,6 +42,7 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 - **FormResponse** — one student's completed form instance. Fields: → FormInstance, → StudentRecord, **→ ClassSection (the attribution section — the audience section the student answered through)**, submission timestamp, state (§3.2), participation validity (§3.3), invalidation reason (staff-only). **Unique on (FormInstance, StudentRecord)** — one submission per student per form instance. The section is deliberately **not** part of that key, so a student enrolled in two targeted sections still has exactly one response ([FORMS-AUDIENCE-DYNAMIC-INSTANCES.md §2.4](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md)).
 - **QuestionAnswer** — an answer to one FormQuestion within a FormResponse. Fields: → FormResponse, → FormQuestion, value(s) (stores stable option ids *and* labels where applicable), free text.
 - **StudentSubmissionItem** — the student-originated question/feedback/concern/clarification/suggestion within a FormResponse. Fields: → FormResponse, submission type (student-selected, staff-correctable), broad category (Content/Logistics/Misc), → Lesson/Topic (for content), original text (**immutable**), review state (§3.4), response disposition (§3.5).
+- **ResponseRead** — **[Confirmed 2026-09-07 — GitHub issue #6]** one staff member has read one response. Fields: → FormResponse (cascade), → User (the reader, cascade), read-at. **Unique on (FormResponse, User)**, which is what makes marking idempotent. It is **per reader on purpose**: a shared marker would let one assistant's skim hide a submission from the instructor who still has to decide on it. It is bookkeeping about the READER — see [§3.10](#310-read-state--about-the-reader-not-the-submission).
 
 ### Responses & publishing
 
@@ -242,7 +243,7 @@ States: `No draft`, `Draft`, `Awaiting approval`, `Scheduled`, `Published`, `Unp
 | Published | Unpublished | **Instructor only**, reason required, audited |
 | Unpublished | Published | **Instructor only** (restore), audited |
 
-- Scheduled-publication failure handling and idempotency are detailed in [public-qa-and-source-linking.md](public-qa-and-source-linking.md) and [architecture-proposal.md](architecture-proposal.md).
+- Scheduled-publication failure handling and idempotency are detailed in [public-qa-and-source-linking.md](public-qa-and-source-linking.md) and [architecture-history.md](architecture-history.md).
 - Student-visible (to the asker, via source link): whether their question reached `Published`, plus
   the reworded public text, the answer, and a last-updated timestamp. Drafts, drafts awaiting
   approval, rejected drafts, schedules, unpublished entries, revision text, the editor's identity,
@@ -287,6 +288,27 @@ Full rule, import validation, and migration behaviour in [student-identity.md](s
 - A `FormInstance` must have at least one audience section. Enforced by the three services that create instances and asserted by integration tests — a `CHECK` cannot span tables.
 - A `FormResponse`'s attribution section must be one of its instance's audience sections.
 
+### 3.10 Read state — about the reader, not the submission
+
+**[Confirmed 2026-09-07 — GitHub issue #6]** Whether a response has been read is **not** a state
+dimension of the response, which is why it is a separate table rather than a column and why it does
+not appear in §7 of [../AGENTS.md](../AGENTS.md) beside the review and validity dimensions.
+
+A response has no single read state. It has one per staff member who can see it, and those disagree
+by design — the point of the feature is that each reader resumes where *they* left off. A column
+would force one shared answer, and the shared answer is the harmful one.
+
+What it never touches: participation credit, validity, review state, disposition, publication, or
+anything a student can see. **A student is never told whether staff have opened their submission** —
+that would be a claim the product does not make and a pressure it should not apply.
+
+Distinct from `src/lib/reviewed-session.ts`, which answers "did I act on this in *this sitting*?"
+and is deliberately a session cookie: it keeps a post you have just answered in place under the
+"needs a reply" view instead of letting it vanish under the cursor. Read state is the persistent
+question, and the two are independent.
+
+<a id="audit-events"></a>
+
 ## 4. Audit events
 
 **[Confirmed]** Every important action produces an **AuditEvent** recording: **actor** (→ User), **action** (typed), **timestamp**, **affected entity** (type + id), and **important before/after values**. Audit records are staff/admin-visible only; never student-visible (R6).
@@ -307,8 +329,111 @@ every export; and each email send attempt.
 Audit rows never carry private message bodies, comment bodies, or student numbers — only
 identifiers, state transitions, reasons, and content lengths/digests.
 
-Audit implementation approach (append-only, before/after capture) is discussed in [architecture-proposal.md](architecture-proposal.md#audit).
+### 4.1 How the log is READ **[Confirmed 2026-09-08 — GitHub issue #16]**
+
+The log's shape is a domain concern; how a teacher reads it is a separate decision, taken here
+because the same rules bind every future surface over these rows.
+
+- **One sentence per entry — actor, verb, object.** `src/lib/audit-story.ts` maps each action to a
+  past-tense predicate and each entity type to a noun, so an entry reads "Maria Santos published an
+  answer to *When will the practice set be available?*" rather than `public_answer.published`. An
+  action with no predicate yet still forms a sentence from its existing label.
+- **No student is ever named, in any position.** Three places, because the first implementation
+  closed only one of them:
+  - the *object* is resolved only for course-shaped entities — a public question's reworded text, a
+    class list, a course, a form, an occurrence — and every student-shaped entity
+    (`form_response`, `student_submission_item`, `student_record`, `enrollment`,
+    `private_response`) resolves to a noun instead. The subject map is keyed by **entity type and
+    id**, never id alone, so a student-shaped row cannot inherit a label resolved for a
+    course-shaped one; and each lookup is constrained to this section or its course, so an id that
+    reached the log by another route resolves to nothing;
+  - the *actor* of the actions a student performs (submit, edit, save a draft, withdraw, follow up
+    privately, comment) reads as "A student", **and is masked in the read model** — `actor` comes
+    back null and the projected event carries no `actorUserId`, so no surface over it can print a
+    name it was never given;
+  - the *actor filter* offers staff, the scheduler, and **"Students" as a group**. A person is
+    offered only when they wrote at least one row as staff, so a teacher who is also enrolled keeps
+    their option and a student never gains one. Filtering by a guessed student id returns nothing:
+    the clause admits that account's staff rows only, so the filter cannot be turned into a
+    per-student activity view one id at a time.
+
+  The reader holds `view_student_identities` by role, so none of this prevents an escalation; it
+  keeps the log's default reading about what happened rather than about who a student is. Which
+  student a submission belongs to stays answerable where it belongs — beside the submission, in the
+  review inbox. The audit ROW itself is untouched and append-only; what is withheld is this read
+  model's projection of it.
+- **Changes are named fields, not a payload.** `before`/`after` render as a
+  before → after list per changed field, with only the fields that differ. A value that is a
+  structure is described (`3 items`, `changed`) rather than serialized inline, and a value longer
+  than 80 characters is truncated.
+
+- **What the default diff will not print [Confirmed 2026-09-08 — GitHub issue #16].** The rows do
+  carry identity for the writes whose whole purpose is to record it: `roster.row_added` stores
+  `fullName` and `rosterEmail`, `roster.email_linked` stores both sides of `rosterEmail`,
+  `student_record.name_corrected` stores the name, and `staff.assigned` stores an `email`. Those
+  rows are right to hold them — the imported UP email **is** the access grant, and an audit log that
+  did not say what was granted would not be one. But a teacher scanning a history to find out that
+  an import happened should not be reading a list of names and addresses to do it. So the default
+  view states the FACT and **withholds the value**, showing the field's label and the word
+  `withheld`; absence still reads as `not set`, because that discloses nothing and is the fact a
+  reader needs. Prose fields (`answerBody`, `body`, `text`, `note`, `originalText`, …) are reported
+  by length. Both are enforced by an explicit list **and** by name patterns, so a field a future
+  writer adds is withheld until somebody classifies it — the safe direction for a display.
+
+  One deliberate exception: `publicQuestionText` prints on both sides, because
+  `public_answer.reworded` is the single most useful diff in the log, both sides are staff-authored
+  wording already published to that whole class, and the student's original words are immutable and
+  never in that payload.
+
+- **The raw payload is retained, as a staff-only exception.** It sits behind a labelled, closed
+  disclosure — *"Technical details, exactly as stored"*, with a line saying the list above withholds
+  names, addresses and message text. Keeping it unredacted is a decision, not an oversight: "what
+  did the system actually store" is the question an audit log exists to answer when something has
+  gone wrong, and a redacted copy could not. It is safe here because the page already requires
+  **non-TA section standing**, and an instructor holds `view_student_identities` by role — so it
+  contains no name or address they cannot already read on the class list. Nothing about the stored
+  row changes: the log is append-only and everything above is a projection of it.
+- **A teacher-facing allowlist decides what is shown by default.** Derived from `AUDIT_ACTIONS` by
+  subtracting the platform's own records — occurrence generation, response locking, email delivery,
+  per-reader read state, source linking, student-number ops, import mechanics, the platform-admin
+  teacher-role grant, and the removed claim/match codes. Derived from a denylist so a newly added
+  action is teacher-facing until somebody decides otherwise. **Withheld is never deleted:** the log
+  is append-only and the view offers an explicit "everything, including system records" scope.
+- **Every narrowing is a SQL clause.** Action, actor, and an inclusive date range in the section's
+  own timezone, all applied to the same predicate the count and the offset use — so a filtered view
+  cannot advertise a page it has nothing to fill. Requesting a withheld action inside the default
+  scope returns nothing rather than silently dropping the filter, and the action selector is built
+  from the set the CURRENT scope can show — the allowlist by default, all of `AUDIT_ACTIONS` under
+  "everything" — so the control never advertises a record it cannot then select. Only the exact
+  string `all` widens the scope: any other value normalizes to the default, so an unrecognised
+  parameter cannot open the log up.
+- **Scope is three disjoint cases**, decided by how much scope the WRITER recorded, not by id
+  uniqueness:
+  1. `section_id` names this section — the row is ours;
+  2. `section_id IS NULL AND course_id` names this course — a **course-level** record. The writers
+     that own course-level entities record only the course (`course.created`, `course.updated`,
+     `template.created`, `template.version_created`, `form.delivery_configured`,
+     `form.audience_set`, `cycle.*`, `staff.course_*`, `legacy.imported`, `backlog.*`) because a
+     section's forms, templates, schedules and backlog all live there. None of those entities is
+     reachable from a section by id, so without this clause a section's own history silently
+     omitted every one of them. No student data is written at course scope;
+  3. both columns NULL — the legacy path, reached by fanning out from the section to the entity ids
+     it owns. The audit table gained its scope columns after rows already existed; this case reaches
+     the rows written before that.
+
+  `section_id IS NULL` on cases 2 and 3 is the safety: without it a row that explicitly says
+  "section B" would reach section A by sharing a course or by naming a colliding entity id. Case 3
+  additionally requires no course, so a row from another course cannot arrive through a collision.
+- **Every writer records its own scope, and two kinds of writer must.** A course-owned entity is
+  reachable from no section, and an entity **deleted in the same transaction** (`staff.removed`)
+  can never be found by fanning out again — so both record the column rather than relying on case
+  3. One deliberate exception: `user.teacher_role_changed` is platform administration, owned by no
+  course, and stays unscoped (it is also withheld from the default view).
+- **Nothing rendered is markup.** A subject label may be staff-authored rich text and arrives
+  flattened by the read model; every value reaches the page as plain text in a JSX text node.
+
+Audit implementation approach (append-only, before/after capture) is discussed in [architecture-history.md](architecture-history.md#audit).
 
 ## 5. Related documents
 
-[product-requirements.md](product-requirements.md) · [roles-and-permissions.md](roles-and-permissions.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [participation-rules.md](participation-rules.md) · [student-identity.md](student-identity.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [question-backlog.md](question-backlog.md) · [legacy-question-import.md](legacy-question-import.md) · [open-decisions.md](open-decisions.md) · [architecture-proposal.md](architecture-proposal.md)
+[product-requirements.md](product-requirements.md) · [roles-and-permissions.md](roles-and-permissions.md) · [weekly-form-workflow.md](weekly-form-workflow.md) · [participation-rules.md](participation-rules.md) · [student-identity.md](student-identity.md) · [public-qa-and-source-linking.md](public-qa-and-source-linking.md) · [question-backlog.md](question-backlog.md) · [legacy-question-import.md](legacy-question-import.md) · [open-decisions.md](open-decisions.md) · [architecture-history.md](architecture-history.md)

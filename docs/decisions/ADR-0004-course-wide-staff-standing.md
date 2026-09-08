@@ -110,13 +110,16 @@ denormalized `courseId` set and a shared batch id in metadata:
 
 ## Follow-up
 
-- The **Add staff** dialog (issue #17 item 1) is the next milestone; this ADR
-  settles the model it is designed against.
+- The **Add staff** dialog (issue #17 item 1) is **built**: one dialog, one
+  permission set, several people per action, with a course-wide/per-section
+  scope choice on the course Teaching team page and a section-locked variant on
+  section setup. This ADR settled the model it was designed against.
 - Owner sign-off on [Open D3](../open-decisions.md) (who grants the teacher
   role) still stands open, and now also governs how a non-teacher grantee is
   expected to be provisioned.
 - Whether an invitation/pending-account flow should exist is unresolved and
   deliberately not decided here.
-- The product documents ([roles-and-permissions.md](../roles-and-permissions.md),
-  [domain-model.md](../domain-model.md)) are updated in a later milestone of the
-  same issue; until then this ADR is the record.
+- The product documents ([roles-and-permissions.md](../roles-and-permissions.md)
+  §2.5 and [domain-model.md](../domain-model.md) `CourseStaff` / `SectionStaff`)
+  **have been updated** to describe the two tiers, so they — not this ADR — are
+  now the reference for the model.

@@ -38,11 +38,16 @@ flowchart LR
 ### Student loop
 
 1. Sign in with an allowed university Google account.
-2. Wait for teacher confirmation if the account has not been matched to a
-   roster identity.
+2. Their classes appear immediately: the account resolves to the class-list row
+   whose UP email equals its normalized email, exactly. Nothing is claimed,
+   matched by name, or confirmed by a teacher — an account whose address is on
+   no class list is told only that (decision **D23**,
+   [student-identity.md](student-identity.md)).
 3. Open the current cycle for an enrolled section.
 4. Answer required questions and optionally submit a question or feedback item.
-5. Submit once; the response cannot be edited.
+5. Save a draft, submit, and keep editing that same response until the deadline;
+   at the deadline the latest submitted version locks. No late submission, no
+   late edit, and an edit never mints a second participation credit.
 6. Return to history to see private replies and whether an item was answered.
 7. Search the section's anonymous Q&A archive.
 

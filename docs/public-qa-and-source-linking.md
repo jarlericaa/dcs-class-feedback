@@ -1,7 +1,7 @@
 # Public Q&A & Source Linking
 
 > **Status:** Product/privacy rule specification with an implemented foundation.
-> This document **owns** private/public responses, rewording rules, source-link invariants, small-class anonymity rules, scheduled publication, the public archive, and the student submission-history view. States: [domain-model.md](domain-model.md#3-state-models). Scheduling infrastructure: [architecture-proposal.md](architecture-proposal.md#scheduling).
+> This document **owns** private/public responses, rewording rules, source-link invariants, small-class anonymity rules, scheduled publication, the public archive, and the student submission-history view. States: [domain-model.md](domain-model.md#3-state-models). Scheduling infrastructure: [architecture-history.md](architecture-history.md#scheduling).
 > Label key as in [product-requirements.md](product-requirements.md).
 
 ## 1. Response types **[Confirmed]**
@@ -42,6 +42,8 @@ When a teacher publishes a student-originated question publicly, the public entr
 
 **Invariant:** `SourceLink` is internal-only; no source identity ever appears in any student-visible public field.
 
+<a id="5-merging-multiple-submissions"></a>
+
 ## 5. Merging multiple submissions **[Confirmed]**
 
 When multiple submissions merge into one public answer:
@@ -51,7 +53,7 @@ When multiple submissions merge into one public answer:
 - The public version must **not reveal any source student identity**.
 - The public wording must **not imply it came from exactly one student** unless that is safe and intentional.
 
-- **[Recommended]** Merge scope for MVP is within a single class section; cross-cycle merge within a section is [Open D8](open-decisions.md). Merging is a publishing concern only — each source student's per-cycle participation is unaffected (see [participation-rules.md](participation-rules.md#3-participation-derivation)).
+- **[Confirmed — D8, closed 2026-08-03]** Merge scope is within a single class section, and it **may span cycles**; cross-section reuse goes through the course backlog ([open-decisions.md](open-decisions.md)). Merging is a publishing concern only — each source student's per-cycle participation is unaffected (see [participation-rules.md](participation-rules.md#3-participation-derivation)).
 
 ## 6. Student submission-history view **[Confirmed]**
 
@@ -61,18 +63,20 @@ Students must **not** see: invalidity status; invalidation reason; no-response d
 
 - **[Recommended]** State→label mapping for students: any of `Private response` / `Public response` / `Private and public response` → "Answered"; `Undecided` / `No response` → remains "Submitted" (never surfaced as "no response").
 
+<a id="7-scheduled-public-answers"></a>
+
 ## 7. Scheduled public answers **[Confirmed]**
 
 Teachers can: publish immediately; schedule for a future date/time; edit a scheduled post; cancel scheduled publication; view scheduled posts; see whether scheduled publication succeeded; and resolve failed scheduled-publication jobs. Public-answer states: [domain-model.md](domain-model.md#36-public-answer-state).
 
-- **[Confirmed]** Scheduling uses the class/institution timezone ([Open D7](open-decisions.md) picks which).
-- **[Confirmed]** Prefer **database-backed scheduling** before recommending message brokers — see [architecture-proposal.md](architecture-proposal.md#scheduling).
+- **[Confirmed]** Scheduling uses the institution timezone, stored on each section — **D7** closed 2026-08-03; per-section overrides are deferred ([open-decisions.md](open-decisions.md)).
+- **[Confirmed]** Prefer **database-backed scheduling** before recommending message brokers — see [architecture-history.md](architecture-history.md#scheduling).
 
 ### 7.1 Idempotency & failure handling **[Recommended]**
 
 - **Idempotent publication:** the publish job checks the `PublicAnswer`'s current state before acting and uses a unique job key per answer; re-running never double-publishes.
 - **Scheduler-down:** on restart, the reconciliation poller finds `Scheduled` answers past their scheduled-at and publishes them late (flagged **late** in audit).
-- **Failure surfacing:** a failed job leaves the answer `Scheduled` with a failure flag/reason, visible to staff, with retry/resolve actions. The MVP has no notifications ([mvp-scope.md](mvp-scope.md)), so failures surface **in-app** on the scheduled-posts view.
+- **Failure surfacing:** a failed job leaves the answer `Scheduled` with a failure flag/reason, visible to staff, with retry/resolve actions. Failures surface **in-app** on the scheduled-posts view: email notifications (`F1`) are approved and built for form-opened, deadline reminders and validity changes, but **no publication-failure notification exists**, so in-app is still the only channel for this.
 
 ## 8. Public class Q&A archive **[Confirmed]**
 
@@ -87,6 +91,13 @@ Entries may be organized by: Content / Logistics / Miscellaneous; lesson/lecture
 - **[Confirmed]** Each entry shows a last-updated timestamp when it has been edited. Staff-only
   revision metadata — the prior text, the editor, and the revision count — is **never** in the
   student payload.
+- **[Confirmed 2026-09-07 — GitHub issue #14]** Each published answer is **signed with the display
+  name of the staff member who published it**. This is the one place a staff name reaches a student:
+  a private reply is still attributed to "your teaching team" rather than to a person
+  ([student submission-history view](#6-student-submission-history-view-confirmed)). It changes
+  nothing about the **asker**, who stays anonymous, and adds no source link, draft or revision
+  metadata to the student payload. The asker line on an entry reads **`Anonymous`** — a scoped
+  exception to CONTENT-VOICE P3, recorded there.
 - **Still excluded:** voting/upvotes, "I also have this question," and public student identities
   ([mvp-scope.md](mvp-scope.md)). Reactions and moderated comments are **approved** as `P2` — see §8A.
 
@@ -125,10 +136,10 @@ Entries may be organized by: Content / Logistics / Miscellaneous; lesson/lecture
 
 ## 9. Decisions affecting this area
 
-D6 (unpublish — **approved and implemented**), D7 (institution timezone), D8 (cross-cycle merge
+D6 (unpublish — **approved**; not yet built, see [CURRENT_STATE.md](CURRENT_STATE.md) E2), D7 (institution timezone), D8 (cross-cycle merge
 within a section), D16 (unpublish hides from the asker too) are **closed**. See
 [open-decisions.md](open-decisions.md).
 
 ## 10. Related documents
 
-[domain-model.md](domain-model.md) · [question-backlog.md](question-backlog.md) · [legacy-question-import.md](legacy-question-import.md) · [participation-rules.md](participation-rules.md) · [roles-and-permissions.md](roles-and-permissions.md) · [architecture-proposal.md](architecture-proposal.md) · [open-decisions.md](open-decisions.md)
+[domain-model.md](domain-model.md) · [question-backlog.md](question-backlog.md) · [legacy-question-import.md](legacy-question-import.md) · [participation-rules.md](participation-rules.md) · [roles-and-permissions.md](roles-and-permissions.md) · [architecture-history.md](architecture-history.md) · [open-decisions.md](open-decisions.md)

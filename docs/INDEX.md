@@ -15,10 +15,14 @@ not silently contradict one another.
    sequence.
 6. [../DESIGN.md](../DESIGN.md) — the design authority: visual system, tokens,
    type registers, states, breakpoints, and forbidden patterns.
-7. [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md) — stale specs, proposed
-   changes, and questions that still matter.
-8. [prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md](prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md) —
-   copy-paste implementation brief for the first UI slice.
+7. [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md) — **historical**: the
+   2026-08-02 drift reconciliation. Every question it raised is now answered;
+   read [open-decisions.md](open-decisions.md) for the live register.
+8. [../CLAUDE_AUTONOMOUS_FULLSTACK_IMPLEMENTATION_PROMPT.md](../CLAUDE_AUTONOMOUS_FULLSTACK_IMPLEMENTATION_PROMPT.md) —
+   **the live implementation handoff.** Start here for implementation work.
+   ([prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md](prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md)
+   and [CLAUDE_OPUS_5_UI_HANDOFF.md](CLAUDE_OPUS_5_UI_HANDOFF.md) are the earlier
+   UI-only briefs and are **historical** — do not build from them.)
 9. [ED_DISCUSSION_REFERENCE_PACK.md](ED_DISCUSSION_REFERENCE_PACK.md) —
    screenshot-bearing inspiration and translation rules.
 10. [REPOSITORY_MAP.md](REPOSITORY_MAP.md) — fast code and documentation
@@ -53,9 +57,10 @@ Documents use these labels:
 
 | Document | Owns |
 |---|---|
+| [project-specs.md](project-specs.md) | **The acceptance target** — owner-approved 2026-08-03. Where an older document conflicts, this one wins |
 | [product-requirements.md](product-requirements.md) | Goals, requirements, risks, and non-goals |
 | [mvp-scope.md](mvp-scope.md) | MVP, post-MVP, and out-of-scope boundaries |
-| [roles-and-permissions.md](roles-and-permissions.md) | Roles, resource scope, and TA capabilities |
+| [roles-and-permissions.md](roles-and-permissions.md) | Roles, resource scope, the two staff standing tiers, and TA capabilities |
 | [weekly-form-workflow.md](weekly-form-workflow.md) | Recurrence, cycles, questions, templates, and submissions |
 | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) | Private/public response behavior, anonymity, source links, and archive |
 | [participation-rules.md](participation-rules.md) | Validity, participation derivation, and CSV exports |
@@ -77,10 +82,11 @@ Documents use these labels:
 | [REPOSITORY_MAP.md](REPOSITORY_MAP.md) | Fast map of code, scripts, persistence, and docs |
 | [TESTING.md](TESTING.md) | Test layers, invariants, and coverage gaps |
 | [SECURITY.md](SECURITY.md) | Privacy invariants, threat model, and release checks |
+| [../CLAUDE_AUTONOMOUS_FULLSTACK_IMPLEMENTATION_PROMPT.md](../CLAUDE_AUTONOMOUS_FULLSTACK_IMPLEMENTATION_PROMPT.md) | **The live implementation handoff** for agents taking the app forward |
 | [decisions/](decisions/) | ADRs for durable technical choices |
 | [WEB-APP-BUILD-PLAN.md](WEB-APP-BUILD-PLAN.md) | UI information architecture and build slices |
 | [DOCUMENT_MANIFEST.yaml](DOCUMENT_MANIFEST.yaml) | Machine-readable document ownership and update triggers |
-| [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md) | Drift correction and requested owner decisions |
+| [SPEC-RECONCILIATION.md](SPEC-RECONCILIATION.md) | **Historical:** the 2026-08-02 drift reconciliation and the owner decisions it requested, all since answered |
 
 ## Design research
 
@@ -90,7 +96,7 @@ Documents use these labels:
 | [PILOT-STRATEGY.md](PILOT-STRATEGY.md) | Proposed strategic frame for the pilot: five-question validation state, minimum viable investigation, Phase 1 |
 | [JOURNEY-STUDENT-SUBMIT.md](JOURNEY-STUDENT-SUBMIT.md) | Audit and proposed redesign of the student weekly submit flow |
 | [JOURNEY-TEACHER-PUBLISH.md](JOURNEY-TEACHER-PUBLISH.md) | Audit and proposed redesign of the teacher publish flow and anonymity check |
-| [JOURNEY-STUDENT-FIRSTRUN.md](JOURNEY-STUDENT-FIRSTRUN.md) | Audit and proposed redesign of first sign-in to verified identity, including the stranded-unmatched trap |
+| [JOURNEY-STUDENT-FIRSTRUN.md](JOURNEY-STUDENT-FIRSTRUN.md) | Audit of first sign-in to verified identity. **Largely historical:** it audits the name-matching/claim journey removed by decision D23; the live rule is [student-identity.md](student-identity.md) |
 | [JOURNEY-TEACHER-SETUP.md](JOURNEY-TEACHER-SETUP.md) | Audit and proposed redesign of cold setup: sequencing, section readiness, and the roster-before-sign-in dependency |
 | [IA-STRUCTURE.md](IA-STRUCTURE.md) | Navigation grouping, category taxonomy, labelling conventions, and Q&A archive browse/search strategy |
 | [CONTENT-VOICE.md](CONTENT-VOICE.md) | Voice framework, the user/system register rule, microcopy patterns, error inventory, and label decisions |
@@ -100,13 +106,13 @@ Documents use these labels:
 | [UX-DESIGN-BRIEF.md](UX-DESIGN-BRIEF.md) | The earlier [Recommended] direction DESIGN.md grew out of; superseded for tokens |
 | [DESIGN-RESEARCH.md](DESIGN-RESEARCH.md) | Comparable products and patterns worth borrowing |
 | [ED_DISCUSSION_REFERENCE_PACK.md](ED_DISCUSSION_REFERENCE_PACK.md) | Screenshot links, visual study checklist, and product-pattern translation |
-| [prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md](prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md) | Implementation prompt for Claude Opus 5 |
+| [prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md](prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md) | **Historical:** the UI-only implementation prompt for the first visual slice; superseded as a handoff by [../CLAUDE_AUTONOMOUS_FULLSTACK_IMPLEMENTATION_PROMPT.md](../CLAUDE_AUTONOMOUS_FULLSTACK_IMPLEMENTATION_PROMPT.md) |
 
 ## Historical and proposal material
 
 | Document | Use |
 |---|---|
-| [architecture-proposal.md](architecture-proposal.md) | Earlier architecture alternatives and trade-offs; current architecture is owned by [ARCHITECTURE.md](ARCHITECTURE.md) |
+| [architecture-history.md](architecture-history.md) | **Historical:** the architecture alternatives weighed before the current stack was adopted, and why each was rejected. Current architecture is owned by [ARCHITECTURE.md](ARCHITECTURE.md) |
 
 ## Maintenance rules
 

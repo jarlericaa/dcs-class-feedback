@@ -54,7 +54,7 @@
 | Public anonymous answers | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) |
 | Teacher rewording of public questions (original preserved) | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) |
 | Source links between submissions and public answers | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) |
-| Scheduled public posting (DB-backed) | [public-qa-and-source-linking.md](public-qa-and-source-linking.md), [architecture-proposal.md](architecture-proposal.md) — idempotent, failure recovery. |
+| Scheduled public posting (DB-backed) | [public-qa-and-source-linking.md](public-qa-and-source-linking.md), [architecture-history.md](architecture-history.md) — idempotent, failure recovery. |
 | Searchable class Q&A archive | [public-qa-and-source-linking.md](public-qa-and-source-linking.md) |
 | Separate course-level question backlog area | [question-backlog.md](question-backlog.md) |
 | Basic legacy & backlog import (manual, CSV, copy-paste) | [legacy-question-import.md](legacy-question-import.md) |
@@ -67,7 +67,7 @@
 
 ### Merging submissions
 
-**[Confirmed]** Merging similar student questions into one public answer is in MVP, with all source links preserved. Merge scope is **[Recommended]** to be within a single class section for MVP; cross-cycle merge within a section is [Open D8](open-decisions.md). See [public-qa-and-source-linking.md](public-qa-and-source-linking.md).
+**[Confirmed]** Merging similar student questions into one public answer is in MVP, with all source links preserved. Merge scope is **[Confirmed]** as within a single class section, and it **may span cycles** — **D8** closed 2026-08-03; cross-section reuse goes through the course backlog ([open-decisions.md](open-decisions.md)). See [public-qa-and-source-linking.md](public-qa-and-source-linking.md).
 
 ## 2. Post-MVP features (not in the first release)
 

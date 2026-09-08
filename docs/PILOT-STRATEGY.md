@@ -14,8 +14,9 @@ design constraints, and ethical stance. This file owns the pilot argument.
 
 ## 0. Honesty note on this brief
 
-This product is already built ([CURRENT_STATE.md](CURRENT_STATE.md): 20 routes,
-both loops complete). Writing a strategic brief *after* the build is an invitation
+This product is already built — both loops complete, across every implemented
+route ([CURRENT_STATE.md](CURRENT_STATE.md) owns the route list and the counts).
+Writing a strategic brief *after* the build is an invitation
 to post-hoc justification — construct a tension shaped to fit what already
 exists, and everyone reads a fiction as orientation.
 
@@ -35,14 +36,23 @@ plus a hand-compiled answer document. Collection works. The five steps after
 collection — read every row, decide what to answer, compile answers, send the
 document, track participation — are manual and repeat every week per section.
 
-A replacement now exists and is pilot-usable. Student loop, staff loop, and
-operations surfaces are complete end to end. Lint, typecheck, 44 unit tests, 114
-integration tests, and a build all pass. A Chromium QA pass on the teacher →
-student journey passed after remediation.
+A replacement now exists and is **pilot-usable for the core loops**: the setup,
+student and staff loops run end to end. Lint, typecheck, **157 unit tests in a
+tracked checkout** (163 including one untracked local test file), **279
+integration tests**, and a build all pass —
+[CURRENT_STATE.md](CURRENT_STATE.md) owns these figures. A Chromium QA pass on
+the teacher → student journey passed after remediation.
 
-Remaining work is recorded as hardening: browser e2e coverage, merge UI,
-deployment automation, and owner sign-off on the open decisions
-([CURRENT_STATE.md](CURRENT_STATE.md) §"Immediate next milestone").
+**It is not feature-complete, and remaining work is more than hardening.**
+[CURRENT_STATE.md](CURRENT_STATE.md) lists surfaces that are `missing` or
+`schema only` — response analysis (`C1`), the item-level question inbox (`D1`),
+bonus periods and student progress (`C3`), merge/unmerge (`D3`),
+unpublish/restore (`E2`), reactions and comments (`P2`) — plus `partial` ones
+such as private-thread follow-ups (`E1`), archive filters (`E3`), exports
+(`F2`), archive/clone (`F3`) and legacy import (`P1`). Genuine hardening items —
+browser e2e coverage, deployment automation, backup/restore verification — sit
+alongside that, not in place of it. **[Recommended]** framing only; nothing here
+promotes a deferred item into scope.
 
 ## 2. Complication
 
@@ -66,11 +76,14 @@ Evidence for the complication, stated at the size the evidence supports:
   [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) §"Product success signals" says
   explicitly: *"These are proposed measurements, not current requirements."* So
   there is no agreed definition of pilot success to design the pilot against.
-- **Eight open decisions change user-visible rules** and are unresolved: **D4**
-  edit lock, **D5** grace/reopen, **D6** unpublish, **D8** merge scope, **D9**
-  join code, **D10** dropped-student access, plus **D2** match policy and **D13**
-  retention ([open-decisions.md](open-decisions.md)). D13 and D10 must be settled
-  before real student data is used at all.
+- **One open decision still changes a user-visible rule.** When this brief was
+  written, eight did. Since then **D4** edit lock, **D5** grace/reopen, **D6**
+  unpublish, **D8** merge scope and **D10** dropped-student access were
+  **closed** (2026-08-03), and **D9** join code and **D2** match policy were
+  **removed** (2026-08-07) with the name-matching workflow. What remains is
+  **D13** retention, which must be settled before real student data is used at
+  all — and, outside the user-visible set, **D3** (who grants the Teacher role)
+  and **D24** (staff invitations). See [open-decisions.md](open-decisions.md).
 - **The pilot is not repeatable.** A semester of feedback cycles happens once.
   Instrumentation that is not designed in before it starts cannot be added
   retroactively — the weeks are gone.
@@ -149,9 +162,10 @@ else on this page.
 
 **In:**
 
-1. **Decision sign-off** on the eight user-visible open decisions, D13 retention
-   and D10 dropped-student access first — those two gate real student data
-   outright.
+1. **Decision sign-off** on what is actually still open: **D13** retention
+   first, because it gates real student data outright. (The other seven this
+   brief listed have since been closed or removed — see §1. D10 dropped-student
+   access, previously paired with D13 here, was closed 2026-08-03.)
 2. **An agreed success definition.** Promote a small set of the proposed signals
    in [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) and
    [INTENT-CONTEXT.md](INTENT-CONTEXT.md) §6 from proposal to agreed, or replace

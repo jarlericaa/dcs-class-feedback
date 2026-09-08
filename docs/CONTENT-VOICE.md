@@ -31,10 +31,12 @@ by document — they should be locked before they drift:
    `is not`, `do not`, `did not`. That is a completely consistent formal register
    and nothing anywhere records it as a decision. **Codified in §2.**
 2. **Some strings name the risk plainly.** *"These files contain student names and
-   numbers"* on the participation export. *"Nothing is verified automatically"* on
-   the matches page. *"Identities are hidden for your account"* for a masked TA.
-   These are the product's voice working correctly — precise about consequence,
-   no reassurance the system cannot back.
+   numbers"* on the participation export. *"Identities are hidden for your account"*
+   for a masked TA. These are the product's voice working correctly — precise about
+   consequence, no reassurance the system cannot back. (A third example at audit
+   time, *"Nothing is verified automatically"*, sat on the `/matches` page, which
+   was **removed with account matching on 2026-08-07** — decision **D23**. It is
+   noted only as historical evidence of the pattern.)
 3. **Domain vocabulary is used consistently.** `Week N`, `cycle`, `section`,
    `validity` appear as the domain defines them, and staff-only terms stay on
    staff surfaces.
@@ -83,12 +85,28 @@ explicitly. This is the principle the product exists to protect.
 | Do | Do not |
 |---|---|
 | "Published without your name. Staff can still trace it to your submission." | "Posted anonymously." |
-| "Once you submit, this form is final." | "Ready to submit?" |
+| "You can keep editing until Friday, 5:00 pm. Your question goes to staff as soon as you submit." | "Once you submit, this form is final." (false — see B4) |
 | "Anonymous **to classmates**." | "Anonymous." |
 
-**"Anonymous" is never used unqualified anywhere in this product.** It is the one
-banned word, because unqualified it implies a guarantee the system does not
-provide — which [../PRODUCT.md](../PRODUCT.md) forbids by name.
+**"Anonymous" is qualified everywhere except the two places named below**, because
+unqualified it implies a guarantee the system does not provide — which
+[../PRODUCT.md](../PRODUCT.md) forbids by name.
+
+> **Owner exception [Confirmed 2026-09-07 — GitHub issue #14].** On the Class Q&A
+> read view the bare word **`Anonymous`** is used in exactly two places, at the
+> owner's instruction:
+>
+> - the asker line on a published entry, which previously read *"Asked by a
+>   classmate, name not shown"*;
+> - the answer byline of an answer that carries **no author** — a defensive arm
+>   only, since `public_answers.created_by_user_id` is NOT NULL with a foreign
+>   key, so every published answer in fact has one.
+>
+> This is a deliberate, scoped reversal of the rule above and not a licence to
+> use the bare word elsewhere. The guarantee the product actually makes is
+> unchanged: the archive still exposes no source link and no asker identity, and
+> a student's own history still tells them their submission is traceable by
+> staff. Everywhere outside that view, qualify it.
 
 **Boundary on the other side:** precise does not mean exhaustive. Do not recite
 the whole privacy model at a field where one fact is what matters.
@@ -223,8 +241,11 @@ reads — does not. Titles per case in §6.
 
 ### A4 · P2 · Two placeholder conventions
 
-*"Search by name or email"* (matches page) versus *"Search questions"* (archive).
-One describes the query, one describes the corpus. Pattern in §5.
+*"Search by name or email"* versus *"Search questions"* (archive). One describes
+the query, one describes the corpus. Pattern in §5. **Historical note:** the
+first string was observed on the `/matches` page, which no longer exists (**D23**,
+2026-08-07); the same inconsistency is worth avoiding wherever a search field is
+added, which is why the pattern is kept.
 
 ### A5 · P2 · One string blames the reader
 
@@ -233,6 +254,12 @@ One describes the query, one describes the corpus. Pattern in §5.
 Rejected in [JOURNEY-STUDENT-FIRSTRUN.md](JOURNEY-STUDENT-FIRSTRUN.md) F6 on
 accuracy grounds; it also fails P4 (no path) and reads as an accusation for what
 is usually a system ordering problem. Replacement copy lives in that document.
+
+**Historical:** this string belonged to the account-matching flow removed by
+**D23** (2026-08-07), so nothing renders it today. The finding is kept because
+the *pattern* — blaming the reader for a system ordering problem — is the thing
+to avoid, and the empty-state case it described still exists as "your email is
+on no class list yet".
 
 ### A6 · Not a finding — flagged so it is not "fixed"
 
@@ -303,7 +330,7 @@ Title names the action as a question. Body names the consequence. The confirm
 button repeats the action; the cancel button names the safe outcome, not "Cancel".
 
 > **Publish this answer to the class?**
-> Students in this section will see it. There is no way to unpublish it.
+> Students in this section will see it. You cannot take it back yet — unpublishing is approved (**D6**) but not built ([CURRENT_STATE.md](CURRENT_STATE.md) `E2`).
 > [Publish to this section] · [Keep editing]
 
 ### Loading
@@ -329,7 +356,7 @@ titles and the tone, which is what was missing.
 | Deadline passed mid-session | The deadline has passed and this form is closed | Factual, then the limit | Draft kept locally; teacher decides on reopen |
 | Network failure | Your form was not sent | Calm, retry available | Retry in place, nothing lost |
 | Already submitted | This week's form is already submitted | Neutral | Link to history |
-| Not verified yet | Your account is not confirmed yet | Explanatory | Who acts next |
+| Email not on a class list | No classes are associated with this UP email yet | Explanatory | Who acts next |
 
 Four distinct titles where there is currently one. The distinction matters because
 the recovery differs in each case, and the title is what a stressed reader on a

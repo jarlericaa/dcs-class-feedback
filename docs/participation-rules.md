@@ -79,6 +79,8 @@ assigned to one period each.
   cycles were invalidated, and the student-visible reason for each invalidation.
 - Instructors get per-student and per-form breakdowns and exports.
 
+<a id="3-participation-derivation"></a>
+
 ## 3. Participation derivation **[Recommended]**
 
 Participation is **not** a separately maintained, mutable table — it is computed from the source of truth (valid `FormResponse`s):
@@ -89,14 +91,27 @@ Participation is **not** a separately maintained, mutable table — it is comput
 - Legacy imported questions never contribute (see [legacy-question-import.md](legacy-question-import.md)).
 - Merged submissions still each count for their own author's participation — merging is a publishing concern, not a participation concern (see [public-qa-and-source-linking.md](public-qa-and-source-linking.md)).
 
+<a id="4-participation-csv-exports"></a>
+
 ## 4. Participation exports **[Confirmed]**
 
-Three CSV reports, all **identity-bearing**. Per decision **D17** these three keep honouring the
-`export_participation` TA flag, and access is audited (Risk R4). Every **newer** export — bonus
-records, any XLSX variant, PDF response summaries, and the backlog/question status export — is
-**Instructor-only**: the flag alone does not suffice. All export responses are
-`cache-control: no-store, private`, are generated in memory, and neutralize leading `= + - @`
-in every cell so a spreadsheet cannot execute exported text.
+Five reports, all **identity-bearing**, and they split into two authorization tiers:
+
+| Report | Gate |
+|---|---|
+| §4.1 Weekly participation matrix (`report=weekly_matrix`) | `export_participation` — delegable to a TA |
+| §4.2 Participating-student list (`report=participants`) | `export_participation` — delegable to a TA |
+| §4.3 Detailed response export (`report=detailed`) | `export_participation` — delegable to a TA |
+| §4.4 One week, filtered (`report=week`) | **Instructor-only** |
+| §4.5 Responder list, CSV and XLSX (`report=responders`) | **Instructor-only** |
+
+Per decision **D17** the first three keep honouring the `export_participation` TA flag. Every
+**newer** export — the filtered week file and both responder formats above, plus bonus records, any
+XLSX variant, PDF response summaries, and the backlog/question status export — is
+**Instructor-only**: the flag alone does not suffice, and a Student Assistant holding it reads the
+dashboard but does not take the file away. Access is audited either way (Risk R4). All export
+responses are `cache-control: no-store, private`, are generated in memory, and neutralize leading
+`= + - @` in every cell so a spreadsheet cannot execute exported text.
 
 ### 4.1 Weekly participation matrix
 
@@ -109,12 +124,79 @@ Columns (example): Student number · Student name · Week 1 · Week 2 · Week 3 
 
 A **deduplicated** list of students who participated during a selected week, date range, or term.
 
+> **No longer offered on screen [Confirmed 2026-09-07 — GitHub issue #15].** The service and the
+> `report=participants` download remain, but the dashboard no longer carries a
+> Participating-students figure or button: it answered "how many", and the actionable question is
+> *who*. §4.4 and §4.5 answer that, per week and by name.
+
+<a id="detailed-response-export"></a>
+
 ### 4.3 Detailed response export
 
 Columns (example): Student number · Student name · Course · Class section · Weekly cycle · Submission timestamp · Form question identifier · Question text · Student answer · Student-originated question/feedback · Submission type · Category · Lesson/topic · Validity · Invalidation reason · Private-response indicator · Public-publication indicator.
 
 - **[Confirmed]** For multiple-choice, checkbox, dropdown, and scale answers, export **both** readable labels **and** stable internal question/option identifiers where useful (see stable-id design in [weekly-form-workflow.md](weekly-form-workflow.md#51-conceptual-question-shape-not-a-schema)).
 - The invalidation reason column is staff-only output (these exports are staff-only by definition).
+
+<a id="week-and-answer-filters"></a>
+
+### 4.4 One week, filtered **[Confirmed 2026-09-07 — GitHub issue #15]**
+
+The dashboard is built around the two questions a teacher actually has: **who answered this week**,
+and **who said that**.
+
+- **Week filter.** One occurrence at a time, chosen from the occurrences this section actually
+  received. The default is the **most recent occurrence anybody answered** — landing on next week's
+  empty form would be technically correct and useless, which is the same rule the review column
+  uses. A section that has collected nothing has no "this week", so it opens on the whole-term
+  matrix instead. `All weeks` is always one explicit choice away, and every filter is in the URL.
+- **Answer filter.** A question on that occurrence, and one of its answers. Offered **only** for
+  questions whose answers form a finite set — multiple choice, checkboxes, dropdown, yes/no, and a
+  linear scale of at most twenty steps. A free-text question has nothing to enumerate, so it is not
+  offered rather than offered and then unable to answer.
+- **Per week, not per term.** A question belongs to one occurrence's snapshot, so "that answer" has
+  no meaning across a term whose forms may differ.
+- **A filter narrows; it never widens.** The answer key must be one the question **actually offers**
+  — it is checked against the same enumerated list the selector is built from — so a question from
+  another occurrence, an option id that does not exist, or a scale value that is out of range, off
+  step, or merely parses to a number (`2abc`, `1e1`, `2.9`) all yield **nothing**, not everyone.
+  A **half-specified** filter — a question with no answer, or an answer with no question — is
+  refused the same way, and a blank or whitespace query-string value counts as absent rather than as
+  a value. Silently widening a filter is how a teacher contacts the wrong students.
+- The list is **paginated in the database**, one row per student even when the filtered answer is a
+  multi-select, and ordered by name so page boundaries are stable.
+- **Both halves or neither.** A question with no answer chosen, or an answer with no question, is
+  not a filter and is refused the same way a bad key is — it yields **nothing**. The screen's own
+  two-step selector sends neither half until both are chosen (and says so on the intermediate
+  step), so this is the rule for a hand-edited or stale URL and for the download that shares the
+  same scope builder.
+- The export follows whatever filter is active, because it runs the same scope query. Columns:
+  Student number · Student name · Form occurrence · Participated · Submitted at · Validity ·
+  Enrolment, plus **Answer** when an answer filter is applied. It is **Instructor-only** (see §4
+  above): it is one of the exports added after D17, so `export_participation` does not reach it.
+
+### 4.5 Responder list, for encoding **[Confirmed 2026-09-07 — GitHub issue #8]**
+
+One click, one occurrence: the students who submitted, in the columns an encoding sheet wants.
+
+- Columns: **Student number · Student name · UP email · Submitted at**, in that order.
+- **Ordered by student number**, not by name, because that is the column the sheet is keyed on.
+  The number is sealed, so the sort happens after decryption; a row whose number cannot be read
+  sorts last under its name rather than silently first.
+- **Optionally includes non-responders**, adding *Responded* and *Enrolment* columns, so the gap is
+  visible in one file instead of two to diff.
+- Available as **CSV or XLSX**, both through the shared `modules/exports/tabular` path, so both
+  neutralize spreadsheet formula injection the same way.
+- **Instructor-only** in both formats (see §4): it carries a name, a UP email and a full student
+  number per row — the widest identity payload of any export here — so `export_participation` does
+  not reach it. **Audited** as `export.responses` with the occurrence, the format, the row count and
+  whether non-responders were included — never a name, an address or a student number.
+
+Student numbers in **every** export here are written in the reading format (`2026-00001`) rather
+than the normalized stored form (`202600001`): each of these files is opened by a person or pasted
+into a sheet whose own numbers carry the separator, and a column that will not match on a lookup has
+to be repaired by hand. See `src/lib/student-number.ts` — the separator is restored only for the one
+shape it is known to belong to.
 
 ## 5. Student-facing participation **[Confirmed — project-specs.md §4.3, §6.5]**
 

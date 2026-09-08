@@ -13,9 +13,9 @@ second architecture document; durable runtime decisions belong in
 | Path | Responsibility |
 |---|---|
 | README.md | Human first entry point, local setup, scripts, and scope reminders |
-| PROJECT_CONTEXT.md | Founding product intent, users, privacy rules, and initial build target — **not present in this checkout** |
+| PROJECT_CONTEXT.md | Orientation and reading guide: what the project is, which document owns which question, and the settled architecture. Navigation and context, **not** a requirements source |
 | AGENTS.md | Compact repository rules and authority routing for coding agents |
-| CLAUDE.md | Claude Code wrapper that imports AGENTS.md — **not present in this checkout**; agents should read AGENTS.md directly |
+| CLAUDE.md | Claude Code wrapper that imports AGENTS.md (`@AGENTS.md`). It adds nothing of its own; AGENTS.md governs |
 | package.json | Scripts and dependency contract |
 | .env.example | Environment-variable names and local configuration shape |
 | docker-compose.yml | Development and test PostgreSQL services |
@@ -34,7 +34,7 @@ second architecture document; durable runtime decisions belong in
 | src/app/actions/ | Shared server actions (sign-out) |
 | src/app/sections/[id]/ | Student section home, history, and Q&A archive |
 | src/app/teach/courses/ | Course/section creation and template authoring |
-| src/app/teach/sections/[id]/ | Staff review, setup, matches, import, participation, publications, backlog, audit |
+| src/app/teach/sections/[id]/ | Staff review, setup, roster, import, participation, publications, backlog, audit |
 | src/app/api/auth/ | Auth.js callback route |
 | src/app/api/internal/scheduler/ | Secret-protected scheduler tick endpoint |
 | src/app/favicon.ico/ | Cacheable repository-native application icon route |
@@ -54,7 +54,7 @@ second architecture document; durable runtime decisions belong in
 | src/modules/review/ | Staff review and validity-state mutations |
 | src/modules/publishing/ | Public answer drafts, source links, and publication |
 | src/modules/backlog/ | Course-level backlog foundations |
-| src/modules/roster-import/ | CSV preview, reconciliation, and confirmation |
+| src/modules/roster-import/ | CSV/XLSX parsing, the import plan, the audited commit, and the outcome read model |
 | src/modules/participation/ | Derived participation and export foundations |
 | src/modules/scheduling/ | Reconciliation poller and scheduled transitions |
 | src/modules/audit/ | Append-only audit event writes and section-scoped browsing |
@@ -71,15 +71,15 @@ second architecture document; durable runtime decisions belong in
 
 | Area | Owning documents |
 |---|---|
-| Product intent and scope | PROJECT_CONTEXT.md, docs/PROJECT_OVERVIEW.md, docs/product-requirements.md, docs/mvp-scope.md |
+| Product intent and scope | **docs/project-specs.md (the acceptance target)**, PROJECT_CONTEXT.md, docs/PROJECT_OVERVIEW.md, docs/product-requirements.md, docs/mvp-scope.md |
 | Current implementation | docs/CURRENT_STATE.md, source code, migrations, and tests |
 | Runtime architecture | docs/ARCHITECTURE.md, docs/decisions/ |
 | Local development and verification | docs/DEVELOPMENT.md, docs/TESTING.md |
 | Deployment and release assumptions | docs/DEPLOYMENT.md |
 | Security and privacy | docs/SECURITY.md, docs/roles-and-permissions.md, docs/public-qa-and-source-linking.md |
 | Domain rules | docs/domain-model.md and the owning workflow documents |
-| UI implementation | docs/WEB-APP-BUILD-PLAN.md, docs/UX-DESIGN-BRIEF.md, docs/DESIGN-RESEARCH.md |
-| Agent implementation handoff | docs/prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md and docs/ED_DISCUSSION_REFERENCE_PACK.md |
+| UI implementation | **DESIGN.md** (design authority) and docs/WEB-APP-BUILD-PLAN.md. *Historical:* docs/UX-DESIGN-BRIEF.md, docs/DESIGN-RESEARCH.md, docs/CLAUDE_UI_SCREEN_SPEC.md and docs/prompts/CLAUDE_OPUS_5_UI_IMPLEMENTATION_PROMPT.md — records, not specifications to build from |
+| Agent implementation handoff | **CLAUDE_AUTONOMOUS_FULLSTACK_IMPLEMENTATION_PROMPT.md** (repository root — the live handoff) and **DESIGN.md** (the live design authority) |
 | Navigation and ownership | docs/INDEX.md and docs/DOCUMENT_MANIFEST.yaml |
 
 ## Authority reminders

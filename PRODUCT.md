@@ -29,14 +29,22 @@ on phone-heavy student usage.
   aloud, and later find whether it was answered. They are doing this alongside
   coursework, under a hard deadline, often on a phone, and they need to understand
   who can see what before they type. They never see other students' identities,
-  cannot edit after submitting, cannot submit late, and in MVP cannot see their own
+  cannot edit **after the deadline** (they may keep editing their submitted
+  response until it locks), cannot submit late, and in MVP cannot see their own
   participation totals or any internal staff state.
 - **Teachers** — own the courses and sections they teach. Job: make sense of a
   week's submissions, reply privately where needed, publish anonymized Q&A to the
   class, and know what still needs attention. They are the administrator of their
   own courses: rosters, schedules, templates, staff, backlog, exports.
-- **Teaching assistants / co-teachers** — hold a per-section, owner-configured
-  subset of teacher capabilities (13 independent flags). A TA without
+- **Co-teachers / co-instructors** — hold **every** teacher capability on what
+  they are assigned to; there is no subset for them. `project-specs.md` §4.1
+  and story A2 confirm it: "all instructors assigned to a course have equal
+  permissions." They are assigned at one of two scopes — course-wide, which
+  covers every section including ones added later, or a named class list. Only
+  the course owner assigns either.
+- **Student assistants (TAs)** — hold a per-section, owner-configured subset of
+  teacher capabilities (14 independent flags). This catalog exists only at
+  section scope: there is no course-wide student assistant. A TA without
   `view_student_identities` must be able to do real review work with identities
   masked, so identity exposure is a UI-level concern, not only a data-level one.
 - **Platform administrators** — grant the Teacher role and handle access, account,
@@ -88,10 +96,13 @@ destroyed by rewording or merging**.
   `scheduled → open → closed` by wall-clock time, not by anyone clicking. Late
   transitions are audit-flagged rather than hidden. **[Implemented]**
 - **Deadlines are hard.** No grace period; a staff reopen is possible and audited.
-  **[Confirmed]** feature, **[Open D5]** on the exact policy.
+  **[Confirmed]** feature, and the policy is settled — **D5** closed 2026-08-03:
+  hard deadline, no grace, with `reopenCycle` as the audited teacher escape hatch.
 - **Single institution timezone**, `Asia/Manila` via `INSTITUTION_TIMEZONE`.
-  Owner-confirmed value; single-timezone-for-MVP is **[Assumption A3]** /
-  **[Open D7]**.
+  **D7 closed 2026-08-03**: one institution timezone, stored per section, with
+  per-section overrides deferred. Single-timezone-for-MVP remains
+  **[Assumption A3]**, and the *value* still needs confirming before production
+  if the institution does not run on `Asia/Manila`.
 - **Enrollment arrives as a registrar export whose format is largely fixed.** The
   import must bend to the file: CRS-style XLSX, with pasted CSV as a fallback.
   **[Confirmed]**
@@ -146,16 +157,29 @@ database. Scheduling is a DB-backed idempotent reconciliation poller
 hosting, domain, secret manager, and backup service are **[Open]**.
 
 **Explicit non-goals** **[Confirmed]**: student file attachments; editing a
-submitted form; multiple submissions per student per cycle; student comments;
-discussion threads; question voting; native mobile apps; any automatic AI reply or
-publication; PDF/Word export of published answers; public access for unenrolled
-users; per-staff task assignment of submissions. Unpublishing is not promised in
-MVP (**[Open D6]**). Course-material *management* is post-MVP; only the data model
+submitted form **after its deadline** (before the deadline it is editable — B4);
+multiple submissions per student per cycle; **unmoderated** student
+comments and open discussion threads; question voting; native mobile apps; any automatic AI reply or
+publication; **Word** export of published answers; public access for unenrolled
+users; per-staff task assignment of submissions. Unpublishing is **approved**
+(decision **D6**, closed 2026-08-03): Instructor-only, reason required, audited,
+reversible by restore, and an unpublished entry leaves both the class archive and
+the linked asker's history (**D16**). It is **not built yet** —
+[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) E2 is `schema only` — so it is
+pending work, not a non-goal.
+
+**PDF exports are likewise no longer a non-goal**: the scope-expansion table in
+[docs/mvp-scope.md](docs/mvp-scope.md) records XLSX and PDF exports as
+**approved** (`C1`, `F2`). They are **not built** — `C1` is `missing` and `F2` is
+`partial` (three identity-bearing CSVs only). **Word** export stays out of
+scope. Course-material *management* is post-MVP; only the data model
 stays compatible. All AI features are post-MVP and, when built, require human
 approval and never receive student identity.
 
 **Known implementation gaps** (services exist, UI does not): richer template and
-cycle editing with the enforced post-submission edit lock (**[Open D4]**), backlog
+cycle editing with the enforced post-submission edit lock (**D4**, closed —
+structural edits lock once a cycle has a non-draft response; per-occurrence
+open/deadline overrides stay allowed and audited), backlog
 management UI, Playwright e2e coverage.
 
 ## Brand Commitments
@@ -191,11 +215,21 @@ management UI, Playwright e2e coverage.
   roster, schedule, and four users covering each role.
 - **Absent — must not be fabricated:** no testimonials, quotes, case studies,
   press, adoption numbers, benchmarks, uptime figures, pricing, or licensing
-  claims. No real student submissions. No sample of the registrar's fixed CSV
-  export is in the repository, so its exact columns are known only as
-  "student number + full name" — do not invent a specific header set beyond what
-  [src/modules/roster-import/index.ts](src/modules/roster-import/index.ts) already
-  accepts. No logo or illustration assets exist yet.
+  claims. No real student submissions. **No sample of the registrar's export is
+  in the repository**, so its exact header spelling and column order are
+  unverified — do not invent a specific header set beyond what
+  [src/modules/roster-import/crs-columns.ts](src/modules/roster-import/crs-columns.ts)
+  already accepts. What the importer *does* define: the identity fields it maps
+  are **student number, full name and the normalized UP email** — the email
+  being the access key (**D23**,
+  [docs/student-identity.md](docs/student-identity.md)) — alongside
+  family/first/middle name, lived name, preferred pronoun, program, enrollment
+  status and enlistment date. Each is matched against a list of accepted header
+  spellings rather than one fixed name, and headers naming sex or gender are
+  refused on principle. Acceptance rules are owned by
+  [docs/project-specs.md](docs/project-specs.md) §6.1 and
+  [docs/student-identity.md](docs/student-identity.md). No logo or illustration
+  assets exist yet.
 
 ## Product Principles
 

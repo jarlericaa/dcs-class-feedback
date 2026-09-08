@@ -7,6 +7,17 @@
 > [FORMS-AUDIENCE-DYNAMIC-INSTANCES.md](FORMS-AUDIENCE-DYNAMIC-INSTANCES.md) §7
 > for the current route map. A student now opens a **form** (`/forms/[id]`), and a
 > teacher configures delivery once on the form rather than once per section.
+>
+> **Also corrected: the submit rule.** This audit was written against a flow
+> where submitting was final. The implemented rule is **draft → submit → edit
+> until the deadline → lock** (`AGENTS.md` §4, `project-specs.md` §4.3,
+> `CURRENT_STATE.md` B4), and the running app says so
+> ([weekly-form.tsx](../src/components/student/weekly-form.tsx): *"still edit
+> after submitting, until the deadline"*). Every "final / cannot be edited"
+> statement below has been corrected in place; where a quotation records what a
+> screen said **at audit time**, it is labelled as such. The findings survive the
+> correction — see F5, whose reasoning now rests on **exposure**, which is
+> genuinely one-way, rather than on finality, which is not.
 
 **Status:** **[Recommended]** flow redesign. Audit of the implemented flow plus
 proposed changes. No scope change: every proposal is a change to an existing MVP
@@ -36,14 +47,20 @@ else on the screen is data entry.
 Two consequences set the stakes:
 
 - **Credit.** Submitting is participation ([participation-rules.md](participation-rules.md)).
-  A failure to submit is lost credit, and the deadline is hard with no grace
-  (**[Open D5]**). No edit, no withdrawal, no late path.
+  A failure to submit *by the deadline* is lost credit, and the deadline is hard
+  with no grace (**D5**, closed 2026-08-03). Until it passes the student may keep editing
+  their submitted response; at the deadline the latest version locks. No late
+  submission, no late edit, and an edit never mints a second credit.
 - **Exposure.** The free-text item may be published to the class, reworded, with
   the asker anonymous to classmates but never to staff
   ([public-qa-and-source-linking.md](public-qa-and-source-linking.md)).
 
-So this flow can cost a student credit or expose them. Both are irreversible.
-That is what earns it the design attention, not its volume.
+So this flow can cost a student credit or expose them. **The two are not
+reversible in the same way, and the difference drives the design.** Credit is
+recoverable right up to the deadline — a wrong answer can be fixed. Exposure is
+not: the moment a response is submitted, staff may read it, and editing
+afterwards does not unsay it (earlier versions are kept in the revision trail).
+That asymmetry is what earns this flow the design attention, not its volume.
 
 ---
 
@@ -90,7 +107,7 @@ close to deadline, competing coursework, possibly mobile data.
 [Dashboard] → /sections/[id]
                   │
                   ├─ no open cycle ────────→ EmptyState: "No form is open at the moment"   ⚠ F6
-                  ├─ already submitted ────→ "Submitted · edits are closed"                 ✓
+                  ├─ already submitted ────→ "Submitted · still editable · N days left"     ✓
                   └─ open cycle
                         │
                         ▼
@@ -99,13 +116,14 @@ close to deadline, competing coursework, possibly mobile data.
                   ├─ badge:  "Open · 30 minutes left"  (server-rendered, frozen)            ⚠ F4
                   ├─ teacher questions ×N   (React state, inline errors)                    ✓
                   ├─ free-text item (optional) — NO visibility copy                         ⚠ F1
-                  └─ [Submit this week's form]  ← single tap, irreversible                  ⚠ F5
+                  └─ [Submit this week's form]  ← single tap; staff can read it from        ⚠ F5
+                                                   here on, and an edit cannot unsay it
                         │
                         ├─ validation error ─→ inline errors, input kept, no focus move     ⚠ F7 F8
                         ├─ deadline passed ──→ "The deadline for this form has passed" ⛔    ⚠ F3
                         ├─ network failure ──→ error boundary, everything typed is gone ⛔   ⚠ F2
-                        └─ success ──────────→ ?submitted=1 → "Submitted" + irreversibility
-                                                notice shown for the first time             ⚠ F5
+                        └─ success ──────────→ ?submitted=1 → "Submitted"; what submitting
+                                                actually exposed is said only here          ⚠ F5
 ```
 
 What is already right, and should not be touched: input survives a failed
@@ -182,14 +200,16 @@ unsubmittable.
 
 **Why it is P0.** Catalog: **Dead Ends** and **Broken Error Recovery** (Cat 9,
 High). The stake is real credit. And the copy is incomplete on the facts — a
-staff reopen is possible and audited (**[Open D5]**), so "the deadline has
-passed" is true while "there is nothing you can do" is *not*, yet that is what
-the screen communicates.
+staff reopen is possible and audited (**D5**, closed — `reopenCycle` is the
+sanctioned escape hatch), so "the deadline has passed" is true while "there is
+nothing you can do" is *not*, yet that is what the screen communicates.
 
 **Fix.** Keep the refusal, add the path: what happened, that their text is
 preserved locally, that a reopen is at staff discretion, and a link to their
-submission history. Copy in §6. This does not promise a reopen — **[Open D5]** is
-unresolved and the copy must not resolve it.
+submission history. Copy in §6. This does not promise a reopen: **D5** closed as
+*hard deadline, no grace*, and `reopenCycle` is a discretionary staff action, not
+something a student may expect — so the copy names the path without implying an
+entitlement.
 
 ### F4 · P1 · The countdown goes stale while the student types
 
@@ -209,25 +229,38 @@ F3 rather than causing loss directly.
 one-time non-blocking notice at T−5. Above an hour the coarse server text is
 fine and a live clock would be pure anxiety. Absolute time stays as the anchor.
 
-### F5 · P1 · Irreversibility is disclosed only after it is irreversible
+### F5 · P1 · The one-way part of submitting is disclosed only after it happens
 
 **Evidence.** One tap on "Submit this week's form"
-([weekly-form.tsx:304](../src/components/student/weekly-form.tsx#L304)) commits
-permanently. The fact arrives afterwards, on the success screen: *"Submissions
-cannot be edited, so nothing here can be changed or withdrawn."*
-([page.tsx:111-113](../src/app/sections/[id]/page.tsx#L111-L113)).
+([weekly-form.tsx:304](../src/components/student/weekly-form.tsx#L304)) puts the
+free-text item in front of staff. Nothing beside the button says so. At audit
+time the success screen then told the student *"Submissions cannot be edited, so
+nothing here can be changed or withdrawn"* — which was **also factually wrong**
+against the implemented rule, and has since been corrected in the app to
+*"still edit after submitting, until the deadline"*
+([weekly-form.tsx](../src/components/student/weekly-form.tsx)).
 
-**Why it matters.** Catalog: **Destructive Defaults** (Cat 9, High) — an
-irreversible action on a single tap. [INTENT-CONTEXT.md](INTENT-CONTEXT.md) §3.1
-holds that with no edit path, the pre-submit moment is the student's only review,
-so it has to be a real one. Right now there is none.
+**Why it matters.** Catalog: **Destructive Defaults** (Cat 9) — but the
+destructive thing is not what the old copy claimed. Two facts have to be kept
+apart, and the audit originally conflated them:
 
-**Fix.** Not a confirmation dialog — for the non-asker that is ceremony on a
-weekly chore, and a dialog nobody reads protects nobody. Instead: state the
-finality *next to the button* before the tap, and require a review step **only
-when the free-text field is non-empty** — the one case where the content is
-sensitive and unrecoverable. Friction lands on the asker, who needs it, and never
-on the non-asker, who does not.
+| | Reversible until the deadline | One-way from the tap |
+|---|---|---|
+| **The answers** | Yes — edit the submitted response until it locks | — |
+| **The free-text item** | The *stored* text, yes | Staff may already have read it, and the revision trail keeps what was written. An edit does not unsay it. |
+
+So the pre-submit moment is **not** the student's last chance to fix a wrong
+answer — that was the old premise and it was false. It *is* their last chance to
+decide whether staff see this particular sentence at all. The friction is still
+warranted; it was simply justified for the wrong reason.
+
+**Fix.** Unchanged in shape, corrected in grounds. Not a confirmation dialog —
+for the non-asker that is ceremony on a weekly chore, and a dialog nobody reads
+protects nobody. Instead: state beside the button **what submitting actually
+does** — the answers stay editable, the free-text goes to staff now — and
+require a review step **only when the free-text field is non-empty**, the one
+case where the content is sensitive and cannot be unsent. Friction lands on the
+asker, who needs it, and never on the non-asker, who does not.
 
 ### F6 · P2 · Three different situations render as one empty state
 
@@ -283,7 +316,7 @@ invalid field. Folds into F7's fix.
     ├─ teacher questions ×N  (autosave to localStorage, debounced)                    [F2]
     ├─ FREE-TEXT BLOCK
     │    └─ visibility facts, always visible, above the textarea                      [F1]
-    ├─ finality line beside the button                                                [F5]
+    ├─ what-submitting-does line beside the button                                    [F5]
     └─ [Submit]
           │
           ├─ local completeness check fails → focus first gap, no round trip          [F7]
@@ -336,11 +369,19 @@ work in most products.
 > [See my submissions]
 
 Fact, then state of their work, then the honest limit. It does not promise a
-reopen (**[Open D5]**) and does not pretend nothing can be done.
+reopen — that is discretionary under the closed **D5** policy — and does not
+pretend nothing can be done.
 
-### F5 — finality, beside the submit button
+### F5 — what submitting does, beside the submit button
 
-> Once you submit, this form is final — it cannot be edited or withdrawn.
+> You can keep editing your answers until the deadline. Your question goes to
+> the teaching staff as soon as you submit, and editing later does not unsend
+> it.
+
+Two facts, in the order that matters to the decision: the reassuring one first,
+so the sentence is not read as a warning about the whole form, then the one that
+is genuinely one-way. It promises no reopen — discretionary under the closed
+**D5** policy — and claims no undo that does not exist.
 
 ### F5 — review step (free text non-empty only)
 
@@ -393,7 +434,7 @@ Shows their exact words back. No summarising, no paraphrase.
 | Error focus | On error, focus the `role="alert"` container; error count links to first invalid field. |
 | Network failure | Catch transport failure in the action; return a form-level error instead of throwing. Never let it reach the error boundary — that unmounts the draft. Retry in place. |
 | Motion | Feedback only, 200–300 ms: draft-restored notice, review panel, submit success. Respect `prefers-reduced-motion`. |
-| Undo | None exists and none is proposed — no edit after submit is **[Confirmed]**. Which is precisely why F5's pre-submit review carries the weight. |
+| Undo | Answers are editable until the deadline lock, so the ordinary mistake *is* recoverable and no undo is needed for it. What has no undo is the free-text item reaching staff — the revision trail keeps every version (**[Confirmed]**). That, not finality, is why F5's pre-submit review carries the weight. |
 
 Accessibility is audited by `/include`, not here. Two things this flow must not
 break: the visibility block in F1 has to be in the accessible name or description
@@ -435,8 +476,10 @@ credit incentive, not the design), any engagement measure. See
 2. **Do students currently read the free-text field as anonymous-from-staff?**
    Five sessions answers it. If yes, F1 is not an improvement — it is a
    correction of a false belief the product is currently benefiting from.
-3. **[Open D5]** grace/reopen — F3's copy is written to survive either outcome,
-   but should be revised once the policy lands.
+3. **D5 grace/reopen — closed 2026-08-03** (hard deadline, no grace, audited
+   `reopenCycle`). F3's copy was written to survive either outcome and is
+   compatible with the landed policy; it needs no revision, only the check that
+   it still names the discretionary path without promising it.
 4. **[Open D13]** retention + the audit-for-learning consent question — gates §8.
 
 **Handoffs:**

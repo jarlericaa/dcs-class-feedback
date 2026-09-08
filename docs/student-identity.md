@@ -67,6 +67,8 @@ The student number remains the **permanent internal identity** ([Assumption A2])
 
 Key configuration, rotation, and the backfill procedure: [SECURITY.md](SECURITY.md), [DEPLOYMENT.md](DEPLOYMENT.md).
 
+<a id="7-class-list-import-confirmed-project-specsmd-61"></a>
+
 ## 7. Class-list import **[Confirmed — project-specs.md §6.1]**
 
 Teachers upload the official **CRS-style XLSX** class list. Pasted **CSV** remains supported as a fallback. Required columns: **student number**, a **name**, and a **UP email**.
@@ -79,7 +81,7 @@ Student number, **UP email**, family name, first name, lived/preferred name, pre
 
 **`Sex Assigned at Birth` is never persisted.** It is on an explicit column denylist and is not mapped into a row at all, so it cannot reach the database; the preview reports it among the ignored columns.
 
-Student numbers are identifiers, not numbers. An `.xlsx` numeric cell has already lost any leading zero at the file level, so the importer prefers the cell's formatted text, and where it can only see a bare number it **flags the row for correction rather than zero-padding silently**.
+Student numbers are identifiers, not numbers. An `.xlsx` numeric cell has already lost any leading zero at the file level, so the importer prefers the cell's formatted text, and where it can only see a bare number it **refuses the row for correction rather than zero-padding silently**.
 
 ### 7.2 Import flow
 
@@ -87,11 +89,13 @@ Student numbers are identifiers, not numbers. An `.xlsx` numeric cell has alread
 2. **Column mapping** — CRS header synonyms are recognized; unmapped and denied columns are reported.
 3. **Course-metadata detection** — code, title, section, term, units, instructor, shown for confirmation.
 4. **Row validation** — see §7.3.
-5. **Editable preview before confirmation** — staff correct rows in place, **including the email**, and see exactly what will be created, enrolled, reactivated, renamed, linked, deactivated, or refused. Edited rows are re-validated as untrusted input at commit time and re-resolved against live data inside the commit transaction.
+5. **Outcome after applying** — **[Confirmed 2026-09-07 — GitHub issue #12]** the class-list screen imports in one step and then reports what happened: the counts, the file lines it refused and why, and the students the file no longer lists (now dropped, never deleted). It does **not** walk the teacher through an editable preview first. Nothing about correctness rested on that preview — `commitRosterImport` re-derives every decision from live data inside its own transaction and refuses any row whose UP email it cannot trust — so what changed is when the teacher is told, not what is enforced. `previewRosterImport` remains the planner the tests hold to account, and `applyPreviewEdits` remains for a caller that wants the older two-step flow.
 6. **Row-level errors** — per-row problems surfaced, never a whole-file failure.
 7. **Import summary** — created / enrolled / reactivated / names updated / **emails linked** / **blocked** / deactivated / unchanged / warned / edited / errored.
 8. **Safe re-import** — re-importing an unchanged list is a no-op; nothing is created, relinked, or dropped.
 9. **Audit logging** — an `ImportBatch` records the event; see §8.
+
+<a id="73-email-rules-blocking-not-advisory"></a>
 
 ### 7.3 Email rules — blocking, not advisory
 
@@ -107,7 +111,7 @@ Anything wrong with an email **blocks its row**. The row is not imported, the re
 | Student is enrolled only in **another** section and the address differs | `cross_section_email_conflict` | Row refused — see §7.5 |
 | Same address, same record (a re-import) | — | Idempotent, no change |
 
-The existing student-number and full-name validations are unchanged, and duplicate student numbers still block a row. Everything else — unrecognized enrollment status, a lost leading zero, a field differing from stored data — remains an advisory warning the teacher decides on.
+The existing full-name validation is unchanged. Duplicate, malformed, and uncertain numeric student numbers block a row, because none can safely establish identity. Everything else — unrecognized enrollment status, a field differing from stored data — remains an advisory warning the teacher decides on.
 
 The two live-data checks (`email_belongs_to_another_record`, `cross_section_email_conflict`) are **re-derived inside the commit transaction** and never inherited from the preview, in either direction: a stale finding cannot block an import, and a stale absence cannot let one through.
 
@@ -132,7 +136,7 @@ Deliberately **not** done: falling back to a name, or minting a second student r
 
 Deactivation and import success are different questions, and conflating them is how a class quietly loses somebody.
 
-An enrolment is deactivated only when the uploaded file **does not mention that student number at all**. A row that was refused still proves the teacher listed that student, so it counts as present and that student stays exactly as they were — record untouched, enrolment untouched.
+An enrolment is deactivated only when the uploaded file **does not mention that student number at all**. A row that was refused for an email still proves the teacher listed that student, so it counts as present and that student stays exactly as they were — record untouched, enrolment untouched. A malformed or uncertain number instead makes the whole deactivation pass wait for a trustworthy file, because it cannot safely establish which student was listed.
 
 Two consequences worth stating:
 
@@ -166,11 +170,15 @@ Historical `claim.*` and `match.*` rows are **kept**: the log is append-only. Th
 
 ## 9. Teacher experience
 
-The **Class list** page (`/teach/sections/[id]/roster`, formerly "Account matches") shows the imported students behind `view_student_identities`: name, UP email, last four of the student number, dropped state, and whether an account has signed in with that address yet.
+The **Class list** page (`/teach/sections/[id]/roster`, formerly "Account matches") shows the imported students behind `view_student_identities`: name, UP email, the **whole student number**, dropped state, and whether an account has signed in with that address yet.
+
+**[Confirmed 2026-09-07 — GitHub issue #12]** The number is shown in full, not masked to its last four. It is decrypted per render by the read model, which requires `view_student_identities` — so nobody without that capability can open the page at all, let alone read a number. The stored plaintext is normalized and therefore has no separator; `src/lib/student-number.ts` restores it for reading, and **only** for the one shape it is known to belong to (four-digit entry year, five-digit serial). A value of any other shape is printed exactly as stored rather than split on a guess.
+
+Viewing is deliberately **not** audited, consistently with the participation dashboard: the capability that permits it is granted and revoked under audit, and one log row per page view — per reload, per search — would bury the events the log exists for. Producing a **file** that carries the number is audited, because that is what leaves the building.
 
 It has **no approve, reject, confirm, correct, or unlink control**, because there is no decision to take. The only thing that changes the list is an import. "Signed in" is reporting, not gating: a rostered student who has never logged in already has their classes waiting.
 
-The list is paginated and searchable by name, email, or the visible last four.
+The list is paginated and searchable by name, email, or the student number — with or without its separator, since the stored form has none either.
 
 ## 10. What was removed, and what happened to the data
 

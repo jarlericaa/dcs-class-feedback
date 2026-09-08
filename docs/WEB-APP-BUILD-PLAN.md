@@ -71,13 +71,16 @@ Build:
 - form sections with question labels, descriptions, required markers, and
   clear validation messages;
 - optional student-originated item with privacy explanation;
-- submit confirmation that says the response cannot be edited;
+- submit confirmation that states the real rule — the response stays editable
+  until the deadline, then locks — and that the student's own question reaches
+  staff on submit and cannot be unsent (decision B4; **do not** write copy
+  claiming the submission is immutable);
 - submission history with neutral “submitted/answered” states;
 - searchable Q&A archive with empty and no-result states.
 
-Done when a seeded student can sign in, open a section, submit once, return to
-history, and find a published answer without seeing internal fields or another
-student's identity.
+Done when a seeded student can sign in, open a section, submit, edit that same
+response before the deadline, return to history, and find a published answer
+without seeing internal fields or another student's identity.
 
 ### Slice 2 — Teacher review loop
 
@@ -115,12 +118,20 @@ Build:
 
 - roster import wizard: upload/paste → map → validate → preview → confirm;
 - row-level errors and reconciliation summary;
-- pending-match queue with clear candidate/ambiguous/unmatched states;
-- correction flow for an already-confirmed match;
+- ~~pending-match queue with clear candidate/ambiguous/unmatched states;~~
+- ~~correction flow for an already-confirmed match;~~
 - staff-only identity warnings and audit history.
 
-Done when a teacher can safely import a roster, resolve a candidate, and see
-that a removed roster row is deactivated rather than deleted.
+> **Struck by decision D23 (2026-08-07).** Identity is exact normalized UP-email
+> equality against the class list, so there are no candidates, no ambiguity and
+> nothing to confirm — those two surfaces must **not** be built. The work they
+> represented moved into the import preview, where a missing, malformed,
+> off-domain, duplicated or already-taken email is corrected or refused before
+> commit. See [student-identity.md](student-identity.md).
+
+Done when a teacher can safely import a roster, correct a wrong UP email before
+committing it, and see that a removed roster row is deactivated rather than
+deleted.
 
 ### Slice 5 — Backlog, participation, and operations
 
@@ -170,8 +181,12 @@ transactions, and audit writes.
 - Put privacy explanations next to the action that changes visibility.
 - Preserve user input when validation fails.
 - Never use color alone for status.
-- Prefer explicit confirmation for irreversible actions: submit, invalidate,
-  publish, deactivate, and confirm identity.
+- Prefer explicit confirmation for irreversible actions: invalidate, publish,
+  and deactivate. Submitting is **not** one of them — the response stays
+  editable until the deadline (B4) — but the free-text item reaching staff *is*
+  one-way, so the confirmation belongs at that field, not at the whole form.
+  (Identity is not among them either — there is nothing to confirm; see decision
+  D23 and the note in Slice 4.)
 - Design mobile-first for students and desktop-first for teacher review.
 
 ## Suggested first coding task

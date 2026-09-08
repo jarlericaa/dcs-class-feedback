@@ -106,6 +106,14 @@ The seed script creates demo users for the local workflow, including teacher,
 TA, platform-admin, and an unverified student account. Use the exact values in
 the seed script/README rather than copying credentials into documentation.
 
+The demo week it seeds is deliberately **representative rather than tidy**, so
+what a reviewer sees locally matches what an authored form actually produces:
+one prompt carries inline LaTeX and a code span with Markdown help text under
+it, one written answer is long enough to be collapsed in the review column, and
+the second student leaves the optional question blank. A demo form of short
+plain sentences made the review view's rendering impossible to judge from
+seeded data — the question GitHub issue #10 asked.
+
 ## Project commands
 
 | Command | Purpose |

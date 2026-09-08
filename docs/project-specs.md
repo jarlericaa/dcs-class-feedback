@@ -67,7 +67,7 @@ Student Assistants can:
 - Write answers and reword public questions.
 - Send manually written private answers without instructor approval.
 - Submit public-answer drafts for instructor approval.
-- Help resolve uncertain student-to-roster matches.
+- ~~Help resolve uncertain student-to-roster matches.~~ — **closed by decision D23 (2026-08-07): there are no uncertain matches to resolve.** Identity is exact normalized UP-email equality, so a row either matches one student record or it does not; there is no candidate queue and nothing to adjudicate. What replaced this work is correcting a wrong or missing UP email in the roster import preview, which story A4 covers. See [student-identity.md](student-identity.md).
 
 Student Assistants cannot directly invalidate a submission, confirm backlog membership, publish a public answer, or export identity/bonus records unless this permission is later expanded.
 
@@ -75,7 +75,7 @@ Student Assistants cannot directly invalidate a submission, confirm backlog memb
 
 Students can:
 
-- Sign in with a school Google account and claim their roster entry.
+- Sign in with a school Google account and see their classes immediately — the account resolves to the class-list row whose UP email equals its normalized email, exactly. There is nothing to claim and nothing to confirm (decision D23; story A4 above).
 - View active forms and submit one response per form.
 - Edit that response until the form deadline.
 - Add zero or more separately tracked questions and a general comment.
@@ -702,7 +702,7 @@ These do not block core product planning but must be chosen before implementatio
 
 - Exact method for granting the initial platform-level Instructor role
 - Exact school Google domain(s)
-- Automatic account-name match threshold and normalization rules
+- ~~Automatic account-name match threshold and normalization rules~~ — **closed by decision D23 (2026-08-07): there is no name matching.** Identity is exact normalized UP-email equality against the class list; the only normalization is trim + lowercase, applied to both sides. See [student-identity.md](student-identity.md) and story A4.
 - Email provider and reminder timing
 - Default form release/deadline schedule
 - Exact enrollment-status mapping for every CRS code

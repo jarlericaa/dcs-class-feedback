@@ -2,7 +2,7 @@
 
 **Status:** Current implementation baseline, with future recommendations clearly
 marked. This document describes the repository as it exists today; the longer
-trade-off discussion remains in [architecture-proposal.md](architecture-proposal.md).
+trade-off discussion remains in [architecture-history.md](architecture-history.md).
 
 ## Runtime shape
 
@@ -66,7 +66,7 @@ services. Business rules should not be duplicated in React components.
 | `/sections/[id]/qa` | Section-scoped Q&A archive |
 | `/teach/sections/[id]/review` | Staff review, validity, private/public response actions |
 | `/teach/sections/[id]/roster` | Staff class list: imported students and UP-email link status (no approve/reject) |
-| `/teach/sections/[id]/import` | Staff roster import preview/confirmation |
+| `/teach/sections/[id]/import` | Forwards to the class list — the import is a modal there |
 | `/api/auth/[...nextauth]` | Auth.js callback route |
 | `/api/internal/scheduler/tick` | Secret-protected scheduler tick |
 
@@ -109,8 +109,11 @@ Durable architecture choices are recorded in
 3. Keep scheduling as a poller while volume and operational evidence are small.
 4. Add a queue only if reconciliation latency, retry visibility, or workload
    volume demonstrates a real need.
-5. Treat the TypeScript stack as the working baseline unless the owner confirms
-   that F#/Fable is required.
+5. The TypeScript stack is the **settled** baseline — D1 closed 2026-08-03 and
+   no F#/Fable option is planned
+   ([ADR-0001](decisions/ADR-0001-current-stack-and-scheduler.md)). The
+   alternatives that were weighed, and why each was rejected, are recorded in
+   [architecture-history.md](architecture-history.md).
 
 ## Future boundaries
 
@@ -118,9 +121,15 @@ The following may be added later without changing the core domain model:
 
 - richer course/section setup UI;
 - a dedicated background-job abstraction;
-- notifications;
 - LMS integration;
 - AI-assisted drafting behind explicit human approval and PII controls.
 
 Do not add these while building the first web-app slice unless scope is
 explicitly expanded.
+
+**Email notifications are no longer a future boundary.** `F1` was approved and
+built: an idempotent outbox with SMTP/fake/log adapters and reconciliation,
+sending for form-opened, deadline reminders and validity changes. Enqueue paths
+for private-answer, public-answer-linked and approval events exist but their
+triggering workflows are **not wired**. See
+[CURRENT_STATE.md](CURRENT_STATE.md) `F1`.
