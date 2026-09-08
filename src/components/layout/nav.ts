@@ -61,6 +61,20 @@ export const NAV_ICONS = {
 
 export type NavIcon = keyof typeof NAV_ICONS;
 
+/**
+ * The heading over the course's work objects — Forms and Responses.
+ *
+ * Named once and shared by both places that draw that strip (the course
+ * workspace, and a section belonging to a course the reader holds) so the
+ * category a reader learns on one page is the same category on the other.
+ *
+ * It reads as a heading over a set, not as a duplicate of the row beneath it:
+ * "Forms" the category contains the form definitions AND the queue of
+ * responses over them, which is why the strip is labelled rather than left
+ * bare next to WEEKLY REVIEW, REPORTS and SETUP.
+ */
+export const FORMS_GROUP = "Forms";
+
 export interface NavItem {
   href: string;
   label: string;
@@ -266,15 +280,15 @@ export function primaryNav(
 }
 
 /**
- * Peer views of ONE course.
+ * The course's WORK objects, and only those.
  *
- * Forms comes first because it is the work object. Responses is the queue over
- * those forms. Class lists is who can reach them — the audience, not a thing a
- * teacher comes here to work on. Teaching team is who may ACT on them, and it
- * sits last for the same reason: it is set once a term, not worked on weekly.
- * The two are deliberately separate destinations — students reach a form,
- * staff administer it, and welding both into "Class lists" was what left course
- * standing with nowhere to be seen.
+ * Forms is the work object; Responses is the queue over it. Nothing else
+ * belongs here: who can reach a form (Class lists) and who may act on it
+ * (Teaching team) are both configuration, set once a term, and they live in
+ * {@link courseSetupTabs} under the Setup heading instead. Keeping them in this
+ * strip is what put two different "class list" destinations side by side — the
+ * course's index of sections, and one section's roster — with nothing in either
+ * label to say which was which.
  */
 export function courseTabs(
   courseId: string,
@@ -289,6 +303,30 @@ export function courseTabs(
         label: "Responses",
         count: opts.needsReview || undefined,
       },
+    ],
+    currentPath,
+    opts.activeHref,
+  );
+}
+
+/**
+ * How the course is CONFIGURED, as opposed to worked on.
+ *
+ * "Class lists" is plural on purpose: it is the index of the course's sections,
+ * and one section's roster is reached by clicking through it. A course can hold
+ * many lecture and lab sections, so the index is the honest destination — there
+ * is no single "the class list" at course scope to link to directly.
+ *
+ * Teaching team follows because it answers the neighbouring question: not who
+ * receives the forms, but who may act on them.
+ */
+export function courseSetupTabs(
+  courseId: string,
+  currentPath: string,
+  opts: { activeHref?: string } = {},
+): NavItem[] {
+  return mark(
+    [
       { href: `/teach/courses/${courseId}/sections`, label: "Class lists" },
       { href: `/teach/courses/${courseId}/staff`, label: "Teaching team" },
     ],
@@ -311,13 +349,62 @@ export function courseTabs(
 export function staffSectionTabGroups(
   access: SectionAccess,
   currentPath: string,
-  opts: { needsReview?: number; activeHref?: string } = {},
+  opts: {
+    needsReview?: number;
+    activeHref?: string;
+    /**
+     * Whether to lead with the course's own destinations. Default `true` for a
+     * reader who has course standing; passed `false` by the two callers that
+     * must not print the strip — `courseTabGroups`, which already carries it
+     * (printing it twice is what a naive fold-in would do), and
+     * `staffSectionTabs`, whose flattened list feeds `firstStaffSectionHref`
+     * and must therefore contain section views only.
+     */
+    courseStrip?: boolean;
+  } = {},
 ): NavGroup[] {
   const id = access.section.id;
   const staff = access.staff;
   if (!staff) return [];
   const perms = staff.permissions;
   const groups: NavGroup[] = [];
+
+  /**
+   * The course strip, kept while the reader is inside one of that course's
+   * sections.
+   *
+   * Entering a section used to REPLACE the contextual column, so Forms and
+   * Responses disappeared and the course's work objects were reachable only
+   * back through the left rail. This is the same fold-in `courseTabGroups`
+   * already performs in the other direction, and it reuses `courseTabs` for
+   * the same reason: the course's destinations are listed in exactly one place.
+   *
+   * Gated on course standing, not on the route: a delegated assistant has no
+   * course workspace, and every one of these destinations would reject them.
+   * Labelled rather than left unlabelled, because the column heading here names
+   * the SECTION — an unlabelled strip of course views under it would not say
+   * what it belonged to.
+   */
+  /**
+   * Whether this column may name the COURSE's destinations at all — the work
+   * strip below, and the course-scoped rows in Setup further down.
+   *
+   * One flag for both, so the two can never disagree about whether the reader
+   * is being shown course scope. A caller that suppresses the strip because it
+   * prints its own (`courseTabGroups`) or because it must stay section-only
+   * (`staffSectionTabs`) suppresses the Setup rows on the same grounds.
+   */
+  const showCourseDestinations =
+    staff.hasCourseStanding && opts.courseStrip !== false;
+
+  if (showCourseDestinations) {
+    groups.push({
+      label: FORMS_GROUP,
+      items: courseTabs(access.section.courseId, currentPath, {
+        needsReview: opts.needsReview,
+      }),
+    });
+  }
 
   // The review queue is COURSE-scoped: a form shared by several sections has one
   // queue, which is the point of sharing it. Course staff therefore reach it
@@ -339,13 +426,20 @@ export function staffSectionTabGroups(
     });
   }
 
-  // Who can reach this section's forms, and how they got there.
-  const classList: NavItem[] = [];
-  if (perms.viewStudentIdentities) {
-    classList.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
-    classList.push({ href: `/teach/sections/${id}/import`, label: "Import" });
+  // A form definition is course-owned but `manage_templates` is deliberately
+  // delegable at section scope. Give that permission a real doorway without
+  // implying that it also grants delivery or occurrence controls.
+  //
+  // Gated on NOT having course standing, for the same reason as the review
+  // queue above: a course teacher already reached Forms through the course
+  // strip, and printing a second "Forms" row directly under it said nothing
+  // the first one had not.
+  if (perms.manageTemplates && !staff.hasCourseStanding) {
+    groups.push({
+      label: "Forms",
+      items: [{ href: `/teach/sections/${id}/forms`, label: "Forms" }],
+    });
   }
-  if (classList.length > 0) groups.push({ label: "Class list", items: classList });
 
   // The recurring cycle: draft and publish this week's answers, then the
   // archive students actually read once they are out. Any publication
@@ -386,21 +480,84 @@ export function staffSectionTabGroups(
   }
   if (reports.length > 0) groups.push({ label: "Reports", items: reports });
 
-  if (perms.manageWeeklyCycles || perms.manageTemplates) {
-    groups.push({
-      label: "Setup",
-      items: [
-        { href: `/teach/sections/${id}/setup`, label: "Section setup" },
-      ],
-    });
+  /**
+   * Configuration, in one group: who receives the forms, who may act on them,
+   * and how this section is set up.
+   *
+   * Which class-list destination appears depends on what the reader can reach,
+   * not on the page they are standing on. A reader with course standing gets
+   * the course's INDEX ("Class lists") and clicks through to whichever of the
+   * course's many sections they meant — a single "Class list" row would be
+   * quietly lying to them about there being one. A delegated assistant holds
+   * exactly one section and has no index to click through, so for them the
+   * roster itself is the destination.
+   *
+   * There is no `Import` row in either case. Importing is an OPERATION on the
+   * class list, not a peer view of it, and this column lists peer views —
+   * "create, import, export, publish, edit belong in neither layer" (see the
+   * note at the top of this file). It opens as a modal on the class list
+   * itself, behind the button that was already there (GitHub issue #12), and
+   * `/teach/sections/[id]/import` forwards to it so old links still land.
+   */
+  const setup: NavItem[] = [];
+  if (showCourseDestinations) {
+    setup.push(...courseSetupTabs(access.section.courseId, currentPath));
+  } else if (!staff.hasCourseStanding && perms.viewStudentIdentities) {
+    /**
+     * Gated on course STANDING rather than on `showCourseDestinations`, and
+     * the difference matters in exactly one place. `courseTabGroups` folds a
+     * single section's groups in with the strip suppressed and then leads
+     * Setup with the course's own rows; keying this off the suppressed strip
+     * would let the section roster back in beside the course index, putting
+     * two class-list destinations side by side inside one Setup group — the
+     * very redundancy moving them here removed.
+     *
+     * So: a reader who holds the course always clicks through the index. A
+     * reader who does not always gets the roster, because it is the only
+     * class list they can reach.
+     */
+    setup.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
   }
+  /**
+   * No "Section setup" row. That page was a second teaching-team table over
+   * the same `section_staff` rows the course's Teaching team already lists,
+   * reachable only after choosing a section first — so the one view that
+   * showed everybody was the one place you could not act on them. Editing and
+   * revoking a section grant now happen on that table, beside the row.
+   *
+   * Its other half — renaming a section and changing its term — is gone with
+   * it by decision, not by oversight: a section's name and term are set when
+   * the section is created.
+   */
+  if (setup.length > 0) groups.push({ label: "Setup", items: setup });
+
+  /**
+   * A reader with course standing reaches this section's roster through the
+   * course's INDEX, so while they are on it the row to light up is "Class
+   * lists" — the destination they clicked — and not a section row, which no
+   * longer exists for them. Without this the roster page marks nothing at all
+   * and the column goes silent about where the reader is standing.
+   *
+   * This is the same child-marks-its-parent rule `mark` already documents for
+   * the form-instance and importer pages, applied across a scope boundary
+   * rather than within one. An explicit `opts.activeHref` from the caller
+   * still wins.
+   */
+  const rosterHref = `/teach/sections/${id}/roster`;
+  const onRoster =
+    currentPath === rosterHref || currentPath.startsWith(`${rosterHref}/`);
+  const activeHref =
+    opts.activeHref ??
+    (showCourseDestinations && onRoster
+      ? `/teach/courses/${access.section.courseId}/sections`
+      : undefined);
 
   // Marked across every group at once, so the longest-match rule (and an
   // activeHref override) stays global rather than resetting per group.
   const flatActive = mark(
     groups.flatMap((g) => g.items),
     currentPath,
-    opts.activeHref,
+    activeHref,
   );
   const activeByHref = new Map(flatActive.map((i) => [i.href, i.active]));
   return groups.map((g) => ({
@@ -411,15 +568,20 @@ export function staffSectionTabGroups(
 
 /** Flattened form of {@link staffSectionTabGroups}, for the few callers that
  *  still want one plain list (a page whose own layout has no room for group
- *  headings). Prefer the grouped form wherever the reader can see it. */
+ *  headings). Prefer the grouped form wherever the reader can see it.
+ *
+ *  SECTION views only: the course strip is excluded, because a flat list of
+ *  "this section's peer views" that opened with the course's own destinations
+ *  would make `firstStaffSectionHref` resolve a section to the course. */
 export function staffSectionTabs(
   access: SectionAccess,
   currentPath: string,
   opts: { needsReview?: number; activeHref?: string } = {},
 ): NavItem[] {
-  return staffSectionTabGroups(access, currentPath, opts).flatMap(
-    (g) => g.items,
-  );
+  return staffSectionTabGroups(access, currentPath, {
+    ...opts,
+    courseStrip: false,
+  }).flatMap((g) => g.items);
 }
 
 /**
@@ -429,7 +591,29 @@ export function staffSectionTabs(
  * treat as no access rather than as an empty page.
  */
 export function firstStaffSectionHref(access: SectionAccess): string | null {
-  return staffSectionTabs(access, "")[0]?.href ?? null;
+  const tabs = staffSectionTabs(access, "");
+  /**
+   * Two rows are poor landing pages and are passed over when the reader holds
+   * anything else.
+   *
+   * The Q&A archive is offered to every section member, so it is always
+   * present — which makes it a bad default precisely when the reader has real
+   * work here. The audit log is worse: it is granted to everyone who is not a
+   * TA, so it is nearly always present too, and it opens on a wall of change
+   * records rather than on anything the reader came to do.
+   *
+   * Both are written as "not this href" rather than as a position, so
+   * reordering the groups cannot silently change where a reader lands — which
+   * is exactly what happened when the class list moved into Setup, below
+   * Reports, and quietly made the audit log the landing page for a course
+   * teacher whose only other row it was.
+   */
+  const poorLanding = new Set([
+    `/sections/${access.section.id}/qa`,
+    `/teach/sections/${access.section.id}/audit`,
+  ]);
+  const preferred = tabs.find((tab) => !poorLanding.has(tab.href));
+  return preferred?.href ?? tabs[0]?.href ?? null;
 }
 
 /**
@@ -438,16 +622,16 @@ export function firstStaffSectionHref(access: SectionAccess): string | null {
  * "Class lists" to find out what is inside gains nothing, because there is
  * only one answer.
  *
- * A course with several sections keeps the plain three-item strip and the
- * click-through instead: which section a destination like "Publication
- * queue" means is then a real, necessary choice, not friction. Inlining
- * every section's groups there would not remove a click, it would stack N
- * full group sets permanently into the sidebar — trading "hidden" for
- * "overwhelming," the same defect from the other direction.
+ * A course with several sections keeps the plain strip and the click-through
+ * instead: which section a destination like "Publication queue" means is then
+ * a real, necessary choice, not friction. Inlining every section's groups
+ * there would not remove a click, it would stack N full group sets permanently
+ * into the sidebar — trading "hidden" for "overwhelming," the same defect from
+ * the other direction.
  *
- * The first group carries the course's own three destinations, unlabeled
- * (exactly how they render today) — this is an addition to that sidebar, not
- * a replacement of it.
+ * The first group carries the course's work objects, unlabeled; its
+ * configuration lands under Setup at the bottom, beside the folded section's
+ * own setup rather than in a second heading of its own.
  */
 export function courseTabGroups(
   courseId: string,
@@ -455,15 +639,38 @@ export function courseTabGroups(
   opts: { needsReview?: number; activeHref?: string } = {},
   singleSectionAccess?: SectionAccess | null,
 ): NavGroup[] {
-  // Reuses courseTabs rather than repeating its three items, so the two can
-  // never list the course's own destinations two different ways. Its active
-  // flags are provisional — overwritten below once the section's groups (if
-  // any) are marked alongside them.
+  // Reuses courseTabs rather than repeating its items, so the two can never
+  // list the course's own destinations two different ways. Its active flags
+  // are provisional — overwritten below once the section's groups (if any) are
+  // marked alongside them.
   const groups: NavGroup[] = [
-    { label: "", items: courseTabs(courseId, currentPath, opts) },
+    { label: FORMS_GROUP, items: courseTabs(courseId, currentPath, opts) },
   ];
   if (singleSectionAccess) {
-    groups.push(...staffSectionTabGroups(singleSectionAccess, currentPath));
+    // `courseStrip: false`: this function already opened with the course's own
+    // destinations, and staffSectionTabGroups would otherwise add them again.
+    groups.push(
+      ...staffSectionTabGroups(singleSectionAccess, currentPath, {
+        courseStrip: false,
+      }),
+    );
+  }
+
+  /**
+   * The course's configuration rows, led into the Setup group.
+   *
+   * Merged into the folded section's Setup when there is one, rather than
+   * pushed as a second group: two "Setup" headings stacked on top of each
+   * other would be the same redundancy this restructure removed from Forms.
+   * Course scope leads, section scope follows — widest frame first, matching
+   * the order the column already reads in.
+   */
+  const courseSetup = courseSetupTabs(courseId, currentPath, opts);
+  const existingSetup = groups.find((group) => group.label === "Setup");
+  if (existingSetup) {
+    existingSetup.items = [...courseSetup, ...existingSetup.items];
+  } else {
+    groups.push({ label: "Setup", items: courseSetup });
   }
 
   // Marked across every group at once — see staffSectionTabGroups for why.

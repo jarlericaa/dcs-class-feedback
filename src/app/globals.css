@@ -492,31 +492,6 @@ kbd {
 .notice--pad {
   padding: var(--s5);
 }
-/* A resource's own destinations, grouped by what they are for — the class
-   list's own version of the section subnav's groups (nav.ts), so the two
-   never describe the same set of pages two different ways. Each group is its
-   own small column, so "which of these am I after" is answered before any
-   row is read, the way a settings screen groups its rows into named cards
-   instead of one flat list. */
-.section-links {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--s5) var(--s6);
-}
-.section-links__heading {
-  margin: 0 0 var(--s2);
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-.section-links__list {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
 /* student surfaces breathe more than staff surfaces */
 .notice--roomy .notice__head {
   padding: var(--s6) var(--s6) var(--s4);

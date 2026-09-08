@@ -7,7 +7,6 @@ import { db } from "@/db";
 import { classSections, courses, enrollments } from "@/db/schema";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { staffSectionTabGroups } from "@/components/layout/nav";
 import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
@@ -20,11 +19,7 @@ import {
 import { IconPlus } from "@/components/ui/icons";
 import { TermFields } from "@/components/ui/term-fields";
 import { termParts } from "@/lib/term";
-import {
-  AuthzError,
-  getSectionAccess,
-  requireCourseStaff,
-} from "@/modules/authz";
+import { AuthzError, requireCourseStaff } from "@/modules/authz";
 import { CatalogError, createSection } from "@/modules/catalog";
 import { requireUser, toShellUser } from "@/lib/session";
 
@@ -88,11 +83,6 @@ export default async function CourseSectionsPage({
     for (const row of rows) {
       counts.set(row.sectionId, (counts.get(row.sectionId) ?? 0) + 1);
     }
-  }
-  const destinations = new Map<string, ReturnType<typeof staffSectionTabGroups>>();
-  for (const section of sections) {
-    const access = await getSectionAccess(db, user.id, section.id);
-    if (access) destinations.set(section.id, staffSectionTabGroups(access, ""));
   }
   const createOpen = newSection === "1" || !!error;
 
@@ -190,12 +180,34 @@ export default async function CourseSectionsPage({
           <div className="stack-3">
             {sections.map((section) => {
               const enrolled = counts.get(section.id) ?? 0;
-              const groups = destinations.get(section.id) ?? [];
               return (
+                /* The card IDENTIFIES the section and enters it — nothing more.
+                   It used to also print every destination the section leads to,
+                   as a four-column grid of the same links the contextual column
+                   was already listing an inch to its left: two copies of one
+                   navigation, side by side. The destinations belong to the
+                   section's own column, which is where they are now kept while
+                   a reader is inside it. */
                 <section className="notice" key={section.id}>
                   <div className="notice__head">
                     <div>
-                      <h2>{section.title}</h2>
+                      <h2>
+                        {/* Straight to this section's class list, because that is
+                            what the reader asked for: this page is what "Class
+                            lists" opens, and the only reason it exists is that a
+                            course holds many sections and none of them is "the"
+                            class list. Landing on the section's first permitted
+                            view instead — the review inbox, usually — would
+                            answer a question nobody asked here. Every other
+                            destination is one click away in the section's own
+                            column once they are inside. */}
+                        <Link
+                          className="link"
+                          href={`/teach/sections/${section.id}/roster`}
+                        >
+                          {section.title}
+                        </Link>
+                      </h2>
                       <MetaList
                         items={[
                           ...termParts(section.term),
@@ -207,30 +219,6 @@ export default async function CourseSectionsPage({
                       />
                     </div>
                     {!section.active && <Stamp tone="neutral">Inactive</Stamp>}
-                  </div>
-                  {/* Every page this section leads to, grouped by what it is
-                      for — not hidden behind having to open the section
-                      first, and not one flat wall of links either. */}
-                  <div className="notice__body section-links">
-                    {groups.map((group) => (
-                      <div className="section-links__group" key={group.label}>
-                        <p className="section-links__heading">{group.label}</p>
-                        <nav
-                          className="section-links__list"
-                          aria-label={`${section.title} ${group.label}`}
-                        >
-                          {group.items.map((item) => (
-                            <Link
-                              key={item.href}
-                              className="link"
-                              href={item.href}
-                            >
-                              {item.label}
-                            </Link>
-                          ))}
-                        </nav>
-                      </div>
-                    ))}
                   </div>
                 </section>
               );
