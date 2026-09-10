@@ -25,6 +25,7 @@ import {
   ValidityBadge,
 } from "@/components/ui";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
+import { MarkReadOnView } from "@/components/staff/mark-read-on-view";
 import { Dialog } from "@/components/ui/dialog";
 import { ScrollToPost } from "@/components/ui/scroll-to";
 import { Thread, ThreadMessage } from "@/components/ui/thread";
@@ -48,7 +49,6 @@ import {
   invalidateSubmission,
   listReadResponseIds,
   markResponseRead,
-  markResponsesRead,
   markResponseUnread,
   rejectFlag,
   restoreSubmission,
@@ -210,7 +210,12 @@ export default async function CourseResponsesPage({
     }
     throw err;
   }
-  const { rows, counts, instances, sections, canSeeIdentities } = queue;
+  const {
+    rows: scopeRows,
+    instances,
+    sections,
+    canSeeIdentities,
+  } = queue;
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
@@ -226,7 +231,32 @@ export default async function CourseResponsesPage({
     sp.cycle ??
     instances.find((i) => i.responseCount > 0)?.instance.id ??
     instances[0]?.instance.id;
-  const currentCycle = instances.find((i) => i.instance.id === currentCycleId);
+
+  /**
+   * Narrowed to the week the selector is SHOWING, which is not the same thing
+   * as the week the query was given.
+   *
+   * The fetch above passes `sp.cycle`, and that is undefined until the reader
+   * picks a week explicitly — so a first load asked for every occurrence while
+   * the selector displayed the default one. The result was a column headed
+   * "Week 8" listing Week 3 posts, with counts to match. The default cannot
+   * move into the query, because deriving it needs the occurrence list the
+   * query returns; so it is applied here, where the selector's own value is
+   * finally known.
+   *
+   * Counts are re-derived over the same narrowed set rather than taken from
+   * the service, for exactly the same reason: they describe the week on
+   * screen, and the service counted the scope it was asked for.
+   */
+  const rows = currentCycleId
+    ? scopeRows.filter((row) => row.response.cycleId === currentCycleId)
+    : scopeRows;
+  const counts = {
+    total: rows.length,
+    needsReview: rows.filter(needsReply).length,
+    answered: rows.filter((row) => row.answered).length,
+    invalid: rows.filter((row) => row.response.validity === "invalid").length,
+  };
 
   /**
    * Standing is resolved per SECTION, not per course: every instructor
@@ -325,7 +355,6 @@ export default async function CourseResponsesPage({
       if (unread !== 0) return unread;
       return submittedAt(a).getTime() - submittedAt(b).getTime();
     });
-  const unreadVisibleIds = visible.filter(isUnread).map((row) => row.response.id);
 
   const nextWaiting = visible.find(
     (row) => needsReply(row) && !reviewedThisSession.has(row.response.id),
@@ -600,18 +629,24 @@ export default async function CourseResponsesPage({
    * written. Each lands back on the post it acted on, for the same reason every
    * other action here does.
    */
-  async function markRead(formData: FormData) {
+  /**
+   * The same write, fired by having actually read the thing (see
+   * `MarkReadOnView`).
+   *
+   * Quiet on purpose: no `revalidatePath`, no `redirect`. Both would rearrange
+   * the column underneath a reader mid-response — and with "Unread only" on,
+   * revalidating would delete the row they are reading out from under them.
+   * The state is correct on the next load, which is when it is read back.
+   *
+   * Recorded as `viewed`, which the service deliberately does not audit: one
+   * row per response somebody scrolled past would bury the entries that record
+   * an actual decision.
+   */
+  async function markReadOnView(responseId: string) {
     "use server";
     const uid = await currentUserId();
-    if (!uid) redirect("/signin");
-    const responseId = String(formData.get("responseId"));
-    await markResponseRead(uid, responseId, "explicit");
-    revalidatePath(path);
-    {
-      const back = new URLSearchParams(backQuery);
-      back.set("at", responseId);
-      redirect(`${path}?${back.toString()}`);
-    }
+    if (!uid) return;
+    await markResponseRead(uid, responseId, "viewed");
   }
 
   async function markUnread(formData: FormData) {
@@ -628,48 +663,6 @@ export default async function CourseResponsesPage({
     }
   }
 
-  /**
-   * Clear the pile in front of the reader.
-   *
-   * Marks exactly what the current filters SHOW, not the whole week: a control
-   * that silently reached past the screen would be a way to lose a week's
-   * queue by accident. The ids are carried in the form and re-authorized one
-   * section at a time by the service.
-   */
-  async function markAllRead(formData: FormData) {
-    "use server";
-    const uid = await currentUserId();
-    if (!uid) redirect("/signin");
-    const ids = String(formData.get("ids") ?? "")
-      .split(",")
-      .filter(Boolean);
-    /* The service REFUSES an oversized id list rather than marking part of it,
-       and a refusal belongs on this page as a sentence — not as an error
-       boundary. Only the call is guarded: a `redirect()` throws a control-flow
-       signal that must not be swallowed. */
-    let marked: number;
-    try {
-      marked = await markResponsesRead(uid, ids);
-    } catch (err) {
-      const failed = new URLSearchParams(backQuery);
-      failed.set(
-        "error",
-        err instanceof Error
-          ? err.message
-          : "Those responses could not be marked as read.",
-      );
-      redirect(`${path}?${failed.toString()}`);
-    }
-    revalidatePath(path);
-    const done = new URLSearchParams(backQuery);
-    done.set(
-      "ok",
-      marked! === 0
-        ? "Nothing left to mark."
-        : `${marked!} ${marked! === 1 ? "response" : "responses"} marked as read. Only you see this.`,
-    );
-    redirect(`${path}?${done.toString()}`);
-  }
 
   async function draftOrPublish(formData: FormData) {
     "use server";
@@ -945,24 +938,6 @@ export default async function CourseResponsesPage({
           ) : (
             <span>Nothing here is waiting on you.</span>
           )}
-          {/* Clears what is on screen, not the whole term. Outside the GET
-              form above, because nesting forms is invalid and the inner one is
-              dropped. */}
-          {unreadVisibleIds.length > 0 && (
-            <form action={markAllRead}>
-              <input
-                type="hidden"
-                name="ids"
-                value={unreadVisibleIds.join(",")}
-              />
-              <button
-                className="button button--quiet button--small feedbar__markall"
-                type="submit"
-              >
-                Mark {unreadVisibleIds.length} as read
-              </button>
-            </form>
-          )}
         </div>
       </div>
 
@@ -1022,6 +997,16 @@ export default async function CourseResponsesPage({
                     leaves the name line for a column of its own so the dates
                     line up down the page and can be compared without reading
                     the rest of the row. */}
+                {/* Reading it is what marks it read. Mounted only while the
+                    post is still unread, so a re-render of an already-read
+                    column starts no observers at all. */}
+                {unread && (
+                  <MarkReadOnView
+                    responseId={row.response.id}
+                    action={markReadOnView}
+                  />
+                )}
+
                 <span className="post__mark" aria-hidden="true">
                   {row.student ? initials(row.student.fullName) : "—"}
                 </span>
@@ -1108,8 +1093,13 @@ export default async function CourseResponsesPage({
                             before they start reading it, not after. */}
                         <p className="post__itemmeta">
                           <span>
+                            {/* Just what it is. "· never publishable" was
+                                policy trivia about a thing the reader was not
+                                trying to publish, printed on every general
+                                comment; the "No reply needed" stamp beside it
+                                already says what to do with one. */}
                             {isComment
-                              ? "General comment · never publishable"
+                              ? "General comment"
                               : `${sentenceCase(item.submissionType)} · ${categoryShortLabel(item.category)}`}
                           </span>
                           {/* A stamp only where the body cannot say it. An
@@ -1370,23 +1360,26 @@ export default async function CourseResponsesPage({
                     away. Both are about the response as a whole rather than
                     about any one question in it. */}
                 <div className="post__foot">
-                  {/* Read state is per reader and reversible in one press, so
-                      it needs no confirmation — and it says who can see it,
-                      because a control on someone else's submission had
-                      better be clear that it is not about them. */}
-                  <form action={unread ? markRead : markUnread}>
-                    <input
-                      type="hidden"
-                      name="responseId"
-                      value={row.response.id}
-                    />
-                    <button
-                      className="button button--quiet button--small"
-                      type="submit"
-                    >
-                      {unread ? "Mark as read" : "Mark as unread"}
-                    </button>
-                  </form>
+                  {/* Only the reversal. "Mark as read" asked the reader to
+                      tell the page something it can see for itself, once per
+                      response, down a whole week — reading now does that on
+                      its own. Putting one BACK is a real intention and has no
+                      other way to be expressed, so that control stays. */}
+                  {!unread && (
+                    <form action={markUnread}>
+                      <input
+                        type="hidden"
+                        name="responseId"
+                        value={row.response.id}
+                      />
+                      <button
+                        className="button button--quiet button--small"
+                        type="submit"
+                      >
+                        Mark as unread
+                      </button>
+                    </form>
+                  )}
 
                   {/* Validity last, and folded. It removes a student's
                       participation credit, so it must never sit beside Reply
@@ -1415,18 +1408,6 @@ export default async function CourseResponsesPage({
             );
           })}
 
-          {/* The bottom of the pile, said out loud. A column with no end is the
-              one thing this page must not become: the week is finite, and
-              finishing it should feel like finishing. */}
-          <p className="feed__end">
-            That is all {visible.length}{" "}
-            {visible.length === 1 ? "response" : "responses"}
-            {readFilter === "unread" ? " you had not read" : ""}
-            {currentCycle ? ` for ${currentCycle.label}` : ""}.{" "}
-            {waitingCount > 0
-              ? `${waitingCount} still ${waitingCount === 1 ? "needs" : "need"} a reply.`
-              : "Nothing is waiting on you."}
-          </p>
         </div>
       )}
     </AppShell>
@@ -1612,9 +1593,9 @@ function Meter({
   return (
     <li className="meter">
       <span className="meter__label">{label}</span>
-      <span className="meter__separator" aria-hidden="true">
-        —
-      </span>
+      {/* No separator glyph. The answer sits under the question now, so there
+          is no gap between them for a dash to bridge — and an em dash floating
+          mid-row was reading as punctuation inside the question itself. */}
       <span className="meter__answer">
         {scale && (
           <span className="meter__cells" aria-hidden="true">

@@ -17,10 +17,14 @@ import {
   Stamp,
 } from "@/components/ui";
 import { IconPlus } from "@/components/ui/icons";
-import { TermFields } from "@/components/ui/term-fields";
-import { termParts } from "@/lib/term";
+import { fallbackTerm, termParts } from "@/lib/term";
 import { AuthzError, requireCourseStaff } from "@/modules/authz";
 import { CatalogError, createSection } from "@/modules/catalog";
+import {
+  commitRosterImport,
+  parseRosterCsv,
+  looksLikeXlsx,
+} from "@/modules/roster-import";
 import { requireUser, toShellUser } from "@/lib/session";
 
 /**
@@ -85,28 +89,102 @@ export default async function CourseSectionsPage({
     }
   }
   const createOpen = newSection === "1" || !!error;
+  /**
+   * Pulled out as a plain string because a "use server" closure serializes
+   * everything it captures — the section rows themselves must not be dragged
+   * into the action.
+   */
+  const inheritedTerm = fallbackTerm(sections.map((section) => section.term));
 
+  /**
+   * Create the class list, and fill it in the same submit when a file came
+   * with the form.
+   *
+   * The two writes are deliberately NOT one transaction. `commitRosterImport`
+   * runs its own, and wrapping the pair would mean a single refused row threw
+   * away a section the teacher had correctly named — so the section is kept and
+   * the import reports itself. That makes the order matter: create first, then
+   * import into the section that now exists, and say plainly which of the two
+   * happened if the second fails.
+   *
+   * CSV only. The registrar's `.xlsx` is detected purely so it can be refused
+   * by name instead of being decoded as CSV and reported as a page of
+   * unrelated malformed rows.
+   */
   async function addSection(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
+    const done = (params: Record<string, string>) =>
+      redirect(
+        `/teach/courses/${courseId}/sections?${new URLSearchParams(params).toString()}`,
+      );
+
+    let sectionId: string;
     try {
-      await createSection(uid, {
+      const created = await createSection(uid, {
         courseId,
-        term: String(formData.get("term") ?? ""),
+        term: inheritedTerm,
         title: String(formData.get("title") ?? ""),
       });
+      sectionId = created.id;
     } catch (err) {
-      redirect(
-        `/teach/courses/${courseId}/sections?error=${encodeURIComponent(describe(err))}`,
-      );
+      done({ error: describe(err) });
+      return;
     }
-    revalidatePath(`/teach/courses/${courseId}/sections`);
-    redirect(
-      `/teach/courses/${courseId}/sections?ok=${encodeURIComponent(
-        "Section added. Import its class list next.",
-      )}`,
-    );
+
+    const upload = formData.get("file");
+    if (!(upload instanceof File) || upload.size === 0) {
+      revalidatePath(`/teach/courses/${courseId}/sections`);
+      done({ ok: "Section added." });
+      return;
+    }
+
+    try {
+      const bytes = Buffer.from(await upload.arrayBuffer());
+      if (upload.name.toLowerCase().endsWith(".xlsx") || looksLikeXlsx(bytes)) {
+        done({
+          error:
+            "Section added, but its class list was not imported: choose a .csv file.",
+        });
+        return;
+      }
+      const parsed = parseRosterCsv(new TextDecoder().decode(bytes));
+      if (parsed.fileError) {
+        done({ error: `Section added, but ${parsed.fileError}` });
+        return;
+      }
+      const summary = await commitRosterImport(
+        uid,
+        sectionId,
+        parsed,
+        upload.name || "class list",
+      );
+      revalidatePath(`/teach/courses/${courseId}/sections`);
+      /* `blocked` is named rather than folded into the total: a row refused
+         for an unusable UP email is the one outcome a teacher has to act on,
+         and a bare enrolled count would hide it. */
+      done({
+        ok:
+          summary.blocked > 0
+            ? `Section added with ${summary.enrolled} on its class list. ${summary.blocked} row(s) were refused — open the class list to see which.`
+            : `Section added with ${summary.enrolled} on its class list.`,
+      });
+    } catch (err) {
+      /* A `done()` above throws Next's redirect signal, which must not be
+         reported here as an import failure. */
+      if (
+        err &&
+        typeof err === "object" &&
+        "digest" in err &&
+        String((err as { digest?: unknown }).digest).startsWith("NEXT_REDIRECT")
+      ) {
+        throw err;
+      }
+      done({
+        error: `Section added, but its class list was not imported: ${describe(err)}`,
+      });
+    }
   }
 
   return (
@@ -136,7 +214,16 @@ export default async function CourseSectionsPage({
         {createOpen && (
           <section className="notice notice--pad" id="new-section">
             <h2 className="panel-title">Add a section</h2>
-            <form action={addSection} className="stack-4">
+            {/* Two fields, because two is what creating a class list needs:
+                what it is called, and who is in it. The academic term is gone
+                — it describes the course's offering, not one class list inside
+                it, and it was being retyped per section. New sections inherit
+                the term the course is already using. */}
+            <form
+              action={addSection}
+              className="stack-4"
+              encType="multipart/form-data"
+            >
               <div className="field-row">
                 <label htmlFor="section-title">Section name</label>
                 <input
@@ -148,7 +235,16 @@ export default async function CourseSectionsPage({
                   autoFocus
                 />
               </div>
-              <TermFields />
+              <div className="field-row">
+                <label htmlFor="section-roster">Class list</label>
+                <input
+                  id="section-roster"
+                  className="field"
+                  type="file"
+                  name="file"
+                  accept=".csv,text/csv"
+                />
+              </div>
               <div className="row">
                 <button className="button button--primary" type="submit">
                   Add section
@@ -208,13 +304,19 @@ export default async function CourseSectionsPage({
                           {section.title}
                         </Link>
                       </h2>
+                      {/* No timezone. There is one institution timezone for
+                          the whole platform (INSTITUTION_TIMEZONE, decision
+                          D7), so printing "Asia/Manila" on every card repeated
+                          a constant — it looked like a per-section fact the
+                          reader might need to check, and it is not one. It
+                          still governs every open and close time; it is just
+                          not news. */}
                       <MetaList
                         items={[
                           ...termParts(section.term),
                           enrolled === 0
                             ? "No class list imported"
                             : `${enrolled} enrolled`,
-                          section.timezone,
                         ]}
                       />
                     </div>

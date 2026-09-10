@@ -107,3 +107,42 @@ export function derivedAcademicYear(startYear: string): string {
   }
   return `${year}-${year + 1}`;
 }
+
+/**
+ * The term to file a new section under when nobody was asked.
+ *
+ * The Add-a-section form no longer collects one: a term describes the course's
+ * offering, not one class list inside it, and typing the same academic year
+ * once per section was busywork. `class_sections.term` is still `NOT NULL`
+ * though, and `courses` has no term column to read instead — adding one is a
+ * migration, which is out of scope here — so the value has to come from
+ * somewhere.
+ *
+ * Preference order:
+ *   1. a term the course is already using, so every section of one course
+ *      agrees, and so the answer comes from the teacher's own earlier input
+ *      rather than from a rule invented here;
+ *   2. failing that (the course's first section), the current academic year.
+ *
+ * **[Assumption]** Step 2 reads the academic year as starting in August and
+ * splits the year 1st = Aug–Dec, 2nd = Jan–May, Midyear = Jun–Jul. That is a
+ * calendar convention this module had no business deciding on its own; it is
+ * only ever used for a course with no sections yet, and it stays visible and
+ * editable in exactly one place, so correcting it is a one-line change rather
+ * than a data migration. Confirm it before real terms depend on it.
+ */
+export function fallbackTerm(existingTerms: readonly string[]): string {
+  for (const candidate of existingTerms) {
+    if (parseTerm(candidate)) return candidate;
+  }
+  return currentTerm();
+}
+
+/** The academic term today falls in, under the convention above. */
+export function currentTerm(now: Date = new Date()): string {
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+  const startYear = month >= 8 ? year : year - 1;
+  const semester: Semester = month >= 8 ? "1" : month <= 5 ? "2" : "M";
+  return encodeTerm(startYear, semester);
+}

@@ -8,10 +8,8 @@ import {
   AccessDenied,
   Alert,
   EmptyState,
-  Figure,
   Pagination,
   Stamp,
-  ValidityBadge,
 } from "@/components/ui";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 import { IconDownload } from "@/components/ui/icons";
@@ -143,8 +141,6 @@ export default async function ParticipationPage({
     return `${path}/export?${query.toString()}`;
   };
 
-  const respondedCount = week?.rows.filter((r) => r.participated).length ?? 0;
-
   /**
    * Which downloads to OFFER. Presentation only — the services refuse them
    * regardless (`requireInstructor`), which is the enforcement point.
@@ -178,38 +174,30 @@ export default async function ParticipationPage({
       actions={
         <>
           {currentCycle && canExportIdentityFiles && (
+            /* CSV only. The XLSX twins doubled the row of buttons to offer the
+               same three reports in a second file format nobody had asked for,
+               and the format suffix can go with them: when every download is a
+               CSV, saying so on each button is noise. */
             <>
               <a className="button button--primary" href={exportHref("responders")}>
                 <IconDownload size={15} />
-                Who responded (CSV)
-              </a>
-              <a
-                className="button button--secondary"
-                href={exportHref("responders", { format: "xlsx" })}
-              >
-                <IconDownload size={15} />
-                Who responded (XLSX)
+                Who responded
               </a>
               <a
                 className="button button--secondary"
                 href={exportHref("responders", { include: "all" })}
               >
                 <IconDownload size={15} />
-                Everyone, responded or not (CSV)
+                Everyone, responded or not
               </a>
-              <a
-                className="button button--secondary"
-                href={exportHref("responders", {
-                  include: "all",
-                  format: "xlsx",
-                })}
-              >
-                <IconDownload size={15} />
-                Everyone, responded or not (XLSX)
-              </a>
+              {/* Not "This week" — that named the FILTER, which the selector
+                  above already shows, and said nothing about what the file
+                  holds. This one is the table as it currently stands, answer
+                  filter and all, which is the only thing that distinguishes it
+                  from the two above. */}
               <a className="button button--secondary" href={exportHref("week")}>
                 <IconDownload size={15} />
-                {question && answer ? "This filtered list" : "This week"}
+                This list, as shown
               </a>
             </>
           )}
@@ -318,20 +306,19 @@ export default async function ParticipationPage({
                 <div className="notice__head">
                   <div>
                     <h2>{currentCycle.label}</h2>
-                    <p>
-                      {question && answer
-                        ? `${week.total} ${week.total === 1 ? "student" : "students"} answered “${answer.label}”`
-                        : `${respondedCount} of ${week.rows.length} students on this page responded`}
-                      {" · "}
-                      {currentCycle.state === "open"
-                        ? "still open"
-                        : `closed ${formatDate(currentCycle.deadlineAt, section.timezone)}`}
-                    </p>
+                    {/* Only the filter is described, and only when one is on.
+                        The old line read "2 of 3 students on this page
+                        responded · still open": a count scoped to the current
+                        PAGE rather than the class, beside a state the selector
+                        and the Submitted column both already imply. The
+                        response-count figure that sat opposite it is gone too
+                        — the Responded column is the count. */}
+                    {question && answer && (
+                      <p>
+                        {`${week.total} ${week.total === 1 ? "student" : "students"} answered “${answer.label}”`}
+                      </p>
+                    )}
                   </div>
-                  <Figure
-                    value={currentCycle.responseCount}
-                    label="responses this week"
-                  />
                 </div>
 
                 {week.rows.length === 0 ? (
@@ -374,11 +361,24 @@ export default async function ParticipationPage({
                             </th>
                             <td>
                               {row.participated ? (
-                                <Stamp tone="green">Yes</Stamp>
-                              ) : row.validity === "invalid" ? (
-                                <ValidityBadge validity="invalid" />
+                                <span className="yesno yesno--yes">Yes</span>
                               ) : (
-                                <span className="muted">No</span>
+                                /* A submission marked invalid earns no credit,
+                                   so it answers "responded?" with No like any
+                                   other. The reason is kept on the cell rather
+                                   than in a second badge beside the word —
+                                   losing it would hide the one No a teacher
+                                   might need to explain. */
+                                <span
+                                  className="yesno yesno--no"
+                                  title={
+                                    row.validity === "invalid"
+                                      ? "Marked invalid, so it earns no credit"
+                                      : undefined
+                                  }
+                                >
+                                  No
+                                </span>
                               )}
                             </td>
                             <td>
@@ -422,18 +422,6 @@ export default async function ParticipationPage({
                       {overview.summary.deactivatedStudentCount > 0 &&
                         `, including ${overview.summary.deactivatedStudentCount} dropped and kept for the record`}
                     </p>
-                  </div>
-                  {/* Two figures, both actionable: how many weeks have run, and
-                      how many students have never taken part. The section
-                      average and the participating-students count are gone —
-                      neither named anybody to follow up (issue #15). */}
-                  <div className="figure-row">
-                    <Figure value={overview.summary.cycleCount} label="weeks run" />
-                    <Figure
-                      value={overview.summary.neverParticipated}
-                      label="never participated"
-                      attention={overview.summary.neverParticipated > 0}
-                    />
                   </div>
                 </div>
                 {overview.summary.cycleCount === 0 ||
@@ -491,7 +479,19 @@ export default async function ParticipationPage({
                                 student.participatedCycleIds.has(cycle.id);
                               return (
                                 <td className="num" key={cycle.id}>
+                                  {/* The same green Yes as the week list, so
+                                      one colour means one thing across both
+                                      views. A blank week stays an em dash
+                                      rather than a red No: across eight weeks
+                                      of a term that would paint most of the
+                                      grid red, and here the cell means "no
+                                      form answered", not "failed to". */}
                                   <span
+                                    className={
+                                      participated
+                                        ? "yesno yesno--yes"
+                                        : "muted"
+                                    }
                                     aria-label={
                                       participated
                                         ? "participated"

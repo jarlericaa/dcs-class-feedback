@@ -630,6 +630,17 @@ kbd {
   border: 1px solid var(--rule);
   background: var(--paper);
 }
+/* In a panel head the row is squeezed into the trailing slot, where
+   `auto-fit minmax(132px, 1fr)` collapses to a single column: the figures
+   stack, and the dividers — written for a horizontal row — leave the pair
+   looking like one box with a seam missing. Side by side, always. */
+.notice__head .figure-row {
+  display: flex;
+  flex-wrap: nowrap;
+}
+.notice__head .figure {
+  white-space: nowrap;
+}
 .figure {
   padding: var(--s3) var(--s4);
   border-right: 1px solid var(--rule);
@@ -1474,6 +1485,13 @@ kbd {
   gap: var(--s3);
   flex-wrap: wrap;
 }
+/* A pagination that sits INSIDE a panel, under a flush table, has to supply
+   the padding the table deliberately gave up — otherwise the count and the
+   buttons sit hard against the panel edge with the table's rule cutting
+   between them. Panels that place it outside are unaffected. */
+.notice > .pagination {
+  padding: var(--s3) var(--s5) var(--s4);
+}
 .pagination__summary {
   color: var(--ink-muted);
   font-size: 12px;
@@ -1519,7 +1537,12 @@ kbd {
   font-weight: 600;
   letter-spacing: 0;
 }
-.data-table tbody tr:last-child td {
+.data-table tbody tr:last-child td,
+/* `th` too, not only `td`. The first cell of a row is a `<th scope="row">`,
+   so clearing `td` alone left one short rule under the leading column and
+   nothing under the rest — the stub of a line the last row appeared to hang
+   off. */
+.data-table tbody tr:last-child th {
   border-bottom: 0;
 }
 .data-table td.wrap {
@@ -1528,6 +1551,31 @@ kbd {
 }
 .data-table td.num {
   text-align: right;
+}
+
+/* Row actions in a data table.
+   Kept on ONE line and pushed to the trailing edge, so a row with two buttons
+   and a row with one still agree about where actions begin. Wrapping was what
+   made them look crooked: the cell is narrow, the two triggers are different
+   widths, and a wrapped flex line left them stacked and ragged. The table
+   already lives in .table-scroll, so refusing to wrap scrolls the table
+   instead of crushing the column. */
+.data-table td.actions {
+  text-align: right;
+}
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s2);
+}
+.table-actions > * {
+  flex: 0 0 auto;
+}
+/* Equal height regardless of label length, and no label broken mid-word. */
+.table-actions .button {
+  white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -2114,13 +2162,14 @@ kbd {
  * is left are the map that a list pane used to be, and they have to stay in
  * reach thirty posts down.
  */
+/* The filters sit at the top of the column and scroll away with it.
+   They used to stick under the top bar for the whole scroll, which meant a
+   band of controls permanently occupying the first ~100px of a reading column
+   — and the thing being read is prose, chosen once at the top and then read
+   to the end. Choosing a week is not something a reader does mid-response. */
 .feedbar {
-  position: sticky;
-  top: 52px;
-  z-index: 3;
   margin-bottom: var(--s5);
   padding: var(--s3) 0;
-  background: var(--board);
   border-bottom: 1px solid var(--rule-strong);
 }
 /* The scope on its own line, the search under it. Two decisions, in the order
@@ -2205,10 +2254,18 @@ kbd {
  * one thing that matters, which is the reading. A hairline is enough to say
  * where one student ends and the next begins.
  */
+/* A stack of separate responses, not one panel of rows.
+   Padding and a stronger hairline were not enough to say where one response
+   ended and the next began — read in bulk they still ran together. So each
+   response is now its own surface with real space around it, and the feed is
+   just the spacing that holds them apart. The earlier note here argued
+   against thirty bordered cards competing with the words; the gap is what
+   makes that survivable — the cards are separated by air rather than stacked
+   edge to edge, so the eye reads one block at a time. */
 .feed {
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-panel);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
   /* The rows respond to the FEED's width, not the window's: two navigation
      columns sit to the left of it, so the viewport says nothing useful about
      how much room a row actually has. */
@@ -2235,16 +2292,24 @@ kbd {
      together into one wall. The rule stays a hairline — thirty bordered cards
      would be thirty containers competing with the words — and the SPACE does
      the separating instead. */
-  padding: var(--s6) var(--s5);
-  /* Set on every post so the amber marker changes colour, not geometry: a
-     border that only existed while something was waiting would shift the whole
-     column sideways by its rule width per answered row. */
-  border-left: 1px solid transparent;
-  scroll-margin-top: 128px;
+  /* Tightened so a whole response fits one screen: the card edge and the gap
+     between cards already do the separating, so the padding no longer has to. */
+  padding: var(--s4);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  /* The status edge is always 3px and always present, so the unread and
+     waiting markers change COLOUR, not geometry: an edge that only appeared
+     while something was waiting would shift each row sideways by its own
+     width. It defaults to the card's own rule, so a settled response simply
+     looks like a card. */
+  border-left: 3px solid var(--rule);
+  /* Clears the sticky top bar (52px) and no more: the filter bar above used to
+     be sticky too, and this offset was sized for both. */
+  scroll-margin-top: 68px;
 }
-.post + .post {
-  border-top: 1px solid var(--rule);
-}
+/* No divider between posts any more: each one is a card, and the gap between
+   them is the division. A border-top here would draw a line across the air. */
 /* Who, then when, then what they said — in that order at every width. */
 .post__ident {
   grid-column: 2;
@@ -2337,8 +2402,8 @@ kbd {
 /* The form answers now sit above, so every question is separated from what
    precedes it — not only from a sibling question. */
 .post__item {
-  margin-top: var(--s5);
-  padding-top: var(--s5);
+  margin-top: var(--s4);
+  padding-top: var(--s4);
   border-top: 1px solid var(--rule);
 }
 
@@ -2441,8 +2506,8 @@ kbd {
   max-width: 68ch;
   color: var(--ink);
   font-family: var(--serif);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 15px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
   /* A pasted list or a stanza keeps its breaks: collapsing them turned a
      student's structure into one paragraph. */
@@ -2674,8 +2739,8 @@ kbd {
  * distinct from the next.
  */
 .meters {
-  margin-top: var(--s4);
-  padding-top: var(--s3);
+  margin-top: var(--s3);
+  padding-top: var(--s2);
   border-top: 1px solid var(--rule);
 }
 .meters__list {
@@ -2685,31 +2750,53 @@ kbd {
   padding: 0;
   list-style: none;
 }
+/**
+ * One measurement: the question, then its answer underneath.
+ *
+ * This began as one line — question, em dash, answer pinned to the trailing
+ * edge — which put the two halves of a pair at opposite ends of a wide card
+ * with a dash stranded between them, and set the question at 12px muted grey
+ * where it was barely readable. Two attempts to fix that within a single row
+ * (a dotted leader, then weight alone) both failed the same way: a row cannot
+ * be scanned as "question, answer" when the eye has to cross the whole card
+ * to pair them.
+ *
+ * So it stacks, in the order it is read, matching the written questions in the
+ * same post: the prompt, then what the student answered below it. The question
+ * gets normal reading size and darker ink; the answer takes the weight. That
+ * costs the old right-edge alignment down a run of measurements, which is a
+ * real loss for comparing one scale across students — and the wrong thing to
+ * optimise on a page whose unit is one student's response.
+ */
 .meter {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: baseline;
-  gap: 0 var(--s2);
-  padding: var(--s2) 0;
-  font-size: 12px;
+  gap: var(--s1);
+  padding: var(--s3) 0;
 }
 .meter + .meter {
   border-top: 1px solid var(--rule);
 }
 .meter__label {
   min-width: 0;
-  color: var(--ink-muted);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
-.meter__separator {
-  color: var(--ink-muted);
-}
+/* Under the question, indented behind a rule — the same "this part is the
+   student's" signal `.post__words` uses for a written answer, so a scale and a
+   paragraph are read the same way. */
 .meter__answer {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-self: end;
+  justify-self: start;
   gap: var(--s2);
   min-width: 0;
+  padding-left: var(--s3);
+  border-left: 1px solid var(--rule-strong);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /**
@@ -2763,20 +2850,8 @@ kbd {
   margin-top: var(--s2);
 }
 
-/* A narrow detail pane gets one answer per line: the prompt remains readable,
-   and its value cannot visually run into the next prompt. */
-@container (max-width: 520px) {
-  .meter {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--s1);
-  }
-  .meter__separator {
-    display: none;
-  }
-  .meter__answer {
-    justify-self: start;
-  }
-}
+/* No narrow-width variant any more: stacking the answer under the question is
+   the base layout, so there is nothing left for a container query to undo. */
 
 /**
  * The foot of a post: this reader's place, and the folded destructive control.
@@ -2814,15 +2889,6 @@ kbd {
 }
 
 /* The bottom of the pile, said out loud. */
-.feed__end {
-  margin-top: var(--s2);
-  padding: var(--s4) 0 var(--s6);
-  border-top: 1px solid var(--rule-strong);
-  color: var(--ink-muted);
-  font-size: 13px;
-  text-align: center;
-}
-
 /* --- contextual band ------------------------------------------------------ */
 
 /**
@@ -3759,14 +3825,11 @@ kbd {
   .page-head {
     margin-bottom: var(--s5);
   }
-  /* The contextual band scrolls away with the page here, so the feed controls
-     stick directly under the top bar rather than under the band. */
-  .feedbar {
-    top: 52px;
-  }
   .post {
-    padding: var(--s4);
-    scroll-margin-top: 96px;
+    /* Narrow screens keep the vertical/horizontal asymmetry the wide layout
+       has — the separation between two responses is the point, and it is worth
+       more than the sliver of width square padding would win back. */
+    padding: var(--s5) var(--s4);
   }
   .page-title {
     font-size: 24px;
@@ -4694,4 +4757,20 @@ kbd {
 }
 .data-table .matrix__total {
   border-left: 1px solid var(--rule-strong);
+}
+
+/* Participation answered plainly.
+   A Stamp is a box, and a column of boxes reads as a column of buttons —
+   fourteen of them down a class list is louder than the fact it carries. The
+   word alone, coloured, says the same thing: green Yes, red No. */
+.yesno {
+  font-weight: 600;
+}
+.yesno--yes {
+  /* The same green the green Stamp used, so the colour still means what it
+     meant — only the box is gone. */
+  color: var(--accent-deep);
+}
+.yesno--no {
+  color: var(--red-deep);
 }

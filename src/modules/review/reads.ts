@@ -43,7 +43,16 @@ export type ReadSource =
   /** implied by resolving the post — replying, publishing, declining */
   | "resolved"
   /** part of a "mark all as read" sweep */
-  | "bulk";
+  | "bulk"
+  /**
+   * The response was on screen long enough to have been read.
+   *
+   * Deliberately NOT audited, for the same reason `resolved` is not: a reader
+   * scrolling one week of a large class list would otherwise write one audit
+   * row per response they passed, burying the entries that record a decision
+   * somebody made under a log of ordinary reading.
+   */
+  | "viewed";
 
 const NO_RESPONSE_ACCESS = "No access to this response";
 
@@ -170,7 +179,7 @@ export async function markResponseRead(
     // Nothing changed, so nothing to record: re-pressing the control must not
     // put a second row in an append-only log.
     if (inserted.length === 0) return;
-    if (source === "resolved") return;
+    if (source === "resolved" || source === "viewed") return;
     await writeAudit(tx, {
       actorUserId,
       action: "response.marked_read",

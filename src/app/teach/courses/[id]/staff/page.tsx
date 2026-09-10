@@ -420,39 +420,42 @@ function AccessRow({
             row.staff.role.replace("_", " "))}
       </td>
       {canRevoke && (
-        <td>
+        <td className="actions">
           {/* Only a course-standing row that IS a row can be revoked. The
               owner's standing comes from `courses.owner_user_id` and carries no
-              `courseStaffId`, so there is nothing here to remove — and a
-              section grant is changed on its own section's setup page, where its
-              permissions are. */}
+              `courseStaffId`, so there is nothing here to remove. */}
           {row.scope === "course" && row.courseStaffId ? (
-            <Dialog
-              variant="danger"
-              className="button--small"
-              label="Remove"
-              title={`Remove ${row.user.displayName} from this course?`}
-              description="They lose access to every section of this course. Sections they were added to individually keep them, and nothing they already did is deleted."
-            >
-              <form action={onRevoke}>
-                <input
-                  type="hidden"
-                  name="courseStaffId"
-                  value={row.courseStaffId}
-                />
-                <div className="row">
-                  <button className="button button--danger" type="submit">
-                    Remove course-wide access
-                  </button>
-                </div>
-              </form>
-            </Dialog>
+            /* Wrapped in the same container as the pair below, so a one-button
+               row and a two-button row put their trailing button in the same
+               place instead of one sitting flush and the other indented. */
+            <div className="table-actions">
+              <Dialog
+                variant="danger"
+                className="button--small"
+                label="Remove"
+                title={`Remove ${row.user.displayName} from this course?`}
+                description="They lose access to every section of this course. Sections they were added to individually keep them, and nothing they already did is deleted."
+              >
+                <form action={onRevoke}>
+                  <input
+                    type="hidden"
+                    name="courseStaffId"
+                    value={row.courseStaffId}
+                  />
+                  <div className="row">
+                    <button className="button button--danger" type="submit">
+                      Remove course-wide access
+                    </button>
+                  </div>
+                </form>
+              </Dialog>
+            </div>
           ) : row.scope === "section" ? (
-            /* A section grant is edited and revoked HERE, next to the row that
-               states it. It used to be changed only on that section's own
-               setup page, which meant the one table listing everybody was the
-               one place you could not act on them. */
-            <div className="row">
+            /* A section grant is edited and revoked HERE, next to the row
+               that states it. It used to be changed only on that section's own
+               setup page — now deleted — which meant the one table listing
+               everybody was the one place you could not act on them. */
+            <div className="table-actions">
               <EditStaffPermissions
                 action={onSaveSection}
                 displayName={row.user.displayName}
