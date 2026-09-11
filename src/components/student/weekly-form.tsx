@@ -12,15 +12,14 @@ import {
   Label,
   OwnItem,
   OwnItemBlock,
-  OwnItemNote,
   Question,
   QuestionDesc,
-  QuestionNote,
   ScaleList,
   ScaleInput,
   Select,
   Textarea,
 } from "@/components/ui/form";
+import { RequiredMark } from "@/components/ui/required-mark";
 
 /**
  * The student form. A client component for ONE reason: input must survive a
@@ -109,6 +108,30 @@ export function questionErrorAttributes(
     "aria-invalid": error ? ("true" as const) : undefined,
     "aria-describedby": describedBy,
   };
+}
+
+/**
+ * "Optional" beside a prompt, or the required asterisk on it.
+ *
+ * One helper for all three places a prompt is marked — the teacher's
+ * questions, the student's own question, the general comment — because they
+ * were three copies of the same decision and had already drifted: two said
+ * "Optional." with a full stop under the question, one said "OPTIONAL" in
+ * small caps beside it.
+ *
+ * No vertical-align override. The word is 12px against an 18px serif prompt,
+ * and `align-middle` centred it on the prompt's box, which floats it above the
+ * text it sits beside; the default baseline alignment is what "in line with
+ * the question" means.
+ */
+function PromptMark({ required }: { required: boolean }) {
+  return required ? (
+    <RequiredMark />
+  ) : (
+    <span className="ml-2 font-sans text-meta font-normal text-ink-muted">
+      Optional
+    </span>
+  );
 }
 
 export function WeeklyForm({
@@ -313,28 +336,33 @@ export function WeeklyForm({
           <Question
             key={question.id}
             legendId={legendId}
+            /*
+              Required is a red asterisk ON the prompt, the way every form a
+              student has already filled in marks it (owner, 2026-09-11) — and
+              `RequiredMark` is exactly that, already carrying the three
+              channels that let the glyph replace the word: its presence
+              against unmarked questions, a visually-hidden "required", and the
+              control's own `required` attribute.
+
+              Optional says so beside the prompt rather than under it. It used
+              to be a line of its own below the question, which gave a
+              one-word qualifier the same vertical weight as the question it
+              qualified.
+            */
             legend={
-              question.promptHtml ? (
-                <PreRenderedRichText
-                  html={question.promptHtml}
-                  className="rich-text--inline"
-                />
-              ) : (
-                question.prompt
-              )
+              <>
+                {question.promptHtml ? (
+                  <PreRenderedRichText
+                    html={question.promptHtml}
+                    className="rich-text--inline"
+                  />
+                ) : (
+                  question.prompt
+                )}
+                <PromptMark required={question.required} />
+              </>
             }
           >
-            <QuestionNote>
-              <span
-                className={
-                  question.required
-                    ? "text-meta font-bold uppercase tracking-[0.04em] text-ink-soft"
-                    : "text-meta font-normal text-ink-muted"
-                }
-              >
-                {question.required ? "Required" : "Optional"}
-              </span>
-            </QuestionNote>
             {(question.descriptionHtml || question.description) && (
               <div id={`desc-${question.id}`}>
                 <QuestionDesc>
@@ -468,17 +496,13 @@ export function WeeklyForm({
 
       {config.maxStudentQuestions > 0 && (
         <OwnItem
-          legend={config.studentQuestionPrompt ?? "Anything you want to raise?"}
+          legend={
+            <>
+              {config.studentQuestionPrompt ?? "Anything you want to raise?"}
+              <PromptMark required={false} />
+            </>
+          }
         >
-          {/* Just whether it is required. The sentence that followed —
-              "Staff may reply privately, or rewrite the question and answer it
-              for the whole class — never with your name or your own wording."
-              — is gone at the owner's request (2026-09-11). */}
-          <OwnItemNote>
-            <span className="text-meta font-normal text-ink-muted">
-              Optional.
-            </span>
-          </OwnItemNote>
 
           {questionItems.map((item, index) => {
             const refused = item.itemId ? rejected.has(item.itemId) : false;
@@ -504,9 +528,14 @@ export function WeeklyForm({
                 )}
 
                 {!item.editable && !locked && (
+                  /* Short enough for one line. It read "Staff have already
+                     replied to or published this one, so its original wording
+                     is kept as it was." — 95 characters, which cannot fit one
+                     line inside the 68ch reading measure no matter how the box
+                     is laid out, so the fix is the sentence and not the CSS
+                     (owner, 2026-09-11). */
                   <Alert variant="info">
-                    Staff have already replied to or published this one, so its
-                    original wording is kept as it was.
+                    Answered by staff, so its wording is kept as it was.
                   </Alert>
                 )}
                 {refused && (
@@ -591,19 +620,14 @@ export function WeeklyForm({
       )}
 
       {config.generalCommentEnabled && commentItem && (
-        <OwnItem legend={config.generalCommentPrompt ?? "Anything else?"}>
-          <OwnItemNote>
-            <span
-              className={
-                config.generalCommentRequired
-                  ? "text-meta font-bold uppercase tracking-[0.04em] text-ink-soft"
-                  : "text-meta font-normal text-ink-muted"
-              }
-            >
-              {config.generalCommentRequired ? "Required." : "Optional."}
-            </span>
-            {/* "Never published to the class." removed (owner, 2026-09-11). */}
-          </OwnItemNote>
+        <OwnItem
+          legend={
+            <>
+              {config.generalCommentPrompt ?? "Anything else?"}
+              <PromptMark required={config.generalCommentRequired} />
+            </>
+          }
+        >
           <div className="grid gap-tight">
             <label className="visually-hidden" htmlFor="general_comment">
               General comment
@@ -638,11 +662,6 @@ export function WeeklyForm({
             "mt-6 flex flex-wrap items-center justify-between gap-4 border-t-2 border-t-rule-ink pt-6 max-md:flex-col-reverse max-md:items-stretch"
           }
         >
-          {/* No `max-w-[44ch]`. The clamp wrapped "Submitted · last edited …
-              You can keep editing until Sunday 13 Sept, 11:59 pm." after a
-              few words while the bar beside it sat half empty — and it was an
-              ad-hoc geometry value of the kind §7 greps for. The flex row
-              already keeps it off the buttons. */}
           <p className="text-ui-sm text-ink-muted">
             This is a preview. Students see a submit button here.
           </p>
@@ -653,7 +672,17 @@ export function WeeklyForm({
             "mt-6 flex flex-wrap items-center justify-between gap-4 border-t-2 border-t-rule-ink pt-6 max-md:flex-col-reverse max-md:items-stretch"
           }
         >
-          <p className={"max-w-[44ch] text-ui-sm text-ink-muted"}>
+          {/*
+            `basis-full`, and no `max-w-[44ch]`.
+
+            Two faults, one line. The clamp broke "Submitted. You can keep
+            editing until Sunday 13 Sept, 11:59 pm." after about half of it,
+            and it was an ad-hoc geometry value of the kind §7 greps for. Even
+            unclamped it would still wrap, because it was a flex item beside
+            the Save and Submit buttons and lost the width contest on anything
+            but a very wide panel — so it takes a row of its own.
+          */}
+          <p className="basis-full text-ui-sm text-ink-muted">
             {locked ? (
               <>This form is closed, so it can no longer be changed.</>
             ) : lifecycle === "submitted" ? (

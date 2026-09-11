@@ -367,16 +367,28 @@ export default async function StudentFormPage({
           deadline is in the status line beside the title and stated in full by
           the submit bar.
         */
-        <MetaList
-          items={[
-            sequenceLabel,
-            focusLabel ? `Focus: ${focusLabel}` : null,
-            topicTitle && topicTitle !== focusLabel ? topicTitle : null,
-            /* The section, only when the student is in more than one class
-               list this form went to — otherwise it tells them nothing. */
-            showSectionLabel ? sectionTitle : null,
-          ]}
-        />
+        <>
+          {/* The week, said loudly. A student opening this needs to know WHICH
+              week they are answering before anything else on the page, and as
+              one item in a dot-separated meta line it was the same size as the
+              focus and the section beside it. `--text-title` is the step below
+              the page title, in the same serif, so it reads as the title's
+              subject rather than as a second heading competing with it. */}
+          {sequenceLabel && (
+            <p className="font-document text-title font-bold text-ink">
+              {sequenceLabel}
+            </p>
+          )}
+          <MetaList
+            items={[
+              focusLabel ? `Focus: ${focusLabel}` : null,
+              topicTitle && topicTitle !== focusLabel ? topicTitle : null,
+              /* The section, only when the student is in more than one class
+                 list this form went to — otherwise it tells them nothing. */
+              showSectionLabel ? sectionTitle : null,
+            ]}
+          />
+        </>
       }
       status={
         <>
