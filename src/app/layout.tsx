@@ -5,6 +5,7 @@ import localFont from "next/font/local";
 // unpositioned spans. Loaded here, once, rather than per page.
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import { BOARD } from "@/lib/theme";
 
 /**
  * Charter is the document register: text a person wrote, and the titles of the
@@ -18,7 +19,12 @@ const documentFace = localFont({
     { path: "./fonts/XCharter-Italic.woff2", weight: "400", style: "italic" },
     { path: "./fonts/XCharter-Bold.woff2", weight: "700", style: "normal" },
   ],
-  variable: "--font-document",
+  /**
+   * The FACE, not the register. `--font-document` is the Tailwind theme token
+   * (globals.css `@theme`) holding the whole stack — this face plus its
+   * fallbacks — so the two cannot share a name without one shadowing the other.
+   */
+  variable: "--font-document-face",
   display: "swap",
   fallback: [
     "Charter",
@@ -36,7 +42,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f1f0ee",
+  /* `--color-board`, by way of the one module allowed to restate a token value.
+     A test holds the two together; see src/lib/theme.ts. When dark mode lands
+     this becomes the two-entry `prefers-color-scheme` form (DESIGN-TODO §6.4). */
+  themeColor: BOARD,
   width: "device-width",
   initialScale: 1,
 };
