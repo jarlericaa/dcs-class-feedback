@@ -113,6 +113,38 @@
   --color-red-tint: #fdfbfc;
 
   /**
+   * Question-category flair — **owner decision, 2026-09-12.**
+   *
+   * DESIGN.md §3 said "categories carry no colour", and for every other
+   * category rendering in the app it still does: `Category` in `status.tsx` is
+   * a word plus a drawn silhouette and is unchanged. What the owner asked for
+   * is a Reddit-style flair on the RESPONSES screen specifically, where a
+   * teacher scans a column of student questions and wants the topic to
+   * separate at a glance.
+   *
+   * Three things keep this from becoming the rejected rainbow. There are four
+   * families and they are assigned by MEANING, not cycled per value, so a
+   * category always has the same one. Every family is a wash with its own deep
+   * ink at ≥ 7:1, so the word is the channel that carries meaning and the hue
+   * is reinforcement — it survives grayscale exactly as a neutral chip would.
+   * And they live here rather than in the route, so there is one place to
+   * change them and no hex literal in a component.
+   *
+   * `logistics` deliberately reuses the amber family rather than minting a
+   * fifth: amber already means "notice this" and the two never appear as a
+   * status and a category in the same slot.
+   */
+  --color-cat-content: #1c4f7c;
+  --color-cat-content-wash: #e7eef5;
+  --color-cat-content-edge: #c2d4e4;
+  --color-cat-assessment: #5c3a70;
+  --color-cat-assessment-wash: #f0e9f4;
+  --color-cat-assessment-edge: #d7c8e0;
+  --color-cat-other: #3f4a52;
+  --color-cat-other-wash: #eceef1;
+  --color-cat-other-edge: #ccd3d9;
+
+  /**
    * The PRESSED step, one below each family's hover (§12.1).
    *
    * The stylesheet had no `:active` anywhere, so every control went rest →

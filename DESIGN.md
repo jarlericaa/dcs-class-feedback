@@ -528,13 +528,33 @@ palette:
 4. **The top bar stays white.** The rail is a *ground* the interface stands on,
    not a stripe of paint across the chrome — §11.4's actual target.
 
-### Categories carry no colour
+### Categories carry no colour — except one fenced flair
 
 There are exactly three question categories in the domain (`content`,
-`logistics`, `misc`). They render as a word in the interface register with a
-distinct 8px shape — square, triangle, circle — not as a colour. A rainbow of
-category hues is a rejected pattern: it reads as decoration, it fails in
-grayscale, and it competes with the two signals.
+`logistics`, `misc`). Everywhere in the app they render through `Category` in
+`status.tsx` as a word in the interface register with a distinct 8px shape —
+square, triangle, circle — not as a colour. A rainbow of category hues is a
+rejected pattern: it reads as decoration, it fails in grayscale, and it
+competes with the two signals.
+
+**The Responses flair is the one exception — owner decision, 2026-09-12.** On
+the Responses screen a teacher scans a column of student questions and asked
+for the topic to separate at a glance, Reddit-flair style. `CategoryFlair` in
+`teach/courses/[id]/responses/parts.tsx` is that flair and the only coloured
+category in the system; `Category` is untouched and still governs everywhere
+else.
+
+Four things fence it, and they are what make it an exception rather than a
+return to the rejected pattern:
+
+| Constraint | Why |
+|---|---|
+| Four families, assigned by **meaning** (`content` blue, `logistics` amber, `assessment` violet, everything else slate) | a category always wears the same hue; nothing is cycled per value |
+| Declared once as `--color-cat-*` in `globals.css` | no hex in a component, one place to change |
+| Each is a **wash with its own deep ink at ≥ 7:1** | the WORD carries the meaning, so it survives grayscale exactly as the neutral chip did |
+| It is still not a `Stamp` | a category says what a question is *about*; the stamp beside it says what the question still *needs*, and the two keep different shapes and vocabularies |
+
+`logistics` reuses the existing amber family rather than minting a fifth.
 
 ---
 
@@ -990,7 +1010,10 @@ Hard rules. Each one is currently satisfied; breaking one is a regression.
    bar. The rail's ground is **not** the accent: it is its own token, and the
    accent is unreadable on it (§3). This is how it stayed meaningful; spending it everywhere is how the
    previous version stopped meaning anything.
-6. No category colour spectrum. Categories are words plus shapes.
+6. No category colour spectrum. Categories are words plus shapes — with the
+   single fenced exception of the Responses `CategoryFlair` (§3), which is four
+   meaning-assigned washes declared as tokens, never a spectrum and never
+   colour alone.
 7. No coloured `border-left` above 1px.
 8. No decorative illustration, hero metric, sparkline, progress ring, or
    dashboard tile that is not a real count.

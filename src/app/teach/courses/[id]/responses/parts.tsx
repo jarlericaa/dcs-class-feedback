@@ -156,7 +156,12 @@ export type Aggregate =
       responded: number;
       skipped: number;
     }
-  | { kind: "prose"; entries: QuestionEntry[]; responded: number; skipped: number };
+  | {
+      kind: "prose";
+      entries: QuestionEntry[];
+      responded: number;
+      skipped: number;
+    };
 
 /**
  * One question, read across every student who was asked it.
@@ -387,6 +392,32 @@ function ViewOption({
 /* ========================================================================== */
 
 /**
+ * A scope fact that is not a choice — the form's name when a course runs only
+ * one of them.
+ *
+ * It takes the SELECT's geometry, not a label's: same 38px control height, same
+ * 6px radius, same paper fill and hairline, same interface type, so it sits in
+ * the control cluster as a peer of the week selector rather than as bold text
+ * floating beside it. What it deliberately does not take is a caret, a hover or
+ * a focus ring — there is nothing to open, and a control that looks clickable
+ * and is not is worse than a plain word. It is not greyed out either: the fact
+ * is current, it is simply not a decision.
+ */
+export function ScopeChip({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex min-h-control items-center rounded-control",
+        "border border-control-edge bg-paper px-control-pad",
+        "font-sans text-ui text-ink",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
  * The sheet every region of this page is drawn on. `.notice`'s geometry.
  *
  * `tone` draws a 3px batten down the sheet's left edge — green for a normal
@@ -402,6 +433,7 @@ export function Sheet({
   title,
   aside,
   tone,
+  flush,
 }: {
   children: ReactNode;
   className?: string;
@@ -410,6 +442,8 @@ export function Sheet({
   /** sits opposite the title — a stamp, a figure, a count */
   aside?: ReactNode;
   tone?: "accent" | "critical";
+  /** the body owns its own padding: a list of rows that rule to the edges */
+  flush?: boolean;
 }) {
   return (
     <section
@@ -421,7 +455,7 @@ export function Sheet({
             "before:w-[3px] before:rounded-l-panel before:content-['']",
             tone === "accent" ? "before:bg-accent" : "before:bg-red",
           ),
-        title === undefined ? "p-6" : "",
+        title === undefined && !flush ? "p-6" : "",
         className,
       )}
     >
@@ -433,7 +467,11 @@ export function Sheet({
           {aside}
         </div>
       )}
-      {title === undefined ? children : <div className="p-6">{children}</div>}
+      {title === undefined || flush ? (
+        children
+      ) : (
+        <div className="p-6">{children}</div>
+      )}
     </section>
   );
 }
@@ -718,6 +756,14 @@ function ScaleFigure({
  * mislead — a flat 3 and a class split between 1 and 5 average the same — so
  * the distribution is not optional beside it.
  *
+ * **No track behind the bars.** Each bucket used to sit inside a full-height
+ * `--board-deep` rectangle, so a scale where four of five buckets held nothing
+ * drew five equal-height columns and the one real answer was told apart only by
+ * its colour. That is not a column chart; it is five boxes. The plot area is
+ * now transparent, every bar grows from a shared baseline in proportion to the
+ * tallest bucket, and a bucket with no answers draws nothing at all — which is
+ * the honest picture of "nobody chose this".
+ *
  * Columns are `--spacing-scale-cell` wide, the step the system already uses for
  * a scale's cells, rather than stretched across the sheet: five 200px blocks
  * were a wall of colour that said nothing five 58px ones do not.
@@ -749,7 +795,11 @@ export function ScaleSummary({
             <span className="font-sans text-meta tabular-nums text-ink-muted">
               {bucket.count} ({percent}%)
             </span>
-            <span className="block h-12 w-full rounded-[2px] bg-board-deep">
+            {/* The plot area: transparent, with one hairline for the baseline
+                the bars stand on. A zero bucket draws a zero-height rect,
+                which is nothing — no box, no colour, no false equivalence
+                with the bucket beside it that actually has answers. */}
+            <span className="block h-12 w-full border-b border-rule">
               <svg
                 aria-hidden="true"
                 className="block h-full w-full"
@@ -780,10 +830,14 @@ export function ScaleSummary({
  * Written answers, under the one prompt that asked for them.
  *
  * The prompt is printed once by `QuestionBlock` above; repeating it per student
- * is what made the old feed unreadable for this question. Each answer is one
- * quoted line with its provenance held quiet beside it — the words are what the
- * reader came for, and a stack of metadata chips under every one of them made
- * the metadata the louder half.
+ * is what made the old feed unreadable for this question.
+ *
+ * **No provenance on these rows.** This view answers "what did the class say",
+ * and a section and a timestamp beside every line answered a question nobody
+ * reading by question is asking — while taking the eye off the words, which
+ * are the entire point. Who said it, and when, belong to that student's own
+ * submission, which is one click away through the by-submission list. The data
+ * is still carried on `QuestionEntry`; it is simply not printed here.
  */
 export function ProseAnswers({
   entries,
@@ -812,7 +866,7 @@ export function ProseAnswers({
   const rest = matching.slice(limit);
   return (
     <div className="grid gap-3">
-      <ul className="m-0 grid list-none gap-0 p-0">
+      <ul className="m-0 grid list-none gap-2 p-0">
         {shown.map((entry) => (
           <ProseAnswer entry={entry} key={entry.responseId} />
         ))}
@@ -843,7 +897,7 @@ export function ProseAnswers({
               size={15}
             />
           </summary>
-          <ul className="m-0 mt-1 grid list-none gap-0 p-0">
+          <ul className="m-0 mt-2 grid list-none gap-2 p-0">
             {rest.map((entry) => (
               <ProseAnswer entry={entry} key={entry.responseId} />
             ))}
@@ -854,27 +908,27 @@ export function ProseAnswers({
   );
 }
 
+/**
+ * One written answer, as its own contained row.
+ *
+ * A bordered quiet-paper block rather than divider-separated paragraphs: a run
+ * of answers to the same prompt needs to read as a list of separate people's
+ * replies, and a hairline between two paragraphs of the same serif did not do
+ * that. It carries no quotation marks — the container is the quoting — and no
+ * name, section or timestamp, because this view is what the class said and the
+ * provenance belongs to the submission behind it.
+ */
 function ProseAnswer({ entry }: { entry: QuestionEntry }) {
-  /* Two facts, one separator — the single case DESIGN.md §14 allows, and the
-     only two the approved design carries here. The student's NAME is not one
-     of them: this view is what the class said, the submission behind it is who
-     said it, and the reader is one click from that either way. */
-  const meta = [entry.sectionTitle, entry.when].filter(Boolean).join(" · ");
   return (
-    <li
-      className={cn(
-        "flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1",
-        "border-b border-rule py-2.5 first:pt-0 last:border-b-0 last:pb-0",
-      )}
-    >
-      <blockquote className="m-0 min-w-0 max-w-measure flex-1 font-document text-doc-dense text-ink">
-        &ldquo;{entry.answer.freeText}&rdquo;
+    <li>
+      <blockquote
+        className={cn(
+          "m-0 max-w-measure rounded-control border border-rule bg-paper-quiet",
+          "px-4 py-2.5 font-document text-doc-dense text-ink",
+        )}
+      >
+        {entry.answer.freeText}
       </blockquote>
-      {meta && (
-        <span className="shrink-0 font-sans text-meta tabular-nums text-ink-muted">
-          {meta}
-        </span>
-      )}
     </li>
   );
 }
@@ -913,18 +967,47 @@ export function ItemStamp({
 /**
  * A question's category, as restrained flair.
  *
- * Tracked caps in the strip register inside one neutral box — no hue, no shape,
- * and identical geometry whatever the word is. A category is not a status: it
- * says what the question is ABOUT, while the stamp beside it says what the
- * question still NEEDS, and the two must never be mistakable for each other.
- * That is why this deliberately does not borrow `Stamp`'s tones, and why the
- * eight-hue category spectrum this app used to run is not coming back.
+ * **Coloured, by owner decision on 2026-09-12**, and this is the one place in
+ * the app where a category is. `Category` in `status.tsx` — the word plus a
+ * drawn silhouette — is untouched and still governs everywhere else; DESIGN.md
+ * §3 records the exception rather than being quietly contradicted by it.
+ *
+ * What the colour is allowed to be is fenced. Four washed families assigned by
+ * MEANING (`--color-cat-*`, declared once in `globals.css`), each with its own
+ * deep ink at 7:1 or better, so the WORD still carries the meaning and the hue
+ * only makes it findable in a column — it survives grayscale exactly as the
+ * neutral chip it replaced did. Not eight hues, not one per value as they
+ * arrive, and no literal in this file.
+ *
+ * A category is still not a status: it says what the question is ABOUT, while
+ * the stamp beside it says what the question still NEEDS. They keep different
+ * shapes (`--radius-stamp` with no mark here, a marked `Stamp` there) and
+ * different vocabularies for that reason.
  *
  * It hugs its own content by default. A LIST passes `w-full` so that every
  * flair fills the same fixed column and CONTENT and LOGISTICS put the question
  * text at exactly the same x — the width belongs to the row's grid, not to the
  * flair, or the flair stretches to whatever container it lands in next.
  */
+/**
+ * The four category families, by MEANING.
+ *
+ * A map rather than a cycle: `content` is always the blue one, whatever order
+ * the questions arrive in, so the colour is a fact about the category and not
+ * about its position in a list. An unknown slug falls to the neutral family
+ * rather than inventing a hue — a category nobody has named should not arrive
+ * wearing a colour nobody chose.
+ */
+const CATEGORY_TONE: Record<string, string> = {
+  content: "border-cat-content-edge bg-cat-content-wash text-cat-content",
+  logistics: "border-amber-edge bg-amber-wash text-amber-deep",
+  assessment:
+    "border-cat-assessment-edge bg-cat-assessment-wash text-cat-assessment",
+  misc: "border-cat-other-edge bg-cat-other-wash text-cat-other",
+};
+const CATEGORY_FALLBACK =
+  "border-cat-other-edge bg-cat-other-wash text-cat-other";
+
 export function CategoryFlair({
   value,
   className,
@@ -936,8 +1019,9 @@ export function CategoryFlair({
     <span
       className={cn(
         "inline-flex h-6 items-center justify-center px-2",
-        "rounded-stamp border border-rule bg-paper-quiet",
-        "font-sans text-strip uppercase text-ink-soft",
+        "rounded-stamp border",
+        "font-sans text-strip uppercase",
+        CATEGORY_TONE[value ?? ""] ?? CATEGORY_FALLBACK,
         className,
       )}
     >
@@ -1210,18 +1294,16 @@ function SubmittedAnswer({ question }: { question: AnswerRow }) {
   }
 
   if (PROSE_TYPES.has(question.type)) {
-    /* A filled field, the way the student typed it into one. `LongText` still
-       clamps an essay so one answer cannot bury the two below it — but its
-       `.post__words` quote rule is dropped here: the box already says "this is
-       what they wrote", and a rule inside it is a second container drawing the
-       same boundary. */
+    /* Read-only, and it has to LOOK read-only.
+
+       This was a rounded, hairline-bordered box — which is the recipe for a
+       textarea in this system, so a teacher's eye read the student's answer as
+       a field they could type into. It is the authored-text treatment instead:
+       quiet paper, the 1px quote rule and indent `.post__words` already
+       carries, no radius and no control border. `LongText` still clamps an
+       essay so one answer cannot bury the two below it. */
     return (
-      <div
-        className={cn(
-          "max-w-measure rounded-control border border-rule bg-paper-quiet px-3 py-2",
-          "[&_.post__words]:border-l-0 [&_.post__words]:pl-0",
-        )}
-      >
+      <div className="max-w-measure bg-paper-quiet py-2 pr-3">
         <LongText text={question.freeText ?? ""} />
       </div>
     );
@@ -1230,7 +1312,9 @@ function SubmittedAnswer({ question }: { question: AnswerRow }) {
   const scale = question.type === "linear_scale" ? scaleOf(question) : null;
   const value = (question.value ?? {}) as { scaleValue?: number };
   if (scale && value.scaleValue !== undefined) {
-    return <ScaleAnswer max={scale.max} min={scale.min} value={value.scaleValue} />;
+    return (
+      <ScaleAnswer max={scale.max} min={scale.min} value={value.scaleValue} />
+    );
   }
 
   const chosen = chosenValues(question);
@@ -1290,8 +1374,14 @@ export function ScaleAnswer({
 }) {
   const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
   return (
-    <p className="flex max-w-measure flex-wrap items-end gap-x-4 gap-y-2">
-      <span aria-hidden="true" className="grid min-w-0 flex-1 gap-1">
+    <p className="flex flex-wrap items-end gap-x-3 gap-y-2">
+      <span
+        aria-hidden="true"
+        /* Capped rather than stretched to the measure: the number reads as the
+           segments' value, and a column of whitespace between the two made it
+           float free of the thing it describes. */
+        className="grid min-w-0 max-w-[22rem] flex-1 gap-1"
+      >
         <span className="flex gap-1">
           {steps.map((step) => (
             <span
@@ -1323,6 +1413,22 @@ export function ScaleAnswer({
       <span className="font-sans text-ui font-semibold tabular-nums text-ink">
         {value} / {max}
       </span>
+    </p>
+  );
+}
+
+/**
+ * The staff answer itself — the thing the Instructor response section is for.
+ *
+ * Set one step up from `.thread__body` in the document register and given room
+ * above it, because everything else in that message (a mark, a name, a
+ * relative time, a stamp) is machine text ABOUT the answer, and it was reading
+ * at the same weight as the answer.
+ */
+export function AnswerBody({ children }: { children: ReactNode }) {
+  return (
+    <p className="mt-2 max-w-measure font-document text-doc-staff text-ink">
+      {children}
     </p>
   );
 }
@@ -1369,7 +1475,13 @@ export function SubmissionHeader({
         <span className="block text-ink-soft">Submitted</span>
         <span className="block whitespace-nowrap">{submitted}</span>
       </p>
-      {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
+      {action && (
+        /* Wraps, and does not `shrink-0`. Two controls side by side — `Mark as
+           unread` beside `Invalidate submission` — are wider than a 320px
+           phone's content column, and an unshrinkable row of them pushed the
+           page into horizontal scroll. */
+        <div className="flex flex-wrap items-center gap-2">{action}</div>
+      )}
     </Sheet>
   );
 }
