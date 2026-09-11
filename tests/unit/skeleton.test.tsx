@@ -106,14 +106,20 @@ describe("each skeleton matches its own page", () => {
     expect(occurrences(markup, "rounded-panel border border-rule bg-paper p-6")).toBe(4);
   });
 
-  it("responses leads with its selectors at the real control height", () => {
+  it("responses leads with its view switch and selectors at real heights", () => {
     const markup = renderToStaticMarkup(<ResponsesLoading />);
     // 38px — if this were the 41px the buttons used to be, the whole list
     // below it would sit three pixels low and then jump (§12h.2c).
     // Three controls, each carrying `min-h-control` AND `h-control`; counted on
     // the `min-` form because `h-control` is a substring of it.
     expect(occurrences(markup, "min-h-control")).toBe(3);
-    expect(occurrences(markup, "h-control")).toBe(6);
+    // Seven, not six: the three selectors contribute two each, and the By
+    // question / By submission segment above them contributes one more as
+    // `h-control-compact` — 34px, which is what `ViewSwitch` actually draws.
+    // The segment has to be here or the selectors and everything under them
+    // jump down by its height when the real page lands.
+    expect(occurrences(markup, "h-control")).toBe(7);
+    expect(occurrences(markup, "h-control-compact")).toBe(1);
   });
 
   it("the root fallback predicts nothing it cannot know", () => {

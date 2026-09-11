@@ -534,6 +534,15 @@ async function reviewQueue(
         type: question.type,
         required: question.required,
         displayOrder: question.displayOrder,
+        /**
+         * The authored choice list, `[{ stableId, label }]`.
+         *
+         * Carried so the by-question view can show an option NOBODY picked. An
+         * aggregate built only from the answers given cannot tell "no student
+         * chose Too fast" from "the question never offered it", and a
+         * distribution missing its zero rows is a misleading one.
+         */
+        options: question.options,
         scale: question.scale,
         answered: !!answer,
         value: answer?.value ?? null,
@@ -550,6 +559,13 @@ async function reviewQueue(
         validity: response.validity,
         invalidationReason: response.invalidationReason,
         invalidationNote: response.invalidationNote,
+        /**
+         * The one sentence a human typed FOR the student, kept apart from
+         * `invalidationNote` so an internal note can never leak by accident.
+         * Staff-facing here: the review surface states what the student was
+         * told, which is the fact a reader reversing a decision needs.
+         */
+        studentVisibleReason: response.studentVisibleReason,
       },
       student: record
         ? { fullName: record.fullName, studentNumber: record.studentNumber }
