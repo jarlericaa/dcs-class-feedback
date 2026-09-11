@@ -31,12 +31,12 @@ export function AutoSubmitSelect({
   /**
    * Container-specific sizing.
    *
-   * This control appears in three places that each wanted a different width,
-   * and the stylesheet said so by descendant selector — `.feedbar__line
-   * .select-field` capped it at 22ch while `.ws-list__primary .select-field`
-   * let it fill. Once the select renders utilities rather than `.select-field`
-   * those rules match nothing, so the override has to travel with the call
-   * (§3.2). Passing nothing keeps the component's own full-width default.
+   * This control appears in several places that each want a different width,
+   * and the stylesheet used to say so by descendant selector — the responses
+   * bar capped it at 22ch while `.ws-list__primary .select-field` let it fill.
+   * Once the select renders utilities rather than `.select-field` those rules
+   * match nothing, so the override travels with the call (§3.2). Passing
+   * nothing keeps the component's own full-width default.
    */
   className?: string;
   children: ReactNode;

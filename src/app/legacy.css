@@ -2244,36 +2244,31 @@ kbd {
 /* --- detail pane and single-column pages ---------------------------------- */
 
 /* ==========================================================================
-   The review column — one week of responses, as posts
+   Responses — what is left of the old review column
+   ==========================================================================
+
+   The review feed this section used to style is gone. Responses is now two
+   views over one week — by question and by submission — and both are built
+   from `src/app/teach/courses/[id]/responses/parts.tsx` with utilities and
+   tokens, per §13's rule that nothing new goes in this file.
+
+   Deleted with the feed: `.feedbar`, `.feedbar__line`, `.feedbar__status`
+   (and the "N responses shown / nothing waiting" line it drew), `.feed`,
+   `.post` and its card/column/status-edge rules, `.post__item`/`__ask`/
+   `__prompt`/`__askdesc`/`__blank`/`__itemmeta`, the `.meters`/`.meter`
+   compact answer block, `.post__foot`/`.post__validity`, and the container
+   query that keyed off `.post`. Roughly 450 lines.
+
+   What survives is what is still rendered, and only that:
    ========================================================================== */
 
 /**
- * The bar above the column. Sticky, because the controls and the count of what
- * is left are the map that a list pane used to be, and they have to stay in
- * reach thirty posts down.
+ * The search composite: a bordered 38px box holding an icon and a bare input.
+ *
+ * Used by the by-submission search and by the per-question search on a long
+ * answer. It is a COMPOSITE, which is why the focus rules below are the way
+ * they are — see the note on the ring.
  */
-/* The filters sit at the top of the column and scroll away with it.
-   They used to stick under the top bar for the whole scroll, which meant a
-   band of controls permanently occupying the first ~100px of a reading column
-   — and the thing being read is prose, chosen once at the top and then read
-   to the end. Choosing a week is not something a reader does mid-response. */
-.feedbar {
-  margin-bottom: var(--s5);
-  padding: var(--s3) 0;
-  border-bottom: 1px solid var(--rule-strong);
-}
-/* The scope on its own line, the search under it. Two decisions, in the order
-   they are made: which form am I reading, then what am I looking for in it. */
-/* Same redundancy as `.ws-list__primary .select-field` above. */
-.feedbar__line {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  flex-wrap: wrap;
-  margin-top: var(--s2);
-}
-/* `.feedbar__line .select-field { max-width: 22ch }` — the one non-redundant
-   width override; it travelled to `AutoSubmitSelect`'s call site (§3.2). */
 .feedbar__search {
   display: flex;
   align-items: center;
@@ -2337,246 +2332,10 @@ kbd {
      control. */
   outline: none;
 }
-.feedbar__status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--s1) var(--s4);
-  margin-top: var(--s2);
-  color: var(--ink-muted);
-  font-size: 13px;
-}
-.feedbar__status strong {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-.feedbar__waiting {
-  color: var(--amber-deep);
-  font-weight: 600;
-}
-/* How much of the week this reader has not read yet. Quieter than the
-   still-needs-a-reply figure beside it: unread is a reading position, not
-   outstanding work. */
-.feedbar__unread {
-  color: var(--ink-soft);
-  font-variant-numeric: tabular-nums;
-}
-.feedbar__status form {
-  display: contents;
-}
-
-/**
- * One sheet, ruled between rows — not a stack of cards.
- *
- * Thirty bordered boxes down a column is thirty containers competing with the
- * one thing that matters, which is the reading. A hairline is enough to say
- * where one student ends and the next begins.
- */
-/* A stack of separate responses, not one panel of rows.
-   Padding and a stronger hairline were not enough to say where one response
-   ended and the next began — read in bulk they still ran together. So each
-   response is now its own surface with real space around it, and the feed is
-   just the spacing that holds them apart. The earlier note here argued
-   against thirty bordered cards competing with the words; the gap is what
-   makes that survivable — the cards are separated by air rather than stacked
-   edge to edge, so the eye reads one block at a time. */
-.feed {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s5);
-  /* The rows respond to the FEED's width, not the window's: two navigation
-     columns sit to the left of it, so the viewport says nothing useful about
-     how much room a row actually has. */
-  container-type: inline-size;
-}
-
-/**
- * One post: one student, one occurrence. Flat paper squared to the board, like
- * every other sheet in this system — a feed is a reading order, not a licence
- * for a different kind of container.
- */
-/**
- * One student's response: who, what they said, and when — in three columns, so
- * the marks and the dates line up down the page and can be compared without
- * reading the rows between them.
- */
-.post {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  gap: 2px var(--s4);
-  /* Roomier vertically than horizontally, and deliberately so. A column read
-     in bulk was reported as cramped: the hairline said where one student ended,
-     but nothing gave the reading room to breathe, so thirty responses ran
-     together into one wall. The rule stays a hairline — thirty bordered cards
-     would be thirty containers competing with the words — and the SPACE does
-     the separating instead. */
-  /* Tightened so a whole response fits one screen: the card edge and the gap
-     between cards already do the separating, so the padding no longer has to. */
-  padding: var(--s4);
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-panel);
-  /* The status edge is always 3px and always present, so the unread and
-     waiting markers change COLOUR, not geometry: an edge that only appeared
-     while something was waiting would shift each row sideways by its own
-     width. It defaults to the card's own rule, so a settled response simply
-     looks like a card. */
-  border-left: 3px solid var(--rule);
-  /* Clears the sticky top bar (52px) and no more: the filter bar above used to
-     be sticky too, and this offset was sized for both. */
-  scroll-margin-top: 68px;
-}
-/* No divider between posts any more: each one is a card, and the gap between
-   them is the division. A border-top here would draw a line across the air. */
-/* Who, then when, then what they said — in that order at every width. */
-.post__ident {
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
-}
-.post__content {
-  grid-column: 2;
-  min-width: 0;
-}
-/* Who it is from, and when — top-aligned, so a long row does not strand them
-   in the middle of the whitespace beside it. */
-.post__stamp {
-  grid-column: 3;
-  grid-row: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--s1);
-  text-align: right;
-}
-.post__stamp-label {
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-.post__stamp-when {
-  color: var(--ink-soft);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.post--invalid {
-  background: var(--paper-quiet);
-}
-/**
- * Not read yet, by THIS reader.
- *
- * A left edge rather than a fill or a weight change: the amber edge is already
- * the column's language for "this one is on you" (see `.post--waiting`), and a
- * tinted background would fight the one `.post--invalid` uses to say something
- * far more consequential. Where a post is both unread and waiting, waiting
- * wins the edge — it is the stronger claim — so this rule comes first and is
- * overridden below.
- */
-.post--unread {
-  border-left-color: var(--rule-ink);
-}
-/* Waiting outranks unread on the edge: "somebody is owed a reply" is a
-   stronger claim on a reader than "you have not read this yet". */
-.post--waiting {
-  border-left-color: var(--amber);
-}
-.post--unread .post__who {
-  /* The name carries the weight, the way an unread row does in a mail client.
-     Nothing is hidden and nothing moves: only the ink changes. */
-  color: var(--ink);
-}
-.post__mark {
-  grid-column: 1;
-  grid-row: 1;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--r-control);
-  color: var(--ink-soft);
-  background: var(--board-deep);
-  font-size: 12px;
-  font-weight: 700;
-}
-.post__who {
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-.post__quiet {
-  margin-top: var(--s4);
-  padding-top: var(--s4);
-  border-top: 1px solid var(--rule);
-  color: var(--ink-muted);
-  font-size: 13px;
-}
-
 /* --- one student-written item inside a post ------------------------------- */
 
 /* The form answers now sit above, so every question is separated from what
    precedes it — not only from a sibling question. */
-.post__item {
-  margin-top: var(--s4);
-  padding-top: var(--s4);
-  border-top: 1px solid var(--rule);
-}
-
-/**
- * The question, above the answer to it.
- *
- * Three levels, and they have to be tellable apart at a glance: the PROMPT
- * (what was asked), its HELP TEXT (smaller, quieter), and the ANSWER (the
- * student's own words, in the serif, behind a rule). The prompt is set in the
- * same register the student read it in — it is a person's writing, not the
- * system speaking — one step down in size so that in a column of thirty posts
- * the answer stays the thing the eye lands on.
- */
-.post__ask {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s3);
-  margin-bottom: var(--s2);
-}
-.post__prompt {
-  min-width: 0;
-  max-width: 68ch;
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.4;
-}
-.post__askdesc {
-  margin-bottom: var(--s2);
-  max-width: 68ch;
-  color: var(--ink-muted);
-  font-size: 12px;
-}
-.post__askdesc .rich-text {
-  font-size: 12px;
-}
-/* Asked, and left empty. Stated rather than drawn as a gap: an absent row is
-   indistinguishable from a rendering fault. */
-.post__blank {
-  margin: 0;
-  color: var(--ink-muted);
-  font-size: 13px;
-  font-style: italic;
-}
-
-/**
- * A long answer, collapsed to its opening lines.
- *
- * `-webkit-line-clamp` with the legacy box model is still the only way to clamp
- * at a line count in every browser this app targets; the standard `line-clamp`
- * is listed beside it so the rule follows the property once support lands.
- * Applied only once the toggle exists (see `LongText`), so nothing is ever
- * hidden from a reader whose JavaScript has not run.
- */
 .longtext {
   display: grid;
   gap: var(--s2);
@@ -2632,24 +2391,6 @@ kbd {
   white-space: pre-wrap;
 }
 /* Above the words it describes, so it reads as a label rather than a caption. */
-.post__itemmeta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s2);
-  flex-wrap: wrap;
-  margin-bottom: var(--s2);
-  color: var(--ink-muted);
-  font-size: 12px;
-}
-/**
- * The actions on a question, as quiet text rather than buttons.
- *
- * A column of thirty posts carrying ninety bordered buttons reads as a control
- * panel; the post is already the thing being acted on, so the actions can sit
- * under it as words. The accent stays in reserve for hover and focus, which is
- * where "what do I click?" is actually being asked.
- */
 .post__actions {
   display: flex;
   align-items: center;
@@ -2696,33 +2437,6 @@ kbd {
  * page without reading the rows. Below this width it stops paying for itself —
  * the student's question is what the column is for.
  */
-@container (max-width: 720px) {
-  .post {
-    grid-template-columns: 34px minmax(0, 1fr);
-    /* The side padding buys nothing once the row is this narrow; the reading
-       measure does. */
-    padding: var(--s5) var(--s4);
-  }
-  /* A rule plus an indent costs three characters a line at this width, and the
-     serif register already says whose words these are. */
-  .post__words {
-    padding-left: var(--s3);
-  }
-  /* Under the name, not above it: the person is what the row is about, and a
-     date arriving first reads as a log entry rather than as somebody's week. */
-  .post__stamp {
-    grid-column: 2;
-    grid-row: 2;
-    flex-direction: row;
-    align-items: baseline;
-    gap: var(--s2);
-    text-align: left;
-  }
-  .post__stamp-label {
-    display: none;
-  }
-}
-
 /* --- what has already been said back -------------------------------------- */
 
 /**
@@ -2849,164 +2563,6 @@ kbd {
   overflow-wrap: anywhere;
 }
 
-/* --- the measurements ------------------------------------------------------ */
-
-/**
- * Compact answers, kept in the form's authored order. Adjacent measurements
- * share an aligned block, while each row's rule keeps one question's answer
- * distinct from the next.
- */
-.meters {
-  margin-top: var(--s3);
-  padding-top: var(--s2);
-  border-top: 1px solid var(--rule);
-}
-.meters__list {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-/**
- * One measurement: the question, then its answer underneath.
- *
- * This began as one line — question, em dash, answer pinned to the trailing
- * edge — which put the two halves of a pair at opposite ends of a wide card
- * with a dash stranded between them, and set the question at 12px muted grey
- * where it was barely readable. Two attempts to fix that within a single row
- * (a dotted leader, then weight alone) both failed the same way: a row cannot
- * be scanned as "question, answer" when the eye has to cross the whole card
- * to pair them.
- *
- * So it stacks, in the order it is read, matching the written questions in the
- * same post: the prompt, then what the student answered below it. The question
- * gets normal reading size and darker ink; the answer takes the weight. That
- * costs the old right-edge alignment down a run of measurements, which is a
- * real loss for comparing one scale across students — and the wrong thing to
- * optimise on a page whose unit is one student's response.
- */
-.meter {
-  display: grid;
-  gap: var(--s1);
-  padding: var(--s3) 0;
-}
-.meter + .meter {
-  border-top: 1px solid var(--rule);
-}
-.meter__label {
-  min-width: 0;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-/* Under the question, indented behind a rule — the same "this part is the
-   student's" signal `.post__words` uses for a written answer, so a scale and a
-   paragraph are read the same way. */
-.meter__answer {
-  display: flex;
-  align-items: center;
-  justify-self: start;
-  gap: var(--s2);
-  min-width: 0;
-  padding-left: var(--s3);
-  border-left: 1px solid var(--rule-strong);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/**
- * The cells, drawn from the question's OWN scale.
- *
- * Not decoration standing in for content (DESIGN.md §11) — the count IS the
- * content: "2" cannot say whether it sits near the bottom of the range, and
- * that is the only thing a reader scanning a column needs from it. Filled cells
- * take the ink, not the accent: this is a reading, not a call to act, and it
- * must not compete with the one control on the row that is.
- */
-.meter__cells {
-  display: inline-flex;
-  gap: 2px;
-}
-.meter__cell {
-  flex: 0 0 6px;
-  width: 6px;
-  height: 12px;
-  /* Square, like every other mark in this system. DESIGN.md §5 keeps radius for
-     controls and stamps; a 6px cell is neither, and softening it would be the
-     only rounded corner on the page. */
-  border: 1px solid var(--rule-strong);
-}
-.meter__cell--on {
-  border-color: var(--ink-faint);
-  background: var(--ink-faint);
-}
-.meter__value {
-  color: var(--ink);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.meter__value--blank {
-  color: var(--ink-faint);
-  font-style: italic;
-  font-variant-numeric: normal;
-}
-.meters__more {
-  margin-top: var(--s2);
-}
-.meters__more > summary {
-  color: var(--ink-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-.meters__more > summary:hover {
-  color: var(--ink-soft);
-}
-.meters__more .meters__list {
-  margin-top: var(--s2);
-}
-
-/* No narrow-width variant any more: stacking the answer under the question is
-   the base layout, so there is nothing left for a container query to undo. */
-
-/**
- * The foot of a post: this reader's place, and the folded destructive control.
- *
- * One row, so "mark as read" and "participation credit" are visibly the same
- * kind of thing — decisions about the response as a whole, taken after reading
- * it, rather than replies to any one question inside it.
- */
-.post__foot {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s5);
-  flex-wrap: wrap;
-  margin-top: var(--s4);
-  padding-top: var(--s3);
-  border-top: 1px solid var(--rule);
-}
-.post__validity {
-  margin-top: 0;
-}
-.post__validity > summary {
-  color: var(--ink-muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-.post__validity > summary:hover {
-  color: var(--ink-soft);
-}
-.post__validity-body {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  flex-wrap: wrap;
-  margin-top: var(--s2);
-}
-
-/* The bottom of the pile, said out loud. */
 /* --- contextual band ------------------------------------------------------ */
 
 /**

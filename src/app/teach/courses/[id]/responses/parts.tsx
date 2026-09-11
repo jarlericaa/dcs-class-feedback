@@ -1,12 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import { Category, Stamp } from "@/components/ui/status";
+import { Stamp } from "@/components/ui/status";
 import { Tag, TagList } from "@/components/ui/tag";
-import { IconChevron } from "@/components/ui/icons";
+import { IconChevron, IconForward, IconSearch } from "@/components/ui/icons";
 import { PreRenderedRichText } from "@/components/rich-text-client";
 import { LongText } from "@/components/ui/long-text";
-import { formatDateTime, initials } from "@/lib/datetime";
+import { categoryShortLabel } from "@/lib/threads";
+import { initials } from "@/lib/datetime";
 
 /**
  * The Responses tab's two axes through one week of submissions, and the
@@ -55,14 +56,22 @@ export type RenderedQuestions = Map<
   { prompt: string; description: string }
 >;
 
-/** One student's answer to one question, with only what the view may show. */
+/**
+ * One student's answer to one question, with only what the view may show.
+ *
+ * `when` arrives already formatted in the section's own timezone: this file
+ * draws, it does not decide what a date means. `who` is carried so a future
+ * surface can use it and stays null when the reader lacks
+ * `view_student_identities` — the aggregate list deliberately does not print
+ * it (see `ProseAnswer`).
+ */
 export interface QuestionEntry {
   responseId: string;
   /** null when the reader lacks `view_student_identities` */
   who: string | null;
   sectionTitle: string | null;
-  at: Date | null;
-  timezone: string;
+  /** formatted in the section's timezone, or null when never submitted */
+  when: string | null;
   answer: AnswerRow;
 }
 
@@ -301,9 +310,21 @@ export type ResponsesView = "question" | "submission";
  * Two links rather than two buttons, because the selection lives in the URL
  * like every other selection in this app (DESIGN.md §7): it is shareable, it
  * survives reload, and it needs no client state. `aria-current="page"` carries
- * the selected state independently of the fill, which is 1.1:1 against its
- * neighbour by design — a mode switch must not look like the page's primary
- * action (DESIGN.md §7a, "one primary per view").
+ * the selected state independently of the fill.
+ *
+ * **`w-fit` and `justify-self-start`, and both are load-bearing.** This shipped
+ * as a bare `inline-flex` and drew **1080px** — the entire content column, with
+ * a bordered void trailing the two labels. `inline-flex` sets the element's
+ * INNER layout; it does not stop a grid item from being stretched by the
+ * default `justify-items: stretch` of the container it sits in. `w-fit` makes
+ * the box hug its content and `justify-self-start` keeps it at the left edge,
+ * so the switch measures its two labels and nothing more at any width. Not a
+ * pixel width: the labels are what set it.
+ *
+ * The selected option takes the accent fill, which is the approved mockup's
+ * call and is legal under DESIGN.md §3 — a chosen option is "a checked choice",
+ * one of the accent's six jobs. It keeps `--radius-control`; it does not become
+ * a pill, and the page's real primary action still lives in the header.
  */
 export function ViewSwitch({
   current,
@@ -315,7 +336,10 @@ export function ViewSwitch({
   return (
     <nav
       aria-label="Responses view"
-      className="inline-flex overflow-hidden rounded-control border border-control-edge"
+      className={cn(
+        "inline-flex w-fit justify-self-start self-start",
+        "overflow-hidden rounded-control border border-control-edge",
+      )}
     >
       <ViewOption current={current === "question"} href={hrefFor("question")}>
         By question
@@ -343,12 +367,12 @@ function ViewOption({
     <Link
       aria-current={current ? "page" : undefined}
       className={cn(
-        "inline-flex min-h-control-compact items-center px-3.5",
-        "font-sans text-ui-sm font-semibold",
+        "inline-flex min-h-control-compact items-center px-4",
+        "font-sans text-ui-sm font-semibold whitespace-nowrap",
         "border-l border-control-edge first:border-l-0",
         "transition-colors duration-120 active:not-disabled:duration-0",
         current
-          ? "bg-board-deep text-ink"
+          ? "bg-accent text-on-accent"
           : "bg-paper text-ink-muted hover:bg-paper-quiet hover:text-ink",
       )}
       href={href}
@@ -362,19 +386,54 @@ function ViewOption({
 /* by question                                                                 */
 /* ========================================================================== */
 
-/** The sheet every region of this page is drawn on. `.notice`'s geometry. */
+/**
+ * The sheet every region of this page is drawn on. `.notice`'s geometry.
+ *
+ * `tone` draws a 3px batten down the sheet's left edge — green for a normal
+ * region, maroon for the invalidated one. It is the batten DESIGN.md §5
+ * sanctions: drawn INSIDE the element's own edge as a `::before`, so switching
+ * it on shifts no content and it is not a coloured `border-left` (anti-pattern
+ * 7). The approved mockup uses it to tell one region of a submission from the
+ * next without giving each its own container.
+ */
 export function Sheet({
   children,
   className,
+  title,
+  aside,
+  tone,
 }: {
   children: ReactNode;
   className?: string;
+  /** a panel title in the document register, with a hairline under it */
+  title?: ReactNode;
+  /** sits opposite the title — a stamp, a figure, a count */
+  aside?: ReactNode;
+  tone?: "accent" | "critical";
 }) {
   return (
     <section
-      className={cn("rounded-panel border border-rule bg-paper p-6", className)}
+      className={cn(
+        "rounded-panel border border-rule bg-paper",
+        tone &&
+          cn(
+            "relative before:absolute before:inset-y-0 before:left-0",
+            "before:w-[3px] before:rounded-l-panel before:content-['']",
+            tone === "accent" ? "before:bg-accent" : "before:bg-red",
+          ),
+        title === undefined ? "p-6" : "",
+        className,
+      )}
     >
-      {children}
+      {title !== undefined && (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-rule px-6 py-4">
+          <h2 className="min-w-0 font-document text-panel-title font-bold text-ink">
+            {title}
+          </h2>
+          {aside}
+        </div>
+      )}
+      {title === undefined ? children : <div className="p-6">{children}</div>}
     </section>
   );
 }
@@ -423,6 +482,11 @@ function QuestionPrompt({
  * the questions in, which is the order the student answered them and the only
  * thing that ties this block to the same question on a submission's own screen.
  * That is the exception DESIGN.md anti-pattern 12 names.
+ *
+ * A rating question puts its average in `aside`, opposite the prompt, because
+ * that is the one number a reader comes to a rating question for. A long-answer
+ * question puts its own search there, because that is the only question type
+ * where searching means anything — there is no page-wide search on this view.
  */
 export function QuestionBlock({
   question,
@@ -437,43 +501,67 @@ export function QuestionBlock({
   index: number;
   total: number;
   aggregate: Aggregate;
-  /** already-lowercased free-text narrowing from the page's one search box */
-  search?: string;
+  /** the long-answer search: its form, and the term already applied */
+  search?: { action: string; hidden: [string, string][]; value: string };
 }) {
   const meta = rendered.get(question.questionId);
   const responded = aggregate.responded;
   return (
     <Sheet>
-      <div className="grid gap-2">
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="font-sans text-strip uppercase text-ink-muted">
-            Question {index + 1} of {total}
-          </span>
-          <Tag>{questionTypeLabel(question)}</Tag>
-        </p>
-        {/* Level 2: each question sheet is a top-level region of this page,
-            and the only heading above it is the page title. A level-3 here
-            skipped a level, which is what a screen-reader user navigating by
-            heading actually notices. */}
-        <QuestionPrompt fallback={question.prompt} level={2} meta={meta} />
-        {meta?.description && (
-          <div className="max-w-measure text-meta text-ink-muted">
-            <PreRenderedRichText html={meta.description} />
-          </div>
+      <div
+        className={cn(
+          // A grid, not `flex-wrap`: wrapping let the prompt shrink to a
+          // three-word column on a phone rather than pushing the search onto
+          // its own line. One column below `sm`, two above it, and the prompt
+          // never competes with the control beside it.
+          "grid items-start gap-x-6 gap-y-3",
+          "sm:grid-cols-[minmax(0,1fr)_auto]",
         )}
-        <p className="font-sans text-meta tabular-nums text-ink-muted">
-          {responded} {responded === 1 ? "response" : "responses"}
-          {aggregate.skipped > 0 && ` · ${aggregate.skipped} skipped`}
-        </p>
+      >
+        <div className="grid min-w-0 gap-2">
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span className="font-sans text-strip uppercase text-ink-muted">
+              Question {index + 1} of {total}
+            </span>
+            <Tag>{questionTypeLabel(question)}</Tag>
+          </p>
+          {/* Level 2: each question sheet is a top-level region of this page,
+              and the only heading above it is the page title. */}
+          <QuestionPrompt fallback={question.prompt} level={2} meta={meta} />
+          {meta?.description && (
+            <div className="max-w-measure text-meta text-ink-muted">
+              <PreRenderedRichText html={meta.description} />
+            </div>
+          )}
+          <p className="font-sans text-meta tabular-nums text-ink-muted">
+            {responded} {responded === 1 ? "response" : "responses"}
+            {aggregate.skipped > 0 && ` · ${aggregate.skipped} skipped`}
+          </p>
+        </div>
+
+        {aggregate.kind === "scale" && aggregate.responded > 0 && (
+          <ScaleFigure aggregate={aggregate} />
+        )}
+        {aggregate.kind === "prose" && search && (
+          <AnswerSearch
+            action={search.action}
+            hidden={search.hidden}
+            questionId={question.questionId}
+            value={search.value}
+          />
+        )}
       </div>
 
-      <div className="mt-5">
+      <div className="mt-4">
         {aggregate.kind === "choice" ? (
           <Distribution buckets={aggregate.buckets} total={responded} />
         ) : aggregate.kind === "scale" ? (
           <ScaleSummary aggregate={aggregate} />
         ) : (
-          <ProseAnswers entries={aggregate.entries} search={search} />
+          <ProseAnswers
+            entries={aggregate.entries}
+            search={search?.value.trim().toLowerCase()}
+          />
         )}
       </div>
     </Sheet>
@@ -481,12 +569,71 @@ export function QuestionBlock({
 }
 
 /**
+ * The one search on this view, and it belongs to the question it narrows.
+ *
+ * A page-wide `Search` box sat under the week selector at full width and said
+ * nothing about what it searched. Written answers are the only thing on a
+ * by-question page there is any point searching, so the control lives in that
+ * question's own header where its scope is obvious from where it is.
+ *
+ * A plain GET form carrying the page's other selections as hidden fields, so it
+ * works before hydration like every other filter in this app.
+ */
+function AnswerSearch({
+  action,
+  hidden,
+  questionId,
+  value,
+}: {
+  action: string;
+  hidden: [string, string][];
+  questionId: string;
+  value: string;
+}) {
+  const id = `q-search-${questionId}`;
+  return (
+    <form
+      action={action}
+      className="feedbar__search w-full sm:w-[20rem]"
+      method="get"
+    >
+      {hidden.map(([name, hiddenValue]) => (
+        <input key={name} name={name} type="hidden" value={hiddenValue} />
+      ))}
+      <IconSearch size={15} />
+      <label className="visually-hidden" htmlFor={id}>
+        Search the written answers to this question
+      </label>
+      <input
+        defaultValue={value}
+        id={id}
+        name="q"
+        placeholder="Search responses…"
+        type="search"
+      />
+      <button className="visually-hidden" type="submit">
+        Search
+      </button>
+    </form>
+  );
+}
+
+/**
  * A horizontal distribution: the option, how far it got, and the two numbers.
+ *
+ * **The fill is the accent, and that is a deliberate reversal.** An earlier
+ * pass put these on `.chart__bar` (`--rule-ink`) reasoning that bars are data
+ * rather than action. The design owner rejected that for this screen: the
+ * Responses analytics are the point of the by-question view, and a column of
+ * grey bars reads as disabled. The exception is scoped HERE — `.chart__bar`
+ * and every other chart in the app are untouched, so this is not a licence to
+ * turn the app's data visualisations green.
  *
  * The bar is `aria-hidden` and the count and share are text beside it, because
  * a chart that hides its numbers behind a length is not an accessible chart
- * (DESIGN.md §12). It takes `.chart__bar`, which is `--rule-ink`: bars are
- * data, not action, so they stay off the accent (DESIGN.md §3, §11.5a).
+ * (DESIGN.md §12). The list is held to a reading measure: a 1080px-wide bar
+ * says no more than a 400px one and makes the label impossible to pair with
+ * its own number.
  */
 export function Distribution({
   buckets,
@@ -499,7 +646,7 @@ export function Distribution({
     return <NoAnswersYet />;
   }
   return (
-    <ul className="m-0 grid list-none gap-3 p-0">
+    <ul className="m-0 grid max-w-measure list-none gap-2.5 p-0">
       {buckets.map((bucket) => {
         const percent = share(bucket.count, total);
         return (
@@ -509,33 +656,35 @@ export function Distribution({
               // Narrow: the option and its numbers share a line and the bar
               // takes the one below. Wide: the mockup's three columns.
               "grid-cols-[minmax(0,1fr)_auto]",
-              "sm:grid-cols-[minmax(6rem,14rem)_minmax(0,1fr)_auto]",
+              "sm:grid-cols-[minmax(5rem,11rem)_minmax(0,1fr)_5.5rem]",
             )}
             key={bucket.key}
           >
-            <span className="min-w-0 font-sans text-ui text-ink">
+            <span className="min-w-0 font-sans text-ui-sm text-ink">
               {bucket.label}
             </span>
             <span className="order-last col-span-2 sm:order-none sm:col-span-1">
-              <svg
-                aria-hidden="true"
-                className="block h-2.5 w-full bg-board-deep"
-                focusable="false"
-                preserveAspectRatio="none"
-                viewBox="0 0 100 10"
-              >
-                <rect
-                  className="chart__bar"
-                  height="10"
-                  width={percent}
-                  x="0"
-                  y="0"
-                />
-              </svg>
+              <span className="block h-2.5 w-full rounded-[2px] bg-board-deep">
+                <svg
+                  aria-hidden="true"
+                  className="block h-full w-full"
+                  focusable="false"
+                  preserveAspectRatio="none"
+                  viewBox="0 0 100 10"
+                >
+                  <rect
+                    className="fill-accent"
+                    height="10"
+                    width={percent}
+                    x="0"
+                    y="0"
+                  />
+                </svg>
+              </span>
             </span>
-            <span className="justify-self-end font-sans text-meta tabular-nums text-ink-muted">
-              <span className="font-semibold text-ink">{bucket.count}</span>{" "}
-              {percent}%
+            <span className="flex items-baseline justify-end gap-2 font-sans text-meta tabular-nums text-ink-muted">
+              <span className="font-semibold text-ink">{bucket.count}</span>
+              <span className="w-9 text-right">{percent}%</span>
             </span>
           </li>
         );
@@ -544,13 +693,34 @@ export function Distribution({
   );
 }
 
+/** The number a reader comes to a rating question for, opposite the prompt. */
+function ScaleFigure({
+  aggregate,
+}: {
+  aggregate: Extract<Aggregate, { kind: "scale" }>;
+}) {
+  return (
+    <p className="shrink-0 text-right">
+      <strong className="block font-document text-object-title tabular-nums text-ink">
+        {aggregate.average.toFixed(1)} / {aggregate.max}
+      </strong>
+      <span className="block font-sans text-meta text-ink-muted">
+        average rating
+      </span>
+    </p>
+  );
+}
+
 /**
- * A rating question, read across the week: the average, then where the answers
- * actually sat.
+ * Where the ratings actually sat.
  *
- * The average alone is the number people quote and the one most able to
+ * The average above is the number people quote and the one most able to
  * mislead — a flat 3 and a class split between 1 and 5 average the same — so
  * the distribution is not optional beside it.
+ *
+ * Columns are `--spacing-scale-cell` wide, the step the system already uses for
+ * a scale's cells, rather than stretched across the sheet: five 200px blocks
+ * were a wall of colour that said nothing five 58px ones do not.
  */
 export function ScaleSummary({
   aggregate,
@@ -560,55 +730,49 @@ export function ScaleSummary({
   const tallest = Math.max(1, ...aggregate.buckets.map((b) => b.count));
   if (aggregate.responded === 0) return <NoAnswersYet />;
   return (
-    <div className="grid gap-5">
-      <p className="flex items-baseline gap-2">
-        {/* A real figure, in the document register the rest of this system
-            sets a figure's value in. */}
-        <strong className="font-document text-object-title tabular-nums text-ink">
-          {aggregate.average.toFixed(1)}
-        </strong>
-        <span className="font-sans text-ui text-ink-muted">
-          average of {aggregate.min}–{aggregate.max}
-        </span>
-      </p>
-      <ul className="m-0 flex list-none items-end gap-2 p-0">
-        {aggregate.buckets.map((bucket) => {
-          const percent = share(bucket.count, aggregate.responded);
-          const height = Math.round((bucket.count / tallest) * 100);
-          return (
-            <li
-              className="flex min-w-0 flex-1 flex-col items-center gap-1"
-              key={bucket.key}
-            >
-              {/* The numbers first, and in text. The column below them is the
-                  same fact drawn; it is `aria-hidden` because a bar is not
-                  something to read out (DESIGN.md §12). */}
-              <span className="font-sans text-meta tabular-nums text-ink-muted">
-                {bucket.count} ({percent}%)
-              </span>
+    <ul className="m-0 flex max-w-[26rem] list-none items-end gap-2 p-0">
+      {aggregate.buckets.map((bucket) => {
+        const percent = share(bucket.count, aggregate.responded);
+        const height = Math.round((bucket.count / tallest) * 100);
+        return (
+          <li
+            /* `--spacing-scale-cell` is the ceiling, not the width: five 58px
+               columns overflow a 320px phone and wrapped onto a second row,
+               which broke the comparison the chart exists for. They share the
+               line instead and never wrap. */
+            className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:max-w-scale-cell"
+            key={bucket.key}
+          >
+            {/* The numbers first, and in text. The column below them is the
+                same fact drawn; it is `aria-hidden` because a bar is not
+                something to read out (DESIGN.md §12). */}
+            <span className="font-sans text-meta tabular-nums text-ink-muted">
+              {bucket.count} ({percent}%)
+            </span>
+            <span className="block h-12 w-full rounded-[2px] bg-board-deep">
               <svg
                 aria-hidden="true"
-                className="block h-14 w-full bg-board-deep"
+                className="block h-full w-full"
                 focusable="false"
                 preserveAspectRatio="none"
                 viewBox="0 0 10 100"
               >
                 <rect
-                  className="chart__bar"
+                  className="fill-accent"
                   height={height}
                   width="10"
                   x="0"
                   y={100 - height}
                 />
               </svg>
-              <span className="font-sans text-ui-sm font-semibold tabular-nums text-ink">
-                {bucket.label}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+            </span>
+            <span className="font-sans text-ui-sm font-semibold tabular-nums text-ink">
+              {bucket.label}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -616,13 +780,15 @@ export function ScaleSummary({
  * Written answers, under the one prompt that asked for them.
  *
  * The prompt is printed once by `QuestionBlock` above; repeating it per student
- * is what made the old feed unreadable for this question. Each answer keeps the
- * document register and its own quiet provenance line.
+ * is what made the old feed unreadable for this question. Each answer is one
+ * quoted line with its provenance held quiet beside it — the words are what the
+ * reader came for, and a stack of metadata chips under every one of them made
+ * the metadata the louder half.
  */
 export function ProseAnswers({
   entries,
   search,
-  limit = 6,
+  limit = 3,
 }: {
   entries: QuestionEntry[];
   search?: string;
@@ -645,29 +811,43 @@ export function ProseAnswers({
   const shown = matching.slice(0, limit);
   const rest = matching.slice(limit);
   return (
-    <div className="grid gap-4">
-      <ul className="m-0 grid list-none gap-4 p-0">
+    <div className="grid gap-3">
+      <ul className="m-0 grid list-none gap-0 p-0">
         {shown.map((entry) => (
           <ProseAnswer entry={entry} key={entry.responseId} />
         ))}
       </ul>
       {rest.length > 0 && (
         /* A native disclosure, so the rest of a thirty-answer question is one
-           click away and reachable before hydration. Inset, because a bordered
-           box inside this sheet would be a box within a box. */
-        <details className="disclose disclose--inset">
-          <summary>
-            <IconChevron className="disclose__mark" size={15} />
-            Show the other {rest.length}{" "}
-            {rest.length === 1 ? "answer" : "answers"}
+           click away and works before hydration — but drawn as the quiet
+           onward control the approved design shows, not as a bordered box
+           inside a box. */
+        <details className="group">
+          <summary
+            className={cn(
+              "inline-flex cursor-pointer list-none items-center gap-2",
+              "font-sans text-ui-sm font-semibold text-accent-deep",
+              "[&::-webkit-details-marker]:hidden",
+              "hover:underline hover:underline-offset-4",
+            )}
+          >
+            <span className="group-open:hidden">
+              View all {matching.length} responses
+            </span>
+            <span className="hidden group-open:inline">
+              Show only the first {limit}
+            </span>
+            <IconForward
+              aria-hidden="true"
+              className="shrink-0 transition-transform duration-120 group-open:-rotate-90"
+              size={15}
+            />
           </summary>
-          <div className="disclose__body">
-            <ul className="m-0 grid list-none gap-4 p-0">
-              {rest.map((entry) => (
-                <ProseAnswer entry={entry} key={entry.responseId} />
-              ))}
-            </ul>
-          </div>
+          <ul className="m-0 mt-1 grid list-none gap-0 p-0">
+            {rest.map((entry) => (
+              <ProseAnswer entry={entry} key={entry.responseId} />
+            ))}
+          </ul>
         </details>
       )}
     </div>
@@ -675,18 +855,26 @@ export function ProseAnswers({
 }
 
 function ProseAnswer({ entry }: { entry: QuestionEntry }) {
+  /* Two facts, one separator — the single case DESIGN.md §14 allows, and the
+     only two the approved design carries here. The student's NAME is not one
+     of them: this view is what the class said, the submission behind it is who
+     said it, and the reader is one click from that either way. */
+  const meta = [entry.sectionTitle, entry.when].filter(Boolean).join(" · ");
   return (
-    <li className="grid gap-1">
-      <LongText text={entry.answer.freeText ?? ""} />
-      {/* Quiet and secondary: whose answer it is matters less here than what it
-          says, which is the whole point of reading by question. */}
-      <TagList
-        items={[
-          entry.who,
-          entry.sectionTitle,
-          entry.at ? formatDateTime(entry.at, entry.timezone) : null,
-        ]}
-      />
+    <li
+      className={cn(
+        "flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1",
+        "border-b border-rule py-2.5 first:pt-0 last:border-b-0 last:pb-0",
+      )}
+    >
+      <blockquote className="m-0 min-w-0 max-w-measure flex-1 font-document text-doc-dense text-ink">
+        &ldquo;{entry.answer.freeText}&rdquo;
+      </blockquote>
+      {meta && (
+        <span className="shrink-0 font-sans text-meta tabular-nums text-ink-muted">
+          {meta}
+        </span>
+      )}
     </li>
   );
 }
@@ -723,15 +911,49 @@ export function ItemStamp({
 }
 
 /**
+ * A question's category, as restrained flair.
+ *
+ * Tracked caps in the strip register inside one neutral box — no hue, no shape,
+ * and identical geometry whatever the word is. A category is not a status: it
+ * says what the question is ABOUT, while the stamp beside it says what the
+ * question still NEEDS, and the two must never be mistakable for each other.
+ * That is why this deliberately does not borrow `Stamp`'s tones, and why the
+ * eight-hue category spectrum this app used to run is not coming back.
+ *
+ * It hugs its own content by default. A LIST passes `w-full` so that every
+ * flair fills the same fixed column and CONTENT and LOGISTICS put the question
+ * text at exactly the same x — the width belongs to the row's grid, not to the
+ * flair, or the flair stretches to whatever container it lands in next.
+ */
+export function CategoryFlair({
+  value,
+  className,
+}: {
+  value: string | null | undefined;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-6 items-center justify-center px-2",
+        "rounded-stamp border border-rule bg-paper-quiet",
+        "font-sans text-strip uppercase text-ink-soft",
+        className,
+      )}
+    >
+      {categoryShortLabel(value)}
+    </span>
+  );
+}
+
+/**
  * One student-originated question, as a row of the list at the foot of the
  * by-question view.
  *
  * The whole row is the link, and the grid is why the rows stay in rhythm: the
- * category flair sits in a column of its own with a floor and a ceiling, so a
- * long label cannot push the question text sideways and a short one cannot let
- * it drift back — which is the specific failure a row of free-floating chips
- * produces. Every row is the same height for the same reason: one padding
- * value, one alignment, no per-row exceptions.
+ * flair sits in a fixed column, the stamp is aligned on its trailing edge
+ * against the fixed chevron, and one padding value governs every row. A longer
+ * category or a longer state cannot move anything in the row above or below it.
  */
 export function StudentQuestionRow({
   href,
@@ -743,26 +965,26 @@ export function StudentQuestionRow({
   href: string;
   category: string | null;
   text: string;
+  /** already-formatted quiet facts, at most two */
   meta: (string | null)[];
   stamp: ReactNode;
 }) {
+  const line = meta.filter(Boolean).join(" · ");
   return (
-    <li>
+    <li className="border-t border-rule first:border-t-0">
       <Link
         className={cn(
-          "grid items-center gap-x-4 gap-y-2 px-4 py-3",
+          "grid items-center gap-x-4 gap-y-2 px-5 py-3",
           "grid-cols-[auto_minmax(0,1fr)_auto]",
-          "sm:grid-cols-[9.5rem_minmax(0,1fr)_auto_auto]",
+          "sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_auto]",
           "text-left no-underline",
           "transition-colors duration-120 hover:bg-paper-quiet",
           "active:not-disabled:duration-0",
         )}
         href={href}
       >
-        <span className="col-start-1 row-start-1">
-          <Tag className="whitespace-nowrap">
-            <Category value={category} />
-          </Tag>
+        <span className="col-start-1 row-start-1 grid">
+          <CategoryFlair className="w-full" value={category} />
         </span>
         <span className="col-span-2 row-start-2 grid min-w-0 gap-0.5 sm:col-span-1 sm:col-start-2 sm:row-start-1">
           {/* The student's own words, in the document register, dense — this is
@@ -771,18 +993,20 @@ export function StudentQuestionRow({
           <span className="truncate font-document text-doc-dense text-ink">
             {text}
           </span>
-          <TagList items={meta} />
+          {line && (
+            <span className="truncate font-sans text-meta tabular-nums text-ink-muted">
+              {line}
+            </span>
+          )}
         </span>
         {/*
           Right-aligned, and that is what makes a column of these line up.
-
           Every row is its own grid — they have to be, because the row is a
           link and `display: contents` on a link destroys its hit area and its
           focus ring — so an `auto` column sizes to ITS OWN row's content and
-          two rows' stamps started at different x. Measured: 1236 and 1191 on
-          the same list. The chevron beside it is a fixed 16px, so aligning the
-          stamp's trailing edge instead is stable no matter how long the label
-          is, and it stays stable when a row carries two stamps.
+          two rows' stamps started 45px apart. The chevron beside it is a fixed
+          16px, so aligning the stamp's trailing edge is stable however long
+          the label is.
         */}
         <span className="col-start-2 row-start-1 justify-self-end sm:col-start-3">
           {stamp}
@@ -826,14 +1050,19 @@ export function FilterChips({
               "rounded-control border font-sans text-ui-sm font-semibold",
               "transition-colors duration-120 active:not-disabled:duration-0",
               active
-                ? "border-control-edge bg-board-deep text-ink"
+                ? "border-accent bg-accent text-on-accent"
                 : "border-rule bg-paper text-ink-muted hover:bg-paper-quiet hover:text-ink",
             )}
             href={option.href}
             key={option.key}
           >
             {option.label}
-            <span className="font-sans text-meta tabular-nums text-ink-muted">
+            <span
+              className={cn(
+                "font-sans text-meta tabular-nums",
+                active ? "text-on-accent/80" : "text-ink-muted",
+              )}
+            >
               {option.count}
             </span>
           </Link>
@@ -860,23 +1089,25 @@ export function SubmissionRow({
   who,
   mark,
   tags,
-  when,
+  date,
+  time,
   stamp,
 }: {
   href: string;
   who: string;
   mark: string;
   tags: (string | null)[];
-  when: string;
+  date: string;
+  time: string;
   stamp: ReactNode;
 }) {
   return (
     <li className="border-t border-rule first:border-t-0">
       <Link
         className={cn(
-          "grid items-center gap-x-4 gap-y-2 px-4 py-3 no-underline",
-          "grid-cols-[34px_minmax(0,1fr)_auto]",
-          "sm:grid-cols-[34px_minmax(0,1fr)_auto_auto_auto]",
+          "grid items-center gap-x-4 gap-y-2 px-5 py-3 no-underline",
+          "grid-cols-[auto_minmax(0,1fr)_auto]",
+          "sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]",
           "transition-colors duration-120 hover:bg-paper-quiet",
           "active:not-disabled:duration-0",
         )}
@@ -892,24 +1123,26 @@ export function SubmissionRow({
         >
           {mark}
         </span>
-        <span className="col-start-2 row-start-1 grid min-w-0 gap-0.5">
+        <span className="col-start-2 row-start-1 grid min-w-0 gap-1">
           <span className="truncate font-sans text-ui font-bold text-ink">
             {who}
           </span>
-          <TagList items={tags} />
+          {/* Week, section and state on one line of compact flair — the three
+              facts a reader scans a list of forty submissions for. */}
+          <span className="flex flex-wrap items-center gap-tight">
+            <TagList items={tags} />
+            {stamp}
+          </span>
         </span>
-        <span className="col-span-2 col-start-2 row-start-2 font-sans text-meta tabular-nums text-ink-muted sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:justify-self-end">
-          {when}
-        </span>
-        {/* Trailing edge, against the fixed chevron column — see
-            `StudentQuestionRow` for why an `auto` column cannot align across
-            rows that are each their own grid. */}
-        <span className="col-start-3 row-start-1 justify-self-end sm:col-start-4">
-          {stamp}
+        {/* The date over the time, so a column of these compares day by day
+            without the hour getting in the way. */}
+        <span className="col-span-2 col-start-2 row-start-2 font-sans text-meta tabular-nums text-ink-muted sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:justify-self-end sm:text-right">
+          <span className="block whitespace-nowrap">{date}</span>
+          <span className="block whitespace-nowrap">{time}</span>
         </span>
         <IconChevron
           aria-hidden="true"
-          className="col-start-3 row-start-1 hidden shrink-0 justify-self-end text-ink-faint sm:col-start-5 sm:block"
+          className="col-start-3 row-start-1 shrink-0 justify-self-end text-ink-faint sm:col-start-4"
           size={16}
         />
       </Link>
@@ -940,7 +1173,7 @@ export function AnswerBlock({
 }) {
   const meta = rendered.get(question.questionId);
   return (
-    <li className="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-rule py-4 first:border-t-0 first:pt-0">
+    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-rule py-4 first:border-t-0 first:pt-0">
       <span
         aria-hidden="true"
         className="font-sans text-meta font-bold tabular-nums text-ink-faint"
@@ -949,8 +1182,8 @@ export function AnswerBlock({
       </span>
       <div className="grid min-w-0 gap-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          {/* Level 3: the `Form answers` strip label above these is an h2
-              (`StripLabel` renders one), so this is the next level down. */}
+          {/* Level 3: the sheet's own `Form answers` title is an h2, so this is
+              the next level down. */}
           <QuestionPrompt fallback={question.prompt} level={3} meta={meta} />
           {!question.answered && <Stamp tone="neutral">Not answered</Stamp>}
         </div>
@@ -977,7 +1210,21 @@ function SubmittedAnswer({ question }: { question: AnswerRow }) {
   }
 
   if (PROSE_TYPES.has(question.type)) {
-    return <LongText text={question.freeText ?? ""} />;
+    /* A filled field, the way the student typed it into one. `LongText` still
+       clamps an essay so one answer cannot bury the two below it — but its
+       `.post__words` quote rule is dropped here: the box already says "this is
+       what they wrote", and a rule inside it is a second container drawing the
+       same boundary. */
+    return (
+      <div
+        className={cn(
+          "max-w-measure rounded-control border border-rule bg-paper-quiet px-3 py-2",
+          "[&_.post__words]:border-l-0 [&_.post__words]:pl-0",
+        )}
+      >
+        <LongText text={question.freeText ?? ""} />
+      </div>
+    );
   }
 
   const scale = question.type === "linear_scale" ? scaleOf(question) : null;
@@ -991,7 +1238,7 @@ function SubmittedAnswer({ question }: { question: AnswerRow }) {
     return <AnswerChip>Answered</AnswerChip>;
   }
   return (
-    <p className="flex flex-wrap gap-2">
+    <p className="flex max-w-measure flex-wrap gap-2">
       {chosen.map((choice) => (
         <AnswerChip key={choice.key}>{choice.label}</AnswerChip>
       ))}
@@ -1013,7 +1260,7 @@ function AnswerChip({ children }: { children: ReactNode }) {
       className={cn(
         "inline-flex min-h-control items-center rounded-control px-3 py-1.5",
         "border border-rule bg-paper-quiet",
-        "font-document text-doc-staff text-ink",
+        "font-document text-doc-dense text-ink",
       )}
     >
       {children}
@@ -1043,21 +1290,19 @@ export function ScaleAnswer({
 }) {
   const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
   return (
-    <p className="flex flex-wrap items-end gap-x-4 gap-y-2">
+    <p className="flex max-w-measure flex-wrap items-end gap-x-4 gap-y-2">
       <span aria-hidden="true" className="grid min-w-0 flex-1 gap-1">
         <span className="flex gap-1">
           {steps.map((step) => (
             <span
               className={cn(
-                "h-6 min-w-0 flex-1 rounded-control border",
-                /* The checked-choice treatment from `form.tsx` — an accent edge
-                   over `--accent-wash` — because that is what this is: the
-                   option the student picked, shown back. It is one of the six
-                   jobs the accent is allowed (DESIGN.md §3), and it is NOT the
-                   solid accent, which would make a read-only reading look like
-                   a control. */
+                "h-6 min-w-0 flex-1 rounded-[3px] border",
+                /* Every segment UP TO the value, in the solid accent — the
+                   approved treatment. A single lit box four places along reads
+                   as "the fourth option"; a filled run reads as "four out of
+                   five", which is what the number actually means. */
                 step <= value
-                  ? "border-accent bg-accent-wash"
+                  ? "border-accent bg-accent"
                   : "border-rule-strong bg-paper",
               )}
               key={step}
@@ -1082,7 +1327,13 @@ export function ScaleAnswer({
   );
 }
 
-/** Who this submission is from, and when it arrived. */
+/**
+ * Who this submission is from, when it arrived, and the one exceptional action.
+ *
+ * Three zones, left to right: identity, the timestamp held quiet under its own
+ * label, and the action. The action slot is state-dependent and carries exactly
+ * one control — `Invalidate submission` or `Revert invalidation`, never both.
+ */
 export function SubmissionHeader({
   who,
   tags,
@@ -1095,8 +1346,8 @@ export function SubmissionHeader({
   action?: ReactNode;
 }) {
   return (
-    <Sheet className="flex flex-wrap items-start justify-between gap-4">
-      <div className="flex min-w-0 items-start gap-3">
+    <Sheet className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4 p-5">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
         <span
           aria-hidden="true"
           className={cn(
@@ -1112,14 +1363,13 @@ export function SubmissionHeader({
             {who}
           </h2>
           <TagList items={tags} />
-          {/* Metadata, deliberately secondary: the fact that matters on this
-              screen is what the student wrote, not the minute it landed. */}
-          <p className="font-sans text-meta tabular-nums text-ink-muted">
-            Submitted {submitted}
-          </p>
         </div>
       </div>
-      {action && <div className="flex flex-wrap items-center gap-2">{action}</div>}
+      <p className="shrink-0 font-sans text-meta tabular-nums text-ink-muted">
+        <span className="block text-ink-soft">Submitted</span>
+        <span className="block whitespace-nowrap">{submitted}</span>
+      </p>
+      {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
     </Sheet>
   );
 }

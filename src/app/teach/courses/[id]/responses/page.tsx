@@ -8,7 +8,7 @@ import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courseSubtitle } from "@/components/staff/course-heading";
 import { classSections, courses } from "@/db/schema";
-import { formatDateTime, initials } from "@/lib/datetime";
+import { formatDate, formatDateTime, formatTime, initials } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   courseTabGroups,
@@ -23,14 +23,12 @@ import {
 import {
   AccessDenied,
   Alert,
-  Category,
   EmptyState,
   Stamp,
   StripLabel,
 } from "@/components/ui";
 import { buttonClass } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
-import { Tag } from "@/components/ui/tag";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 import { MarkReadOnView } from "@/components/staff/mark-read-on-view";
 import { Dialog } from "@/components/ui/dialog";
@@ -77,6 +75,7 @@ import { Field, FieldRow, Select, Textarea } from "@/components/ui/form";
 import {
   aggregateQuestion,
   AnswerBlock,
+  CategoryFlair,
   FilterChips,
   ItemStamp,
   QuestionBlock,
@@ -502,13 +501,14 @@ export default async function CourseResponsesPage({
    * A submission is invalidated for exactly one class of reason — empty, spam,
    * abusive, irrelevant, bad faith — and every one of them says the content is
    * not genuine feedback. Averaging it into "what the class thought" would let
-   * one spam submission move a rating a teacher has already judged. It is not
-   * hidden: the by-submission list still carries it under Marked invalid, and
-   * the count is stated below the view switch so the two views cannot silently
-   * disagree.
+   * one spam submission move a rating a teacher has already judged.
+   *
+   * It is not hidden and it is not announced: the by-submission list carries it
+   * under `Marked invalid`, one click away. A standing sentence above the
+   * questions saying so interrupted the page's hierarchy to explain an
+   * exception most weeks do not have.
    */
   const countedRows = rows.filter((row) => row.response.validity !== "invalid");
-  const excludedInvalid = rows.length - countedRows.length;
   for (const row of countedRows) {
     for (const answer of row.answers) {
       if (!entriesByQuestion.has(answer.questionId)) {
@@ -522,8 +522,12 @@ export default async function CourseResponsesPage({
         who: row.student?.fullName ?? null,
         sectionTitle:
           sections.length > 1 ? sectionTitleOf(row.response.sectionId) : null,
-        at: row.response.submittedAt,
-        timezone: timezoneOf(row.response.sectionId),
+        when: row.response.submittedAt
+          ? formatDateTime(
+              row.response.submittedAt,
+              timezoneOf(row.response.sectionId),
+            )
+          : null,
         answer,
       });
     }
@@ -1024,6 +1028,19 @@ export default async function CourseResponsesPage({
     return query ? `${path}?${query}` : path;
   };
 
+  /**
+   * What a per-question search form has to carry so submitting it keeps the
+   * page where it is. A plain list of pairs rather than a URL, because the
+   * control is a GET form and these are its hidden fields.
+   */
+  const searchHidden: [string, string][] = Object.entries({
+    view,
+    sq: sqFilter === "all" ? undefined : sqFilter,
+    form: currentFormId,
+    cycle: currentCycleId,
+    section: sp.section,
+  }).filter((entry): entry is [string, string] => !!entry[1]);
+
   return (
     <AppShell
       user={toShellUser(user)}
@@ -1201,19 +1218,17 @@ export default async function CourseResponsesPage({
                 )}
               </div>
 
-              {/* `.strip` owns its own rhythm — 32px above, 12px below — so
-                  these sit in plain flow rather than in a gapped grid, which
-                  would add a second gap to the same seam. */}
-              <div>
-                <StripLabel>Form answers</StripLabel>
-                {row.answers.length === 0 ? (
-                  <Sheet>
+              {/* Each region of a submission is its own sheet, titled, with a
+                  3px accent batten down its left edge — the approved way to
+                  tell the fixed form answers from the student's own question
+                  and from what staff said back. The container owns the gaps. */}
+              <div className="grid gap-4">
+                <Sheet title="Form answers" tone="accent">
+                  {row.answers.length === 0 ? (
                     <p className="max-w-measure-empty font-sans text-ui-sm text-ink-muted">
                       This occurrence asked no questions of its own.
                     </p>
-                  </Sheet>
-                ) : (
-                  <Sheet>
+                  ) : (
                     <ul className="m-0 grid list-none p-0">
                       {row.answers.map((answer, index) => (
                         <AnswerBlock
@@ -1224,22 +1239,19 @@ export default async function CourseResponsesPage({
                         />
                       ))}
                     </ul>
-                  </Sheet>
-                )}
+                  )}
+                </Sheet>
 
                 {row.items.length === 0 ? (
-                  <>
-                    <StripLabel>Student question</StripLabel>
-                    <Sheet>
-                      {/* They answered the form and asked nothing. There is no
-                          reply to write, and saying so plainly beats a row of
-                          buttons that would all be wrong. */}
-                      <p className="max-w-measure font-sans text-ui-sm text-ink-muted">
-                        They answered the form and did not add a question or
-                        comment.
-                      </p>
-                    </Sheet>
-                  </>
+                  <Sheet title="Student question" tone="accent">
+                    {/* They answered the form and asked nothing. There is no
+                        reply to write, and saying so plainly beats a row of
+                        buttons that would all be wrong. */}
+                    <p className="max-w-measure font-sans text-ui-sm text-ink-muted">
+                      They answered the form and did not add a question or
+                      comment.
+                    </p>
+                  </Sheet>
                 ) : (
                   row.items.map((entry) => {
                     const { item, privateResponses, publicAnswers } = entry;
@@ -1262,28 +1274,29 @@ export default async function CourseResponsesPage({
                     const declined = item.disposition === "no_response";
 
                     return (
-                      <div key={item.id}>
-                        <StripLabel>
-                          {isComment ? "Student feedback" : "Student question"}
-                        </StripLabel>
-                        <Sheet>
+                      <div className="grid gap-4" key={item.id}>
+                        <Sheet
+                          aside={
+                            <ItemStamp
+                              declined={declined}
+                              isComment={isComment}
+                              published={published}
+                              settled={entry.settled}
+                            />
+                          }
+                          title={
+                            isComment ? "Student feedback" : "Student question"
+                          }
+                          tone="accent"
+                        >
                           <div className="grid gap-3">
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <span className="flex flex-wrap items-center gap-2">
-                                <Tag className="whitespace-nowrap">
-                                  <Category value={item.category} />
-                                </Tag>
-                                {!isComment && (
-                                  <Tag>{sentenceCase(item.submissionType)}</Tag>
-                                )}
-                              </span>
-                              <ItemStamp
-                                declined={declined}
-                                isComment={isComment}
-                                published={published}
-                                settled={entry.settled}
-                              />
-                            </div>
+                            {/* The category, and nothing beside it. The
+                                sheet's own title already says whether this is
+                                a question or general feedback, and the stamp
+                                opposite it says what it still needs. */}
+                            <p className="m-0">
+                              <CategoryFlair value={item.category} />
+                            </p>
                             {/* The student's own words, in the document
                                 register, and never overwritten by a reworded
                                 public version. */}
@@ -1293,8 +1306,7 @@ export default async function CourseResponsesPage({
                           </div>
                         </Sheet>
 
-                        <StripLabel>Instructor response</StripLabel>
-                        <Sheet>
+                        <Sheet title="Instructor response" tone="accent">
                           {events.length === 0 ? (
                             <p className="max-w-measure font-sans text-ui-sm text-ink-muted">
                               {declined
@@ -1581,156 +1593,165 @@ export default async function CourseResponsesPage({
       ) : (
         <>
           {/* Two decisions, in the order they are made: which axis am I
-              reading the week on, then which week. */}
-          <div className="feedbar">
-            <div className="grid gap-3">
-              <ViewSwitch
-                current={view}
-                hrefFor={(next) =>
-                  hrefWith({ view: next, r: undefined, at: undefined })
-                }
-              />
+              reading the week on, then which week. One compact group — 12px
+              between the switch and the selectors, not a band of air. */}
+          <div className="mb-6 grid justify-items-start gap-3">
+            <ViewSwitch
+              current={view}
+              hrefFor={(next) =>
+                hrefWith({ view: next, r: undefined, at: undefined })
+              }
+            />
 
-              <form action={path} className="grid gap-2" method="get">
-                <input name="view" type="hidden" value={view} />
-                {view === "submission" && sort !== "oldest" && (
-                  <input name="sort" type="hidden" value={sort} />
-                )}
-                {view === "question" && sqFilter !== "all" && (
-                  <input name="sq" type="hidden" value={sqFilter} />
-                )}
+            <form
+              action={path}
+              className="flex w-full flex-wrap items-center gap-2"
+              method="get"
+            >
+              <input name="view" type="hidden" value={view} />
+              {view === "submission" && sort !== "oldest" && (
+                <input name="sort" type="hidden" value={sort} />
+              )}
+              {view === "question" && sqFilter !== "all" && (
+                <input name="sq" type="hidden" value={sqFilter} />
+              )}
+              {/* By question has no page-wide search: the only thing worth
+                  searching there is a written answer, and that control lives
+                  in that question's own header. The term still has to survive
+                  a change of week. */}
+              {view === "question" && sp.q && (
+                <input name="q" type="hidden" value={sp.q} />
+              )}
 
-                {/* The scope, on its own line: which form's responses this
-                    whole page is, before anything narrows it.
+              {/* The scope: which form's responses this whole page is, before
+                  anything narrows it.
 
-                    Two controls, because they are two questions. The form is
-                    the outer axis and the occurrence lives inside it; one
-                    merged list of every form's weeks could offer two
-                    indistinguishable "Week 1"s.
+                  Two controls, because they are two questions. The form is the
+                  outer axis and the occurrence lives inside it; one merged list
+                  of every form's weeks could offer two indistinguishable
+                  "Week 1"s.
 
-                    Both live in one GET form, so changing the form resubmits
-                    the previous form's `cycle` along with it. That is handled
-                    above, by correcting the URL rather than by splitting the
-                    controls into two forms — a second form would break the
-                    `noscript` submit, which is the only way this bar works
-                    before hydration. */}
-                {instances.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {forms.length + (hasUnassigned ? 1 : 0) > 1 && (
-                      <AutoSubmitSelect
-                        className="max-w-[28ch]"
-                        defaultValue={currentFormId ?? ""}
-                        id="feed-form"
-                        label="Which form"
-                        name="form"
-                      >
-                        {forms.map((form) => (
-                          <option key={form.id} value={form.id}>
-                            {form.title}
-                          </option>
-                        ))}
-                        {hasUnassigned && (
-                          <option value={UNASSIGNED_FORM}>
-                            Other occurrences
-                          </option>
-                        )}
-                      </AutoSubmitSelect>
-                    )}
-                    {formInstances.length > 1 && (
-                      <AutoSubmitSelect
-                        className="max-w-[24ch]"
-                        defaultValue={currentCycleId ?? ""}
-                        id="feed-week"
-                        label="Which occurrence"
-                        name="cycle"
-                      >
-                        {formInstances.map(({ instance, label }) => (
-                          <option key={instance.id} value={instance.id}>
-                            {label}
-                            {instance.state === "open" ? " · open" : ""}
-                          </option>
-                        ))}
-                      </AutoSubmitSelect>
-                    )}
-                    {/* Only when the reader actually has more than one: a
-                        control with a single option is noise. */}
-                    {sections.length > 1 && (
-                      <AutoSubmitSelect
-                        className="max-w-[22ch]"
-                        defaultValue={sp.section ?? ""}
-                        id="feed-section"
-                        label="Section"
-                        name="section"
-                      >
-                        <option value="">All sections</option>
-                        {sections.map((section) => (
-                          <option key={section.id} value={section.id}>
-                            {section.title}
-                          </option>
-                        ))}
-                      </AutoSubmitSelect>
-                    )}
-                  </div>
-                )}
+                  Both live in one GET form, so changing the form resubmits the
+                  previous form's `cycle` along with it. That is handled above,
+                  by correcting the URL rather than by splitting the controls
+                  into two forms — a second form would break the `noscript`
+                  submit, which is the only way this bar works before
+                  hydration. */}
+              {instances.length > 0 && (
+                <>
+                  {forms.length + (hasUnassigned ? 1 : 0) > 1 && (
+                    <AutoSubmitSelect
+                      className="w-auto max-w-[28ch]"
+                      defaultValue={currentFormId ?? ""}
+                      id="feed-form"
+                      label="Which form"
+                      name="form"
+                    >
+                      {forms.map((form) => (
+                        <option key={form.id} value={form.id}>
+                          {form.title}
+                        </option>
+                      ))}
+                      {hasUnassigned && (
+                        <option value={UNASSIGNED_FORM}>
+                          Other occurrences
+                        </option>
+                      )}
+                    </AutoSubmitSelect>
+                  )}
+                  {formInstances.length > 1 && (
+                    <AutoSubmitSelect
+                      className="w-auto max-w-[24ch]"
+                      defaultValue={currentCycleId ?? ""}
+                      id="feed-week"
+                      label="Which occurrence"
+                      name="cycle"
+                    >
+                      {formInstances.map(({ instance, label }) => (
+                        <option key={instance.id} value={instance.id}>
+                          {label}
+                          {instance.state === "open" ? " · Open" : ""}
+                        </option>
+                      ))}
+                    </AutoSubmitSelect>
+                  )}
+                  {/* Only when the reader actually has more than one: a control
+                      with a single option is noise. */}
+                  {sections.length > 1 && (
+                    <AutoSubmitSelect
+                      className="w-auto max-w-[22ch]"
+                      defaultValue={sp.section ?? ""}
+                      id="feed-section"
+                      label="Section"
+                      name="section"
+                    >
+                      <option value="">All sections</option>
+                      {sections.map((section) => (
+                        <option key={section.id} value={section.id}>
+                          {section.title}
+                        </option>
+                      ))}
+                    </AutoSubmitSelect>
+                  )}
+                </>
+              )}
 
-                <div className="feedbar__line">
-                  <span className="feedbar__search">
+              {/* By submission keeps a page-wide search, because there it has
+                  an obvious subject: a student, or something they wrote. */}
+              {view === "submission" && (
+                <>
+                  <span className="feedbar__search max-w-[26rem] flex-1">
                     <IconSearch size={15} />
                     <label className="visually-hidden" htmlFor="feed-q">
-                      Search this form
+                      Search student name or content
                     </label>
                     <input
                       defaultValue={sp.q ?? ""}
                       id="feed-q"
                       name="q"
-                      placeholder="Search"
+                      placeholder="Search student name or content…"
                       type="search"
                     />
                   </span>
+                  <AutoSubmitSelect
+                    className="w-auto max-w-[22ch]"
+                    defaultValue={filter}
+                    id="feed-filter"
+                    label="Show"
+                    name="filter"
+                  >
+                    {FILTERS.map((f) => (
+                      <option key={f.key} value={f.key}>
+                        {f.key === "all"
+                          ? `Everything (${counts.total})`
+                          : f.key === "needs_review"
+                            ? `Needs a reply (${counts.needsReview})`
+                            : f.key === "answered"
+                              ? `Answered (${counts.answered})`
+                              : `Marked invalid (${counts.invalid})`}
+                      </option>
+                    ))}
+                  </AutoSubmitSelect>
+                  <AutoSubmitSelect
+                    className="w-auto max-w-[18ch]"
+                    defaultValue={sort}
+                    id="feed-sort"
+                    label="Order"
+                    name="sort"
+                  >
+                    {SORTS.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </AutoSubmitSelect>
+                </>
+              )}
 
-                  {view === "submission" && (
-                    <>
-                      <AutoSubmitSelect
-                        className="max-w-[22ch]"
-                        defaultValue={filter}
-                        id="feed-filter"
-                        label="Show"
-                        name="filter"
-                      >
-                        {FILTERS.map((f) => (
-                          <option key={f.key} value={f.key}>
-                            {f.key === "all"
-                              ? `Everything (${counts.total})`
-                              : f.key === "needs_review"
-                                ? `Needs a reply (${counts.needsReview})`
-                                : f.key === "answered"
-                                  ? `Answered (${counts.answered})`
-                                  : `Marked invalid (${counts.invalid})`}
-                          </option>
-                        ))}
-                      </AutoSubmitSelect>
-                      <AutoSubmitSelect
-                        className="max-w-[18ch]"
-                        defaultValue={sort}
-                        id="feed-sort"
-                        label="Order"
-                        name="sort"
-                      >
-                        {SORTS.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </AutoSubmitSelect>
-                    </>
-                  )}
-
-                  <button className="visually-hidden" type="submit">
-                    Search
-                  </button>
-                </div>
-              </form>
-            </div>
+              <button className="visually-hidden" type="submit">
+                Apply
+              </button>
+            </form>
           </div>
 
           {view === "question" ? (
@@ -1740,28 +1761,7 @@ export default async function CourseResponsesPage({
                 the questions students raise will appear here as they arrive.
               </EmptyState>
             ) : (
-              <div className="grid gap-6">
-                {/* Stated only when it is true, and precise about what it
-                    changes. A general sentence about how many rows are on
-                    screen is what this page used to carry instead. */}
-                {excludedInvalid > 0 && (
-                  <p className="font-sans text-ui-sm text-ink-muted">
-                    {excludedInvalid} invalidated{" "}
-                    {excludedInvalid === 1 ? "submission is" : "submissions are"}{" "}
-                    left out of these totals.{" "}
-                    <Link
-                      className="link"
-                      href={hrefWith({
-                        view: "submission",
-                        filter: "invalid",
-                        r: undefined,
-                      })}
-                    >
-                      See them
-                    </Link>
-                  </p>
-                )}
-
+              <div className="grid gap-4">
                 {questions.map((question, index) => (
                   <QuestionBlock
                     aggregate={aggregateQuestion(
@@ -1772,17 +1772,35 @@ export default async function CourseResponsesPage({
                     key={question.questionId}
                     question={question}
                     rendered={questionHtml}
-                    search={term}
+                    /* Every selection this page is holding, so the per-question
+                       search is a plain GET that keeps the week, the form and
+                       the section it was typed on. */
+                    search={{
+                      action: path,
+                      hidden: searchHidden,
+                      value: sp.q ?? "",
+                    }}
                     total={questions.length}
                   />
                 ))}
 
-                <div>
-                  <StripLabel count={itemCounts.all}>
+                <div className="mt-2">
+                  {/* `.strip` uppercases its whole line, which is right for
+                      the batten's label and wrong for a count that reads as a
+                      sentence. `ml-auto` puts it at the far end of the batten,
+                      where the approved design has it. */}
+                  <StripLabel
+                    count={
+                      <span className="ml-auto normal-case">
+                        {itemCounts.all}{" "}
+                        {itemCounts.all === 1 ? "submission" : "submissions"}
+                      </span>
+                    }
+                  >
                     Student questions &amp; feedback
                   </StripLabel>
                   <Sheet className="p-0">
-                    <div className="border-b border-rule p-4">
+                    <div className="border-b border-rule px-5 py-3">
                       <FilterChips
                         current={sqFilter}
                         label="Filter student questions"
@@ -1913,13 +1931,21 @@ export default async function CourseResponsesPage({
                           ? sectionTitleOf(sectionId)
                           : null,
                       ]}
-                      when={
+                      date={
                         row.response.submittedAt
-                          ? formatDateTime(
+                          ? formatDate(
                               row.response.submittedAt,
                               timezoneOf(sectionId),
                             )
                           : "Not submitted"
+                      }
+                      time={
+                        row.response.submittedAt
+                          ? formatTime(
+                              row.response.submittedAt,
+                              timezoneOf(sectionId),
+                            )
+                          : ""
                       }
                       who={row.student?.fullName ?? "Identity hidden"}
                     />
@@ -2255,8 +2281,3 @@ function InvalidatedNotice({
   );
 }
 
-/** An internal enum value, said the way a person would say it. */
-function sentenceCase(value: string): string {
-  const words = value.replace(/_/g, " ").trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
