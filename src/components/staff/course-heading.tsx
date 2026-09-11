@@ -21,15 +21,20 @@ import { termParts } from "@/lib/term";
  *     consistent"* — with the subtitle built here rather than per page, two
  *     courses cannot drift apart, and neither can two tabs of one course.
  *
- * Two lines, per `sidebar.md` §5: the course's name, then its term. A course
- * with no name renders one line; one with several terms says how many rather
- * than listing them.
+ * ONE line now: the term. The course's descriptive title used to sit above it
+ * (`sidebar.md` §5 asked for two lines) and the owner has since dropped it —
+ * "course titles are unnecessary here", 2026-09-11, which is the same
+ * direction §10.3 was already travelling when it made the field optional. The
+ * code in the heading above is what names the course; a sentence describing it
+ * was explanation nobody was reading.
+ *
+ * A course with several terms says how many rather than listing them. One with
+ * no terms at all renders no subtitle — the heading stands alone rather than
+ * leaving an empty line under it.
  */
 export function courseSubtitle({
-  title,
   terms,
 }: {
-  title?: string | null;
   /** the distinct terms of this course's class lists */
   terms?: string[];
 }) {
@@ -40,11 +45,6 @@ export function courseSubtitle({
       : list.length > 1
         ? [`${list.length} terms`]
         : [];
-  if (!title && termLine.length === 0) return undefined;
-  return (
-    <div className="grid gap-px">
-      {title && <span>{title}</span>}
-      {termLine.length > 0 && <MetaList items={termLine} />}
-    </div>
-  );
+  if (termLine.length === 0) return undefined;
+  return <MetaList items={termLine} />;
 }

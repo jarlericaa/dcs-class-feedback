@@ -40,13 +40,11 @@ export function TemplatePreview({
   onClose,
   questions,
   config,
-  templateName,
 }: {
   open: boolean;
   onClose: () => void;
   questions: FormQuestionView[];
   config: StudentSectionConfigView;
-  templateName: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -79,15 +77,13 @@ export function TemplatePreview({
   return createPortal(
     <dialog className="preview" ref={ref} aria-labelledby="preview-title">
       <div className="preview__bar">
-        <div>
-          <h2 className="preview__title" id="preview-title">
-            Preview
-          </h2>
-          <p className="preview__sub">
-            {templateName.trim() || "Untitled template"} — what students answer.
-            Nothing here is saved or sent.
-          </p>
-        </div>
+        {/* The heading alone. The subtitle under it read "<name> — what
+            students answer. Nothing here is saved or sent.", which named the
+            template the editor behind this dialog is already showing and then
+            explained what "Preview" means (owner, 2026-09-11). */}
+        <h2 className="preview__title" id="preview-title">
+          Preview
+        </h2>
         <button
           className={buttonClass({ variant: "secondary", size: "small" })}
           type="button"

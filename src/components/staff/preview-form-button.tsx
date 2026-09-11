@@ -18,13 +18,11 @@ import { buttonClass } from "@/components/ui/button";
  */
 export function PreviewFormButton({
   questions,
-  formTitle,
   config,
   label = "Preview form",
   primary = false,
 }: {
   questions: FormQuestionView[];
-  formTitle: string;
   config: {
     maxStudentQuestions: number;
     studentQuestionPrompt: string | null;
@@ -50,7 +48,6 @@ export function PreviewFormButton({
           open={open}
           onClose={() => setOpen(false)}
           questions={questions}
-          templateName={formTitle}
           config={config}
         />
       )}

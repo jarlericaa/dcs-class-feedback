@@ -89,14 +89,15 @@ export interface NavItem {
    *
    * Set HERE rather than matched by label in `SubNav`, because which sections
    * are frequent is domain knowledge — it belongs with the thing that knows
-   * what each destination is, and a view matching on `"Audit history"` would
-   * break the moment someone renamed it.
+   * what each destination is, and a view matching on `"Question backlog"`
+   * would break the moment someone renamed it.
    *
    * The split the owner specified: Forms, Responses, Class Q&A and
-   * Participation stay visible; Publication queue, Question backlog, Audit
-   * history, Class lists and Teaching team fold away. A destination being
-   * secondary says nothing about permission — it is still authorized the same
-   * way and still reachable.
+   * Participation stay visible; Publication queue, Question backlog, Class
+   * lists and Teaching team fold away. (Audit history was in that second list
+   * until the route moved to the admin area.) A destination being secondary
+   * says nothing about permission — it is still authorized the same way and
+   * still reachable.
    */
   secondary?: boolean;
 }
@@ -479,14 +480,12 @@ export function staffSectionTabGroups(
     weeklyReview.push({
       href: `/teach/sections/${id}/publications`,
       label: "Publication queue",
-      secondary: true,
     });
   }
   if (perms.manageBacklogImports) {
     weeklyReview.push({
       href: `/teach/sections/${id}/backlog`,
       label: "Question backlog",
-      secondary: true,
     });
   }
   weeklyReview.push({ href: `/sections/${id}/qa`, label: "Class Q&A" });
@@ -498,16 +497,23 @@ export function staffSectionTabGroups(
     reports.push({
       href: `/teach/sections/${id}/participation`,
       label: "Participation",
-    });
-  }
-  // Audit browsing is not delegable to a TA in the MVP permission catalog.
-  if (staff.role !== "ta") {
-    reports.push({
-      href: `/teach/sections/${id}/audit`,
-      label: "Audit history",
+      /**
+       * Folded into `More`, and the two publication destinations came out of
+       * it in the same move (owner, 2026-09-11). The visible five are now the
+       * weekly loop itself — author, read, answer, publish, triage — and
+       * Participation is the report you open at the end of a term, not
+       * something you pass through on the way to answering a question.
+       */
       secondary: true,
     });
   }
+  /**
+   * No "Audit history" row. The section-scoped audit browser is gone (owner,
+   * 2026-09-11): change records are a platform concern rather than something a
+   * teacher opens between classes, and they are going to the admin area
+   * instead. Nothing about the LOG changed — every mutation still writes to it
+   * in its own transaction; what went is the one screen that read it back.
+   */
   if (reports.length > 0) groups.push({ label: "Reports", items: reports });
 
   /**
@@ -627,25 +633,20 @@ export function staffSectionTabs(
 export function firstStaffSectionHref(access: SectionAccess): string | null {
   const tabs = staffSectionTabs(access, "");
   /**
-   * Two rows are poor landing pages and are passed over when the reader holds
-   * anything else.
+   * The Q&A archive is a poor landing page and is passed over when the reader
+   * holds anything else: it is offered to every section member, so it is
+   * always present — which makes it a bad default precisely when the reader
+   * has real work here.
    *
-   * The Q&A archive is offered to every section member, so it is always
-   * present — which makes it a bad default precisely when the reader has real
-   * work here. The audit log is worse: it is granted to everyone who is not a
-   * TA, so it is nearly always present too, and it opens on a wall of change
-   * records rather than on anything the reader came to do.
-   *
-   * Both are written as "not this href" rather than as a position, so
-   * reordering the groups cannot silently change where a reader lands — which
-   * is exactly what happened when the class list moved into Setup, below
-   * Reports, and quietly made the audit log the landing page for a course
+   * The audit log used to sit in this set for the same reason and no longer
+   * needs to, because the route is gone. Kept as a SET rather than collapsed
+   * to one comparison: it is written as "not this href" rather than as a
+   * position, so reordering the groups cannot silently change where a reader
+   * lands — which is exactly what happened once, when the class list moved
+   * into Setup and quietly made the audit log the landing page for a course
    * teacher whose only other row it was.
    */
-  const poorLanding = new Set([
-    `/sections/${access.section.id}/qa`,
-    `/teach/sections/${access.section.id}/audit`,
-  ]);
+  const poorLanding = new Set([`/sections/${access.section.id}/qa`]);
   const preferred = tabs.find((tab) => !poorLanding.has(tab.href));
   return preferred?.href ?? tabs[0]?.href ?? null;
 }

@@ -51,14 +51,28 @@ const TONE_SHAPE = {
 /** Status as a stamp: bordered, squared off, and readable in grayscale. */
 export function Stamp({
   tone = "neutral",
+  mark = true,
   children,
 }: {
   tone?: Tone;
+  /**
+   * Draw the tone's shape beside the word. Default on, and it should stay on
+   * almost everywhere — the shape is the third redundant channel that lets a
+   * status survive grayscale and colourblindness (DESIGN.md §9).
+   *
+   * Turned off only for the cycle states (owner, 2026-09-11: "no need for
+   * symbols for scheduled open closed, just the word"). That is safe for the
+   * reason the rule exists: the WORD is the channel that carries meaning
+   * without colour, and it is still there. What is lost is the at-a-glance
+   * distinction in a column of many badges, where the shape read faster than
+   * the word did.
+   */
+  mark?: boolean;
   children: ReactNode;
 }) {
   return (
     <span className={`stamp stamp--${tone}`}>
-      <StampMark shape={TONE_SHAPE[tone]} />
+      {mark && <StampMark shape={TONE_SHAPE[tone]} />}
       {children}
     </span>
   );
@@ -138,5 +152,11 @@ export function CycleStateBadge({ state }: { state: CycleStateName }) {
     skipped: { tone: "neutral", label: "Skipped" },
   };
   const { tone, label } = map[state];
-  return <Stamp tone={tone}>{label}</Stamp>;
+  /* No shape: the word alone, per the owner 2026-09-11. See `Stamp`'s `mark`
+     for why this one badge may drop the third channel and the others may not. */
+  return (
+    <Stamp mark={false} tone={tone}>
+      {label}
+    </Stamp>
+  );
 }

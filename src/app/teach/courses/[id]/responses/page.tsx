@@ -902,7 +902,7 @@ export default async function CourseResponsesPage({
         { href: `/teach/courses/${courseId}`, label: course.code },
       ]}
       title={course.code}
-      description={courseSubtitle({ title: course.title, terms: courseTerms })}
+      description={courseSubtitle({ terms: courseTerms })}
     >
       {sp.at && <ScrollToPost anchorId={`r-${sp.at}`} />}
 

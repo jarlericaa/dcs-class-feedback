@@ -321,10 +321,7 @@ export default async function CourseTeachingTeamPage({
       }
       description={
         <MetaList
-          items={[
-            course.title,
-            team.total === 1 ? "1 person" : `${team.total} people`,
-          ]}
+          items={[team.total === 1 ? "1 person" : `${team.total} people`]}
         />
       }
     >
@@ -381,7 +378,6 @@ export default async function CourseTeachingTeamPage({
               total={team.total}
               basePath={path}
               params={{ pageSize }}
-              label="people"
             />
           </>
         )}

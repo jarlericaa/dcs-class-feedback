@@ -463,14 +463,19 @@ export default async function FormDetailPage({
                               )}
                             </td>
                             <td>{row.responseCount}</td>
-                            <td>
-                              {row.questionCount}
-                              {row.editLocked ? " · locked" : ""}
-                            </td>
+                            {/* The count alone. "· locked" rode along in this
+                                cell as a second fact in a column headed
+                                "Questions", and the action cell already says
+                                it by offering "View" instead of "Customize"
+                                (owner, 2026-09-11). */}
+                            <td>{row.questionCount}</td>
                             <td>
                               <span className="row">
-                                {/* The requested action, named after the thing it
-                                edits: "Customize Week 4", not "Edit cycle". */}
+                                {/* Just the verb. It used to name the thing it
+                                edits — "Customize Week 4" — but the row's own
+                                first cell already says which week this is, so
+                                the button repeated it once per row down the
+                                whole table (owner, 2026-09-11). */}
                                 <Link
                                   className={buttonClass({
                                     variant: "secondary",
@@ -481,8 +486,8 @@ export default async function FormDetailPage({
                                   {row.editLocked
                                     ? "View"
                                     : row.customized
-                                      ? `Edit ${row.label}`
-                                      : `Customize ${row.label}`}
+                                      ? "Edit"
+                                      : "Customize"}
                                 </Link>
                                 {(row.instance.state === "draft" ||
                                   row.instance.state === "scheduled") && (

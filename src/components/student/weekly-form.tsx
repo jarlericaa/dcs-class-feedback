@@ -17,6 +17,7 @@ import {
   QuestionDesc,
   QuestionNote,
   ScaleList,
+  ScaleSlider,
   Select,
   Textarea,
 } from "@/components/ui/form";
@@ -411,25 +412,14 @@ export function WeeklyForm({
             )}
 
             {question.type === "linear_scale" && question.scale && (
-              <ScaleList
-                role="group"
-                aria-labelledby={legendId}
+              <ScaleSlider
+                labelledBy={legendId}
+                name={`q_${question.id}`}
+                onValueChange={(next) => setValue(question.id, next)}
+                scale={question.scale}
+                value={typeof value === "string" ? value : ""}
                 {...questionErrorAttributes(error, describedBy)}
-              >
-                {scaleValues(question.scale).map((v) => (
-                  <Choice
-                    key={v}
-                    type="radio"
-                    name={`q_${question.id}`}
-                    value={v}
-                    checked={value === String(v)}
-                    onChange={() => setValue(question.id, String(v))}
-                    {...questionErrorAttributes(error, describedBy)}
-                  >
-                    <span>{v}</span>
-                  </Choice>
-                ))}
-              </ScaleList>
+              />
             )}
 
             {question.type === "yes_no" && (
@@ -714,13 +704,3 @@ export function WeeklyForm({
   );
 }
 
-function scaleValues(scale: {
-  min: number;
-  max: number;
-  step: number;
-}): number[] {
-  const step = scale.step > 0 ? scale.step : 1;
-  const values: number[] = [];
-  for (let v = scale.min; v <= scale.max; v += step) values.push(v);
-  return values;
-}

@@ -257,7 +257,114 @@ export function ChoiceList({
   );
 }
 
-/** A linear scale: the same choices, laid out as a row of equal-width cells. */
+/**
+ * A linear scale, as a slider.
+ *
+ * Replaces the row of radio cells the owner asked to retire (2026-09-11:
+ * "scale should be a slider instead of choices in both the teacher and the
+ * student side"). One change covers both sides because the teacher's preview
+ * renders the real `WeeklyForm` rather than a lookalike.
+ *
+ * Three things this has to get right, and the first is not cosmetic:
+ *
+ * 1. **An untouched scale stays unanswered.** A native range input always has
+ *    a value — an untouched one reports its midpoint — so naming it directly
+ *    would post an answer the student never gave, and on an optional question
+ *    that is inventing data. The range is therefore unnamed and a hidden input
+ *    carries the value only once there is one. The radios it replaces got this
+ *    for free by being unchecked.
+ * 2. **The number is shown, not implied.** A thumb position is not a reading:
+ *    the chosen value sits beside the track, and it reads "Not answered" until
+ *    it is chosen, so "nothing yet" and "the middle" cannot look alike.
+ * 3. **Keyboard and screen reader come from the platform.** A native range is
+ *    arrow-operable and announces itself; `aria-valuetext` is overridden only
+ *    to say "Not answered", which the platform would otherwise report as
+ *    whatever the midpoint happens to be.
+ *
+ * The cost, recorded rather than discovered later: this control needs
+ * JavaScript, where the radios did not. The form already does — a student's own
+ * question blocks post as one client-built JSON field — and the usual
+ * `<noscript>` fallback is unavailable here because it would need a second
+ * `dangerouslySetInnerHTML`, which AGENTS.md forbids outside `rich-text.tsx`.
+ */
+export function ScaleSlider({
+  name,
+  scale,
+  value,
+  onValueChange,
+  labelledBy,
+  className,
+  ...props
+}: {
+  name: string;
+  scale: { min: number; max: number; step: number };
+  /** "" means not answered */
+  value: string;
+  onValueChange: (next: string) => void;
+  labelledBy?: string;
+} & Omit<ComponentProps<"input">, "value" | "onChange" | "name" | "type">) {
+  const step = scale.step > 0 ? scale.step : 1;
+  const answered = value !== "";
+  // Where to park the thumb before there is an answer. The midpoint reads as
+  // "somewhere in the middle" rather than as a low score the student did not
+  // give — and the label beside it says "Not answered" regardless.
+  const midpoint = scale.min + Math.floor((scale.max - scale.min) / 2 / step) * step;
+
+  return (
+    <div className={cn("grid gap-tight", className)}>
+      {/* Named input, present only when answered — see (1) above. */}
+      {answered && <input name={name} type="hidden" value={value} />}
+      <div className="flex items-center gap-4">
+        <input
+          aria-labelledby={labelledBy}
+          aria-valuetext={answered ? undefined : "Not answered"}
+          className={cn(
+            "h-touch min-w-0 flex-1 cursor-pointer appearance-none bg-transparent",
+            // The track and the thumb have to be styled per engine; there is
+            // no cross-browser shorthand for either.
+            "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-control [&::-webkit-slider-runnable-track]:bg-rule",
+            "[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-control [&::-moz-range-track]:bg-rule",
+            "[&::-webkit-slider-thumb]:-mt-2 [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-paper [&::-webkit-slider-thumb]:bg-accent",
+            "[&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-paper [&::-moz-range-thumb]:bg-accent",
+            // Unanswered: the thumb is hollow, so the control does not look
+            // like it is already reporting a score.
+            !answered &&
+              "[&::-webkit-slider-thumb]:border-control-edge [&::-webkit-slider-thumb]:bg-paper [&::-moz-range-thumb]:border-control-edge [&::-moz-range-thumb]:bg-paper",
+            // Refused, the same way every other control is refused.
+            "aria-invalid:[&::-webkit-slider-runnable-track]:bg-red-edge aria-invalid:[&::-moz-range-track]:bg-red-edge",
+          )}
+          max={scale.max}
+          min={scale.min}
+          onChange={(e) => onValueChange(e.target.value)}
+          step={step}
+          type="range"
+          value={answered ? value : String(midpoint)}
+          {...props}
+        />
+        <output
+          className={cn(
+            "w-14 shrink-0 text-right tabular-nums",
+            answered ? "text-ui font-semibold text-ink" : "text-meta text-ink-muted",
+          )}
+        >
+          {answered ? value : "Not answered"}
+        </output>
+      </div>
+      <div className="flex justify-between text-meta text-ink-muted tabular-nums">
+        <span>{scale.min}</span>
+        <span>{scale.max}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A row of equal-width choice cells.
+ *
+ * No longer used for a linear scale — that is `ScaleSlider` now — but still the
+ * layout for Yes/No, which is two labelled choices rather than a range and
+ * would be nonsense as a slider.
+ */
 export function ScaleList({
   children,
   className,

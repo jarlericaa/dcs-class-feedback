@@ -867,6 +867,17 @@ Cycle state always renders through `CycleStateBadge`, validity through
 `ValidityBadge`, and a student's own credit through `CreditBadge`, so no page
 invents its own wording.
 
+**One exception, and it is `CycleStateBadge`.** Since 2026-09-11 the cycle
+states — Draft · Scheduled · Open · Closed · Archived · Skipped — render the
+word and the tone with **no shape**, at the owner's request ("no need for
+symbols for scheduled open closed, just the word"). This is an amendment to the
+three-channel rule, not a hole in it: the channel that carries meaning without
+colour is the WORD, and it is still there, so the badge still survives
+grayscale and colourblindness. What it gives up is speed — in a column of a
+dozen occurrences the shape was read before the word was. Every other stamp
+keeps all three; the opt-out is the `mark` prop on `Stamp`, and it is
+deliberately a prop rather than a variant so the exception stays countable.
+
 **`ValidityBadge` is staff-only.** `flagged` is an internal state a student must
 never learn exists; the student-facing component is `CreditBadge`, which says
 only *counted* or *not counted*. Rendering `ValidityBadge` on a student route

@@ -176,7 +176,7 @@ export default async function CoursesPage({
                           as what the code stands for, which is the order a
                           teacher actually needs. */}
                       <h2 className="panel-title">{course.code}</h2>
-                      <MetaList items={[course.title, ...termFacts]} />
+                      <MetaList items={termFacts} />
                     </div>
                     <div className="row">
                       {course.archivedAt && (

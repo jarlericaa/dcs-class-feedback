@@ -12,6 +12,7 @@ import {
   Stamp,
 } from "@/components/ui";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
+import { Tag } from "@/components/ui/tag";
 import { IconDownload } from "@/components/ui/icons";
 import {
   defaultCycleId,
@@ -180,36 +181,43 @@ export default async function ParticipationPage({
       actions={
         <>
           {currentCycle && canExportIdentityFiles && (
-            /* CSV only. The XLSX twins doubled the row of buttons to offer the
-               same three reports in a second file format nobody had asked for,
-               and the format suffix can go with them: when every download is a
-               CSV, saying so on each button is noise. */
+            /*
+              Three files that differ by WHO is in them and HOW MUCH each row
+              says — so the label names the file and the `title` names its
+              columns. The previous labels ("Who responded", "Everyone,
+              responded or not", "This list, as shown") read as sentences about
+              the screen rather than as names of a download, and the third said
+              nothing a reader could act on.
+
+              "(CSV)" is back on all three. An earlier pass dropped it as noise
+              because every download here is a CSV — true, and beside the point:
+              it is what tells a reader these buttons produce a FILE rather than
+              another view.
+            */
             <>
               <a
                 className={buttonClass({ variant: "primary" })}
                 href={exportHref("responders")}
+                title="Student number, name and submitted time — only the students who answered"
               >
                 <IconDownload size={15} />
-                Who responded
+                Responders (CSV)
               </a>
               <a
                 className={buttonClass({ variant: "secondary" })}
                 href={exportHref("responders", { include: "all" })}
+                title="Every student on the class list, with a Responded column and their enrolment"
               >
                 <IconDownload size={15} />
-                Everyone, responded or not
+                Everyone (CSV)
               </a>
-              {/* Not "This week" — that named the FILTER, which the selector
-                  above already shows, and said nothing about what the file
-                  holds. This one is the table as it currently stands, answer
-                  filter and all, which is the only thing that distinguishes it
-                  from the two above. */}
               <a
                 className={buttonClass({ variant: "secondary" })}
                 href={exportHref("week")}
+                title="Every student with participation, validity and enrolment — plus their answer when an answer filter is applied"
               >
                 <IconDownload size={15} />
-                This list, as shown
+                Full detail (CSV)
               </a>
             </>
           )}
@@ -220,14 +228,14 @@ export default async function ParticipationPage({
                 href={exportHref("weekly_matrix")}
               >
                 <IconDownload size={15} />
-                Weekly matrix
+                Weekly matrix (CSV)
               </a>
               <a
                 className={buttonClass({ variant: "secondary" })}
                 href={exportHref("detailed")}
               >
                 <IconDownload size={15} />
-                Detailed responses
+                Detailed responses (CSV)
               </a>
             </>
           )}
@@ -247,23 +255,57 @@ export default async function ParticipationPage({
                 applies, and every choice is in the URL, so a filtered view is
                 shareable and survives a reload. */}
             <form className="toolbar" method="get" action={path}>
-              <AutoSubmitSelect
-                id="part-week"
-                name="week"
-                label="Which week"
-                defaultValue={showAllWeeks ? "all" : (currentCycleId ?? "all")}
-              >
-                {cycles
-                  .slice()
-                  .reverse()
-                  .map((cycle) => (
-                    <option key={cycle.id} value={cycle.id}>
-                      {cycle.label} · {cycle.responseCount}{" "}
-                      {cycle.responseCount === 1 ? "response" : "responses"}
-                    </option>
-                  ))}
-                <option value="all">All weeks (the whole term)</option>
-              </AutoSubmitSelect>
+              {/*
+                The count sits INSIDE the control, as a tag: "Week 8
+                (2 responses)" (owner, 2026-09-11).
+
+                It cannot be a child of the `<option>` — a native option renders
+                text only, which is what made it a dot-separated sentence in the
+                first place. So the tag is overlaid on the closed select,
+                positioned just inside the chevron, and the select carries right
+                padding sized to leave room for it. `pointer-events-none` keeps
+                the whole box clickable: the tag is a label on the control, not
+                a thing to press.
+
+                Why not `FilterMenu`, which could render a tag in each row: it
+                is a popover behind a `Filter` button, so it would replace two
+                visible selects with a hidden menu — and its options are
+                `<Link>`s inside a JS-opened panel, where this select degrades
+                to a `<noscript>` Apply button. The filter that survives having
+                no JavaScript is worth more here than a tag per row.
+              */}
+              <span className="relative flex min-w-0 flex-1 items-center">
+                <AutoSubmitSelect
+                  className="pr-32"
+                  id="part-week"
+                  name="week"
+                  label="Which week"
+                  defaultValue={showAllWeeks ? "all" : (currentCycleId ?? "all")}
+                >
+                  {cycles
+                    .slice()
+                    .reverse()
+                    .map((cycle) => (
+                      <option key={cycle.id} value={cycle.id}>
+                        {cycle.label}
+                      </option>
+                    ))}
+                  <option value="all">All weeks (the whole term)</option>
+                </AutoSubmitSelect>
+                {/* Not `aria-hidden`: with the count out of the option text
+                    and off the heading, this tag is the only place the number
+                    exists, so hiding it from a screen reader would delete the
+                    fact rather than de-duplicate it. */}
+                <Tag className="pointer-events-none absolute right-9 top-1/2 -translate-y-1/2">
+                  {showAllWeeks
+                    ? `${cycles.length} ${cycles.length === 1 ? "week" : "weeks"}`
+                    : `${currentCycle?.responseCount ?? 0} ${
+                        currentCycle?.responseCount === 1
+                          ? "response"
+                          : "responses"
+                      }`}
+                </Tag>
+              </span>
 
               {/* Answer filtering is per week by design: a question belongs to
                   one occurrence's snapshot, so "that answer" has no meaning
@@ -323,14 +365,11 @@ export default async function ParticipationPage({
               <section className="notice">
                 <div className="notice__head">
                   <div>
+                    {/* Just the week. The count tag lives on the FILTER above,
+                        where the week is chosen — printing it here as well put
+                        the same number on screen twice, a few pixels apart. */}
                     <h2 className="panel-title">{currentCycle.label}</h2>
-                    {/* Only the filter is described, and only when one is on.
-                        The old line read "2 of 3 students on this page
-                        responded · still open": a count scoped to the current
-                        PAGE rather than the class, beside a state the selector
-                        and the Submitted column both already imply. The
-                        response-count figure that sat opposite it is gone too
-                        — the Responded column is the count. */}
+                    {/* Only the filter is described, and only when one is on. */}
                     {question && answer && (
                       <p>
                         {`${week.total} ${week.total === 1 ? "student" : "students"} answered “${answer.label}”`}
@@ -421,17 +460,22 @@ export default async function ParticipationPage({
                   </div>
                 )}
 
-                {/* Paginated in the database, so a large class list costs one
-                    page of rows rather than the whole class. */}
-                <Pagination
-                  page={week.page}
-                  totalPages={week.totalPages}
-                  total={week.total}
-                  basePath={path}
-                  params={filterParams}
-                  label="students"
-                />
               </section>
+            ) : null}
+
+            {/* OUTSIDE the panel, under it. Paging is navigation between views
+                of the table, not a row of it (owner, 2026-09-11) — sitting
+                inside the panel it read as a footer welded to the last row.
+                Paginated in the database, so a large class list costs one page
+                of rows rather than the whole class. */}
+            {week && currentCycle ? (
+              <Pagination
+                page={week.page}
+                totalPages={week.totalPages}
+                total={week.total}
+                basePath={path}
+                params={filterParams}
+              />
             ) : null}
 
             {overview && (

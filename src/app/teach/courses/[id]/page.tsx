@@ -100,7 +100,7 @@ export default async function CourseWorkspacePage({
       /* Built by `courseSubtitle` so every view of this course leads with the
          same header — see that file for why the tab pages stopped setting their
          own headings. */
-      description={courseSubtitle({ title: course.title, terms })}
+      description={courseSubtitle({ terms })}
       crumbs={[
         { href: "/teach/courses", label: "My courses" },
         { href: `/teach/courses/${courseId}`, label: course.code },
@@ -157,7 +157,7 @@ export default async function CourseWorkspacePage({
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-rule bg-paper-quiet">
-                    {["Form", "Delivery", "Status", "Responses"].map((h) => (
+                    {["Form", "Delivery", "Status"].map((h) => (
                       <th
                         className="px-4 py-3 text-meta font-semibold text-ink-muted"
                         key={h}
@@ -192,11 +192,10 @@ export default async function CourseWorkspacePage({
 /**
  * One form, as a row a teacher can act on (`form-table.md`).
  *
- * The spec's §12 is the test: the row has to answer six questions at a glance —
+ * The spec's §12 is the test: the row has to answer five questions at a glance —
  * what the form is, which class it goes to, how it is delivered, whether it is
- * open, whether anything needs attention, and what to do next. Each of those is
- * its own cell, because welding them into a sentence makes none of them
- * scannable.
+ * open, and what to do next. Each of those is its own cell, because welding
+ * them into a sentence makes none of them scannable.
  *
  * What changed from the previous version:
  *
@@ -205,10 +204,13 @@ export default async function CourseWorkspacePage({
  *     question count — and the name gets the width the column was using.
  *   - **The name is the anchor** (§2): a document mark, then the title in the
  *     accent at semibold. It was a plain link in a row of plain text.
- *   - **Responses say what they mean** (§4). `2 (2 to answer)` became
- *     "2 responses" over "2 need a reply" — the second line in muted gold when
- *     something is waiting, in green when nothing is, and quiet when there is
- *     nothing yet. A parenthetical is not an attention state.
+ *   - **The Responses column is gone** (owner, 2026-09-11). It counted
+ *     responses and, under that, how many were waiting — but the action cell
+ *     beside it already answers "is anything waiting on me?" by offering
+ *     "Review responses" as the primary button precisely when something is,
+ *     and the exact counts belong on the page that button opens. Two cells
+ *     saying one thing is what the rest of this redesign has been removing.
+ *     `needsReviewCount` still drives that button; only its printed form went.
  *   - **The action is the recommendation** (§6). Review is the primary button
  *     only when a reply is actually waiting; otherwise reading is the offer.
  *     A row where nothing needs doing should not push a green button at you.
@@ -285,29 +287,12 @@ function FormRow({ row, courseId }: { row: CourseFormRow; courseId: string }) {
         </div>
       </td>
 
-      <td className="px-4 py-4">
-        {/* Aggregated across the whole form when it targets several sections —
-            that is the point of sharing one form — and only over the sections
-            this account may see. */}
-        <div className="grid gap-0.5">
-          <span className="text-ui-sm font-semibold tabular-nums">
-            {row.responseCount} response{row.responseCount === 1 ? "" : "s"}
-          </span>
-          {needsReply ? (
-            <span className="text-meta font-semibold text-amber-deep">
-              {row.needsReviewCount} need{row.needsReviewCount === 1 ? "s" : ""}{" "}
-              a reply
-            </span>
-          ) : row.responseCount > 0 ? (
-            <span className="text-meta text-accent-deep">All reviewed</span>
-          ) : (
-            <span className="text-meta text-ink-muted">No responses yet</span>
-          )}
-        </div>
-      </td>
-
-      <td className="px-4 py-4">
-        <div className="flex flex-col items-start gap-1">
+      {/* The action cell is the table's LAST column, so its content aligns to
+          the trailing edge — left-aligned, the buttons ended wherever their own
+          labels happened to end ("Review responses" is far wider than "View
+          form"), leaving a ragged margin against the panel edge. */}
+      <td className="px-4 py-4 text-right">
+        <div className="flex flex-col items-end gap-1">
           {needsReply ? (
             <Link
               className={buttonClass({ variant: "primary", size: "small" })}
@@ -331,17 +316,10 @@ function FormRow({ row, courseId }: { row: CourseFormRow; courseId: string }) {
               View form
             </Link>
           )}
-          {/* Reading the form is navigation, so it reads as a link. Only
-              offered as a second line when the button above is not already
-              pointing at it. */}
-          {row.responseCount > 0 && (
-            <Link
-              className="text-meta text-ink-soft underline decoration-1 underline-offset-2 hover:text-ink"
-              href={formHref}
-            >
-              View form
-            </Link>
-          )}
+          {/* No second "View form" line. The form's TITLE in the first cell is
+              already a link to exactly this href (owner, 2026-09-11: "we can
+              just make the hyperlink clickable"), so this repeated it once per
+              row in a column meant for the recommended action. */}
         </div>
       </td>
     </tr>

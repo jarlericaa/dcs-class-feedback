@@ -241,10 +241,12 @@ export default async function HomePage() {
                   <div className="notice__body">
                     <div className="spread">
                       <div className="min-w-0">
-                        {/* The code IS the heading. The title reads underneath
-                            it as what the code stands for. */}
+                        {/* The code IS the heading, and now the whole of it:
+                            the descriptive title that used to read underneath
+                            it was dropped as unnecessary (owner, 2026-09-11).
+                            A student recognises CS 33, not its catalogue
+                            sentence. */}
                         <h2 className="panel-title">{card.course.code}</h2>
-                        <MetaList items={[card.course.title]} />
                       </div>
                       {card.course.archivedAt && (
                         <Stamp tone="neutral">Archived</Stamp>

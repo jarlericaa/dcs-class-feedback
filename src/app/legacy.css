@@ -1596,6 +1596,10 @@ kbd {
 }
 
 /* Paginated lists: links, so a page is shareable and works without JS. */
+/* "Page 1 of 4" at the leading edge, Previous/Next at the trailing one
+   (owner, 2026-09-11). Clustering both at the right was tried and reverted:
+   the summary belongs where reading starts, and the controls where the thumb
+   and the eye already are for "next". */
 .pagination {
   display: flex;
   align-items: center;
@@ -1603,13 +1607,11 @@ kbd {
   gap: var(--s3);
   flex-wrap: wrap;
 }
-/* A pagination that sits INSIDE a panel, under a flush table, has to supply
-   the padding the table deliberately gave up — otherwise the count and the
-   buttons sit hard against the panel edge with the table's rule cutting
-   between them. Panels that place it outside are unaffected. */
-.notice > .pagination {
-  padding: var(--s3) var(--s5) var(--s4);
-}
+/* No `.notice > .pagination` rule any more. It padded a pagination nested
+   INSIDE a table panel, and nothing nests one there: paging is navigation
+   between views of a table, not a row of it, so both call sites now place it
+   under the panel where the page stack supplies the gap (owner, 2026-09-11).
+   Rules went nowhere else — the element simply stopped being a panel child. */
 .pagination__summary {
   color: var(--ink-muted);
   font-size: 12px;

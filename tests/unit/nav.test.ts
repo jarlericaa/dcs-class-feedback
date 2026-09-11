@@ -96,7 +96,7 @@ describe("primaryNav — stability", () => {
       "/teach/courses/c1/staff",
       "/teach/courses/c1/forms/new",
       "/teach/sections/sec-1/roster",
-      "/teach/sections/sec-1/audit",
+      "/teach/sections/sec-1/participation",
       "/sections/sec-1/qa",
     ];
     const expected = labels(primaryNav("/", teacher));
@@ -469,7 +469,6 @@ describe("staffSectionTabs — permission visibility", () => {
       // is no "Section setup" beside it: that page was a duplicate teaching
       // team, and the course's own table replaced it.
       "Class list",
-      // Audit is not delegable to a TA in the MVP permission catalog.
     ]);
   });
 
@@ -514,13 +513,19 @@ describe("staffSectionTabs — permission visibility", () => {
     }
   });
 
-  it("withholds Audit from a TA and offers it to a teacher", () => {
-    expect(
-      staffSectionTabs(access({ role: "ta" }), "/x").map((t) => t.label),
-    ).not.toContain("Audit history");
-    expect(
-      staffSectionTabs(access({ role: "teacher" }), "/x").map((t) => t.label),
-    ).toContain("Audit history");
+  /**
+   * The section-scoped audit browser moved to the admin area (owner,
+   * 2026-09-11), so the row is gone for EVERY role — it is no longer a
+   * question of delegation. Asserted rather than deleted: the old test said a
+   * teacher gets this row, and something has to say that they no longer do.
+   */
+  it("offers Audit history to nobody, whatever their role", () => {
+    for (const role of ["ta", "teacher"] as const) {
+      expect(
+        staffSectionTabs(access({ role }), "/x").map((t) => t.label),
+        role,
+      ).not.toContain("Audit history");
+    }
   });
 
   it("puts the review queue in the section only for a reader with no course", () => {
@@ -551,7 +556,7 @@ describe("staffSectionTabs — permission visibility", () => {
     const a = access({ permissions: { viewStudentIdentities: true } });
     const on = (path: string) => staffSectionTabs(a, path).map((t) => t.label);
     expect(on("/teach/sections/sec-1/roster")).toEqual(
-      on("/teach/sections/sec-1/audit"),
+      on("/teach/sections/sec-1/participation"),
     );
   });
 });
@@ -570,8 +575,8 @@ describe("staffSectionTabs — active state", () => {
     expect(active("/teach/sections/sec-1/roster")).toEqual([
       "/teach/sections/sec-1/roster",
     ]);
-    expect(active("/teach/sections/sec-1/audit")).toEqual([
-      "/teach/sections/sec-1/audit",
+    expect(active("/teach/sections/sec-1/participation")).toEqual([
+      "/teach/sections/sec-1/participation",
     ]);
     expect(active("/sections/sec-1/qa")).toEqual(["/sections/sec-1/qa"]);
   });
@@ -613,7 +618,7 @@ describe("staffSectionTabGroups", () => {
       ["Review", ["Review inbox"]],
       ["Forms", ["Forms"]],
       ["Weekly review", ["Publication queue", "Question backlog", "Class Q&A"]],
-      ["Reports", ["Participation", "Audit history"]],
+      ["Reports", ["Participation"]],
       // The class list is configuration, so it sits in Setup — not in a
       // heading of its own between the week's work and the reports.
       ["Setup", ["Class list"]],
@@ -621,8 +626,9 @@ describe("staffSectionTabGroups", () => {
   });
 
   it("omits a group's heading entirely when every item in it is hidden", () => {
-    // A TA: no roster access (drops Class list), no participation export and
-    // no audit (drops Reports), no template/cycle management (drops Setup).
+    // A TA: no roster access (drops Class list), no participation export
+    // (drops Reports, now that audit has left it), no template/cycle
+    // management (drops Setup).
     // An empty "Reports" strip label naming nothing would be worse than no
     // label — the group must not render at all.
     const groups = staffSectionTabGroups(
@@ -666,9 +672,12 @@ describe("staffSectionTabGroups", () => {
       "/teach/courses/course-1/responses",
     ]);
     // And the section's own groups still follow it.
+    /* No "Reports": this reader holds `viewStudentIdentities` and nothing
+       else, and Reports is now exactly `exportParticipation` — audit history,
+       which used to keep the group alive for any non-TA, has moved to the
+       admin area. */
     expect(groups.slice(1).map((g) => g.label)).toEqual([
       "Weekly review",
-      "Reports",
       "Setup",
     ]);
     /**
@@ -735,7 +744,6 @@ describe("staffSectionTabGroups", () => {
     expect(groups.map((g) => g.label)).toEqual([
       FORMS_GROUP,
       "Weekly review",
-      "Reports",
       "Setup",
     ]);
     // And ONE Setup heading, with course scope leading section scope inside

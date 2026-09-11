@@ -873,7 +873,6 @@ export function TemplateEditor({
           open={previewOpen}
           onClose={() => setPreviewOpen(false)}
           questions={previewQuestions}
-          templateName={title}
           config={{
             maxStudentQuestions: Number.parseInt(maxStudentQuestions, 10) || 0,
             studentQuestionPrompt: studentQuestionPrompt.trim() || null,

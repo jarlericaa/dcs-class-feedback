@@ -54,14 +54,13 @@ export function Pagination({
   total,
   basePath,
   params = {},
-  label = "results",
 }: {
   page: number;
   totalPages: number;
+  /** only to decide whether there is anything to page through */
   total: number;
   basePath: string;
   params?: Record<string, string | undefined>;
-  label?: string;
 }) {
   if (total === 0) return null;
   const href = (target: number) => {
@@ -77,8 +76,12 @@ export function Pagination({
   };
   return (
     <nav className="pagination" aria-label="Pagination">
+      {/* "Page 1 of 4", and nothing else (owner, 2026-09-11). It used to lead
+          with the row count — "3 students · page 1 of 1" — which is a fact
+          about the LIST rather than about paging through it, and the panel
+          heading above already carries the count as a tag. */}
       <p className="pagination__summary" role="status">
-        {total} {label} · page {page} of {totalPages}
+        Page {page} of {totalPages}
       </p>
       <div className="pagination__controls">
         {page > 1 ? (
