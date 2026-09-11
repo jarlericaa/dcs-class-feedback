@@ -10,6 +10,7 @@ import {
   parseTerm,
   type Semester,
 } from "@/lib/term";
+import { Field, FieldLabel, FieldRow, Select } from "@/components/ui/form";
 
 /**
  * The academic term, asked for the way a teacher thinks about it.
@@ -58,15 +59,14 @@ export function TermFields({
 
   return (
     <fieldset className="term-fields">
-      <legend className="field-label">{legend}</legend>
+      <FieldLabel>{legend}</FieldLabel>
       <input type="hidden" name="term" value={term} />
 
       <div className="term-fields__grid">
-        <div className="field-row">
-          <label htmlFor={yearId}>Start year</label>
-          <input
+        <FieldRow label="Start year" htmlFor={yearId}>
+          <Field
             id={yearId}
-            className="field term-fields__year"
+            className="term-fields__year"
             type="number"
             inputMode="numeric"
             min={MIN_START_YEAR}
@@ -78,13 +78,11 @@ export function TermFields({
             required={!unparsed}
             aria-describedby={derivedId}
           />
-        </div>
+        </FieldRow>
 
-        <div className="field-row">
-          <label htmlFor={semesterId}>Semester</label>
-          <select
+        <FieldRow label="Semester" htmlFor={semesterId}>
+          <Select
             id={semesterId}
-            className="select-field"
             value={semester}
             onChange={(event) => setSemester(event.target.value as Semester)}
           >
@@ -93,8 +91,8 @@ export function TermFields({
                 {option.label}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </FieldRow>
       </div>
 
       {/* The derived year, said back before submit. role=status so a screen
@@ -105,7 +103,9 @@ export function TermFields({
             Academic year <strong>{academicYear}</strong>
           </>
         ) : unparsed ? (
-          <>Currently set to “{defaultTerm}”. Enter a start year to replace it.</>
+          <>
+            Currently set to “{defaultTerm}”. Enter a start year to replace it.
+          </>
         ) : (
           <>Enter the year this academic year starts in.</>
         )}
