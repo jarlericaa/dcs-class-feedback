@@ -107,8 +107,9 @@ typography:
     letterSpacing: "-0.015em"
 rounded:
   none: "0"
-  control: "2px"
-  stamp: "3px"
+  control: "6px"
+  stamp: "5px"
+  panel: "12px"
 spacing:
   "1": "4px"
   "2": "8px"
@@ -255,6 +256,14 @@ arrangement that reads as Ed Discussion with the logo removed.
 
 Two registers, one job each. Nothing else is added.
 
+**Two families is the ceiling, confirmed by the owner on 2026-09-11** ("2 fonts
+max"), which the two registers below already satisfy — one self-hosted serif
+plus the platform sans. A third family is a regression, not an addition. The
+count was never the complaint; **placement** was: chrome had been set in the
+document register, which is what made the navigation read as an unfamiliar
+serif. The rule that fixes it is the "Never for" list below, and it is now
+enforced rather than advisory.
+
 ### Document register — Charter
 
 `--font-document` → XCharter, self-hosted, Latin subset, three faces (Roman,
@@ -379,14 +388,19 @@ on the page competes with the one control that matters.
 | `--rule-strong` | `#c9c6c2` | Input strokes, secondary button borders, pane seams, segment borders. |
 | `--rule-ink` | `#9b9893` | The one heavier rule — a 2px batten under a strip label — and chart bars. |
 
-### The accent — deep blue-green
+### The accent — UP Forest Green
+
+Re-hued from the original deep blue-green by decision **D-D** (2026-09-10): the
+app follows the university's colours, with each UP hue given exactly one job.
+The structure did not change — one accent, two signals, one hex per role — and
+every family gained contrast in the move.
 
 | Token | Value | Role |
 |---|---|---|
-| `--accent` | `#1c5f63` | Primary button fill; the checked border of a choice; the active list-row edge. White text on it is **7.3:1**. |
-| `--accent-deep` | `#164c50` | Anything the accent has to *say*: links, the row-action link, the focus ring, text on `--accent-wash`. **9.6:1** on paper, **8.1:1** on its own wash. |
-| `--accent-wash` | `#e5eeef` | The active navigation row, the selected list row, a checked choice, the positive stamp's ground, text selection. |
-| `--accent-edge` | `#b9d2d4` | The 1px edge of anything on the wash. |
+| `--accent` | `#0b5a33` | Primary button fill; the checked border of a choice; the active list-row edge. White text on it is **8.3:1**. |
+| `--accent-deep` | `#014421` | Anything the accent has to *say*: links, the row-action link, the focus ring, text on `--accent-wash`, the active rail row's text. Official UP Forest Green. **11.4:1** on paper, **9.6:1** on its own wash. |
+| `--accent-wash` | `#e7eeeb` | The active list row, a checked choice, the positive stamp's ground, text selection. Derived for **paper** — it is 1.05:1 on the rail's dark ground and must never be used there. |
+| `--accent-edge` | `#bdd2c8` | The 1px edge of anything on the wash. |
 
 **The accent carries exactly six things.** A primary button. A link. The active
 navigation row. The focus ring. A checked choice. A positive state (the green
@@ -397,17 +411,59 @@ not action — the mark is `--ink`), the student's own-question container and it
 input strokes (a decorative wash), the entry screen's tick icons, and chart bar
 fills. Reintroducing any of these is a regression.
 
+### Maroon marks identity and the active tab
+
+**[Confirmed 2026-09-11, `sidebar.md` §7/§9]** Maroon was the *problem* signal
+and nothing else. It now does one more job: the **active tab** in the course tab
+bar takes `--red-deep` text over a `--red` underline, and the spec names maroon
+for "primary actions and active/high-priority accents".
+
+This is a real widening and is recorded rather than left implicit, because the
+reserved-signal rule below is what keeps "invalid" legible. What stops the two
+readings colliding is that **a problem is never *only* maroon**: every status in
+this app is a `Stamp` — a word AND a shape AND a tone (§9) — so a maroon tab
+label cannot be mistaken for an invalid stamp. The discipline never depended on
+maroon's exclusivity, only on status never being carried by colour alone.
+
+**A second job, added 2026-09-11:** the **product mark** — the `cf` square in
+the top bar — is `--red-deep`, the official UP Maroon, with paper on it at
+10.9:1. It was a grey `--ink` square. This is the safest place in the app for
+the colour and the reason is structural rather than aesthetic: a product mark
+carries **no state**. It is identical on every page in every condition, so it
+cannot be read as a status, and saying which institution's system this is is
+the entirety of its job. It is also the one element a reader sees on every
+single page, so it buys the most maroon for the least risk.
+
+**The rule these two share, and the one to extend by.** Maroon now means
+**identity and orientation** — *which system this is*, and *where you are in
+it*. Green means **action** — what you can do. That split is what keeps both
+legible, and it is the test to apply to any further maroon:
+
+| Ask of a candidate | Then |
+|---|---|
+| does it carry **state**? | **no maroon** — it would compete with the problem signal |
+| is it an **action**? | **no maroon** — action is the green accent (D-D) |
+| is it **identity**, or **where you are**? | maroon is available |
+
+Still out of bounds regardless: maroon as a page background, a panel fill, or
+an icon colour. And still out of bounds for `.post`'s 3px left edge, which
+looks like a place for it and is not — that edge is a **status** channel
+("unread", "waiting"), so maroon there would collide with exactly the reading
+this rule protects.
+
 ### The two signals
 
 - **Amber.** `--amber` `#8a5a12`, deep `#6e470e`, wash `#f6ecd8`, edge
   `#e0cda4`. Needs attention, pending, scheduled, open-and-not-yet-done,
   private reply, an identity-bearing export. Amber says *notice this*, never
   *something is wrong*. `#6e470e` on its wash is 7.0:1.
-- **Red.** `--red` `#9c3b30`, deep `#7d2f26`, wash `#f6e4e1`, edge `#e0b8b2`.
+- **Red — UP Maroon.** `--red` `#8f2226`, deep `#7b1113`, wash `#f2e5e5`, edge
+  `#dbb9ba`.
   **Reserved.** Destruction, invalid input, invalidated participation, privacy
   risk, failure. Never for emphasis, never for a count, never for a category,
   never for brand. If red is on screen, something is irreversible or wrong.
-  `#7d2f26` on its wash is 7.4:1.
+  `#7b1113` on its wash is 9.0:1. Maroon **is** the problem signal rather than
+  brand chrome sitting beside one, which is what keeps it legible as "invalid".
 
 ### The wash-plus-ink rule
 
@@ -415,6 +471,62 @@ Every accent and signal ships as a quad: base hue for solid fills, `-deep` for
 text, `-wash` for backgrounds, `-edge` for the 1px border of a washed element.
 Coloured text always sits on its own wash using the deep step. Never the base
 hue as body text on white; never white text on a wash.
+
+### The rail is the one dark region — `--rail-*`
+
+**[Confirmed 2026-09-11]** The owner's call: the workspace rail is a deep
+UP-forest board. It is the single exception to §11.4 ("no coloured chrome
+band"), and it is fenced rather than open-ended — see §11.4 for the exact terms.
+
+**The current destination was a white sheet pinned to that board, and is not any
+more.** `sidebar.md` §7 (owner spec, same day) asked for something "refined"
+rather than "a huge bright green block", so the active row is now a faint white
+overlay — `--rail-active`, white at 10% — with brighter ink, a weight change and
+a 2px `--rail-focus` batten down its left edge. The inversion is gone.
+
+That is **four channels for one state**, and the count is the point: the fill is
+only about 1.3:1 against its neighbours by design, so it could not carry the
+state alone and is not asked to. `aria-current="page"` says it independently of
+all four (§9, "never state by colour alone").
+
+`--rail-hover` is the same idea one step down, white at 6%, replacing
+`--rail-raised` for row hover. Both are **alpha over the ground** rather than
+mixed greens, so if D-E.5 ever reconciles `--rail` with §6A's dark-mode ground
+the two states follow it without being re-measured.
+
+| Token | Value | Use | On the rail |
+|---|---|---|---|
+| `--rail` | `#123a28` | The rail ground, and the mobile drawer's. | — |
+| `--rail-deep` | `#0e2e20` | Its seam: the right edge, the drawer's top edge. | 1.16 |
+| `--rail-raised` | `#1b4a34` | *Superseded by `--rail-hover` for row hover (`sidebar.md` §8).* | 1.25 |
+| `--rail-hover` | white @ 6% | Hover on a destination. | ~1.2 |
+| `--rail-active` | white @ 10% | The current destination's fill — one of four channels, never alone. | ~1.3 |
+| `--rail-ink` | `#e9efe9` | Destination labels, the sign-out control, the account initials. | 10.8:1 |
+| `--rail-ink-muted` | `#a9bdb0` | Group headings, the chevron, the footer. | 6.4:1 |
+| `--rail-icon` | `#b9cbc0` | The drawn nav icons. | 7.4:1 |
+| `--rail-rule` | `#2a5340` | Hairline under a heading, above the footer. | 1.45 |
+| `--rail-focus` | `#93c8ad` | The focus ring, and the selection highlight. | 6.7:1 |
+| `--rail-count` | `#dcb374` | The attention count on a destination. | 6.5:1 |
+| `--rail-count-edge` | `#7a6236` | That count's 1px border. | 2.2 |
+
+Four rules, and they are what make this an exception rather than a second
+palette:
+
+1. **The two grounds never mix.** `--rail-*` is legal only inside `.ws-rail`
+   and `.ws-drawer__panel`; nothing else may use it, and the rail may not reach
+   for the light palette. Every light token is derived against paper and stone
+   and most of them fail here — `--accent-deep` is 1.4:1 on this ground,
+   `--accent-wash` is 1.05:1, `--focus` is a ring nobody can see.
+2. **The accent cannot appear on the rail.** It is a dark green on a dark
+   green. So the active destination **inverts** instead: `--paper` fill with
+   `--accent-deep` text at weight 600 — lightness, hue and weight, which is the
+   same three-channel rule §9 applies to stamps, and it survives grayscale.
+   `.ws-rail__action`, if it is ever rendered, inverts the same way.
+3. **The wash-plus-ink rule does not survive the inversion.** Every amber wash
+   lands within 1.2 of this ground, so the count badge is a bordered mark with
+   no fill.
+4. **The top bar stays white.** The rail is a *ground* the interface stands on,
+   not a stripe of paint across the chrome — §11.4's actual target.
 
 ### Categories carry no colour
 
@@ -449,12 +561,42 @@ and 12px below.
 
 ---
 
+### Who owns a gap
+
+**A container spaces its own children.** A child that adds `mt-*` to separate
+itself from a sibling is a defect: the same gap then exists in two places and
+one of them will be forgotten. This is not a style preference — it is the
+failure that produced a form whose first two cards touched while the rest were
+16px apart, and whose section headings sat flush against their content
+(DESIGN-TODO 10.4.3b).
+
+Two corollaries:
+
+- **Never express a layout gap as a descendant selector on someone else's
+  class.** `.notice--pad > .panel-title { margin-bottom: 16px }` supplied the
+  heading gap on every panel in the app until a component stopped using
+  `.panel-title`, at which point the gap disappeared with no error anywhere.
+- A component that renders *into* a grid it does not own — `DeliveryFields`
+  inside a form, a fragment's children inside a `stack-*` — must add **no**
+  margin of its own. The parent's `gap` already applies to it.
+
+---
+
 ## 5. Borders, radius, elevation
 
-**Radius.** `0` for every sheet, panel, pane, notice, list row, table and
-alert. `2px` for controls (buttons, inputs, selects, choices). `3px` for
-stamps. Nothing else. There are no pills and no 14px cards; both belong to the
-rejected system.
+**Radius.** Three steps and nothing else — **`--radius-control: 6px`** for
+controls (buttons, inputs, selects, choices), **`--radius-stamp: 5px`** for
+stamps, **`--radius-panel: 12px`** for panels, and `0` for anything squared
+directly to the board: list rows, table cells, pane seams and the strip labels.
+
+*This is D-A, closed by the owner on 2026-09-11 in favour of the shipped
+values.* The earlier text specified 2 / 3 / 0 and the code had always been
+6 / 5 / 12 at 20, 5 and 16 call sites respectively; the doc was the side that
+was wrong. What the decision does **not** license is a return to card
+language: there are still **no pills**, no radius above 12px, and no radius at
+all on anything that reads as pinned to the board. A panel is a sheet with a
+softened corner, not a floating card — flatness (below) is what keeps that
+distinction, and it is unchanged.
 
 **Borders do the structural work.** A 1px hairline is the default separator
 everywhere. Two variations carry meaning and are the *only* sanctioned
@@ -465,6 +607,16 @@ variations:
 - a **1px left rule** plus 16px indent marks quoted or attributed text: the
   student's original wording, a private reply, a published answer. It is 1px,
   not 3px; the indent and the serif do the work.
+- a **3px left batten**, inside an element's own edge and drawn as a
+  `::before`, marks **the row you are acting on** in a list of editable rows:
+  `--accent-edge` on hover, `--accent` on `:focus-within`. Added 2026-09-11 for
+  the question editor (DESIGN-TODO 10.4.6), where the owner's request was a
+  resting shadow per question — which is forbidden below, and which this
+  replaces. Three rules apply. It is **state only**, never decoration, so it is
+  transparent at rest. It is drawn inside the edge rather than as
+  `border-left`, so switching it on shifts no content. And it never carries the
+  state alone: the question editor also changes the row's ground and its number
+  chip, so the signal survives grayscale (§9).
 
 **Elevation.** Two levels only.
 
@@ -483,8 +635,19 @@ panel feel important is a defect.
 
 ### Buttons
 
-38px tall, 2px radius, 14px sans at weight 600, 8px internal gap, `padding:
-9px 16px`. `.button--small` is 30px / 13px / `6px 10px`.
+**38px tall** — and 38 is the rendered height, not just a declared floor —
+**6px radius** (`--radius-control`), 14px sans at weight 600, 8px internal gap,
+`padding: 6px 16px`. `.button--small` is 30px / 13px / `4px 10px`.
+
+*Two corrections, both 2026-09-11, both to this paragraph rather than to the
+code.* The radius said **2px** here and has been 6px since D-A closed in favour
+of the code's 6 / 5 / 12 — §5 was amended then and this line was missed. And
+the padding said `9px 16px`, which is what the code carried and is what made a
+button draw **41px**: `min-height` is a floor, and 9 + 9 around a 14px/1.5 line
+box plus 2px of border overshoots it, so the 38px on this line was never the
+height anybody saw. The padding is now 6px and `min-h-control` governs
+(DESIGN-TODO §12h.2c). It stays a minimum, not a fixed height, because a label
+long enough to wrap is supposed to grow the control.
 
 | Variant | Fill | Text | Border | Hover |
 |---|---|---|---|---|
@@ -500,31 +663,51 @@ their shape, drop to `--ink-faint` on `--paper-quiet`, and set
 
 ### Fields
 
-38px tall, 2px radius, 1px `--rule-strong` stroke, white fill, `8px 10px`
+38px tall, 6px radius, 1px `--control-edge` stroke, white fill, `8px 10px`
 padding. Textareas: 10px padding, vertical resize only, `--font-document` at
 16px — because what a student types into them is authored text and should look
 like it while they write.
 
+**One recipe, one place.** `Field` · `Select` · `Textarea` · `FieldRow` ·
+`FieldLabel` in `src/components/ui/form.tsx` are the only implementation of
+everything in this section. The `.field` / `.select-field` / `.textarea-field`
+classes that used to carry it are gone, and with them nine container-scoped
+overrides that had been adjusting a control's width by descendant selector.
+
 - **Label:** always visible, sans 13px weight 600, 6px above its field. Never a
-  placeholder-as-label.
-- **Required:** the word `REQUIRED` in `--ink-soft` at 12px/700 under the
-  prompt, plus server-side validation. Never an unexplained asterisk, never
-  colour alone, and never a stamp — a stamp on every question turns the form
-  into chip soup and stops meaning anything.
-- **Optional:** the word `optional` in `--ink-muted` beside the label.
-- **Help:** 13px `--ink-muted` below the label, above the field.
+  placeholder-as-label. A `<legend>` over a GROUP of controls takes the same
+  recipe, through `FieldLabel`.
+- **Required:** a red asterisk on required fields and **nothing** on optional
+  ones — the owner's call, 2026-09-10 (DESIGN-TODO 10.4.4), replacing the word
+  `REQUIRED` this section used to specify. It is not "colour alone" and not an
+  *unexplained* asterisk, because three independent channels carry it: the
+  glyph's presence against fields that have none (which survives grayscale), a
+  `visually-hidden` "required" for screen readers, and the control's own
+  `required` attribute. `RequiredMark` is the only way to render it. Still never
+  a stamp — a stamp on every question turns the form into chip soup.
+- **Optional:** unmarked. Optional is the default and says nothing, so a form
+  carries one annotation per requirement instead of one per field.
+  `.qualifier-mark` remains for the few staff labels that qualify a *value*
+  rather than a requirement.
+- **Help:** 13px `--ink-muted`, capped at 68ch, below the label and **above**
+  the field. **Known deviation:** roughly 28 call sites render helper text
+  *after* the control instead, as a trailing `.helper-text` span. `FieldRow`'s
+  `help` prop implements this rule correctly; the conversion in DESIGN-TODO §3.2
+  deliberately preserved each site's existing order rather than moving 28 blocks
+  of text as a side effect of a refactor. Someone has to decide which is right —
+  see DESIGN-TODO §3.2.
 - **Focus:** pointer focus shifts the border to `--accent` and adds a 3px
   `--accent-wash` glow — warm rather than shouted, which matters when a
   student is mid-sentence on something uncomfortable. Keyboard focus keeps the
   global 3px outline as well, and the glow steps aside so the two never stack.
   No control anywhere sets `outline: none`.
-- **Error:** `aria-invalid="true"` → border `--red`, fill `#fffbfa`, and a
+- **Error:** `aria-invalid="true"` → border `--red`, fill `--red-tint`, and a
   `FieldError` wired via `aria-describedby` carrying a drawn warning icon and a
   sentence that names the problem *and* the fix.
 - **Choices:** radio and checkbox rows are full-width 38px targets with a 1px
-  border; checked fills `--accent-wash` and shifts the border to
-  `--accent-edge` through `:has(input:checked)`. Native inputs are kept and tinted
-  with `accent-color`.
+  border; checked fills `--accent-wash` and shifts the border to `--accent`
+  through `:has(input:checked)`. Native inputs are kept and tinted with
+  `accent-color`. `Choice` and `ChoiceList` are the implementation.
 - **Search** is a plain GET form. Filters are `<details>` disclosures. Both work
   before hydration.
 
@@ -544,13 +727,15 @@ gone. Decorative icons are `aria-hidden`; an icon-only control carries an
 **Chrome, not brand.** A 52px white top bar with a 1px `--rule-strong` bottom
 edge. It carries the product mark (a 24px `--ink` square with `cf` — identity,
 not action, so it does not take the accent), the current
-context, and the account. There is no coloured brand band; the board's identity
-comes from the board, not from a stripe of paint.
+context, and the account. There is no coloured brand band: the rail below it is
+a dark ground the interface stands on (§3), not a stripe of paint across the
+chrome.
 
 **Three panes for list/detail routes** (Q&A archive, review inbox):
 
-- a **216px rail** on `--board-deep` with its own scroll: courses, categories,
-  section destinations, account footer;
+- a **216px rail** on `--rail` — the one dark region in the app (§3) — with its
+  own scroll: courses, categories, section destinations, account footer. The
+  current destination is a white sheet on it, not a wash;
 - a **360px list pane** on `--paper` with a search field, a filter disclosure,
   day-group battens, and dense rows;
 - a **fluid detail pane** on `--paper`, content capped at 820px.
@@ -658,7 +843,9 @@ second.
 
 Every state below is designed, not incidental. Removing one is a regression.
 
-**Stamps** carry status. A stamp is a bordered rectangle at 3px radius with a
+**Stamps** carry status. A stamp is a bordered rectangle at **5px** radius
+(`--radius-stamp`; this line said 3px until 2026-09-11 — another survivor of
+the pre-D-A numbers, like Buttons above) with a
 drawn 8px shape, a **sentence-case** word, and a tone. Three redundant channels,
 so it survives colourblindness, grayscale printing and low contrast.
 
@@ -687,10 +874,31 @@ would leak the flag, so it never appears on one.
 
 **Loading.** Pages are server-rendered per navigation; the browser's own
 progress is the loading state for navigation. Where a route can be slow, Next's
-`loading.tsx` renders a *structural* placeholder — the real rail and strip
-labels with muted rules where rows will be — never a shimmer, never a spinner
-that pretends to be content. Form submission disables the primary button and
-changes its label to name what is happening ("Submitting…").
+`loading.tsx` renders a *structural* placeholder — the real top bar and rail,
+with muted rules where rows will be — and it renders **that route's own shape**:
+five columns before a five-column table, a card list before a card list, no tab
+bar before a page that has none. A placeholder whose shape differs from the page
+it precedes makes the content jump when it lands, which is worse than no
+placeholder at all. Never a shimmer.
+
+**Spinners — amended 2026-09-11, owner-approved.** This section said "never a
+spinner". That was too broad, and the line falls here instead:
+
+| The wait | What it gets |
+|---|---|
+| content whose **shape is known** — a route, a list, a table | a **skeleton**: it describes what is arriving and holds its space |
+| a wait with **no shape to predict** — a submit in flight, an export being generated | a **spinner**: there is nothing to draw a placeholder of, and a bar pretending to be a row would be a lie |
+
+Three rules keep the original objection answered, because it was a real one:
+a spinner is **never used where a skeleton fits** (it says "something is
+happening" and nothing else, and collapses the layout to a centred dot); it is
+**never alone** — always beside a word, or carrying one for assistive
+technology, because motion is not a message; and it is **static under
+`prefers-reduced-motion`**, where it reads as a ring that marks the place while
+the label carries the meaning. Form submission still disables the primary button
+and changes its label to name what is happening ("Creating…"); the spinner sits
+*beside* that label rather than instead of it — immediate acknowledgement from
+the glyph, meaning from the word.
 
 **Empty.** A dashed `--rule-strong` outline on `--board`, a sentence in the
 document register naming what is not here, one sentence of `--ink-muted` copy at
@@ -701,6 +909,18 @@ never scold and never show a decorative illustration.
 first line naming the problem, and a sentence naming the recovery. Field-level
 errors are wired through `aria-describedby` and never replace the value the
 person typed.
+
+**A refused control is red, from either source, and the red outranks focus.**
+Two things can refuse a value — the server (`aria-invalid`) and the browser
+(`:user-invalid`, an empty required field or a value that does not match its
+type) — and both take the `--red` border on the `--red-tint` fill. `:user-invalid`
+and never `:invalid`: the latter matches an empty required field from page load,
+so styling it paints a pristine form red before anyone has typed. And the
+invalid treatment must beat the focus treatment by **specificity**, because the
+browser focuses the control it refused; otherwise the field that blocked the
+submission renders in the accent — the colour that means *action*. A refused
+**group** (radios, checkboxes, a scale) carries the red on its options, because
+the fault is "this question is unanswered" rather than "that option is wrong".
 
 **Success.** An accent-wash alert with `role="status"`, stating what changed and
 what is now true — "Published to this section, anonymously." Success after an
@@ -741,16 +961,23 @@ Hard rules. Each one is currently satisfied; breaking one is a regression.
 
 **Visual language**
 
-1. No rounded containers above 3px. No pills. No card grid as page structure.
+1. No radius outside the three declared steps (6 / 5 / 12, §5), and none
+   above 12px. No pills, ever. No card grid as page structure.
 2. No `box-shadow` at rest. Shadows exist only on the drawer and the filter menu.
 3. No glassmorphism, backdrop blur, gradient text, glow, or floating blobs.
-4. No purple, no gradient brand bar, no coloured chrome band of any hue.
+4. No purple, no gradient brand bar, no coloured chrome band of any hue —
+   **one exception, taken by the owner on 2026-09-11**: the workspace rail is a
+   deep UP-forest ground with its own fenced `--rail-*` palette (§3). The
+   exception covers the rail and the drawer that replaces it on a phone, and
+   nothing else: the top bar stays white, no other region takes a hue, and no
+   `--rail-*` token appears outside those two selectors.
 5. No second accent colour. The deep blue-green is the only accent; amber and
    red are signals under §3's reserve rules.
 5a. No accent on decoration. The accent is a primary button, a link, active
    navigation, focus, a checked choice, or a positive state — never a brand
    mark, a container fill, an input stroke, an icon tint, a heading, or a chart
-   bar. This is how it stayed meaningful; spending it everywhere is how the
+   bar. The rail's ground is **not** the accent: it is its own token, and the
+   accent is unreadable on it (§3). This is how it stayed meaningful; spending it everywhere is how the
    previous version stopped meaning anything.
 6. No category colour spectrum. Categories are words plus shapes.
 7. No coloured `border-left` above 1px.
@@ -889,21 +1116,86 @@ decisions specific to them.
 
 ## 13. Where the system lives
 
-- `src/app/globals.css` — every token and every class. One stylesheet, one
-  system. No CSS-in-JS, no Tailwind, no UI framework.
-- `src/components/ui/index.tsx` — `Stamp`, `CycleStateBadge`, `Alert`,
-  `EmptyState`, `AccessDenied`, `Panel`, `StripLabel`, `FieldError`,
-  `Breadcrumbs`, `Figure`.
-- `src/components/ui/icons.tsx` — the drawn icon set.
-- `src/components/layout/workspace-shell.tsx` — the top bar, rail, list pane and
-  detail/page panes.
-- `src/components/layout/nav.ts` — destinations derived from effective
-  permissions.
+Rewritten 2026-09-11. The previous version of this section said "one
+stylesheet, one system. No CSS-in-JS, no Tailwind, no UI framework" and listed
+ten components — in a repository part-way through a Tailwind migration with
+nineteen files under `ui/`. It was wrong in every particular, which is what
+DESIGN-TODO 11.6f was about.
+
+**The token layer**
+
+- `src/app/globals.css` — the `@theme` block: **every colour, radius, spacing
+  step, type step and breakpoint, declared once.** A hex literal is legal here
+  and nowhere else.
+- `src/app/legacy.css` — the hand-written class layer, **shrinking to zero**.
+  Imported into `@layer components` so utilities override it. Nothing new goes
+  in; a new component writes utilities.
+- `src/lib/theme.ts` — the one value duplicated outside CSS (`themeColor`
+  cannot read a custom property), held to `globals.css` by
+  `tests/unit/theme-tokens.test.ts`.
 - `src/app/fonts/` — the Charter subset and its licence.
 
-Inline `style` attributes are for one-off geometry only (a max-width on a single
-select, a grid template that exists once). Anything that appears twice becomes a
-class.
+**The components — one recipe per pattern, in `src/components/ui/`**
+
+| File | What it owns |
+|---|---|
+| `button.tsx` | `Button`, `buttonClass` — the only button recipe |
+| `form.tsx` | `Field` · `Select` · `Textarea` · `FieldRow` · `FieldLabel` · `Choice` · `ChoiceList` · `ScaleList` · `Question` · `OwnItem` · `Label` · `FormSection` — §6 in full |
+| `status.tsx` | `Stamp` and the badges that delegate to it; `Category` |
+| `feedback.tsx` | `Alert`, `EmptyState`, `AccessDenied`, `FieldError` |
+| `surface.tsx` | `Panel`, `StripLabel`, `Disclose`, `Figure`, `Quote` |
+| `data.tsx` | `MetaList`, `BarChart`, `Pagination`, `Breadcrumbs` |
+| `dialog.tsx` | the native `<dialog>` primitive — centred, scrimmed, Escape, click-outside, a corner `×`, focus trapped and returned to the trigger. Every modal in the app is an instance of this; none styles its own |
+| `info-tip.tsx` | `InfoTip` — an `(i)` revealing reference text |
+| `tag.tsx` | `Tag`, `TagList` — neutral counts, never a status |
+| `submit-button.tsx` | the pending state on a mutation |
+| `required-mark.tsx` | the red asterisk, with its accessible name |
+| `skeleton.tsx` | `Skeleton` · `SkeletonText` · `SkeletonPanel` · `SkeletonCards` · `SkeletonTable` · `SkeletonControls` · `SkeletonPage` — placeholders sized off the real tokens, composed per route |
+| `spinner.tsx` | `Spinner`, `SpinnerBlock` — a wait with no predictable shape. Read the rules in §9 before using either |
+| `shell-frame.tsx` | the app's chrome with no data behind it, for `loading.tsx` and `error.tsx` — which replace the page *and* its shell |
+| `announcer.tsx` | speaks `?ok=` / `?error=` into a polite live region once, because a banner present at page load is not a mutation and is therefore not announced |
+| `filter-menu.tsx`, `auto-submit.tsx`, `long-text.tsx`, `term-fields.tsx`, `thread.tsx`, `scroll-to.tsx` | one pattern each |
+| `icons.tsx` | the drawn icon set. `IconClose` is the **only** glyph allowed to stand without a word beside it, and only in a dialog's corner |
+| `index.tsx` | a barrel over `status` · `feedback` · `surface` · `data`. Not a component |
+
+**Composed components — a pattern used once, in one place**
+
+These are not primitives and nothing else should import them. They are listed
+so a reader looking for "where is the create-course form" finds it, and so the
+next one is put beside them rather than inlined into a page.
+
+| File | What it is |
+|---|---|
+| `staff/create-course-dialog.tsx` | the create-course modal (`modal.md`). An instance of `dialog.tsx` plus four fields; contains no geometry of its own |
+| `staff/course-heading.tsx` | `courseSubtitle` — a course's two-line subtitle, built once so two courses cannot drift |
+| `layout/nav-count.tsx` | the navigation count badge, one rule over two grounds |
+
+**The shell**
+
+- `src/components/layout/workspace-shell.tsx` — top bar, list pane, detail/page
+  panes, and the rail's geometry and collapsed state.
+- `src/components/layout/rail.tsx` — the rail's contents: sections,
+  destinations, the account block. Rebuilt to `sidebar.md`; **the sidebar owns
+  navigation and the header owns identity**, so it carries no product mark.
+- `src/components/layout/rail-toggle.tsx` — the collapse control. Lives *inside*
+  the rail, which only works because nothing re-expands the rail on hover or
+  focus; see the file for the bug that taught us.
+- `src/components/layout/nav-count.tsx` — the count on a nav row, in either
+  ground.
+- `src/components/layout/sub-nav.tsx` — contextual navigation, in its two
+  responsive shapes.
+- `src/components/layout/nav.ts` — destinations derived from effective
+  permissions. Presentation only: hiding a link is not authorization.
+
+**Two rules about adding to this**
+
+- **Inline `style` attributes are at zero and should stay there.** The previous
+  text here permitted them "for one-off geometry"; that permission produced 59
+  of them. A one-off is an arbitrary utility (`max-w-[220px]`), which at least
+  goes through the token system.
+- **A component that is not in this table will drift.** Its rule belongs in the
+  right section above and its name in this list, in the same change that adds
+  it.
 
 ---
 

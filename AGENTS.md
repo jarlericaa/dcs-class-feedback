@@ -411,6 +411,34 @@ Read the first three, then by area. Each concept has a single owning document; o
 - **Do not silently promote recommendations into confirmed requirements** — keep the [Confirmed]/[Recommended]/[Assumption]/[Open] labels intact.
 - **Always check [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md) before implementation work.** If a relevant decision is marked "wait for owner approval," stop and surface it rather than guessing.
 - **Preserve the scope boundary** in [docs/product/scope.md](docs/product/scope.md); do not pull a deferred item in on your own. `P3` (AI) stays parked.
+- **Run `npm run build`, not just `typecheck`, `lint` and `test`.** Those three
+  pass on a change that cannot start the app: a `"use client"` file importing
+  anything from a module that also imports `next/headers` (or the database)
+  drags that server-only dependency into the browser bundle, and only
+  `next build` reports it. A module imported from **both** sides of the boundary
+  must import nothing itself — `src/lib/rail-cookie.ts` is the worked example.
+- **Never run `npm run build` while `npm run dev` is running.** They share
+  `.next`; the build replaces the module graph under the running server and
+  every route starts returning 500, which reads as a code defect and is not one.
+- **A declared height is not a rendered height — check the page, not the
+  source.** `--spacing-control: 38px`, `DESIGN.md` §6 and `button.tsx`'s own
+  comment all said a button was 38px tall while every button in the app drew
+  **41**, because `min-height` is a floor and the padding overshot it. Four
+  faults of that kind shipped past a clean `typecheck`, a clean `lint` and 245
+  passing tests, including a shared `Dialog` that attached no event listeners
+  (a `useEffect` with `[]` deps running before its portal mounted) so no dialog
+  could be reopened after Escape. Run **`npm run design:check`** for anything
+  touching a control, a floating surface or dialog chrome; it reads
+  `getComputedStyle` off the running app, which is the only place these are
+  visible. `tests/unit/theme-tokens.test.ts` covers what the stylesheet alone
+  can decide. See `DESIGN-TODO.md` §7a.
+- **Before adding a UI component, read `DESIGN-TODO.md` §13.** A second
+  component for a pattern that already has one is the defect, not the fix.
+- **Register every custom `@theme` scale with `tailwind-merge`** (see
+  `src/lib/cn.ts`). `text-*` is both a font size and a text colour; the library
+  tells them apart by recognising the value, so an unregistered custom step
+  makes it group a size with a colour and **silently delete one of them**. That
+  shipped every small primary button with dark ink on a dark green fill.
 - **Prefer small, reviewable changes.**
 - **Keep docs cross-linked** — one owning doc per concept; link instead of duplicating.
 - **When unsure, document the uncertainty** as an open decision instead of inventing a business rule.

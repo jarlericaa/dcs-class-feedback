@@ -50,6 +50,75 @@
 > |---|---|---|
 > | D23 | How does an authenticated account become a student? | **Exact normalized UP email matching against teacher-uploaded class lists.** The class list carries student number, full name, and UP email. A signed-in user is the student record whose `roster_email` equals their trimmed, lowercased email — nothing else. Name similarity, roster claims, claim throttling, and teacher confirm/reject/unlink of matches are **removed** (D2, D9). A roster email is unique across all records, enforced in the database, so two students can never resolve to one another. Class-list rows with a missing, malformed, off-domain, duplicated, or already-taken email are **refused** at import rather than guessed at. |
 
+> ### Design-system decisions recorded 2026-09-11
+>
+> Raised in [DESIGN-TODO.md](../../DESIGN-TODO.md) §1 and §10.1, answered by the owner.
+> These govern the visual system only; the owning document is
+> [DESIGN.md](../../DESIGN.md), which has been corrected in the same pass.
+>
+> | # | Question | Decision |
+> |---|---|---|
+> | D-A | Corner radius — DESIGN.md said 2 / 3 / 0 (control / stamp / panel), the code shipped 6 / 5 / 12. | **The code wins: 6 / 5 / 12.** DESIGN.md §5 and its `rounded` token map were wrong, not the implementation, and they are amended. The three steps are now closed: no fourth radius, nothing above 12px, and no pills. A panel is a sheet with a softened corner — the flat-at-rest rule is what keeps it from reading as a card, and that rule is untouched. Unblocks DESIGN-TODO 11.1 (toggle shape). |
+> | D-B | Is dark mode in scope? | **Yes — approved, and built last.** The palette in DESIGN-TODO §6A is the approved one (warm charcoal ground, the three UP hues re-derived at lower saturation, all eighteen pairings measured). It lands after the token set has stopped moving, so later token edits are not two-place edits. Two carve-outs: 6A.2 (`--color-on-accent` replacing the literal `text-white` in `buttonClass`) is done early because a hard-coded button text colour is wrong in a light-only app too, and D-E.5 must be reconciled first — the rail's `#123a28` and §6A's `#161719` are two dark grounds and only one may survive. |
+> | D-C | Stamp tones: named by appearance (`green \| amber \| red \| neutral`) or by role (`positive \| attention \| problem \| quiet`)? | **The colour names, confirmed twice.** *Correction, same day:* the question was first put to the owner on the basis that the code used colour names — which [DESIGN-TODO.md](../../DESIGN-TODO.md) §1 asserted and which was **stale**. An earlier pass had already renamed `Tone` to the role vocabulary at 32 call sites. Re-asked with the true state, the owner confirmed the colour names, so the rename was **reverted**: 48 tone references, the `Tone` type, the shape map and the four `.stamp--*` rules. Two costs are accepted knowingly and are recorded in `src/components/ui/status.tsx` so they are not rediscovered: this is the one API in the system named by appearance rather than role, and after D-D repainted the palette the names no longer describe their colours (`green` is UP Forest Green, `red` is UP Maroon). What is unaffected is the rule that protects legibility — `Stamp` renders **word + shape + tone**, so no status has ever depended on its colour being read. Note `tone="neutral"` and a button's `variant="quiet"` are deliberately separate vocabularies. |
+> | 10.1b | The owner asked for "1-2 fonts, modern font style sana". Does Charter stay? | **Two families is the ceiling; no new family is added.** The app already ships exactly two (self-hosted XCharter + the platform sans), so the request is satisfied by fixing **placement**, not by swapping a face: the document register is confined to prose and titles, and chrome — nav, list rows, excerpts, counts, labels — moves to the sans (DESIGN-TODO 10.1a). `src/app/fonts/` survives and no webfont is added. If a *named* modern sans is still wanted afterwards, it replaces the platform stack rather than joining it, and that is a separate call with a webfont cost. |
+
+> ### Loading-state decisions recorded 2026-09-11 (skeletons and spinners)
+>
+> Raised against [DESIGN-TODO.md](../../DESIGN-TODO.md) §5.2 and §12i, answered
+> by the owner. **Both are built** (2026-09-11).
+> [engineering/current-state.md](../engineering/current-state.md) remains the
+> authority on what runs.
+>
+> | # | Question | Decision |
+> |---|---|---|
+> | L-1 | Does the app get spinners? [DESIGN.md](../../DESIGN.md) §9 said "never a shimmer, never a spinner" and DESIGN-TODO §11.5 listed one as *forbidden*. | **Yes, and DESIGN.md §9 is amended rather than contradicted.** Both prohibitions were **[Recommended]** verdicts of the implementing agent, and an owner request outranks them. What mattered was *not* shipping a component the design document forbids while leaving the document standing — that is the failure that let a button sit 3px off its declared height for months (§12h.2c). So the rule moved, in writing, and the original objection survives as the line between the two: a **skeleton** for content whose shape is known (a route, a list, a table), a **spinner** only for a wait with no shape to predict (a submit in flight, an export being generated). Three constraints came with it — never a spinner where a skeleton fits; never a spinner alone, because motion is not a message; static under `prefers-reduced-motion`. The spinner is **paired with** `SubmitButton`'s relabel rather than replacing it: the glyph is the immediate acknowledgement, the word is the meaning. |
+> | L-2 | A skeleton should "follow the layout of the current page". What does the placeholder for a route include? | **The app's chrome for real, plus that route's own shape.** Twelve route-level `loading.tsx` files replaced one generic five-bar block that stood in for all 26 routes. Two consequences are decisions rather than details. First, the chrome (top bar, rail) is **drawn and never pulsed** — `AppShell` is rendered by each page rather than by a layout, so a `loading.tsx` replaces the shell too, and without drawing it every slow navigation would flash the whole window; pulsing it would claim the chrome was waiting when it is not. Second, the rail is drawn **expanded** even for a reader who collapsed it: a Suspense fallback renders synchronously and cannot read the cookie, and a client component that could would flash for everyone. The shape of each skeleton is enforced by `tests/unit/skeleton.test.tsx` rather than reviewed, because a placeholder of the wrong shape fails silently — it looks correct on its own and only misbehaves in the transition. |
+
+> ### Course-creation decisions recorded 2026-09-11 (the create-course modal)
+>
+> Raised against [modal.md](../../modal.md) and
+> [DESIGN-TODO.md](../../DESIGN-TODO.md) §10.3b and §12h, answered by the owner.
+> **All three are built** (2026-09-11).
+> [engineering/current-state.md](../engineering/current-state.md) remains the
+> authority on what runs.
+>
+> | # | Question | Decision |
+> |---|---|---|
+> | C-1 | `modal.md` requires a **Semester \*** field when a course is created, but `courses` had no term column — a term lived only on `class_sections.term`. Where does the answer land? | **A nullable `term` column on `courses`, by migration** (`drizzle/0007_course_term.sql`). This is the domain-correct place and `src/lib/term.ts` already pointed at it in prose: a term describes an *offering of a course*, not one class list inside it, so holding it per section made a teacher retype the same academic year per class list and left a course with no class lists showing no term at all. **[AGENTS.md](../../AGENTS.md) §13 normally forbids adding a migration unasked; this one was explicitly approved.** Two alternatives were put and declined: creating the course's first class list as a side effect of course creation (no migration, but every new course would silently arrive with a class list nobody asked for), and dropping the Semester field for now (ships immediately, does not match the reference). Nullable is part of the decision, not a shortcut — every pre-existing course has no value, inventing one would fabricate a fact about somebody's course, and readers fall back to the sections exactly as before, which is what keeps the change additive and `DROP COLUMN` a complete rollback. It also narrows a flagged **[Assumption]**: `fallbackTerm` used to guess a first section's term from the calendar, and now reads the teacher's own answer. |
+> | C-2 | Is **Course title** required? The reference image shows `Course title *`. | **Optional — the spec's text wins over its own picture.** `modal.md`'s field list says three separate times that an empty title must still create the course, carry no asterisk, and raise no error. It also agrees with the app as built: the **code** is a course's identity (`CS 33` is what a teacher and a student both call it, and every heading and breadcrumb leads with it), so a title is a gloss on the code rather than a second required name for it. `courses.title` stays `NOT NULL` and holds the empty string; `MetaList` already drops empty facts, so a titleless course renders one line rather than a line with a gap. This **closes DESIGN-TODO §10.3b**, which had been open on exactly this question. |
+> | C-3 | Inline panel or modal? | **A centred modal, on the shared `Dialog`.** The inline form appeared above the course cards on `?new=1` and pushed the whole list down the page, so the courses you were about to compare against scrolled out of view. Reusing `Dialog` rather than styling a new modal was the spec's own stated priority ("not a separately designed component"), and it is what makes the radius, elevation, scrim, Escape, focus trap and focus return identical to every other dialog in the app. One consequence accepted knowingly: a dialog has no URL, so the cross-page "New course" link on the home screen now points at the courses **list** rather than at a form — a button that lands you somewhere other than where it says is worse than one extra click. |
+
+> ### Navigation decisions recorded 2026-09-11 (the rail, and "where am I")
+>
+> Raised against [DESIGN-TODO.md](../../DESIGN-TODO.md) §10.4.2, §11.4 and §12,
+> with a reference image supplied by the owner (a dark rail that collapses to
+> icons with a flyout submenu). **N-1, N-2 and N-3 are built** (2026-09-11);
+> **N-4 is answered and not yet built**.
+> [engineering/current-state.md](../engineering/current-state.md) remains the
+> authority on what runs.
+>
+> **One amendment to N-3, forced by CSS and recorded rather than quietly
+> substituted.** The reference image's *per-row* flyout cannot be built here: a
+> flyout is a child of a rail row, so it must paint outside the rail's right
+> edge while the rail keeps scrolling vertically for an account with many
+> courses — and CSS forbids that pair (`overflow-x: visible` beside
+> `overflow-y: auto` computes back to `auto`; `overflow-x: clip` computes to
+> `hidden`, which `overflow-clip-margin` cannot reopen). Both were measured in a
+> browser. What shipped instead is the **rail expanding as an overlay** on hover
+> or focus — 60px in the layout, painting 216px over the page via a negative
+> flex margin, so nothing reflows. The decision's intent is intact (labels
+> appear on hover from a collapsed rail) and the result suits this app better:
+> the rows that share a glyph are courses, so revealing every label at once is
+> what lets a reader tell CS 33 from CS 21.
+>
+> | # | Question | Decision |
+> |---|---|---|
+> | N-1 | What collapses the workspace rail — the route, or the reader? | **The reader, with a manual toggle.** A chevron at the top of the rail, as in the reference image. §10.4.2's literal wording ("when you are inside a course, the rail should collapse") was **not** taken: a rail that changes shape on navigation is the instability §12 spent its effort removing, and the owner chose the control over the automation. The route never alters the rail's shape. |
+> | N-2 | Does the collapsed state survive a navigation? | **Yes — a cookie, read on the server.** This app re-renders per navigation, so the shell reads the cookie and the rail paints in the right shape first time, with no flash and no post-hydration snap. The cost is a request-time read in the shell. This is the same trade §6.5 recommends for the dark-mode toggle, so the app will have one answer to "where does a viewer preference live" rather than two. `localStorage` was rejected for exactly the flash it causes here. |
+> | N-3 | Collapsed, what does the rail show? | **Icons, with a flyout on hover and focus.** The reference image's pattern, and here it is a **necessity rather than a flourish**: that image's top-level items are distinct concepts (Dashboard, Analytics, Settings), while this rail is mostly *instances of one kind* — "My courses" lists CS 33, CS 21, CS 11, all carrying the same `course` glyph. Icon-only, three courses are three identical squares. The label has to live somewhere, and the flyout is where. Built as CSS `:hover` / `:focus-within`, so it needs no JavaScript. |
+> | N-4 | **D 11.4b** — the app answers "where am I / how do I get back" three ways (`Breadcrumbs`, the list pane's `.pane-head__back`, and the shell's `selection.backHref`). Which survive? | **Breadcrumbs, everywhere; the other two go.** One mechanism, on every route including top-level ones. This **overrides 11.4d**, which said a top-level route gets no trail and that a one-crumb trail is chrome — that item is superseded and says so. One thing the decision cannot do on its own: in the two-pane layout the list and a selected row **share a route**, so a trail has no crumb that returns to the list, and dropping `backHref` outright would strand a phone reader in a detail view. The return is therefore folded into the trail as its final crumb when a selection is active — still one mechanism, and no dead end. |
+
 ---
 
 ## D1. What does "Fable" mean? (gates the stack)
