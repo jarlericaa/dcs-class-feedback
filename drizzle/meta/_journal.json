@@ -50,6 +50,13 @@
       "when": 1788776507763,
       "tag": "0006_response_reads",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789111151729,
+      "tag": "0007_course_term",
+      "breakpoints": true
     }
   ]
 }

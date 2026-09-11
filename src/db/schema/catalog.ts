@@ -25,6 +25,25 @@ export const courses = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     code: text("code").notNull(),
     title: text("title").notNull(),
+    /**
+     * The academic term this course is OFFERED in, in `lib/term.ts`'s storage
+     * form (`AY2026-1`).
+     *
+     * Nullable, and that is the whole design rather than a convenience. A term
+     * describes an offering of a course, not one class list inside it, and
+     * `class_sections.term` had been carrying it by default — so every section
+     * of one course restated the same academic year, and a course with no
+     * sections yet had no term at all. The create-course dialog collects it
+     * once (owner-approved 2026-09-11, `modal.md`), and this is where it lands.
+     *
+     * It stays nullable because every course that already exists has no value
+     * here and inventing one would be a data rewrite, not a migration: readers
+     * fall back to their sections' terms exactly as they did before, so an old
+     * course reads identically and a new one reads from one place.
+     * `class_sections.term` is unchanged and still `NOT NULL` — this is the
+     * value new sections INHERIT (`fallbackTerm`), not a replacement for it.
+     */
+    term: text("term"),
     ownerUserId: uuid("owner_user_id")
       .notNull()
       .references(() => users.id),

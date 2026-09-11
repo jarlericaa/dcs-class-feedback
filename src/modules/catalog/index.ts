@@ -51,6 +51,7 @@ import {
   type Page,
 } from "@/lib/pagination";
 import { env } from "@/env";
+import { parseTerm } from "@/lib/term";
 
 /**
  * Catalog: courses, class sections, teaching staff, and the per-section TA
@@ -827,9 +828,49 @@ function revealOrNull(record: {
 
 // --- courses ---------------------------------------------------------------
 
+/**
+ * The storage form of an academic term, validated rather than trusted.
+ *
+ * `class_sections.term` is free text and always has been, so this does not
+ * tighten what the database accepts — a term somebody typed by hand years ago
+ * is still the truth about that section (`src/lib/term.ts`). What it does is
+ * refuse a value this application itself composed wrongly, which is the only
+ * case it can be sure about.
+ */
+const termSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .refine((value) => parseTerm(value) !== null, {
+    message: "Expected an academic term like AY2026-1",
+  });
+
 const courseInputSchema = z.object({
   code: z.string().trim().min(1).max(64),
-  title: z.string().trim().min(1).max(200),
+  /**
+   * OPTIONAL, owner-confirmed 2026-09-11 (`modal.md`): "Empty title must still
+   * allow the course to be created."
+   *
+   * The code is the course's identity — `CS 33` is what a teacher and a student
+   * both call it, and every heading in the app leads with it — so a title is a
+   * gloss on the code rather than a second required name for the same thing.
+   * The column stays `NOT NULL`; the absence is stored as the empty string, and
+   * `MetaList` already drops empty facts, so a course with no title renders one
+   * line instead of a line with a gap in it.
+   */
+  title: z.string().trim().max(200).default(""),
+  /**
+   * The term this course is offered in. Optional here, required by the
+   * create-course FORM — and the split is deliberate.
+   *
+   * Every course that predates `courses.term` has none, so a service that
+   * demanded one could not read its own data back. The product rule ("Semester
+   * *") belongs to the dialog that collects it, where it is enforced by two
+   * selects that always carry a value; the service's job is to accept the
+   * domain as it actually is.
+   */
+  term: termSchema.optional(),
 });
 
 export async function createCourse(actorUserId: string, rawInput: unknown) {
@@ -842,6 +883,11 @@ export async function createCourse(actorUserId: string, rawInput: unknown) {
       .values({
         code: input.code,
         title: input.title,
+        // `null` rather than `""` when it was not asked for: the column is
+        // nullable precisely so "no term recorded" and "this course runs in
+        // AY2026-1" are different facts, and an empty string would collapse
+        // them into one that `parseTerm` then has to treat as a typo.
+        term: input.term ?? null,
         ownerUserId: actorUserId,
       })
       .returning();
@@ -853,7 +899,11 @@ export async function createCourse(actorUserId: string, rawInput: unknown) {
       action: "course.created",
       entityType: "course",
       entityId: course!.id,
-      after: { code: course!.code, title: course!.title },
+      after: {
+        code: course!.code,
+        title: course!.title,
+        term: course!.term,
+      },
       // Course-scoped like course.updated, so every section this course later
       // gains finds the record of its own creation.
       courseId: course!.id,
@@ -884,6 +934,7 @@ export async function updateCourse(
       .set({
         ...(input.code !== undefined ? { code: input.code } : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.term !== undefined ? { term: input.term } : {}),
         ...(input.active !== undefined ? { active: input.active } : {}),
       })
       .where(eq(courses.id, courseId));
@@ -892,7 +943,12 @@ export async function updateCourse(
       action: "course.updated",
       entityType: "course",
       entityId: courseId,
-      before: { code: before.code, title: before.title, active: before.active },
+      before: {
+        code: before.code,
+        title: before.title,
+        term: before.term,
+        active: before.active,
+      },
       after: input,
       // A course id is reachable from no section, so this is what puts "the
       // course was renamed / archived" into each of its sections' histories.
