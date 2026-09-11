@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { IconStar } from "@/components/ui/icons";
 
 /**
  * Form primitives, transcribed from `.field`, `.choice`, `.question` and their
@@ -258,36 +259,25 @@ export function ChoiceList({
 }
 
 /**
- * A linear scale, as a slider.
+ * A linear scale, answered.
  *
- * Replaces the row of radio cells the owner asked to retire (2026-09-11:
- * "scale should be a slider instead of choices in both the teacher and the
- * student side"). One change covers both sides because the teacher's preview
- * renders the real `WeeklyForm` rather than a lookalike.
+ * Stars when the scale is star-shaped, a slider when it is not — one component
+ * either way, because "how a linear scale is answered" is one pattern and §13's
+ * rule is that a second component for an existing pattern is the defect.
  *
- * Three things this has to get right, and the first is not cosmetic:
+ * The owner asked for stars (2026-09-11), and a `linear_scale` question is
+ * configurable: the teacher sets its own min, max and step. Stars only work
+ * while there are few enough of them to count at a glance and each one means a
+ * whole unit — so {@link starScale} decides, and anything outside that falls
+ * back to the slider rather than drawing forty stars or half of one.
  *
- * 1. **An untouched scale stays unanswered.** A native range input always has
- *    a value — an untouched one reports its midpoint — so naming it directly
- *    would post an answer the student never gave, and on an optional question
- *    that is inventing data. The range is therefore unnamed and a hidden input
- *    carries the value only once there is one. The radios it replaces got this
- *    for free by being unchecked.
- * 2. **The number is shown, not implied.** A thumb position is not a reading:
- *    the chosen value sits beside the track, and it reads "Not answered" until
- *    it is chosen, so "nothing yet" and "the middle" cannot look alike.
- * 3. **Keyboard and screen reader come from the platform.** A native range is
- *    arrow-operable and announces itself; `aria-valuetext` is overridden only
- *    to say "Not answered", which the platform would otherwise report as
- *    whatever the midpoint happens to be.
- *
- * The cost, recorded rather than discovered later: this control needs
- * JavaScript, where the radios did not. The form already does — a student's own
- * question blocks post as one client-built JSON field — and the usual
- * `<noscript>` fallback is unavailable here because it would need a second
- * `dangerouslySetInnerHTML`, which AGENTS.md forbids outside `rich-text.tsx`.
+ * Stars are the better control where they apply, and not only because they were
+ * asked for: they are **radio inputs**, so they are arrow-key operable, they
+ * post without JavaScript, and "not answered" is simply nothing checked. The
+ * slider had to fake that last part with a hidden input, because a native range
+ * always reports a value.
  */
-export function ScaleSlider({
+export function ScaleInput({
   name,
   scale,
   value,
@@ -303,16 +293,195 @@ export function ScaleSlider({
   onValueChange: (next: string) => void;
   labelledBy?: string;
 } & Omit<ComponentProps<"input">, "value" | "onChange" | "name" | "type">) {
+  return starScale(scale) ? (
+    <ScaleStars
+      className={className}
+      labelledBy={labelledBy}
+      name={name}
+      onValueChange={onValueChange}
+      scale={scale}
+      value={value}
+      {...props}
+    />
+  ) : (
+    <ScaleSlider
+      className={className}
+      labelledBy={labelledBy}
+      name={name}
+      onValueChange={onValueChange}
+      scale={scale}
+      value={value}
+      {...props}
+    />
+  );
+}
+
+/**
+ * Whether a scale can be drawn as stars.
+ *
+ * Whole steps, and few enough to count without counting. Ten is the upper
+ * bound because a 0–10 satisfaction scale is a real thing a teacher may ask
+ * for and eleven stars is still scannable; 1–100 is not, and neither is a
+ * half-step scale, where a star would have to mean half a unit.
+ */
+function starScale(scale: { min: number; max: number; step: number }): boolean {
+  const step = scale.step > 0 ? scale.step : 1;
+  if (!Number.isInteger(step)) return false;
+  const count = Math.floor((scale.max - scale.min) / step) + 1;
+  return count >= 2 && count <= 11;
+}
+
+function scaleValues(scale: {
+  min: number;
+  max: number;
+  step: number;
+}): number[] {
+  const step = scale.step > 0 ? scale.step : 1;
+  const values: number[] = [];
+  for (let v = scale.min; v <= scale.max; v += step) values.push(v);
+  return values;
+}
+
+/**
+ * The star rating.
+ *
+ * A `radiogroup` of real radios with the input visually hidden and a star drawn
+ * in its place, so every platform behaviour comes for free: arrow keys move
+ * within the group, Tab skips past it, the label is clickable, and the value
+ * posts with the form whether or not JavaScript ran.
+ *
+ * Stars fill CUMULATIVELY — choosing 4 fills one through four — which is what
+ * makes a rating readable as a quantity rather than as a position. That is
+ * purely visual: the accessible name of each radio is its number and its
+ * unit ("4 of 5"), because "four stars" is a picture, not a value.
+ *
+ * `Clear` appears once something is chosen, and it is the only part of this
+ * that needs JavaScript. A radio group cannot be un-checked by clicking, and
+ * an optional question a student answered by mistake had no way back.
+ */
+function ScaleStars({
+  name,
+  scale,
+  value,
+  onValueChange,
+  labelledBy,
+  className,
+  ...props
+}: {
+  name: string;
+  scale: { min: number; max: number; step: number };
+  value: string;
+  onValueChange: (next: string) => void;
+  labelledBy?: string;
+} & Omit<ComponentProps<"input">, "value" | "onChange" | "name" | "type">) {
+  const values = scaleValues(scale);
+  const chosen = value === "" ? null : Number(value);
+
+  return (
+    <div className={cn("grid justify-items-start gap-tight", className)}>
+      <div
+        aria-labelledby={labelledBy}
+        className="flex flex-wrap items-center gap-1"
+        role="radiogroup"
+      >
+        {values.map((v) => {
+          const filled = chosen !== null && v <= chosen;
+          return (
+            <label
+              className="group cursor-pointer p-1 leading-none"
+              key={v}
+              title={`${v} of ${scale.max}`}
+            >
+              <input
+                checked={chosen === v}
+                className="peer sr-only"
+                name={name}
+                onChange={() => onValueChange(String(v))}
+                type="radio"
+                value={v}
+                {...props}
+              />
+              <span className="sr-only">
+                {v} of {scale.max}
+              </span>
+              <IconStar
+                className={cn(
+                  "transition-colors",
+                  filled ? "text-accent" : "text-rule-ink",
+                  // Focus has to be visible on the STAR, because the input it
+                  // belongs to is `sr-only` and has no box of its own.
+                  "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent",
+                  "group-hover:text-accent-deep",
+                )}
+                fill={filled ? "currentColor" : "none"}
+                size={28}
+              />
+            </label>
+          );
+        })}
+
+        <span
+          className={cn(
+            "ml-2 tabular-nums",
+            chosen === null
+              ? "text-meta text-ink-muted"
+              : "text-ui font-semibold text-ink",
+          )}
+        >
+          {chosen === null ? "Not answered" : `${chosen} of ${scale.max}`}
+        </span>
+      </div>
+
+      {chosen !== null && (
+        <button
+          className="text-meta text-ink-muted underline decoration-1 underline-offset-2 hover:text-ink"
+          onClick={() => onValueChange("")}
+          type="button"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The fallback for a scale too wide, or too finely stepped, to be stars.
+ *
+ * Unnamed range plus a hidden input, because a native range always reports a
+ * value — an untouched one sits at its midpoint, so naming it directly would
+ * post an answer the student never gave, and on an optional question that is
+ * inventing data. The readout says "Not answered" until there is an answer, so
+ * "nothing yet" and "the middle" cannot look alike.
+ *
+ * Unlike the stars, this needs JavaScript: the hidden input is what carries the
+ * value, and nothing writes it before hydration. The form already depends on JS
+ * for the student's own question blocks, and the usual `<noscript>` fallback
+ * would need a second `dangerouslySetInnerHTML`, which AGENTS.md forbids
+ * outside `rich-text.tsx`.
+ */
+function ScaleSlider({
+  name,
+  scale,
+  value,
+  onValueChange,
+  labelledBy,
+  className,
+  ...props
+}: {
+  name: string;
+  scale: { min: number; max: number; step: number };
+  value: string;
+  onValueChange: (next: string) => void;
+  labelledBy?: string;
+} & Omit<ComponentProps<"input">, "value" | "onChange" | "name" | "type">) {
   const step = scale.step > 0 ? scale.step : 1;
   const answered = value !== "";
-  // Where to park the thumb before there is an answer. The midpoint reads as
-  // "somewhere in the middle" rather than as a low score the student did not
-  // give — and the label beside it says "Not answered" regardless.
-  const midpoint = scale.min + Math.floor((scale.max - scale.min) / 2 / step) * step;
+  const midpoint =
+    scale.min + Math.floor((scale.max - scale.min) / 2 / step) * step;
 
   return (
     <div className={cn("grid gap-tight", className)}>
-      {/* Named input, present only when answered — see (1) above. */}
       {answered && <input name={name} type="hidden" value={value} />}
       <div className="flex items-center gap-4">
         <input
@@ -320,17 +489,12 @@ export function ScaleSlider({
           aria-valuetext={answered ? undefined : "Not answered"}
           className={cn(
             "h-touch min-w-0 flex-1 cursor-pointer appearance-none bg-transparent",
-            // The track and the thumb have to be styled per engine; there is
-            // no cross-browser shorthand for either.
             "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-control [&::-webkit-slider-runnable-track]:bg-rule",
             "[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-control [&::-moz-range-track]:bg-rule",
             "[&::-webkit-slider-thumb]:-mt-2 [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-paper [&::-webkit-slider-thumb]:bg-accent",
             "[&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-paper [&::-moz-range-thumb]:bg-accent",
-            // Unanswered: the thumb is hollow, so the control does not look
-            // like it is already reporting a score.
             !answered &&
               "[&::-webkit-slider-thumb]:border-control-edge [&::-webkit-slider-thumb]:bg-paper [&::-moz-range-thumb]:border-control-edge [&::-moz-range-thumb]:bg-paper",
-            // Refused, the same way every other control is refused.
             "aria-invalid:[&::-webkit-slider-runnable-track]:bg-red-edge aria-invalid:[&::-moz-range-track]:bg-red-edge",
           )}
           max={scale.max}
@@ -344,7 +508,9 @@ export function ScaleSlider({
         <output
           className={cn(
             "w-14 shrink-0 text-right tabular-nums",
-            answered ? "text-ui font-semibold text-ink" : "text-meta text-ink-muted",
+            answered
+              ? "text-ui font-semibold text-ink"
+              : "text-meta text-ink-muted",
           )}
         >
           {answered ? value : "Not answered"}

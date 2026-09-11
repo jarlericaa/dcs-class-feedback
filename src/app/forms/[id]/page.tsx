@@ -18,6 +18,7 @@ import {
   Notice,
   Stamp,
 } from "@/components/ui";
+import { Tag } from "@/components/ui/tag";
 import {
   WeeklyForm,
   type FormQuestionView,
@@ -352,31 +353,46 @@ export default async function StudentFormPage({
          when they set one — that is what explains an unfamiliar question. */
       title={formTitle}
       description={
-        <>
-          <MetaList
-            items={[
-              sequenceLabel,
-              focusLabel ? `Focus: ${focusLabel}` : null,
-              topicTitle && topicTitle !== focusLabel ? topicTitle : null,
-              /* The section, only when the student is in more than one class
-                 list this form went to — otherwise it tells them nothing. */
-              showSectionLabel ? sectionTitle : null,
-            ]}
-          />
-          <span>
-            Closes {formatDeadline(instance.deadlineAt, timezone)}. Your teaching
-            team sees your name beside your answers; your classmates never do.
-          </span>
-        </>
+        /*
+          The week is back in the meta line, not a tag. As a tag it was both
+          too quiet for a heading and physically wrong:
+          `.page-head__description` is a grid, so an inline-flex child stretches
+          to the whole column — the tag drew a full-width box with two small
+          words in it. (Same trap as the forms table's status cell, which needs
+          `justify-items-start` for the same reason.)
+
+          The paragraph that used to close this block is still gone (owner,
+          2026-09-11): "Closes Sunday 13 Sept, 11:59 pm. Your teaching team
+          sees your name beside your answers; your classmates never do." — the
+          deadline is in the status line beside the title and stated in full by
+          the submit bar.
+        */
+        <MetaList
+          items={[
+            sequenceLabel,
+            focusLabel ? `Focus: ${focusLabel}` : null,
+            topicTitle && topicTitle !== focusLabel ? topicTitle : null,
+            /* The section, only when the student is in more than one class
+               list this form went to — otherwise it tells them nothing. */
+            showSectionLabel ? sectionTitle : null,
+          ]}
+        />
       }
       status={
         <>
           <Stamp tone={response ? "green" : "amber"}>
             {response ? "Submitted" : "Not submitted"}
           </Stamp>
-          <span className="meta">
-            {timeRemaining(instance.deadlineAt)} left
-          </span>
+          {/* A tag, matching the stamp beside it (owner, 2026-09-11): the two
+              are the same KIND of fact about this form, and one drawn as a
+              badge next to one drawn as grey text read as an afterthought.
+              `Tag` and not `Stamp`, deliberately — a stamp carries a tone and
+              a shape because it reports a STATE, and "2 days left" is a count
+              (see `ui/tag.tsx`).
+
+              `timeRemaining` already ends in "left"; the caller used to append
+              another one and printed "2 days left left". */}
+          <Tag>{timeRemaining(instance.deadlineAt)}</Tag>
         </>
       }
     >

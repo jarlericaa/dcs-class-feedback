@@ -285,6 +285,20 @@ export const IconNote = (p: IconProps) => (
   </Icon>
 );
 
+/**
+ * A rating star, for the linear-scale control (`ScaleStars`).
+ *
+ * Outlined by default like every other icon in the family. Pass
+ * `fill="currentColor"` for a filled one — that lands on the `<svg>` through
+ * the shared `Icon`'s prop spread, so a filled star needs no second export and
+ * cannot drift from the outline's geometry.
+ */
+export const IconStar = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5l2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17.3l-5.38 2.85 1.03-6L3.3 9.9l6-.9z" />
+  </Icon>
+);
+
 export const IconDownload = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 3v12" />

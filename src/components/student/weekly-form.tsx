@@ -17,7 +17,7 @@ import {
   QuestionDesc,
   QuestionNote,
   ScaleList,
-  ScaleSlider,
+  ScaleInput,
   Select,
   Textarea,
 } from "@/components/ui/form";
@@ -412,7 +412,7 @@ export function WeeklyForm({
             )}
 
             {question.type === "linear_scale" && question.scale && (
-              <ScaleSlider
+              <ScaleInput
                 labelledBy={legendId}
                 name={`q_${question.id}`}
                 onValueChange={(next) => setValue(question.id, next)}
@@ -470,16 +470,14 @@ export function WeeklyForm({
         <OwnItem
           legend={config.studentQuestionPrompt ?? "Anything you want to raise?"}
         >
-          {/* One line, not two paragraphs. What a student needs before typing
-              is the privacy consequence — that an answer may go to the whole
-              class, reworded, without their name. How staff track items
-              internally is not their concern. */}
+          {/* Just whether it is required. The sentence that followed —
+              "Staff may reply privately, or rewrite the question and answer it
+              for the whole class — never with your name or your own wording."
+              — is gone at the owner's request (2026-09-11). */}
           <OwnItemNote>
             <span className="text-meta font-normal text-ink-muted">
               Optional.
-            </span>{" "}
-            Staff may reply privately, or rewrite the question and answer it for
-            the whole class — never with your name or your own wording.
+            </span>
           </OwnItemNote>
 
           {questionItems.map((item, index) => {
@@ -603,10 +601,8 @@ export function WeeklyForm({
               }
             >
               {config.generalCommentRequired ? "Required." : "Optional."}
-            </span>{" "}
-            {/* Kept: it is the difference between this box and the one above,
-                and a student could otherwise expect an answer here. */}
-            Never published to the class.
+            </span>
+            {/* "Never published to the class." removed (owner, 2026-09-11). */}
           </OwnItemNote>
           <div className="grid gap-tight">
             <label className="visually-hidden" htmlFor="general_comment">
@@ -642,7 +638,12 @@ export function WeeklyForm({
             "mt-6 flex flex-wrap items-center justify-between gap-4 border-t-2 border-t-rule-ink pt-6 max-md:flex-col-reverse max-md:items-stretch"
           }
         >
-          <p className={"max-w-[44ch] text-ui-sm text-ink-muted"}>
+          {/* No `max-w-[44ch]`. The clamp wrapped "Submitted · last edited …
+              You can keep editing until Sunday 13 Sept, 11:59 pm." after a
+              few words while the bar beside it sat half empty — and it was an
+              ad-hoc geometry value of the kind §7 greps for. The flex row
+              already keeps it off the buttons. */}
+          <p className="text-ui-sm text-ink-muted">
             This is a preview. Students see a submit button here.
           </p>
         </div>

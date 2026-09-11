@@ -903,6 +903,13 @@ kbd {
   border: 1px solid;
   border-radius: var(--r-panel);
   font-size: 13px;
+  /* The reading measure belongs to the BOX, not to the text inside it. It was
+     on `.alert__body`, so a wide alert drew a full-width border and then
+     stopped its sentence two thirds of the way across — the box and its
+     content disagreed about where the line ended, which is what reads as
+     "not all the way" (owner, 2026-09-11). Now they end together and the
+     measure is still honoured (DESIGN.md §2). */
+  max-width: 68ch;
 }
 .alert__icon {
   flex: 0 0 auto;
@@ -910,7 +917,6 @@ kbd {
 }
 .alert__body {
   min-width: 0;
-  max-width: 68ch;
 }
 .alert strong {
   display: block;
