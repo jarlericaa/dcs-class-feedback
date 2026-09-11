@@ -83,6 +83,22 @@ export interface NavItem {
   active?: boolean;
   /** real count only — never a decorative number */
   count?: number;
+  /**
+   * Folded into the tab bar's `More` menu instead of shown as a tab
+   * (`sidebar.md` §6, §20.15).
+   *
+   * Set HERE rather than matched by label in `SubNav`, because which sections
+   * are frequent is domain knowledge — it belongs with the thing that knows
+   * what each destination is, and a view matching on `"Audit history"` would
+   * break the moment someone renamed it.
+   *
+   * The split the owner specified: Forms, Responses, Class Q&A and
+   * Participation stay visible; Publication queue, Question backlog, Audit
+   * history, Class lists and Teaching team fold away. A destination being
+   * secondary says nothing about permission — it is still authorized the same
+   * way and still reachable.
+   */
+  secondary?: boolean;
 }
 
 export interface NavGroup {
@@ -327,8 +343,16 @@ export function courseSetupTabs(
 ): NavItem[] {
   return mark(
     [
-      { href: `/teach/courses/${courseId}/sections`, label: "Class lists" },
-      { href: `/teach/courses/${courseId}/staff`, label: "Teaching team" },
+      {
+        href: `/teach/courses/${courseId}/sections`,
+        label: "Class lists",
+        secondary: true,
+      },
+      {
+        href: `/teach/courses/${courseId}/staff`,
+        label: "Teaching team",
+        secondary: true,
+      },
     ],
     currentPath,
     opts.activeHref,
@@ -455,12 +479,14 @@ export function staffSectionTabGroups(
     weeklyReview.push({
       href: `/teach/sections/${id}/publications`,
       label: "Publication queue",
+      secondary: true,
     });
   }
   if (perms.manageBacklogImports) {
     weeklyReview.push({
       href: `/teach/sections/${id}/backlog`,
       label: "Question backlog",
+      secondary: true,
     });
   }
   weeklyReview.push({ href: `/sections/${id}/qa`, label: "Class Q&A" });
@@ -476,7 +502,11 @@ export function staffSectionTabGroups(
   }
   // Audit browsing is not delegable to a TA in the MVP permission catalog.
   if (staff.role !== "ta") {
-    reports.push({ href: `/teach/sections/${id}/audit`, label: "Audit history" });
+    reports.push({
+      href: `/teach/sections/${id}/audit`,
+      label: "Audit history",
+      secondary: true,
+    });
   }
   if (reports.length > 0) groups.push({ label: "Reports", items: reports });
 
@@ -516,7 +546,11 @@ export function staffSectionTabGroups(
      * reader who does not always gets the roster, because it is the only
      * class list they can reach.
      */
-    setup.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
+    setup.push({
+      href: `/teach/sections/${id}/roster`,
+      label: "Class list",
+      secondary: true,
+    });
   }
   /**
    * No "Section setup" row. That page was a second teaching-team table over
