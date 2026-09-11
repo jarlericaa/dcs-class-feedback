@@ -17,9 +17,11 @@
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:watch": "vitest --project unit",
-    "db:backfill:student-numbers": "tsx scripts/backfill-student-numbers.ts"
+    "db:backfill:student-numbers": "tsx scripts/backfill-student-numbers.ts",
+    "design:check": "node scripts/qa/design-check.mjs"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "csv-parse": "^5.6.0",
     "drizzle-orm": "^0.44.2",
     "exceljs": "^4.4.0",
@@ -39,12 +41,14 @@
     "remark-math": "^6.0.0",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
+    "tailwind-merge": "^3.6.0",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0",
     "zod": "^3.25.67"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",
@@ -54,6 +58,7 @@
     "drizzle-kit": "^0.31.1",
     "eslint": "^9.29.0",
     "eslint-config-next": "^15.3.4",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
