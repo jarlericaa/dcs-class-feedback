@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { TemplatePreview } from "@/components/staff/template-preview";
 import type { FormQuestionView } from "@/components/student/weekly-form";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * "Preview form" for a page that is only *reading* a form.
@@ -38,7 +39,7 @@ export function PreviewFormButton({
   return (
     <>
       <button
-        className={`button button--${primary ? "primary" : "secondary"}`}
+        className={buttonClass({ variant: primary ? "primary" : "secondary" })}
         type="button"
         onClick={() => setOpen(true)}
       >

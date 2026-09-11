@@ -1,8 +1,10 @@
+import { SubmitButton } from "@/components/ui/submit-button";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { signIn } from "@/auth";
 import { env } from "@/env";
 import { Alert } from "@/components/ui";
 import { IconCheck } from "@/components/ui/icons";
+import { Field } from "@/components/ui/form";
 
 /**
  * The signed-out front door, shared by `/` and `/signin`.
@@ -84,7 +86,7 @@ export function EntryScreen({ error }: { error?: string }) {
             </p>
 
             {error && (
-              <div style={{ marginTop: "var(--s4)" }}>
+              <div className="mt-4">
                 <Alert variant="error" title="Sign-in failed">
                   {error === "AccessDenied"
                     ? "That account is not allowed to sign in. Use your university Google account instead."
@@ -110,9 +112,9 @@ export function EntryScreen({ error }: { error?: string }) {
                     }
                   }}
                 >
-                  <button className="button button--primary" type="submit">
+                  <SubmitButton variant="primary" pendingLabel="Redirecting…">
                     Continue with Google
-                  </button>
+                  </SubmitButton>
                 </form>
               ) : (
                 <Alert
@@ -155,17 +157,18 @@ export function EntryScreen({ error }: { error?: string }) {
                   <label className="visually-hidden" htmlFor="dev-email">
                     Email of an existing user
                   </label>
-                  <input
+                  <Field
+                    // was `.entry__dev .field` (§3.2)
+                    className="mb-2"
                     id="dev-email"
-                    className="field"
                     name="email"
                     type="email"
                     placeholder="teacher@up.edu.ph"
                     required
                   />
-                  <button className="button button--secondary" type="submit">
+                  <SubmitButton variant="secondary" pendingLabel="Signing in…">
                     Development sign in
-                  </button>
+                  </SubmitButton>
                 </form>
               </div>
             )}

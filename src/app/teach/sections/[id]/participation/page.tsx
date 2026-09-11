@@ -21,6 +21,7 @@ import {
   listSectionCycles,
 } from "@/modules/participation";
 import { toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * Participation, around the two questions a teacher actually has.
@@ -165,7 +166,12 @@ export default async function ParticipationPage({
       tabsLabel={sectionLabel(course.code, section.title)}
       tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
-      title="Participation"
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${course.id}`, label: course.code },
+        { href: `/teach/sections/${section.id}`, label: section.title },
+      ]}
+      title={sectionLabel(course.code, section.title)}
       /**
        * The exports follow the FILTER, so they belong beside it rather than in
        * a card of their own. Each one names what it will contain, because a
@@ -179,12 +185,15 @@ export default async function ParticipationPage({
                and the format suffix can go with them: when every download is a
                CSV, saying so on each button is noise. */
             <>
-              <a className="button button--primary" href={exportHref("responders")}>
+              <a
+                className={buttonClass({ variant: "primary" })}
+                href={exportHref("responders")}
+              >
                 <IconDownload size={15} />
                 Who responded
               </a>
               <a
-                className="button button--secondary"
+                className={buttonClass({ variant: "secondary" })}
                 href={exportHref("responders", { include: "all" })}
               >
                 <IconDownload size={15} />
@@ -195,7 +204,10 @@ export default async function ParticipationPage({
                   holds. This one is the table as it currently stands, answer
                   filter and all, which is the only thing that distinguishes it
                   from the two above. */}
-              <a className="button button--secondary" href={exportHref("week")}>
+              <a
+                className={buttonClass({ variant: "secondary" })}
+                href={exportHref("week")}
+              >
                 <IconDownload size={15} />
                 This list, as shown
               </a>
@@ -204,13 +216,16 @@ export default async function ParticipationPage({
           {showAllWeeks && (
             <>
               <a
-                className="button button--secondary"
+                className={buttonClass({ variant: "secondary" })}
                 href={exportHref("weekly_matrix")}
               >
                 <IconDownload size={15} />
                 Weekly matrix
               </a>
-              <a className="button button--secondary" href={exportHref("detailed")}>
+              <a
+                className={buttonClass({ variant: "secondary" })}
+                href={exportHref("detailed")}
+              >
                 <IconDownload size={15} />
                 Detailed responses
               </a>
@@ -295,7 +310,10 @@ export default async function ParticipationPage({
                 both the question and answer are selected.
               </p>
             ) : hasRequestedAnswerFilter && !hasAppliedAnswerFilter ? (
-              <Alert variant="warning" title="That answer filter is unavailable">
+              <Alert
+                variant="warning"
+                title="That answer filter is unavailable"
+              >
                 This question or answer is no longer available. No students are
                 shown for this filter.
               </Alert>
@@ -305,7 +323,7 @@ export default async function ParticipationPage({
               <section className="notice">
                 <div className="notice__head">
                   <div>
-                    <h2>{currentCycle.label}</h2>
+                    <h2 className="panel-title">{currentCycle.label}</h2>
                     {/* Only the filter is described, and only when one is on.
                         The old line read "2 of 3 students on this page
                         responded · still open": a count scoped to the current
@@ -383,13 +401,18 @@ export default async function ParticipationPage({
                             </td>
                             <td>
                               {row.submittedAt ? (
-                                formatDateTime(row.submittedAt, section.timezone)
+                                formatDateTime(
+                                  row.submittedAt,
+                                  section.timezone,
+                                )
                               ) : (
                                 <span className="muted">—</span>
                               )}
                             </td>
                             {question && answer && (
-                              <td className="wrap">{row.answerLabels ?? "—"}</td>
+                              <td className="wrap">
+                                {row.answerLabels ?? "—"}
+                              </td>
                             )}
                           </tr>
                         ))}
@@ -415,7 +438,7 @@ export default async function ParticipationPage({
               <section className="notice">
                 <div className="notice__head">
                   <div>
-                    <h2>The whole term</h2>
+                    <h2 className="panel-title">The whole term</h2>
                     <p>
                       {overview.students.length} student
                       {overview.students.length === 1 ? "" : "s"}
@@ -439,7 +462,37 @@ export default async function ParticipationPage({
                       </caption>
                       <thead>
                         <tr>
-                          <th scope="col">Student</th>
+                          {/*
+                            The student column is PINNED (§5.7).
+
+                            This is the widest thing in the app — one column per
+                            week of the term — and staff open it on phones. It
+                            scrolled horizontally already, but the name scrolled
+                            with it, so three weeks to the right you were
+                            reading a row of Yes/No with no idea whose it was.
+                            A matrix whose row labels can leave the screen is a
+                            matrix you cannot read.
+
+                            `z-20` over the body cells' `z-10`, so the pinned
+                            header wins where the two overlap in the corner. An
+                            opaque fill is not decoration: without it the
+                            scrolled columns show through the pinned cell. It
+                            takes `--paper-quiet` to match `.data-table thead
+                            th` exactly rather than inventing a second header
+                            colour.
+
+                            `sticky` also keeps the containing block the
+                            `position: relative` on these cells was there to
+                            provide, so the `.visually-hidden` children stay
+                            clipped inside the scroller instead of widening the
+                            document.
+                          */}
+                          <th
+                            className="sticky left-0 z-20 border-r border-rule bg-paper-quiet"
+                            scope="col"
+                          >
+                            Student
+                          </th>
                           {overview.cycles.map((cycle) => (
                             <th scope="col" className="num" key={cycle.id}>
                               {/* Each week is a way in: the column heading
@@ -465,7 +518,13 @@ export default async function ParticipationPage({
                       <tbody>
                         {overview.students.map((student) => (
                           <tr key={student.studentRecordId}>
-                            <th scope="row" className="wrap">
+                            {/* Pinned, matching the header above it. `bg-paper`
+                                rather than the header's quiet fill, because
+                                this is a body row. */}
+                            <th
+                              className="wrap sticky left-0 z-10 border-r border-rule bg-paper"
+                              scope="row"
+                            >
                               {student.fullName}
                               {!student.active && (
                                 <>

@@ -1,7 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { RequiredMark } from "@/components/ui/required-mark";
+import { useState, type ReactNode } from "react";
 import { DAY_NAMES } from "@/lib/days";
+import { cn } from "@/lib/cn";
+import {
+  Choice,
+  Field,
+  FieldLabel,
+  FieldRow,
+  FormSection,
+  Select,
+} from "@/components/ui/form";
 
 /**
  * Audience and delivery, as one control the teacher can reason about.
@@ -15,7 +25,8 @@ import { DAY_NAMES } from "@/lib/days";
  * is valid, and refuses anything this component allows through.
  */
 
-export type DeliveryMode = "one_time" | "weekly" | "custom_recurring" | "manual";
+export type DeliveryMode =
+  "one_time" | "weekly" | "custom_recurring" | "manual";
 
 const MODES: { key: DeliveryMode; label: string; hint: string }[] = [
   {
@@ -51,6 +62,7 @@ export function DeliveryFields({
   courseCode,
   defaultMode = "weekly",
   defaultAudienceMode = "all_sections",
+  firstStep,
   defaultSectionIds = [],
   defaultOpenDayOfWeek = 1,
   defaultOpenTime = "08:00",
@@ -69,6 +81,18 @@ export function DeliveryFields({
   courseCode: string;
   defaultMode?: DeliveryMode;
   defaultAudienceMode?: "all_sections" | "selected_sections";
+  /**
+   * The step number this component's FIRST group takes, when it is one of a
+   * numbered sequence. It renders two groups (audience, then schedule), so the
+   * caller's next step is `firstStep + 2`.
+   *
+   * Passed rather than counted so a form with no delivery step at all cannot
+   * silently renumber the ones around it. **Omit it** where this component is
+   * nested inside a panel that already has its own heading — the edit page's
+   * "Who gets it, and when" — because a numbered step inside a named panel
+   * numbers nothing.
+   */
+  firstStep?: number;
   defaultSectionIds?: string[];
   defaultOpenDayOfWeek?: number;
   defaultOpenTime?: string;
@@ -108,32 +132,29 @@ export function DeliveryFields({
 
   return (
     <>
-      <fieldset className="q-item">
-        <legend className="q-item__legend">Who gets this form</legend>
+      <Group step={firstStep} title="Audience">
         <div className="stack-3">
-          <label className="choice">
-            <input
-              type="radio"
-              name="audienceMode"
-              value="all_sections"
-              checked={audienceMode === "all_sections"}
-              onChange={() => setAudienceMode("all_sections")}
-            />
-            <span>All sections in {courseCode}</span>
-          </label>
-          <label className="choice">
-            <input
-              type="radio"
-              name="audienceMode"
-              value="selected_sections"
-              checked={audienceMode === "selected_sections"}
-              onChange={() => setAudienceMode("selected_sections")}
-            />
-            <span>Only the sections I choose</span>
-          </label>
+          <Choice
+            type="radio"
+            name="audienceMode"
+            value="all_sections"
+            checked={audienceMode === "all_sections"}
+            onChange={() => setAudienceMode("all_sections")}
+          >
+            All sections in {courseCode}
+          </Choice>
+          <Choice
+            type="radio"
+            name="audienceMode"
+            value="selected_sections"
+            checked={audienceMode === "selected_sections"}
+            onChange={() => setAudienceMode("selected_sections")}
+          >
+            Only the sections I choose
+          </Choice>
 
           {audienceMode === "selected_sections" && (
-            <div className="form-grid" style={{ marginTop: "var(--s2)" }}>
+            <div className="form-grid mt-2">
               {sections.length === 0 ? (
                 <p className="helper-text">
                   This course has no sections yet, so there is nobody to send a
@@ -141,16 +162,16 @@ export function DeliveryFields({
                 </p>
               ) : (
                 sections.map((section) => (
-                  <label className="choice" key={section.id}>
-                    <input
-                      type="checkbox"
-                      name="sectionIds"
-                      value={section.id}
-                      checked={chosen.includes(section.id)}
-                      onChange={() => toggle(section.id)}
-                    />
-                    <span>{section.title}</span>
-                  </label>
+                  <Choice
+                    key={section.id}
+                    type="checkbox"
+                    name="sectionIds"
+                    value={section.id}
+                    checked={chosen.includes(section.id)}
+                    onChange={() => toggle(section.id)}
+                  >
+                    {section.title}
+                  </Choice>
                 ))
               )}
             </div>
@@ -162,50 +183,46 @@ export function DeliveryFields({
             {audienceSummary}
           </p>
         </div>
-      </fieldset>
+      </Group>
 
-      <fieldset className="q-item" style={{ marginTop: "var(--s5)" }}>
-        <legend className="q-item__legend">When it goes out</legend>
+      <Group
+        step={firstStep === undefined ? undefined : firstStep + 1}
+        title="Schedule"
+      >
         <div className="stack-3">
           {MODES.map((option) => (
-            <label className="choice" key={option.key}>
-              <input
-                type="radio"
-                name="deliveryMode"
-                value={option.key}
-                checked={mode === option.key}
-                onChange={() => setMode(option.key)}
-              />
+            <Choice
+              key={option.key}
+              type="radio"
+              name="deliveryMode"
+              value={option.key}
+              checked={mode === option.key}
+              onChange={() => setMode(option.key)}
+            >
               <span>
                 {option.label}
-                <span className="helper-text" style={{ display: "block" }}>
-                  {option.hint}
-                </span>
+                <span className="helper-text block">{option.hint}</span>
               </span>
-            </label>
+            </Choice>
           ))}
         </div>
 
         {recurring && (
           <>
-            <div className="form-grid" style={{ marginTop: "var(--s4)" }}>
-              <div className="field-row">
-                <label htmlFor="startDate">First one opens</label>
-                <input
+            <div className="form-grid">
+              <FieldRow label="First one opens" htmlFor="startDate">
+                <Field
                   id="startDate"
-                  className="field"
                   type="date"
                   name="startDate"
                   defaultValue={defaultStartDate}
                   required
                 />
-              </div>
+              </FieldRow>
               {mode === "custom_recurring" && (
-                <div className="field-row">
-                  <label htmlFor="intervalWeeks">Repeat every</label>
-                  <select
+                <FieldRow label="Repeat every" htmlFor="intervalWeeks">
+                  <Select
                     id="intervalWeeks"
-                    className="select-field"
                     name="intervalWeeks"
                     defaultValue={String(defaultIntervalWeeks)}
                   >
@@ -214,16 +231,14 @@ export function DeliveryFields({
                         {n} weeks
                       </option>
                     ))}
-                  </select>
-                </div>
+                  </Select>
+                </FieldRow>
               )}
             </div>
             <div className="form-grid">
-              <div className="field-row">
-                <label htmlFor="openDayOfWeek">Opens on</label>
-                <select
+              <FieldRow label="Opens on" htmlFor="openDayOfWeek">
+                <Select
                   id="openDayOfWeek"
-                  className="select-field"
                   name="openDayOfWeek"
                   defaultValue={String(defaultOpenDayOfWeek)}
                 >
@@ -232,23 +247,19 @@ export function DeliveryFields({
                       {day}
                     </option>
                   ))}
-                </select>
-              </div>
-              <div className="field-row">
-                <label htmlFor="openTime">Opens at</label>
-                <input
+                </Select>
+              </FieldRow>
+              <FieldRow label="Opens at" htmlFor="openTime">
+                <Field
                   id="openTime"
-                  className="field"
                   type="time"
                   name="openTime"
                   defaultValue={defaultOpenTime}
                 />
-              </div>
-              <div className="field-row">
-                <label htmlFor="deadlineDayOfWeek">Closes on</label>
-                <select
+              </FieldRow>
+              <FieldRow label="Closes on" htmlFor="deadlineDayOfWeek">
+                <Select
                   id="deadlineDayOfWeek"
-                  className="select-field"
                   name="deadlineDayOfWeek"
                   defaultValue={String(defaultDeadlineDayOfWeek)}
                 >
@@ -257,25 +268,21 @@ export function DeliveryFields({
                       {day}
                     </option>
                   ))}
-                </select>
-              </div>
-              <div className="field-row">
-                <label htmlFor="deadlineTime">Closes at</label>
-                <input
+                </Select>
+              </FieldRow>
+              <FieldRow label="Closes at" htmlFor="deadlineTime">
+                <Field
                   id="deadlineTime"
-                  className="field"
                   type="time"
                   name="deadlineTime"
                   defaultValue={defaultDeadlineTime}
                 />
-              </div>
+              </FieldRow>
             </div>
             <div className="form-grid">
-              <div className="field-row">
-                <label htmlFor="occurrenceCount">How many</label>
-                <input
+              <FieldRow label="How many" htmlFor="occurrenceCount">
+                <Field
                   id="occurrenceCount"
-                  className="field"
                   type="number"
                   min={1}
                   max={60}
@@ -285,12 +292,10 @@ export function DeliveryFields({
                 <span className="helper-text">
                   Leave blank to use an end date instead.
                 </span>
-              </div>
-              <div className="field-row">
-                <label htmlFor="endDate">Or run until</label>
-                <input
+              </FieldRow>
+              <FieldRow label="Or run until" htmlFor="endDate">
+                <Field
                   id="endDate"
-                  className="field"
                   type="date"
                   name="endDate"
                   defaultValue={defaultEndDate}
@@ -298,67 +303,110 @@ export function DeliveryFields({
                 <span className="helper-text">
                   Set one of these two, not both.
                 </span>
-              </div>
+              </FieldRow>
             </div>
           </>
         )}
 
         {mode === "one_time" && (
-          <div className="form-grid" style={{ marginTop: "var(--s4)" }}>
+          <div className="form-grid form-grid--stacked">
             <div className="field-row">
-              <label htmlFor="openDate">Opens</label>
-              <input
-                id="openDate"
-                className="field"
-                type="date"
-                name="openDate"
-                defaultValue={defaultOpenDate}
-                required
-              />
+              <label htmlFor="openDate">
+                Opens <RequiredMark />
+              </label>
+              <div className="datetime-pair">
+                <Field
+                  id="openDate"
+                  type="date"
+                  name="openDate"
+                  defaultValue={defaultOpenDate}
+                  required
+                />
+                <label className="visually-hidden" htmlFor="openAtTime">
+                  Time it opens
+                </label>
+                <Field
+                  id="openAtTime"
+                  type="time"
+                  name="openAtTime"
+                  defaultValue={defaultOpenAtTime}
+                  required
+                />
+              </div>
             </div>
             <div className="field-row">
-              <label htmlFor="openAtTime">at</label>
-              <input
-                id="openAtTime"
-                className="field"
-                type="time"
-                name="openAtTime"
-                defaultValue={defaultOpenAtTime}
-                required
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="deadlineDate">Closes</label>
-              <input
-                id="deadlineDate"
-                className="field"
-                type="date"
-                name="deadlineDate"
-                defaultValue={defaultDeadlineDate}
-                required
-              />
-            </div>
-            <div className="field-row">
-              <label htmlFor="deadlineAtTime">at</label>
-              <input
-                id="deadlineAtTime"
-                className="field"
-                type="time"
-                name="deadlineAtTime"
-                defaultValue={defaultDeadlineAtTime}
-                required
-              />
+              <label htmlFor="deadlineDate">
+                Closes <RequiredMark />
+              </label>
+              <div className="datetime-pair">
+                <Field
+                  id="deadlineDate"
+                  type="date"
+                  name="deadlineDate"
+                  defaultValue={defaultDeadlineDate}
+                  required
+                />
+                <label className="visually-hidden" htmlFor="deadlineAtTime">
+                  Time it closes
+                </label>
+                <Field
+                  id="deadlineAtTime"
+                  type="time"
+                  name="deadlineAtTime"
+                  defaultValue={defaultDeadlineAtTime}
+                  required
+                />
+              </div>
             </div>
           </div>
         )}
 
         {mode === "manual" && (
-          <p className="helper-text" style={{ marginTop: "var(--s4)" }}>
-            You will create each one from the form&rsquo;s page and press Open when it
-            should go out. The deadline is still a hard deadline once it is open.
+          <p className="helper-text">
+            You will create each one from the form&rsquo;s page and press Open
+            when it should go out. The deadline is still a hard deadline once it
+            is open.
           </p>
         )}
-      </fieldset>
+      </Group>
     </>
+  );
+}
+
+/**
+ * One of this component's two groups, in whichever frame its caller needs.
+ *
+ * With a `step` it is a numbered section of a longer form (the new-form
+ * editor). Without one it is a plain labelled fieldset, because it is already
+ * inside a panel with a heading of its own (the edit page) and a second
+ * heading there would compete with the first.
+ */
+function Group({
+  step,
+  title,
+  className,
+  children,
+}: {
+  step?: number;
+  title: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  if (step === undefined) {
+    return (
+      /* No margin of its own in either mode: numbered, the new-form page's
+         `grid gap-4` separates the steps; unnumbered, the edit page's
+         `stack-4` separates these two groups. A component that also spaced
+         itself would double both. */
+      <fieldset className={cn("m-0 grid gap-3 border-0 p-0", className)}>
+        <FieldLabel>{title}</FieldLabel>
+        {children}
+      </fieldset>
+    );
+  }
+  return (
+    <FormSection step={step} title={title} className={className}>
+      {children}
+    </FormSection>
   );
 }

@@ -182,13 +182,13 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="min-w-0">
                         {/* The course code is the identity, and the form is what
                             this card is about. The section is absent: the action
                             and the form are the same in every section it went
                             to, so naming one would imply a choice to make. */}
                         <MetaList items={[card.courseCode]} />
-                        <h2 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title mt-1">
                           {card.formTitle}
                         </h2>
                       </div>
@@ -240,7 +240,7 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="min-w-0">
                         {/* The code IS the heading. The title reads underneath
                             it as what the code stands for. */}
                         <h2 className="panel-title">{card.course.code}</h2>
@@ -290,11 +290,11 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="min-w-0">
                         <MetaList
                           items={[courseById.get(section.courseId)?.code]}
                         />
-                        <h2 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title mt-1">
                           {section.title}
                         </h2>
                       </div>
@@ -332,11 +332,11 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="min-w-0">
                         <MetaList
                           items={[courseById.get(section.courseId)?.code]}
                         />
-                        <h2 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title mt-1">
                           {courseById.get(section.courseId)?.title ??
                             section.title}
                         </h2>
@@ -372,7 +372,15 @@ export default async function HomePage() {
           (user.isTeacher ? (
             <EmptyState
               title="No courses yet"
-              action={{ href: "/teach/courses?new=1", label: "New course" }}
+              /*
+                Points at the LIST, not at a form. Creating a course is a dialog
+                now (`modal.md`), and a dialog has no URL — so `?new=1` no
+                longer opens anything, and a button labelled "New course" that
+                lands you on a list would be lying about where it goes. The
+                courses page's own empty state names the header button from
+                there.
+              */
+              action={{ href: "/teach/courses", label: "My courses" }}
               primary
             >
               A course owns its forms. A form goes to one class list, several, or

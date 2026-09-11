@@ -12,6 +12,10 @@ import {
 } from "@/modules/catalog";
 import { AuthzError } from "@/modules/authz";
 import { requireUser, toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
+import {
+  Field,
+} from "@/components/ui/form";
 
 /**
  * Platform administration (Open D3, provisional: an admin grants the teacher
@@ -93,15 +97,17 @@ export default async function AdminPage({
           <label className="visually-hidden" htmlFor="admin-q">
             Search accounts
           </label>
-          <input
+          <Field
+            // was `.toolbar .field` (§3.2): the search box takes the row's
+            // spare width; the controls beside it keep their own.
+            className="flex-[1_1_220px] min-w-0"
             id="admin-q"
-            className="field"
             name="q"
             type="search"
             placeholder="Search by name or email"
             defaultValue={q ?? ""}
           />
-          <button className="button button--secondary" type="submit">
+          <button className={buttonClass({ variant: "secondary" })} type="submit">
             Search
           </button>
         </form>
@@ -134,11 +140,12 @@ export default async function AdminPage({
                       value={account.isTeacher ? "no" : "yes"}
                     />
                     <button
-                      className={`button button--small ${
-                        account.isTeacher
-                          ? "button--quiet"
-                          : "button--secondary"
-                      }`}
+                      className={buttonClass({
+                        // Granting reads as the action, revoking as the quiet
+                        // undo of one — same control, opposite emphasis.
+                        variant: account.isTeacher ? "quiet" : "secondary",
+                        size: "small",
+                      })}
                       type="submit"
                     >
                       {account.isTeacher

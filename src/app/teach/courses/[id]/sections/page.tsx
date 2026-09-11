@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/ui/submit-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -26,6 +27,8 @@ import {
   looksLikeXlsx,
 } from "@/modules/roster-import";
 import { requireUser, toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
+import { Field, FieldRow } from "@/components/ui/form";
 
 /**
  * Class lists and access for one course.
@@ -94,7 +97,10 @@ export default async function CourseSectionsPage({
    * everything it captures — the section rows themselves must not be dragged
    * into the action.
    */
-  const inheritedTerm = fallbackTerm(sections.map((section) => section.term));
+  const inheritedTerm = fallbackTerm(
+    course.term,
+    sections.map((section) => section.term),
+  );
 
   /**
    * Create the class list, and fill it in the same submit when a file came
@@ -195,10 +201,14 @@ export default async function CourseSectionsPage({
       tabGroups={await courseTabGroupsFor(user.id, courseId, path)}
       tabsLabel={course.code}
       contextLabel={course.code}
-      title="Class lists"
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${courseId}`, label: course.code },
+      ]}
+      title={course.code}
       actions={
         <Link
-          className="button button--primary"
+          className={buttonClass({ variant: "primary" })}
           href={`/teach/courses/${courseId}/sections?new=1`}
         >
           <IconPlus size={15} />
@@ -224,33 +234,29 @@ export default async function CourseSectionsPage({
               className="stack-4"
               encType="multipart/form-data"
             >
-              <div className="field-row">
-                <label htmlFor="section-title">Section name</label>
-                <input
+              <FieldRow label="Section name" htmlFor="section-title">
+                <Field
                   id="section-title"
-                  className="field"
                   name="title"
                   placeholder={`${course.code} Section A`}
                   required
                   autoFocus
                 />
-              </div>
-              <div className="field-row">
-                <label htmlFor="section-roster">Class list</label>
-                <input
+              </FieldRow>
+              <FieldRow label="Class list" htmlFor="section-roster">
+                <Field
                   id="section-roster"
-                  className="field"
                   type="file"
                   name="file"
                   accept=".csv,text/csv"
                 />
-              </div>
+              </FieldRow>
               <div className="row">
-                <button className="button button--primary" type="submit">
+                <SubmitButton variant="primary" pendingLabel="Adding…">
                   Add section
-                </button>
+                </SubmitButton>
                 <Link
-                  className="button button--quiet"
+                  className={buttonClass({ variant: "quiet" })}
                   href={`/teach/courses/${courseId}/sections`}
                 >
                   Cancel
@@ -269,8 +275,8 @@ export default async function CourseSectionsPage({
             }}
             primary
           >
-            A section is the class list a student&rsquo;s UP email is looked up in. A
-            form goes to one section, several, or all of them.
+            A section is the class list a student&rsquo;s UP email is looked up
+            in. A form goes to one section, several, or all of them.
           </EmptyState>
         ) : (
           <div className="stack-3">
@@ -287,7 +293,7 @@ export default async function CourseSectionsPage({
                 <section className="notice" key={section.id}>
                   <div className="notice__head">
                     <div>
-                      <h2>
+                      <h2 className="panel-title">
                         {/* Straight to this section's class list, because that is
                             what the reader asked for: this page is what "Class
                             lists" opens, and the only reason it exists is that a

@@ -1,3 +1,4 @@
+import { RequiredMark } from "@/components/ui/required-mark";
 import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { toShellUser } from "@/lib/session";
@@ -5,10 +6,14 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
-import { courses } from "@/db/schema";
+import { courseSubtitle } from "@/components/staff/course-heading";
+import { classSections, courses } from "@/db/schema";
 import { formatDateTime, initials } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { courseTabGroups, staffSectionTabGroups } from "@/components/layout/nav";
+import {
+  courseTabGroups,
+  staffSectionTabGroups,
+} from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
 import {
   markReviewedThisSession,
@@ -20,10 +25,11 @@ import {
   AccessDenied,
   Alert,
   EmptyState,
-  MetaList,
   Stamp,
   ValidityBadge,
 } from "@/components/ui";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { TagList } from "@/components/ui/tag";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 import { MarkReadOnView } from "@/components/staff/mark-read-on-view";
 import { Dialog } from "@/components/ui/dialog";
@@ -66,6 +72,7 @@ import {
   draftPublicAnswer,
   publishNow,
 } from "@/modules/publishing";
+import { Field, FieldRow, Select, Textarea } from "@/components/ui/form";
 
 /**
  * Staff review for ONE occurrence of a course's forms, as a single column of
@@ -136,7 +143,9 @@ const INVALID_REASONS = [
   { value: "bad_faith_credit_attempt", label: "Bad-faith credit attempt" },
 ];
 
-type QueueRow = Awaited<ReturnType<typeof getCourseReviewQueue>>["rows"][number];
+type QueueRow = Awaited<
+  ReturnType<typeof getCourseReviewQueue>
+>["rows"][number];
 
 /**
  * Waiting on this reader: a valid response carrying a real question nobody has
@@ -150,6 +159,13 @@ function needsReply(row: QueueRow): boolean {
   return row.response.validity === "valid" && row.outstanding;
 }
 
+/**
+ * Stands in for "occurrences with no recorded form version" in the `form`
+ * param. A sentinel rather than an empty string, which the URL cannot tell
+ * apart from "not chosen".
+ */
+const UNASSIGNED_FORM = "unassigned";
+
 export default async function CourseResponsesPage({
   params,
   searchParams,
@@ -157,7 +173,14 @@ export default async function CourseResponsesPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{
     filter?: string;
-    /** one form occurrence — the week this column is reading */
+    /**
+     * one FORM — the outer axis. A course can run several, and an occurrence
+     * label ("Week 1") does not say which form it belongs to, so without this
+     * a two-form course showed both forms' weeks in one undifferentiated list.
+     * `courses/[id]/page.tsx` has always linked here with it.
+     */
+    form?: string;
+    /** one form occurrence — the week this column is reading, within `form` */
     cycle?: string;
     /** one class section, when the reader has more than one */
     section?: string;
@@ -210,27 +233,101 @@ export default async function CourseResponsesPage({
     }
     throw err;
   }
-  const {
-    rows: scopeRows,
-    instances,
-    sections,
-    canSeeIdentities,
-  } = queue;
+  const { rows: scopeRows, instances, sections, canSeeIdentities } = queue;
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
 
+  /* The same header this course shows on every other tab. One extra column
+     read, so that navigating a tab does not change the heading — see
+     `courseSubtitle`. */
+  const courseTerms = [
+    ...new Set(
+      (
+        await db
+          .select({ term: classSections.term })
+          .from(classSections)
+          .where(eq(classSections.courseId, courseId))
+      ).map((row) => row.term),
+    ),
+  ];
+
   /**
-   * Which week the column is reading.
+   * The forms this course runs, newest occurrence first.
+   *
+   * Built from the occurrences rather than queried separately, so the list can
+   * only ever contain forms this reader is already authorized to see — the
+   * scope resolution upstream is what makes that true, and re-querying
+   * `formTemplates` by course would quietly widen it.
+   */
+  const forms: { id: string; title: string }[] = [];
+  for (const entry of instances) {
+    const form = entry.form;
+    if (form && !forms.some((f) => f.id === form.id)) forms.push(form);
+  }
+  const hasUnassigned = instances.some((i) => !i.form);
+
+  /**
+   * Which form the column is reading.
+   *
+   * An unknown id is not honoured: it falls back to the default rather than
+   * rendering an empty column for a form that does not exist in this scope.
+   */
+  const defaultInstance =
+    instances.find((i) => i.responseCount > 0) ?? instances[0];
+  const currentFormId =
+    (sp.form && forms.some((f) => f.id === sp.form)) ||
+    (sp.form === UNASSIGNED_FORM && hasUnassigned)
+      ? sp.form
+      : (defaultInstance?.form?.id ??
+        (hasUnassigned ? UNASSIGNED_FORM : undefined));
+
+  /** The chosen form's own occurrences — the only ones the week switcher offers. */
+  const formInstances = currentFormId
+    ? instances.filter((i) =>
+        currentFormId === UNASSIGNED_FORM
+          ? !i.form
+          : i.form?.id === currentFormId,
+      )
+    : instances;
+
+  /**
+   * Which week the column is reading, WITHIN the chosen form.
    *
    * Without an explicit choice it is the most recent occurrence anyone has
    * actually answered — landing on next week's empty form would be technically
    * correct and useless. `instances` arrives newest-first.
    */
   const currentCycleId =
-    sp.cycle ??
-    instances.find((i) => i.responseCount > 0)?.instance.id ??
-    instances[0]?.instance.id;
+    (sp.cycle && formInstances.some((i) => i.instance.id === sp.cycle)
+      ? sp.cycle
+      : undefined) ??
+    formInstances.find((i) => i.responseCount > 0)?.instance.id ??
+    formInstances[0]?.instance.id;
+
+  /**
+   * A `cycle` belonging to a DIFFERENT form is stale — the reader just changed
+   * forms and the browser resubmitted the old week alongside the new form.
+   *
+   * The rows above were fetched for that stale week, so they cannot simply be
+   * re-filtered; correcting the URL and letting the page load again is both
+   * cheaper than always fetching the whole term and honest about what the
+   * reader asked for.
+   */
+  if (sp.cycle && sp.cycle !== currentCycleId) {
+    const corrected = new URLSearchParams(
+      Object.entries({
+        filter: sp.filter,
+        form: currentFormId,
+        cycle: currentCycleId,
+        section: sp.section,
+        seen: sp.seen,
+        category: sp.category,
+        q: sp.q,
+      }).filter((entry): entry is [string, string] => !!entry[1]),
+    ).toString();
+    redirect(corrected ? `${path}?${corrected}` : path);
+  }
 
   /**
    * Narrowed to the week the selector is SHOWING, which is not the same thing
@@ -269,7 +366,10 @@ export default async function CourseResponsesPage({
     await Promise.all(
       sections.map(
         async (section) =>
-          [section.id, await getSectionAccess(db, user.id, section.id)] as const,
+          [
+            section.id,
+            await getSectionAccess(db, user.id, section.id),
+          ] as const,
       ),
     ),
   );
@@ -321,7 +421,8 @@ export default async function CourseResponsesPage({
     }
   };
 
-  const submittedAt = (row: QueueRow) => row.response.submittedAt ?? new Date(0);
+  const submittedAt = (row: QueueRow) =>
+    row.response.submittedAt ?? new Date(0);
   /**
    * Unread first, then oldest first inside each group.
    *
@@ -424,7 +525,9 @@ export default async function CourseResponsesPage({
         courseId,
         path,
         { needsReview: counts.needsReview },
-        sections.length === 1 ? (accessBySection.get(sections[0]!.id) ?? null) : null,
+        sections.length === 1
+          ? (accessBySection.get(sections[0]!.id) ?? null)
+          : null,
       )
     : staffSectionTabGroups(railAccess!, path, {
         needsReview: counts.needsReview,
@@ -445,6 +548,7 @@ export default async function CourseResponsesPage({
   const backQuery = new URLSearchParams(
     Object.entries({
       filter,
+      form: currentFormId,
       cycle: currentCycleId,
       section: sp.section,
       seen: readFilter === "all" ? undefined : readFilter,
@@ -452,7 +556,6 @@ export default async function CourseResponsesPage({
       q: sp.q,
     }).filter((entry): entry is [string, string] => !!entry[1]),
   ).toString();
-
 
   // A student assistant may FLAG; only an instructor may finalize or reverse a
   // validity decision. The service layer re-checks every one of these.
@@ -663,7 +766,6 @@ export default async function CourseResponsesPage({
     }
   }
 
-
   async function draftOrPublish(formData: FormData) {
     "use server";
     const uid = await currentUserId();
@@ -773,14 +875,38 @@ export default async function CourseResponsesPage({
       tabGroups={tabGroups}
       tabsMode={showsCourseTabs ? undefined : "menu"}
       tabsLabel={
-        showsCourseTabs ? course.code : (railAccess?.section.title ?? course.code)
+        showsCourseTabs
+          ? course.code
+          : (railAccess?.section.title ?? course.code)
       }
       contextLabel={course.code}
-      title="Responses"
+      /*
+        The COURSE is the heading here, not "Responses" — the owner's question:
+        *"selected tab from the cs33 like responses replaces the cs33 with
+        Responses, but the forms doesnt do that? … shud we really replace the
+        heading?"*
+
+        No. Forms and Responses are two views OF one course, so the course is
+        the subject on both and the active tab says which view you are in.
+        Replacing the heading with the tab's name did two bad things at once: it
+        repeated the tab (which is already marked maroon and underlined a few
+        pixels below) and it threw away the only thing that said WHICH course
+        you were looking at. It also made the two tabs inconsistent, since Forms
+        kept the course and Responses did not.
+
+        The breadcrumb carries the path, the heading carries the subject, the
+        tab carries the view. Nothing says the same thing twice.
+      */
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${courseId}`, label: course.code },
+      ]}
+      title={course.code}
+      description={courseSubtitle({ title: course.title, terms: courseTerms })}
     >
       {sp.at && <ScrollToPost anchorId={`r-${sp.at}`} />}
 
-      <div className="stack-4" style={{ marginBottom: "var(--s5)" }}>
+      <div className="stack-4 mb-6">
         {sp.ok && <Alert variant="success">{sp.ok}</Alert>}
         {sp.error && <Alert variant="error">{sp.error}</Alert>}
         {sp.warn && (
@@ -810,100 +936,131 @@ export default async function CourseResponsesPage({
             <input type="hidden" name="category" value={sp.category} />
           )}
           {/* The scope, on its own line and full width: which form's responses
-              this whole column is, before anything narrows it. */}
+              this whole column is, before anything narrows it.
+
+              Two controls, because they are two questions. The form is the
+              outer axis and the occurrence lives inside it; one merged list of
+              every form's weeks could offer two indistinguishable "Week 1"s.
+
+              Both live in one GET form, so changing the form resubmits the
+              previous form's `cycle` along with it. That is handled above, by
+              correcting the URL rather than by splitting the controls into two
+              forms - a second form would break the `noscript` submit, which is
+              the only way this bar works before hydration. */}
           {instances.length > 0 && (
             <div className="feedbar__scope">
-            <AutoSubmitSelect
-              id="feed-week"
-              name="cycle"
-              defaultValue={currentCycleId ?? ""}
-              label="Which form"
-            >
-              {instances.map(({ instance, label }) => (
-                <option key={instance.id} value={instance.id}>
-                  {label}
-                  {instance.state === "open" ? " · open" : ""}
-                </option>
-              ))}
-            </AutoSubmitSelect>
+              {forms.length + (hasUnassigned ? 1 : 0) > 1 && (
+                <AutoSubmitSelect
+                  id="feed-form"
+                  name="form"
+                  defaultValue={currentFormId ?? ""}
+                  label="Which form"
+                >
+                  {forms.map((form) => (
+                    <option key={form.id} value={form.id}>
+                      {form.title}
+                    </option>
+                  ))}
+                  {hasUnassigned && (
+                    <option value={UNASSIGNED_FORM}>Other occurrences</option>
+                  )}
+                </AutoSubmitSelect>
+              )}
+              {formInstances.length > 1 && (
+                <AutoSubmitSelect
+                  id="feed-week"
+                  name="cycle"
+                  defaultValue={currentCycleId ?? ""}
+                  label="Which occurrence"
+                >
+                  {formInstances.map(({ instance, label }) => (
+                    <option key={instance.id} value={instance.id}>
+                      {label}
+                      {instance.state === "open" ? " · open" : ""}
+                    </option>
+                  ))}
+                </AutoSubmitSelect>
+              )}
             </div>
           )}
 
           {/* The search line, with the narrowing controls trailing it. */}
           <div className="feedbar__line">
-          <span className="feedbar__search">
-            <IconSearch size={15} />
-            <label className="visually-hidden" htmlFor="feed-q">
-              Search this form
-            </label>
-            <input
-              id="feed-q"
-              name="q"
-              type="search"
-              placeholder="Search"
-              defaultValue={sp.q ?? ""}
-            />
-          </span>
+            <span className="feedbar__search">
+              <IconSearch size={15} />
+              <label className="visually-hidden" htmlFor="feed-q">
+                Search this form
+              </label>
+              <input
+                id="feed-q"
+                name="q"
+                type="search"
+                placeholder="Search"
+                defaultValue={sp.q ?? ""}
+              />
+            </span>
 
-          <AutoSubmitSelect
-            id="feed-filter"
-            name="filter"
-            defaultValue={filter}
-            label="Show"
-          >
-            {FILTERS.map((f) => (
-              <option key={f.key} value={f.key}>
-                {f.key === "all"
-                  ? `Everything (${counts.total})`
-                  : f.key === "needs_review"
-                    ? `Needs a reply (${counts.needsReview})`
-                    : f.key === "answered"
-                      ? `Answered (${counts.answered})`
-                      : `Marked invalid (${counts.invalid})`}
-              </option>
-            ))}
-          </AutoSubmitSelect>
-
-          {/* Read state, this reader's own. Offered whenever there is anything
-              to read: the count is what says how much of the week is left. */}
-          {counts.total > 0 && (
             <AutoSubmitSelect
-              id="feed-seen"
-              name="seen"
-              defaultValue={readFilter}
-              label="Read"
+              // was `.feedbar__line .select-field` (§3.2)
+              className="max-w-[22ch]"
+              id="feed-filter"
+              name="filter"
+              defaultValue={filter}
+              label="Show"
             >
-              {READ_FILTERS.map((f) => (
+              {FILTERS.map((f) => (
                 <option key={f.key} value={f.key}>
                   {f.key === "all"
-                    ? `${f.label} (${counts.total})`
-                    : `${f.label} (${unreadInScope})`}
+                    ? `Everything (${counts.total})`
+                    : f.key === "needs_review"
+                      ? `Needs a reply (${counts.needsReview})`
+                      : f.key === "answered"
+                        ? `Answered (${counts.answered})`
+                        : `Marked invalid (${counts.invalid})`}
                 </option>
               ))}
             </AutoSubmitSelect>
-          )}
 
-          {/* Only when the reader actually has more than one: a control with a
+            {/* Read state, this reader's own. Offered whenever there is anything
+              to read: the count is what says how much of the week is left. */}
+            {counts.total > 0 && (
+              <AutoSubmitSelect
+                id="feed-seen"
+                name="seen"
+                defaultValue={readFilter}
+                label="Read"
+              >
+                {READ_FILTERS.map((f) => (
+                  <option key={f.key} value={f.key}>
+                    {f.key === "all"
+                      ? `${f.label} (${counts.total})`
+                      : `${f.label} (${unreadInScope})`}
+                  </option>
+                ))}
+              </AutoSubmitSelect>
+            )}
+
+            {/* Only when the reader actually has more than one: a control with a
               single option is noise. */}
-          {sections.length > 1 && (
-            <AutoSubmitSelect
-              id="feed-section"
-              name="section"
-              defaultValue={sp.section ?? ""}
-              label="Section"
-            >
-              <option value="">All sections</option>
-              {sections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.title}
-                </option>
-              ))}
-            </AutoSubmitSelect>
-          )}
+            {sections.length > 1 && (
+              <AutoSubmitSelect
+                id="feed-section"
+                name="section"
+                defaultValue={sp.section ?? ""}
+                label="Section"
+              >
+                <option value="">All sections</option>
+                {sections.map((section) => (
+                  <option key={section.id} value={section.id}>
+                    {section.title}
+                  </option>
+                ))}
+              </AutoSubmitSelect>
+            )}
 
-          <button className="visually-hidden" type="submit">
-            Search
-          </button>
+            <button className="visually-hidden" type="submit">
+              Search
+            </button>
           </div>
         </form>
 
@@ -919,9 +1076,7 @@ export default async function CourseResponsesPage({
               question from how much is left to answer — and the one a reader
               coming back to a half-finished column is asking. */}
           {unreadInScope > 0 && (
-            <span className="feedbar__unread">
-              {unreadInScope} unread
-            </span>
+            <span className="feedbar__unread">{unreadInScope} unread</span>
           )}
           {waitingCount > 0 ? (
             <>
@@ -930,7 +1085,10 @@ export default async function CourseResponsesPage({
                 reply
               </span>
               {nextWaiting && (
-                <a className="link small" href={`#r-${nextWaiting.response.id}`}>
+                <a
+                  className="link small"
+                  href={`#r-${nextWaiting.response.id}`}
+                >
                   Jump to the next one
                 </a>
               )}
@@ -958,6 +1116,7 @@ export default async function CourseResponsesPage({
                   href: `${path}?${new URLSearchParams(
                     Object.entries({
                       filter,
+                      form: currentFormId,
                       cycle: currentCycleId,
                       section: sp.section,
                     }).filter((e): e is [string, string] => !!e[1]),
@@ -1036,7 +1195,11 @@ export default async function CourseResponsesPage({
 
                 <div className="post__ident">
                   <p className="post__who">{who}</p>
-                  <MetaList
+                  {/* Which occurrence this submission belongs to, as a tag: it
+                      is the fact a reader scanning a mixed column looks for
+                      first, and as dot-separated metadata it read as part of
+                      the student's name line. */}
+                  <TagList
                     items={[
                       row.instanceLabel,
                       // Named only when the reader has more than one, so the
@@ -1047,367 +1210,373 @@ export default async function CourseResponsesPage({
                 </div>
 
                 <div className="post__content">
-
-                {/* The form, as the form asks it: every question this
+                  {/* The form, as the form asks it: every question this
                     occurrence actually put to the student, in its authored
                     order, answered or not. */}
-                <FormAnswers answers={row.answers} rendered={questionHtml} />
+                  <FormAnswers answers={row.answers} rendered={questionHtml} />
 
-                {row.items.length === 0 ? (
-                  /* They answered the form and asked nothing. There is no reply
+                  {row.items.length === 0 ? (
+                    /* They answered the form and asked nothing. There is no reply
                      to write, and saying so plainly beats a row of buttons that
                      would all be wrong. It still earns a post: this is where a
                      reader sees who took part, and where an empty submission is
                      judged. */
-                  /* The answers are already above, so there is nothing to
+                    /* The answers are already above, so there is nothing to
                      re-count here — only the absence to state. */
-                  <p className="post__quiet">
-                    They answered the form and did not add a question or comment.
-                  </p>
-                ) : (
-                  row.items.map((entry) => {
-                    const { item, privateResponses, publicAnswers } = entry;
-                    const events = [
-                      ...privateResponses.map((response) => ({
-                        kind: "private" as const,
-                        at: response.createdAt,
-                        response,
-                      })),
-                      ...publicAnswers.map((answer) => ({
-                        kind: "public" as const,
-                        at: answer.publishedAt ?? answer.createdAt,
-                        answer,
-                      })),
-                    ].sort((a, b) => a.at.getTime() - b.at.getTime());
-                    const published = publicAnswers.some(
-                      (answer) => answer.state === "published",
-                    );
-                    const isComment = item.kind === "general_comment";
-                    const declined = item.disposition === "no_response";
-                    const settled = entry.settled;
+                    <p className="post__quiet">
+                      They answered the form and did not add a question or
+                      comment.
+                    </p>
+                  ) : (
+                    row.items.map((entry) => {
+                      const { item, privateResponses, publicAnswers } = entry;
+                      const events = [
+                        ...privateResponses.map((response) => ({
+                          kind: "private" as const,
+                          at: response.createdAt,
+                          response,
+                        })),
+                        ...publicAnswers.map((answer) => ({
+                          kind: "public" as const,
+                          at: answer.publishedAt ?? answer.createdAt,
+                          answer,
+                        })),
+                      ].sort((a, b) => a.at.getTime() - b.at.getTime());
+                      const published = publicAnswers.some(
+                        (answer) => answer.state === "published",
+                      );
+                      const isComment = item.kind === "general_comment";
+                      const declined = item.disposition === "no_response";
+                      const settled = entry.settled;
 
-                    return (
-                      <section className="post__item" key={item.id}>
-                        {/* What kind of thing this is, before the thing itself —
+                      return (
+                        <section className="post__item" key={item.id}>
+                          {/* What kind of thing this is, before the thing itself —
                             a reader knows how to read "Question · Content"
                             before they start reading it, not after. */}
-                        <p className="post__itemmeta">
-                          <span>
-                            {/* Just what it is. "· never publishable" was
+                          <p className="post__itemmeta">
+                            <span>
+                              {/* Just what it is. "· never publishable" was
                                 policy trivia about a thing the reader was not
                                 trying to publish, printed on every general
                                 comment; the "No reply needed" stamp beside it
                                 already says what to do with one. */}
-                            {isComment
-                              ? "General comment"
-                              : `${sentenceCase(item.submissionType)} · ${categoryShortLabel(item.category)}`}
-                          </span>
-                          {/* A stamp only where the body cannot say it. An
+                              {isComment
+                                ? "General comment"
+                                : `${sentenceCase(item.submissionType)} · ${categoryShortLabel(item.category)}`}
+                            </span>
+                            {/* A stamp only where the body cannot say it. An
                               answered question shows its answer in the thread
                               below, so "Answered" was labelling something the
                               reader can already see; the states that leave no
                               trace still need words. */}
-                          {published ? (
-                            <Stamp tone="green">Published</Stamp>
-                          ) : declined ? (
-                            <Stamp tone="neutral">Not being answered</Stamp>
-                          ) : isComment ? (
-                            <Stamp tone="neutral">No reply needed</Stamp>
-                          ) : settled ? null : (
-                            <Stamp tone="amber">Needs a reply</Stamp>
-                          )}
-                        </p>
+                            {published ? (
+                              <Stamp tone="green">Published</Stamp>
+                            ) : declined ? (
+                              <Stamp tone="neutral">Not being answered</Stamp>
+                            ) : isComment ? (
+                              <Stamp tone="neutral">No reply needed</Stamp>
+                            ) : settled ? null : (
+                              <Stamp tone="amber">Needs a reply</Stamp>
+                            )}
+                          </p>
 
-                        {/* The student's own words, in the document register,
+                          {/* The student's own words, in the document register,
                             because a person wrote them. */}
-                        <blockquote className="post__words">
-                          {item.originalText}
-                        </blockquote>
+                          <blockquote className="post__words">
+                            {item.originalText}
+                          </blockquote>
 
-                        {events.length > 0 && (
-                          <Thread>
-                            {events.map((event) => {
-                              if (event.kind === "private") {
-                                const message = event.response;
-                                const fromStudent =
-                                  message.authorRole === "student";
+                          {events.length > 0 && (
+                            <Thread>
+                              {events.map((event) => {
+                                if (event.kind === "private") {
+                                  const message = event.response;
+                                  const fromStudent =
+                                    message.authorRole === "student";
+                                  return (
+                                    <ThreadMessage
+                                      key={`private-${message.id}`}
+                                      from={fromStudent ? "student" : "staff"}
+                                      author={
+                                        message.authorName ??
+                                        (fromStudent
+                                          ? "Identity hidden"
+                                          : "A teaching team member")
+                                      }
+                                      mark={
+                                        message.authorName
+                                          ? initials(message.authorName)
+                                          : null
+                                      }
+                                      action={
+                                        fromStudent
+                                          ? "followed up"
+                                          : "replied privately"
+                                      }
+                                      at={message.createdAt}
+                                      timezone={timezone}
+                                    >
+                                      <p className="thread__body">
+                                        {message.body}
+                                      </p>
+                                    </ThreadMessage>
+                                  );
+                                }
+
+                                const { answer } = event;
                                 return (
                                   <ThreadMessage
-                                    key={`private-${message.id}`}
-                                    from={fromStudent ? "student" : "staff"}
+                                    key={`public-${answer.id}`}
+                                    from="public"
                                     author={
-                                      message.authorName ??
-                                      (fromStudent
-                                        ? "Identity hidden"
-                                        : "A teaching team member")
+                                      answer.authorName ??
+                                      "A teaching team member"
                                     }
                                     mark={
-                                      message.authorName
-                                        ? initials(message.authorName)
+                                      answer.authorName
+                                        ? initials(answer.authorName)
                                         : null
                                     }
                                     action={
-                                      fromStudent
-                                        ? "followed up"
-                                        : "replied privately"
+                                      answer.state === "published"
+                                        ? "answered the section"
+                                        : answer.state === "scheduled"
+                                          ? "scheduled an answer"
+                                          : "drafted an answer"
                                     }
-                                    at={message.createdAt}
+                                    at={event.at}
                                     timezone={timezone}
                                   >
+                                    {answer.publishFailed && (
+                                      <p className="mt-1">
+                                        <Stamp tone="red">
+                                          Publication failed
+                                        </Stamp>
+                                      </p>
+                                    )}
                                     <p className="thread__body">
-                                      {message.body}
+                                      {answer.publicQuestionText}
+                                    </p>
+                                    {answer.answerBody && (
+                                      <p className="thread__body">
+                                        {answer.answerBody}
+                                      </p>
+                                    )}
+                                    <p className="mt-1">
+                                      {answer.state === "published" ? (
+                                        <Link
+                                          className="link small"
+                                          href={`/sections/${sectionId}/qa?selected=${answer.id}`}
+                                        >
+                                          See it in the class Q&amp;A
+                                        </Link>
+                                      ) : canOn(
+                                          sectionId,
+                                          "draftPublicAnswers",
+                                        ) ? (
+                                        <Link
+                                          className="link small"
+                                          href={`/teach/sections/${sectionId}/publications`}
+                                        >
+                                          Finish it in the publication queue
+                                        </Link>
+                                      ) : null}
                                     </p>
                                   </ThreadMessage>
                                 );
-                              }
-
-                              const { answer } = event;
-                              return (
-                                <ThreadMessage
-                                  key={`public-${answer.id}`}
-                                  from="public"
-                                  author={
-                                    answer.authorName ??
-                                    "A teaching team member"
-                                  }
-                                  mark={
-                                    answer.authorName
-                                      ? initials(answer.authorName)
-                                      : null
-                                  }
-                                  action={
-                                    answer.state === "published"
-                                      ? "answered the section"
-                                      : answer.state === "scheduled"
-                                        ? "scheduled an answer"
-                                        : "drafted an answer"
-                                  }
-                                  at={event.at}
-                                  timezone={timezone}
-                                >
-                                  {answer.publishFailed && (
-                                    <p style={{ marginTop: 4 }}>
-                                      <Stamp tone="red">Publication failed</Stamp>
-                                    </p>
-                                  )}
-                                  <p className="thread__body">
-                                    {answer.publicQuestionText}
-                                  </p>
-                                  {answer.answerBody && (
-                                    <p className="thread__body">
-                                      {answer.answerBody}
-                                    </p>
-                                  )}
-                                  <p style={{ marginTop: 4 }}>
-                                    {answer.state === "published" ? (
-                                      <Link
-                                        className="link small"
-                                        href={`/sections/${sectionId}/qa?selected=${answer.id}`}
-                                      >
-                                        See it in the class Q&amp;A
-                                      </Link>
-                                    ) : canOn(sectionId, "draftPublicAnswers") ? (
-                                      <Link
-                                        className="link small"
-                                        href={`/teach/sections/${sectionId}/publications`}
-                                      >
-                                        Finish it in the publication queue
-                                      </Link>
-                                    ) : null}
-                                  </p>
-                                </ThreadMessage>
-                              );
-                            })}
-                          </Thread>
-                        )}
-
-                        <div className="post__actions">
-                          {canOn(sectionId, "sendPrivateResponses") && (
-                            <Dialog
-                              variant="quiet"
-                              className="post__action"
-                              label={
-                                <>
-                                  <IconPrivate size={15} />
-                                  Reply privately
-                                </>
-                              }
-                              title="Reply privately"
-                              description={`Only ${who} can see this.`}
-                            >
-                              <form action={sendPrivate}>
-                                <input
-                                  type="hidden"
-                                  name="itemId"
-                                  value={item.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="responseId"
-                                  value={row.response.id}
-                                />
-                                <div className="field-row">
-                                  <label htmlFor={`private-${item.id}`}>
-                                    Your reply{" "}
-                                    <span className="required-mark">
-                                      Required
-                                    </span>
-                                  </label>
-                                  <textarea
-                                    id={`private-${item.id}`}
-                                    className="textarea-field"
-                                    name="body"
-                                    rows={6}
-                                    required
-                                  />
-                                </div>
-                                <div className="row">
-                                  <button
-                                    className="button button--primary"
-                                    type="submit"
-                                  >
-                                    Send private reply
-                                  </button>
-                                </div>
-                              </form>
-                            </Dialog>
+                              })}
+                            </Thread>
                           )}
 
-                          {/* A general comment is never triaged and can never
+                          <div className="post__actions">
+                            {canOn(sectionId, "sendPrivateResponses") && (
+                              <Dialog
+                                variant="quiet"
+                                className="post__action"
+                                label={
+                                  <>
+                                    <IconPrivate size={15} />
+                                    Reply privately
+                                  </>
+                                }
+                                title="Reply privately"
+                                description={`Only ${who} can see this.`}
+                              >
+                                <form action={sendPrivate}>
+                                  <input
+                                    type="hidden"
+                                    name="itemId"
+                                    value={item.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="responseId"
+                                    value={row.response.id}
+                                  />
+                                  <FieldRow
+                                    label={
+                                      <>
+                                        Your reply <RequiredMark />
+                                      </>
+                                    }
+                                    htmlFor={`private-${item.id}`}
+                                  >
+                                    <Textarea
+                                      id={`private-${item.id}`}
+                                      name="body"
+                                      rows={6}
+                                      required
+                                    />
+                                  </FieldRow>
+                                  <div className="row">
+                                    <SubmitButton
+                                      variant="primary"
+                                      pendingLabel="Sending…"
+                                    >
+                                      Send private reply
+                                    </SubmitButton>
+                                  </div>
+                                </form>
+                              </Dialog>
+                            )}
+
+                            {/* A general comment is never triaged and can never
                               become a Q&A entry — the schema enforces it. The
                               button is absent rather than disabled, because an
                               action that cannot exist should not look like one
                               this reader merely lacks. */}
-                          {!isComment && canOn(sectionId, "draftPublicAnswers") && (
-                            <Dialog
-                              variant="quiet"
-                              className="post__action"
-                              label={
-                                <>
-                                  <IconPublic size={15} />
-                                  Answer publicly
-                                </>
-                              }
-                              title="Answer this student's section"
-                              description={`Everyone enrolled in ${section?.title ?? "their section"} sees the wording you write here. No other section does.`}
-                            >
-                              <PublicAnswerComposer
-                                action={draftOrPublish}
-                                itemId={item.id}
-                                selectedResponseId={row.response.id}
-                                /* The asker's own section. A shared form must
+                            {!isComment &&
+                              canOn(sectionId, "draftPublicAnswers") && (
+                                <Dialog
+                                  variant="quiet"
+                                  className="post__action"
+                                  label={
+                                    <>
+                                      <IconPublic size={15} />
+                                      Answer publicly
+                                    </>
+                                  }
+                                  title="Answer this student's section"
+                                  description={`Everyone enrolled in ${section?.title ?? "their section"} sees the wording you write here. No other section does.`}
+                                >
+                                  <PublicAnswerComposer
+                                    action={draftOrPublish}
+                                    itemId={item.id}
+                                    selectedResponseId={row.response.id}
+                                    /* The asker's own section. A shared form must
                                    not widen a publication, so the target is
                                    carried explicitly and re-checked
                                    server-side. */
-                                sectionId={sectionId}
-                                originalQuestion={item.originalText}
-                                canPublish={canOn(
-                                  sectionId,
-                                  "publishPublicAnswers",
-                                )}
-                              />
-                            </Dialog>
-                          )}
+                                    sectionId={sectionId}
+                                    originalQuestion={item.originalText}
+                                    canPublish={canOn(
+                                      sectionId,
+                                      "publishPublicAnswers",
+                                    )}
+                                  />
+                                </Dialog>
+                              )}
 
-                          {/* The third outcome. A question can be replied to,
+                            {/* The third outcome. A question can be replied to,
                               published, or deliberately left — and without a
                               way to say the third, the queue never empties and
                               a reader has to reply to things that need no
                               reply. Reversible, audited, and invisible to the
                               student either way, so it needs no confirmation. */}
-                          {/* Exactly the condition `declineToAnswer` enforces,
+                            {/* Exactly the condition `declineToAnswer` enforces,
                               rather than a proxy for it: an item that already
                               carries a reply or a drafted answer has an outcome,
                               and "will not answer" would misdescribe it. Offering
                               the control there would only produce an error. */}
-                          {!isComment &&
-                            (item.disposition === "undecided" ||
-                              item.disposition === "no_response") &&
-                            canOn(sectionId, "reviewResponses") && (
-                              <form action={declineAnswer}>
-                                <input
-                                  type="hidden"
-                                  name="itemId"
-                                  value={item.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="responseId"
-                                  value={row.response.id}
-                                />
-                                {declined && (
-                                  <input type="hidden" name="undo" value="yes" />
-                                )}
-                                <button
-                                  className="button button--quiet post__action"
-                                  type="submit"
-                                >
-                                  <IconNoReply size={15} />
-                                  {declined
-                                    ? "Put back in the queue"
-                                    : "Will not answer"}
-                                </button>
-                              </form>
-                            )}
-                        </div>
-                      </section>
-                    );
-                  })
-                )}
+                            {!isComment &&
+                              (item.disposition === "undecided" ||
+                                item.disposition === "no_response") &&
+                              canOn(sectionId, "reviewResponses") && (
+                                <form action={declineAnswer}>
+                                  <input
+                                    type="hidden"
+                                    name="itemId"
+                                    value={item.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="responseId"
+                                    value={row.response.id}
+                                  />
+                                  {declined && (
+                                    <input
+                                      type="hidden"
+                                      name="undo"
+                                      value="yes"
+                                    />
+                                  )}
+                                  <SubmitButton
+                                    variant="quiet"
+                                    className="post__action"
+                                  >
+                                    <IconNoReply size={15} />
+                                    {declined
+                                      ? "Put back in the queue"
+                                      : "Will not answer"}
+                                  </SubmitButton>
+                                </form>
+                              )}
+                          </div>
+                        </section>
+                      );
+                    })
+                  )}
 
-                {/* The foot of the post: where this reader marks their own
+                  {/* The foot of the post: where this reader marks their own
                     place, and where the one destructive control is folded
                     away. Both are about the response as a whole rather than
                     about any one question in it. */}
-                <div className="post__foot">
-                  {/* Only the reversal. "Mark as read" asked the reader to
+                  <div className="post__foot">
+                    {/* Only the reversal. "Mark as read" asked the reader to
                       tell the page something it can see for itself, once per
                       response, down a whole week — reading now does that on
                       its own. Putting one BACK is a real intention and has no
                       other way to be expressed, so that control stays. */}
-                  {!unread && (
-                    <form action={markUnread}>
-                      <input
-                        type="hidden"
-                        name="responseId"
-                        value={row.response.id}
-                      />
-                      <button
-                        className="button button--quiet button--small"
-                        type="submit"
-                      >
-                        Mark as unread
-                      </button>
-                    </form>
-                  )}
+                    {!unread && (
+                      <form action={markUnread}>
+                        <input
+                          type="hidden"
+                          name="responseId"
+                          value={row.response.id}
+                        />
+                        <SubmitButton variant="quiet" size="small">
+                          Mark as unread
+                        </SubmitButton>
+                      </form>
+                    )}
 
-                  {/* Validity last, and folded. It removes a student's
+                    {/* Validity last, and folded. It removes a student's
                       participation credit, so it must never sit beside Reply
                       where one slip costs someone their week. */}
-                  <ResponseValidity
-                    responseId={row.response.id}
-                    validity={row.response.validity}
-                    canMark={canOn(sectionId, "markValidity")}
-                    canFlag={canOn(sectionId, "flagValidity")}
-                    isInstructor={isInstructorOn(sectionId)}
-                    studentNumber={row.student?.studentNumber}
-                    flagLine={
-                      flagEvent
-                        ? `${flagEvent.actorName}: ${(flagEvent.reason ?? "no reason given").replace(/_/g, " ")}${flagEvent.staffNote ? ` — ${flagEvent.staffNote}` : ""}`
-                        : undefined
-                    }
-                    onFlag={flag}
-                    onConfirm={confirmFlagged}
-                    onDismiss={dismissFlag}
-                    onInvalidate={invalidate}
-                    onRestore={restoreValid}
-                  />
-                </div>
+                    <ResponseValidity
+                      responseId={row.response.id}
+                      validity={row.response.validity}
+                      canMark={canOn(sectionId, "markValidity")}
+                      canFlag={canOn(sectionId, "flagValidity")}
+                      isInstructor={isInstructorOn(sectionId)}
+                      studentNumber={row.student?.studentNumber}
+                      flagLine={
+                        flagEvent
+                          ? `${flagEvent.actorName}: ${(flagEvent.reason ?? "no reason given").replace(/_/g, " ")}${flagEvent.staffNote ? ` — ${flagEvent.staffNote}` : ""}`
+                          : undefined
+                      }
+                      onFlag={flag}
+                      onConfirm={confirmFlagged}
+                      onDismiss={dismissFlag}
+                      onInvalidate={invalidate}
+                      onRestore={restoreValid}
+                    />
+                  </div>
                 </div>
               </article>
             );
           })}
-
         </div>
       )}
     </AppShell>
@@ -1479,8 +1648,7 @@ function FormAnswers({
   // One pass in authored order, collecting adjacent measurements together so
   // they can be drawn as one aligned block without reordering anything.
   const blocks: (
-    | { kind: "meters"; rows: AnswerRow[] }
-    | { kind: "prose"; row: AnswerRow }
+    { kind: "meters"; rows: AnswerRow[] } | { kind: "prose"; row: AnswerRow }
   )[] = [];
   for (const row of answers) {
     if (PROSE_TYPES.has(row.type)) {
@@ -1702,7 +1870,10 @@ function promptLabel(prompt: string): string {
  * `answered`; both render as words rather than as an empty cell, because a gap
  * in a column of numbers reads as a rendering fault.
  */
-function compactValue(answer: { scale: unknown; value: unknown }): string | null {
+function compactValue(answer: {
+  scale: unknown;
+  value: unknown;
+}): string | null {
   const value = (answer.value ?? {}) as {
     optionLabels?: string[];
     scaleValue?: number;
@@ -1776,18 +1947,16 @@ function ResponseValidity({
         {validity === "valid" && canDecide && (
           <Dialog
             variant="danger"
-            className="button--small"
+            size="small"
             label="Mark as invalid"
             title="Mark this submission as invalid?"
             description="This removes the week's participation credit. It is recorded and can be reversed."
           >
             <form action={onInvalidate}>
               <input type="hidden" name="responseId" value={responseId} />
-              <div className="field-row">
-                <label htmlFor={`invalid-reason-${responseId}`}>Reason</label>
-                <select
+              <FieldRow label="Reason" htmlFor={`invalid-reason-${responseId}`}>
+                <Select
                   id={`invalid-reason-${responseId}`}
-                  className="select-field"
                   name="reason"
                   defaultValue="empty_or_meaningless"
                 >
@@ -1796,25 +1965,27 @@ function ResponseValidity({
                       {reason.label}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <span className="helper-text">Staff only.</span>
-              </div>
-              <div className="field-row">
-                <label htmlFor={`invalid-student-${responseId}`}>
-                  What the student sees{" "}
-                  <span className="required-mark">Required</span>
-                </label>
-                <input
+              </FieldRow>
+              <FieldRow
+                label={
+                  <>
+                    What the student sees <RequiredMark />
+                  </>
+                }
+                htmlFor={`invalid-student-${responseId}`}
+              >
+                <Field
                   id={`invalid-student-${responseId}`}
-                  className="field"
                   name="studentVisibleReason"
                   required
                 />
-              </div>
+              </FieldRow>
               <div className="row">
-                <button className="button button--danger" type="submit">
+                <SubmitButton variant="danger" pendingLabel="Marking…">
                   Mark as invalid
-                </button>
+                </SubmitButton>
               </div>
             </form>
           </Dialog>
@@ -1823,18 +1994,16 @@ function ResponseValidity({
         {/* A student assistant may flag; only an instructor decides. */}
         {validity === "valid" && canFlag && !isInstructor && (
           <Dialog
-            className="button--small"
+            size="small"
             label="Flag for the instructor"
             title="Flag this submission?"
             description="The week's credit is kept until an instructor decides. The student is never told a flag exists."
           >
             <form action={onFlag}>
               <input type="hidden" name="responseId" value={responseId} />
-              <div className="field-row">
-                <label htmlFor={`flag-reason-${responseId}`}>Reason</label>
-                <select
+              <FieldRow label="Reason" htmlFor={`flag-reason-${responseId}`}>
+                <Select
                   id={`flag-reason-${responseId}`}
-                  className="select-field"
                   name="reason"
                   defaultValue="empty_or_meaningless"
                 >
@@ -1843,23 +2012,18 @@ function ResponseValidity({
                       {reason.label}
                     </option>
                   ))}
-                </select>
-              </div>
-              <div className="field-row">
-                <label htmlFor={`flag-note-${responseId}`}>
-                  Note for the instructor{" "}
-                  <span className="optional-mark">optional</span>
-                </label>
-                <input
-                  id={`flag-note-${responseId}`}
-                  className="field"
-                  name="note"
-                />
-              </div>
+                </Select>
+              </FieldRow>
+              <FieldRow
+                label="Note for the instructor"
+                htmlFor={`flag-note-${responseId}`}
+              >
+                <Field id={`flag-note-${responseId}`} name="note" />
+              </FieldRow>
               <div className="row">
-                <button className="button button--primary" type="submit">
+                <SubmitButton variant="primary" pendingLabel="Flagging…">
                   Flag for the instructor
-                </button>
+                </SubmitButton>
               </div>
             </form>
           </Dialog>
@@ -1867,18 +2031,16 @@ function ResponseValidity({
 
         {validity === "flagged" && canDecide && (
           <Dialog
-            className="button--small"
+            size="small"
             label="Decide on this flag"
             title="A student assistant flagged this submission"
             description={flagLine}
           >
             <form action={onConfirm}>
               <input type="hidden" name="responseId" value={responseId} />
-              <div className="field-row">
-                <label htmlFor={`confirm-reason-${responseId}`}>Reason</label>
-                <select
+              <FieldRow label="Reason" htmlFor={`confirm-reason-${responseId}`}>
+                <Select
                   id={`confirm-reason-${responseId}`}
-                  className="select-field"
                   name="reason"
                   defaultValue="empty_or_meaningless"
                 >
@@ -1887,32 +2049,34 @@ function ResponseValidity({
                       {reason.label}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <span className="helper-text">Staff only.</span>
-              </div>
-              <div className="field-row">
-                <label htmlFor={`confirm-student-${responseId}`}>
-                  What the student sees{" "}
-                  <span className="required-mark">Required</span>
-                </label>
-                <input
+              </FieldRow>
+              <FieldRow
+                label={
+                  <>
+                    What the student sees <RequiredMark />
+                  </>
+                }
+                htmlFor={`confirm-student-${responseId}`}
+              >
+                <Field
                   id={`confirm-student-${responseId}`}
-                  className="field"
                   name="studentVisibleReason"
                   required
                 />
-              </div>
+              </FieldRow>
               <div className="row">
-                <button className="button button--danger" type="submit">
+                <SubmitButton variant="danger" pendingLabel="Removing…">
                   Remove the credit
-                </button>
+                </SubmitButton>
               </div>
             </form>
-            <form action={onDismiss} style={{ marginTop: "var(--s4)" }}>
+            <form className="mt-4" action={onDismiss}>
               <input type="hidden" name="responseId" value={responseId} />
-              <button className="button button--secondary" type="submit">
+              <SubmitButton variant="secondary" pendingLabel="Dismissing…">
                 Dismiss the flag and keep the credit
-              </button>
+              </SubmitButton>
             </form>
           </Dialog>
         )}
@@ -1920,12 +2084,13 @@ function ResponseValidity({
         {validity === "invalid" && canDecide && (
           <form action={onRestore} className="inline-form">
             <input type="hidden" name="responseId" value={responseId} />
-            <button
-              className="button button--secondary button--small"
-              type="submit"
+            <SubmitButton
+              variant="secondary"
+              size="small"
+              pendingLabel="Restoring…"
             >
               Restore the credit
-            </button>
+            </SubmitButton>
           </form>
         )}
       </div>

@@ -12,8 +12,16 @@ import {
   MetaList,
   Stamp,
 } from "@/components/ui";
-import { IconForward, IconPlus } from "@/components/ui/icons";
-import { termParts } from "@/lib/term";
+import { TagList } from "@/components/ui/tag";
+import { IconForward } from "@/components/ui/icons";
+import {
+  academicYearOptions,
+  courseTermParts,
+  currentTerm,
+  encodeTerm,
+  parseTerm,
+  type Semester,
+} from "@/lib/term";
 import {
   CatalogError,
   createCourse,
@@ -22,6 +30,7 @@ import {
 import { listCourseForms } from "@/modules/forms/instances";
 import { AuthzError } from "@/modules/authz";
 import { requireUser, toShellUser } from "@/lib/session";
+import { CreateCourseDialog } from "@/components/staff/create-course-dialog";
 
 /**
  * The list of courses a teacher works in.
@@ -39,10 +48,10 @@ import { requireUser, toShellUser } from "@/lib/session";
 export default async function CoursesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; ok?: string; new?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string }>;
 }) {
   const user = await requireUser();
-  const { error, ok, new: newCourse } = await searchParams;
+  const { error, ok } = await searchParams;
 
   if (!user.isTeacher) {
     return (
@@ -64,18 +73,39 @@ export default async function CoursesPage({
       forms: await listCourseForms(user.id, entry.course.id).catch(() => []),
     })),
   );
-  // Opened by the header action, or by a failed create. Kept in the URL so the
-  // state survives the redirect.
-  const createOpen = newCourse === "1" || !!error;
+  /*
+    The term the dialog opens on. Computed here rather than in the dialog
+    because a client component reading `new Date()` renders one term on the
+    server and possibly another in the browser — a hydration mismatch that
+    would show up only at a semester boundary, which is the worst possible time
+    to discover it.
+  */
+  const openingTerm = parseTerm(currentTerm())!;
 
   async function addCourse(formData: FormData) {
     "use server";
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
+    /*
+      The FORM requires a term; the service accepts a course without one
+      (courses predating `courses.term` have none). So the encoding — and the
+      refusal of a term this page composed wrongly — belongs here, where the
+      form contract lives.
+    */
+    const startYear = Number(formData.get("startYear"));
+    const semester = String(formData.get("semester") ?? "") as Semester;
+    const term = encodeTerm(startYear, semester);
+    if (!parseTerm(term)) {
+      redirect(
+        `/teach/courses?error=${encodeURIComponent("Choose an academic year and semester.")}`,
+      );
+    }
     try {
       await createCourse(uid, {
         code: String(formData.get("code") ?? ""),
+        // Optional, per `modal.md`: an empty title still creates the course.
         title: String(formData.get("title") ?? ""),
+        term,
       });
     } catch (err) {
       redirect(`/teach/courses?error=${encodeURIComponent(describe(err))}`);
@@ -91,65 +121,29 @@ export default async function CoursesPage({
       navGroups={await primaryNavFor(user, "/teach/courses")}
       title="My courses"
       actions={
-        <Link className="button button--primary" href="/teach/courses?new=1">
-          <IconPlus size={15} />
-          New course
-        </Link>
+        <CreateCourseDialog
+          action={addCourse}
+          defaultSemester={openingTerm.semester}
+          defaultStartYear={openingTerm.startYear}
+          yearOptions={academicYearOptions()}
+        />
       }
     >
       <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
         {error && <Alert variant="error">{error}</Alert>}
 
-        {createOpen && (
-          <section className="notice notice--pad" id="new-course">
-            <h2 className="panel-title">New course</h2>
-            <form action={addCourse} className="form-grid">
-              <div className="field-row">
-                <label htmlFor="course-code">Course code</label>
-                <input
-                  id="course-code"
-                  className="field"
-                  name="code"
-                  placeholder="CS 33"
-                  required
-                  autoFocus
-                  aria-describedby="course-code-help"
-                />
-                <span className="helper-text" id="course-code-help">
-                  How you and your students refer to it. This is the name shown
-                  everywhere.
-                </span>
-              </div>
-              <div className="field-row">
-                <label htmlFor="course-title">Course title</label>
-                <input
-                  id="course-title"
-                  className="field"
-                  name="title"
-                  placeholder="Introduction to Computing"
-                  required
-                />
-              </div>
-              <div className="row">
-                <button className="button button--primary" type="submit">
-                  Create course
-                </button>
-                <Link className="button button--quiet" href="/teach/courses">
-                  Cancel
-                </Link>
-              </div>
-            </form>
-          </section>
-        )}
-
         {withForms.length === 0 ? (
-          <EmptyState
-            title="No courses yet"
-            action={{ href: "/teach/courses?new=1", label: "New course" }}
-            primary
-          >
+          /*
+            No action on the empty state any more, deliberately. It used to link
+            to `?new=1`, and with the form now in a dialog there is no URL to
+            link to — the only way to open it is the header button, which is on
+            screen and three inches above this text. A second control that
+            scrolls you to the first is worse than naming it.
+          */
+          <EmptyState title="No courses yet">
             A course owns its forms, its class lists and its question backlog.
+            Use <strong>New course</strong>, above, to add your first one.
           </EmptyState>
         ) : (
           withForms.map(({ course, isOwner, sections, forms }) => {
@@ -158,7 +152,17 @@ export default async function CoursesPage({
               (sum, f) => sum + f.needsReviewCount,
               0,
             );
-            const terms = [...new Set(sections.map((s) => s.term))];
+            /*
+              The course's own term first, its sections' only as a fallback
+              (`courseTermParts`). A course created before `courses.term` still
+              reads exactly as it did; one created since reads its term even
+              with no class lists yet, which is the state it spends its first
+              five minutes in.
+            */
+            const termFacts = courseTermParts(
+              course.term,
+              sections.map((s) => s.term),
+            );
             return (
               <Link
                 className="notice section-notice"
@@ -167,21 +171,12 @@ export default async function CoursesPage({
               >
                 <div className="notice__body">
                   <div className="spread">
-                    <div style={{ minWidth: 0 }}>
+                    <div className="min-w-0">
                       {/* The code IS the heading. The title reads underneath it
                           as what the code stands for, which is the order a
                           teacher actually needs. */}
                       <h2 className="panel-title">{course.code}</h2>
-                      <MetaList
-                        items={[
-                          course.title,
-                          ...(terms.length === 1
-                            ? termParts(terms[0]!)
-                            : terms.length > 1
-                              ? [`${terms.length} terms`]
-                              : []),
-                        ]}
-                      />
+                      <MetaList items={[course.title, ...termFacts]} />
                     </div>
                     <div className="row">
                       {course.archivedAt && (
@@ -192,8 +187,11 @@ export default async function CoursesPage({
                   </div>
                   <div className="section-notice__foot">
                     {/* Forms and attention first — the two facts that decide
-                        whether this course needs the teacher today. */}
-                    <MetaList
+                        whether this course needs the teacher today. Tags, not a
+                        dot-separated sentence: every item here is a count, and
+                        a reader scanning a column of courses is comparing them
+                        rather than reading them. */}
+                    <TagList
                       items={[
                         forms.length === 0
                           ? "No forms yet"

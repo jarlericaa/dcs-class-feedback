@@ -8,6 +8,7 @@ import {
   type StudentSectionConfigView,
   type SubmitState,
 } from "@/components/student/weekly-form";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * What the students will answer, from the editor's current unsaved state.
@@ -88,7 +89,7 @@ export function TemplatePreview({
           </p>
         </div>
         <button
-          className="button button--secondary button--small"
+          className={buttonClass({ variant: "secondary", size: "small" })}
           type="button"
           onClick={onClose}
         >

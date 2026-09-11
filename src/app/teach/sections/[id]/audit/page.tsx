@@ -4,7 +4,12 @@ import { formatDateTime } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionTabGroups } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
-import { AccessDenied, EmptyState, MetaList, Pagination } from "@/components/ui";
+import {
+  AccessDenied,
+  EmptyState,
+  MetaList,
+  Pagination,
+} from "@/components/ui";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
 import { auditActionLabel } from "@/lib/audit-labels";
 import {
@@ -20,6 +25,8 @@ import {
   type AuditHistoryRow,
 } from "@/modules/audit";
 import { toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
+import { Field } from "@/components/ui/form";
 
 /**
  * Audit history for one section, written for the person who opens it.
@@ -147,7 +154,12 @@ export default async function AuditPage({
       tabsLabel={sectionLabel(course.code, section.title)}
       tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
-      title="Audit history"
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${course.id}`, label: course.code },
+        { href: `/teach/sections/${section.id}`, label: section.title },
+      ]}
+      title={sectionLabel(course.code, section.title)}
     >
       <div className="stack-4">
         {/* Choosing applies. Every control is in one GET form, so the whole
@@ -195,9 +207,11 @@ export default async function AuditPage({
           <label className="visually-hidden" htmlFor="audit-from">
             From date
           </label>
-          <input
+          <Field
+            // was `.toolbar .field` (§3.2). A date input is not the row's
+            // stretchy element, but it shared the rule, so it keeps it.
+            className="flex-[1_1_220px] min-w-0"
             id="audit-from"
-            className="field"
             type="date"
             name="from"
             defaultValue={filter.from ?? ""}
@@ -205,9 +219,9 @@ export default async function AuditPage({
           <label className="visually-hidden" htmlFor="audit-to">
             To date
           </label>
-          <input
+          <Field
+            className="flex-[1_1_220px] min-w-0"
             id="audit-to"
-            className="field"
             type="date"
             name="to"
             defaultValue={filter.to ?? ""}
@@ -223,7 +237,10 @@ export default async function AuditPage({
             <option value="all">Everything, including system records</option>
           </AutoSubmitSelect>
 
-          <button className="button button--secondary" type="submit">
+          <button
+            className={buttonClass({ variant: "secondary" })}
+            type="submit"
+          >
             Apply
           </button>
           {(isFiltered || scope === "all") && (
@@ -335,23 +352,23 @@ function AuditEntry({
         )}
 
         {/**
-          * The raw payload, DELIBERATELY unredacted, and deliberately closed.
-          *
-          * The named-field list above withholds identity values and bodies,
-          * because a teacher scanning a history should not be reading student
-          * names to find out that an import happened. This is the escape
-          * hatch for the other question — "what did the system actually
-          * store?" — which is the one thing an audit log exists to answer when
-          * something has gone wrong, and a redacted version of it could not.
-          *
-          * Safe as a staff-only exception: this page already requires non-TA
-          * section standing, and an instructor holds `view_student_identities`
-          * by role, so nothing here is a name or an address they cannot
-          * already read on the class list. It stays a click behind a labelled
-          * disclosure so it is never what a reader passes on the way to the
-          * next entry, and the row itself is never modified — the log is
-          * append-only, and what the default view does is project it.
-          */}
+         * The raw payload, DELIBERATELY unredacted, and deliberately closed.
+         *
+         * The named-field list above withholds identity values and bodies,
+         * because a teacher scanning a history should not be reading student
+         * names to find out that an import happened. This is the escape
+         * hatch for the other question — "what did the system actually
+         * store?" — which is the one thing an audit log exists to answer when
+         * something has gone wrong, and a redacted version of it could not.
+         *
+         * Safe as a staff-only exception: this page already requires non-TA
+         * section standing, and an instructor holds `view_student_identities`
+         * by role, so nothing here is a name or an address they cannot
+         * already read on the class list. It stays a click behind a labelled
+         * disclosure so it is never what a reader passes on the way to the
+         * next entry, and the row itself is never modified — the log is
+         * append-only, and what the default view does is project it.
+         */}
         {hasPayload && (
           <details className="audit-raw">
             <summary>Technical details, exactly as stored</summary>

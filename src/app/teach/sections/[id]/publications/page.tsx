@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/ui/submit-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -26,6 +27,7 @@ import {
 import { AuthzError, PUBLICATION_PERMISSIONS } from "@/modules/authz";
 import { zonedTimeToUtc } from "@/modules/forms/timezone";
 import { toShellUser } from "@/lib/session";
+import { Choice, Field, FieldRow, Textarea } from "@/components/ui/form";
 
 /**
  * Publication queue: drafts, scheduled answers, failed publications and what
@@ -174,7 +176,12 @@ export default async function PublicationsPage({
       tabsLabel={sectionLabel(course.code, section.title)}
       tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
-      title="Publication queue"
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${course.id}`, label: course.code },
+        { href: `/teach/sections/${section.id}`, label: section.title },
+      ]}
+      title={sectionLabel(course.code, section.title)}
     >
       <div className="stack-4">
         {ok && <Alert variant="success">{ok}</Alert>}
@@ -212,19 +219,14 @@ export default async function PublicationsPage({
         ) : (
           editable.map(({ answer, sourceCount }) => (
             <section className="notice notice--pad" key={answer.id}>
-              <div
-                className="row"
-                style={{ justifyContent: "space-between" }}
-              >
+              <div className="row justify-between">
                 <div>
                   <p className="label">
                     {sourceCount} source submission
                     {sourceCount === 1 ? "" : "s"}
                     {sourceCount > 1 && ", merged"}
                   </p>
-                  <h2 className="panel-title">
-                    {answer.publicQuestionText}
-                  </h2>
+                  <h2 className="panel-title">{answer.publicQuestionText}</h2>
                 </div>
                 {answer.publishFailed ? (
                   <Stamp tone="red">Publication failed</Stamp>
@@ -239,43 +241,35 @@ export default async function PublicationsPage({
               </div>
 
               {answer.publishFailed && answer.publishFailureReason && (
-                <div style={{ marginTop: 12 }}>
+                <div className="mt-3">
                   <Alert variant="error" title="Why it failed">
                     {answer.publishFailureReason}
                   </Alert>
                 </div>
               )}
 
-              <form
-                action={saveDraft}
-                className="stack-4"
-                style={{ marginTop: 16 }}
-              >
+              <form action={saveDraft} className="stack-4 mt-4">
                 <input type="hidden" name="answerId" value={answer.id} />
-                <div className="field-row">
-                  <label htmlFor={`q-${answer.id}`}>Public question</label>
-                  <textarea
+                <FieldRow label="Public question" htmlFor={`q-${answer.id}`}>
+                  <Textarea
                     id={`q-${answer.id}`}
-                    className="textarea-field"
                     name="publicQuestion"
                     rows={2}
                     defaultValue={answer.publicQuestionText}
                   />
-                </div>
-                <div className="field-row">
-                  <label htmlFor={`a-${answer.id}`}>Answer</label>
-                  <textarea
+                </FieldRow>
+                <FieldRow label="Answer" htmlFor={`a-${answer.id}`}>
+                  <Textarea
                     id={`a-${answer.id}`}
-                    className="textarea-field"
                     name="answerBody"
                     rows={5}
                     defaultValue={answer.answerBody ?? ""}
                   />
-                </div>
+                </FieldRow>
                 <div>
-                  <button className="button button--secondary" type="submit">
+                  <SubmitButton variant="secondary" pendingLabel="Saving…">
                     Save draft
-                  </button>
+                  </SubmitButton>
                 </div>
               </form>
 
@@ -285,17 +279,15 @@ export default async function PublicationsPage({
                     <h3>Publish now</h3>
                     <form action={publish}>
                       <input type="hidden" name="answerId" value={answer.id} />
-                      <label className="choice">
-                        <input
-                          type="checkbox"
-                          name="acknowledged"
-                          value="yes"
-                        />
-                        <span>I have checked the public wording</span>
-                      </label>
-                      <button className="button button--primary" type="submit">
+                      <Choice type="checkbox" name="acknowledged" value="yes">
+                        I have checked the public wording
+                      </Choice>
+                      <SubmitButton
+                        variant="primary"
+                        pendingLabel="Publishing…"
+                      >
                         Publish to this section
-                      </button>
+                      </SubmitButton>
                     </form>
                   </div>
                 )}
@@ -313,43 +305,38 @@ export default async function PublicationsPage({
                       >
                         Publish at
                       </label>
-                      <input
+                      <Field
                         id={`when-${answer.id}`}
-                        className="field"
                         type="datetime-local"
                         name="scheduledAt"
                         required
                       />
-                      <label className="choice">
-                        <input
-                          type="checkbox"
-                          name="acknowledged"
-                          value="yes"
-                        />
-                        <span>I have checked the public wording</span>
-                      </label>
-                      <button
-                        className="button button--secondary"
-                        type="submit"
+                      <Choice type="checkbox" name="acknowledged" value="yes">
+                        I have checked the public wording
+                      </Choice>
+                      <SubmitButton
+                        variant="secondary"
+                        pendingLabel="Scheduling…"
                       >
                         {answer.state === "scheduled"
                           ? "Reschedule"
                           : "Schedule"}
-                      </button>
+                      </SubmitButton>
                     </form>
                     {answer.state === "scheduled" && (
-                      <form action={cancel} style={{ marginTop: 10 }}>
+                      <form action={cancel} className="mt-2">
                         <input
                           type="hidden"
                           name="answerId"
                           value={answer.id}
                         />
-                        <button
-                          className="button button--quiet button--small"
-                          type="submit"
+                        <SubmitButton
+                          variant="quiet"
+                          size="small"
+                          pendingLabel="Cancelling…"
                         >
                           Cancel schedule
-                        </button>
+                        </SubmitButton>
                       </form>
                     )}
                   </div>
@@ -363,7 +350,7 @@ export default async function PublicationsPage({
           <section className="notice">
             <div className="notice__head">
               <div>
-                <h2>Recently published</h2>
+                <h2 className="panel-title">Recently published</h2>
               </div>
             </div>
             <ul className="data-list">
@@ -389,7 +376,8 @@ export default async function PublicationsPage({
                         `Published ${formatDateTime(answer.publishedAt, section.timezone)}`,
                         `${sourceCount} source submission${sourceCount === 1 ? "" : "s"}`,
                         // "published late by reconciliation" named the module.
-                        answer.publishedLate && "Published later than scheduled",
+                        answer.publishedLate &&
+                          "Published later than scheduled",
                       ]}
                     />
                   </span>

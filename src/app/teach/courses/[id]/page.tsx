@@ -14,13 +14,14 @@ import {
   MetaList,
   Stamp,
 } from "@/components/ui";
-import { IconPlus } from "@/components/ui/icons";
+import { IconForm, IconForward, IconPlus } from "@/components/ui/icons";
 import { formatDateTime } from "@/lib/datetime";
-import { termParts } from "@/lib/term";
+import { courseSubtitle } from "@/components/staff/course-heading";
 import { AuthzError } from "@/modules/authz";
 import { listCourseForms, type CourseFormRow } from "@/modules/forms/instances";
 import { DELIVERY_LABELS } from "@/modules/forms/schedules";
 import { requireUser, toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * The teacher's course workspace.
@@ -87,25 +88,26 @@ export default async function CourseWorkspacePage({
       user={toShellUser(user)}
       workspace="staff"
       navGroups={await primaryNavFor(user, path)}
-      tabGroups={await courseTabGroupsFor(user.id, courseId, path, { needsReview })}
+      tabGroups={await courseTabGroupsFor(user.id, courseId, path, {
+        needsReview,
+      })}
       tabsLabel={course.code}
       contextLabel={course.code}
       /* The code is the title. The academic year and semester sit under it as
          quiet context so two offerings of CS 33 are never confused; the course
          title is metadata, not the heading. */
       title={course.code}
-      description={
-        <MetaList
-          items={[
-            course.title,
-            ...(terms.length === 1 ? termParts(terms[0]!) : []),
-            terms.length > 1 ? `${terms.length} terms` : null,
-          ]}
-        />
-      }
+      /* Built by `courseSubtitle` so every view of this course leads with the
+         same header — see that file for why the tab pages stopped setting their
+         own headings. */
+      description={courseSubtitle({ title: course.title, terms })}
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${courseId}`, label: course.code },
+      ]}
       actions={
         <Link
-          className="button button--primary"
+          className={buttonClass({ variant: "primary" })}
           href={`/teach/courses/${courseId}/forms/new`}
         >
           <IconPlus size={15} />
@@ -141,24 +143,41 @@ export default async function CourseWorkspacePage({
             when you open it.
           </EmptyState>
         ) : (
-          <section className="notice">
-            <div className="table-scroll table-scroll--flush">
-              <table className="data-table">
+          /*
+            The forms table, rebuilt to `form-table.md` — "more like a modern
+            teacher dashboard and less like a dense database table".
+
+            Written in utilities rather than on `.data-table`, because the spec
+            scopes the redesign to THIS table and `.data-table` dresses seven
+            others. Restyling the shared class would have redesigned all of
+            them.
+          */
+          <section className="overflow-hidden rounded-panel border border-rule bg-paper">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
                 <thead>
-                  <tr>
-                    <th scope="col">Form</th>
-                    <th scope="col">Goes to</th>
-                    <th scope="col">Delivery</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Responses</th>
-                    <th scope="col">
-                      <span className="visually-hidden">Actions</span>
+                  <tr className="border-b border-rule bg-paper-quiet">
+                    {["Form", "Delivery", "Status", "Responses"].map((h) => (
+                      <th
+                        className="px-4 py-3 text-meta font-semibold text-ink-muted"
+                        key={h}
+                        scope="col"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                    <th className="px-4 py-3" scope="col">
+                      <span className="sr-only">Actions</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {forms.map((row) => (
-                    <FormRow key={row.template.id} row={row} courseId={courseId} />
+                    <FormRow
+                      key={row.template.id}
+                      row={row}
+                      courseId={courseId}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -171,79 +190,159 @@ export default async function CourseWorkspacePage({
 }
 
 /**
- * One form. Audience, delivery, status and actions are separate fields on
- * purpose: they answer four different questions, and welding them into one
- * sentence makes none of them scannable.
+ * One form, as a row a teacher can act on (`form-table.md`).
+ *
+ * The spec's §12 is the test: the row has to answer six questions at a glance —
+ * what the form is, which class it goes to, how it is delivered, whether it is
+ * open, whether anything needs attention, and what to do next. Each of those is
+ * its own cell, because welding them into a sentence makes none of them
+ * scannable.
+ *
+ * What changed from the previous version:
+ *
+ *   - **"Goes to" is gone as a column** (§1). The audience is a property of the
+ *     form, not a peer of its status, so it sits under the name with the
+ *     question count — and the name gets the width the column was using.
+ *   - **The name is the anchor** (§2): a document mark, then the title in the
+ *     accent at semibold. It was a plain link in a row of plain text.
+ *   - **Responses say what they mean** (§4). `2 (2 to answer)` became
+ *     "2 responses" over "2 need a reply" — the second line in muted gold when
+ *     something is waiting, in green when nothing is, and quiet when there is
+ *     nothing yet. A parenthetical is not an attention state.
+ *   - **The action is the recommendation** (§6). Review is the primary button
+ *     only when a reply is actually waiting; otherwise reading is the offer.
+ *     A row where nothing needs doing should not push a green button at you.
  */
 function FormRow({ row, courseId }: { row: CourseFormRow; courseId: string }) {
   const audience = describeAudience(row);
   const delivery = row.schedule
     ? DELIVERY_LABELS[row.schedule.deliveryMode]
     : "Not scheduled";
+  const formHref = `/teach/courses/${courseId}/forms/${row.template.id}`;
+  const responsesHref = `/teach/courses/${courseId}/responses?form=${row.template.id}`;
+  const needsReply = row.needsReviewCount > 0;
+  const timezone = row.audienceSections[0]?.timezone ?? "Asia/Manila";
+
   return (
-    <tr>
-      <th scope="row">
-        <Link
-          className="link"
-          href={`/teach/courses/${courseId}/forms/${row.template.id}`}
-        >
-          {row.template.title}
-        </Link>
-        <MetaList
-          items={[
-            row.template.purpose,
-            `${row.questionCount} question${row.questionCount === 1 ? "" : "s"}`,
-            row.template.archived ? "Archived" : null,
-          ]}
-        />
+    <tr className="border-b border-rule last:border-b-0 align-top">
+      <th className="px-4 py-4 font-normal" scope="row">
+        <div className="flex items-start gap-3">
+          {/* A mark, not decoration: it gives the name a consistent left edge
+              to start from, so a column of titles aligns whatever their
+              length. */}
+          <span
+            aria-hidden="true"
+            className="grid size-9 shrink-0 place-items-center rounded-control bg-accent-wash text-accent-deep"
+          >
+            <IconForm size={18} />
+          </span>
+          <span className="grid min-w-0 gap-0.5">
+            <Link
+              className="font-semibold text-accent-deep underline decoration-1 underline-offset-2 hover:decoration-2"
+              href={formHref}
+            >
+              {row.template.title}
+            </Link>
+            <MetaList
+              items={[
+                `${row.questionCount} question${row.questionCount === 1 ? "" : "s"}`,
+                audience,
+                row.template.purpose,
+                row.template.archived ? "Archived" : null,
+              ]}
+            />
+          </span>
+        </div>
       </th>
-      <td>{audience}</td>
-      <td>{delivery}</td>
-      <td>
-        {row.openInstance ? (
-          <CycleStateBadge state="open" />
-        ) : row.nextInstance ? (
-          <CycleStateBadge state={row.nextInstance.state} />
-        ) : row.instanceCount > 0 ? (
-          <CycleStateBadge state="closed" />
-        ) : (
-          <Stamp tone="neutral">Not sent yet</Stamp>
-        )}
-        {row.openInstance && (
-          <MetaList
-            items={[
-              `Closes ${formatDateTime(
-                row.openInstance.deadlineAt,
-                row.audienceSections[0]?.timezone ?? "Asia/Manila",
-              )}`,
-            ]}
-          />
-        )}
+
+      <td className="px-4 py-4 text-ui-sm whitespace-nowrap">{delivery}</td>
+
+      <td className="px-4 py-4">
+        {/* `justify-items-start` is load-bearing: a grid item stretches to its
+            column by default, so the badge filled the whole cell and stopped
+            reading as a compact status (§5 asks for "compact status badges"). */}
+        <div className="grid justify-items-start gap-1">
+          {row.openInstance ? (
+            <CycleStateBadge state="open" />
+          ) : row.nextInstance ? (
+            <CycleStateBadge state={row.nextInstance.state} />
+          ) : row.instanceCount > 0 ? (
+            <CycleStateBadge state="closed" />
+          ) : (
+            <Stamp tone="neutral">Not sent yet</Stamp>
+          )}
+          {/* §5: the supporting fact under the badge, not inside it — a badge
+              that grew a date would stop being scannable as a state. */}
+          {row.openInstance ? (
+            <span className="text-meta text-ink-muted">
+              Closes {formatDateTime(row.openInstance.deadlineAt, timezone)}
+            </span>
+          ) : row.nextInstance?.openAt ? (
+            <span className="text-meta text-ink-muted">
+              Opens {formatDateTime(row.nextInstance.openAt, timezone)}
+            </span>
+          ) : null}
+        </div>
       </td>
-      <td>
+
+      <td className="px-4 py-4">
         {/* Aggregated across the whole form when it targets several sections —
             that is the point of sharing one form — and only over the sections
             this account may see. */}
-        {row.responseCount}
-        {row.needsReviewCount > 0 && ` (${row.needsReviewCount} to answer)`}
+        <div className="grid gap-0.5">
+          <span className="text-ui-sm font-semibold tabular-nums">
+            {row.responseCount} response{row.responseCount === 1 ? "" : "s"}
+          </span>
+          {needsReply ? (
+            <span className="text-meta font-semibold text-amber-deep">
+              {row.needsReviewCount} need{row.needsReviewCount === 1 ? "s" : ""}{" "}
+              a reply
+            </span>
+          ) : row.responseCount > 0 ? (
+            <span className="text-meta text-accent-deep">All reviewed</span>
+          ) : (
+            <span className="text-meta text-ink-muted">No responses yet</span>
+          )}
+        </div>
       </td>
-      <td>
-        <span className="row">
-          {row.responseCount > 0 && (
+
+      <td className="px-4 py-4">
+        <div className="flex flex-col items-start gap-1">
+          {needsReply ? (
             <Link
-              className="button button--secondary button--small"
-              href={`/teach/courses/${courseId}/responses?form=${row.template.id}`}
+              className={buttonClass({ variant: "primary", size: "small" })}
+              href={responsesHref}
             >
               Review responses
+              <IconForward size={14} aria-hidden="true" />
+            </Link>
+          ) : row.responseCount > 0 ? (
+            <Link
+              className={buttonClass({ variant: "secondary", size: "small" })}
+              href={responsesHref}
+            >
+              View responses
+            </Link>
+          ) : (
+            <Link
+              className={buttonClass({ variant: "secondary", size: "small" })}
+              href={formHref}
+            >
+              View form
             </Link>
           )}
-          <Link
-            className="button button--secondary button--small"
-            href={`/teach/courses/${courseId}/forms/${row.template.id}`}
-          >
-            {row.responseCount > 0 ? "View form" : "Set up"}
-          </Link>
-        </span>
+          {/* Reading the form is navigation, so it reads as a link. Only
+              offered as a second line when the button above is not already
+              pointing at it. */}
+          {row.responseCount > 0 && (
+            <Link
+              className="text-meta text-ink-soft underline decoration-1 underline-offset-2 hover:text-ink"
+              href={formHref}
+            >
+              View form
+            </Link>
+          )}
+        </div>
       </td>
     </tr>
   );

@@ -317,11 +317,11 @@ export default async function QaArchivePage({
           />
           {/* No "Answered" stamp: everything in this archive is answered by
               definition, so the badge distinguished nothing. */}
-          <div className="row" style={{ marginTop: "var(--s3)" }}>
+          <div className="row mt-3">
             <Category value={active.category} />
           </div>
 
-          <div className="stack-5" style={{ marginTop: "var(--s6)" }}>
+          <div className="stack-5 mt-8">
             {active.answers.length === 0 ? (
               <p className="muted">No answer text was recorded.</p>
             ) : (

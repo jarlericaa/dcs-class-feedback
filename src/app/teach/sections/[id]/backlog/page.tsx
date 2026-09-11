@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/ui/submit-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -8,10 +9,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import { staffSectionTabGroups } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
 import {
+  type Tone,
   AccessDenied,
   Alert,
   Stamp,
-  Breadcrumbs,
   EmptyState,
   MetaList,
 } from "@/components/ui";
@@ -24,6 +25,8 @@ import {
 } from "@/modules/backlog";
 import { AuthzError } from "@/modules/authz";
 import { toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
+import { Field, FieldRow, Textarea } from "@/components/ui/form";
 
 /**
  * Course question backlog, triaged from a section.
@@ -36,7 +39,7 @@ import { toShellUser } from "@/lib/session";
  * student identity or creates a source link to one.
  */
 
-const STATE_TONE: Record<string, "green" | "amber" | "neutral" | "red"> = {
+const STATE_TONE: Record<string, Tone> = {
   imported: "neutral",
   needs_review: "amber",
   answerable: "green",
@@ -187,19 +190,15 @@ export default async function BacklogPage({
       tabsLabel={sectionLabel(course.code, section.title)}
       tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
-      breadcrumbs={
-        <Breadcrumbs
-          items={[
-            { href: "/", label: "Overview" },
-            { label: course.code },
-            { label: "Question backlog" },
-          ]}
-        />
-      }
-      title="Question backlog"
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${course.id}`, label: course.code },
+        { href: `/teach/sections/${section.id}`, label: section.title },
+      ]}
+      title={sectionLabel(course.code, section.title)}
       actions={
         <Link
-          className="button button--secondary"
+          className={buttonClass({ variant: "secondary" })}
           href={`/teach/sections/${sectionId}/backlog?import=1`}
         >
           Import questions
@@ -214,9 +213,10 @@ export default async function BacklogPage({
           <label className="visually-hidden" htmlFor="backlog-q">
             Search the backlog
           </label>
-          <input
+          <Field
+            // was `.toolbar .field` (§3.2)
+            className="flex-[1_1_220px] min-w-0"
             id="backlog-q"
-            className="field"
             name="q"
             type="search"
             placeholder="Search questions"
@@ -280,12 +280,13 @@ export default async function BacklogPage({
                           name="state"
                           value="needs_review"
                         />
-                        <button
-                          className="button button--quiet button--small"
-                          type="submit"
+                        <SubmitButton
+                          variant="quiet"
+                          size="small"
+                          pendingLabel="Starting…"
                         >
                           Start triage
-                        </button>
+                        </SubmitButton>
                       </form>
                     )}
                     {question.state === "needs_review" && (
@@ -301,12 +302,13 @@ export default async function BacklogPage({
                             name="state"
                             value="answerable"
                           />
-                          <button
-                            className="button button--secondary button--small"
-                            type="submit"
+                          <SubmitButton
+                            variant="secondary"
+                            size="small"
+                            pendingLabel="Marking…"
                           >
                             Answerable
-                          </button>
+                          </SubmitButton>
                         </form>
                         <form action={advance} className="inline-form">
                           <input
@@ -319,12 +321,13 @@ export default async function BacklogPage({
                             name="state"
                             value="not_suitable"
                           />
-                          <button
-                            className="button button--quiet button--small"
-                            type="submit"
+                          <SubmitButton
+                            variant="quiet"
+                            size="small"
+                            pendingLabel="Marking…"
                           >
                             Not suitable
-                          </button>
+                          </SubmitButton>
                         </form>
                       </>
                     )}
@@ -336,12 +339,13 @@ export default async function BacklogPage({
                             name="questionId"
                             value={question.id}
                           />
-                          <button
-                            className="button button--primary button--small"
-                            type="submit"
+                          <SubmitButton
+                            variant="primary"
+                            size="small"
+                            pendingLabel="Drafting…"
                           >
                             Draft for this section
-                          </button>
+                          </SubmitButton>
                         </form>
                       )}
                   </span>
@@ -359,41 +363,41 @@ export default async function BacklogPage({
             <h2 className="panel-title">
               Import questions from a previous semester
             </h2>
-          <form action={importLegacy} className="stack-4">
-            <div className="field-row">
-              <label htmlFor="entries">Questions</label>
-              <textarea
-                id="entries"
-                className="textarea-field"
-                name="entries"
-                rows={6}
-                placeholder={
-                  "Why do we normalise database tables?\nWill the finals be cumulative?"
-                }
-                required
-              />
-            </div>
-            <div className="field-row" style={{ maxWidth: 420 }}>
-              <label htmlFor="legacy-source">Where did these come from?</label>
-              <input
-                id="legacy-source"
-                className="field"
-                name="source"
-                placeholder="AY2025-2 Q&A document"
-              />
-            </div>
-            <div className="row">
-              <button className="button button--primary" type="submit">
-                Import anonymously
-              </button>
-              <Link
-                className="button button--quiet"
-                href={`/teach/sections/${sectionId}/backlog`}
+            <form action={importLegacy} className="stack-4">
+              <FieldRow label="Questions" htmlFor="entries">
+                <Textarea
+                  id="entries"
+                  name="entries"
+                  rows={6}
+                  placeholder={
+                    "Why do we normalise database tables?\nWill the finals be cumulative?"
+                  }
+                  required
+                />
+              </FieldRow>
+              <FieldRow
+                label="Where did these come from?"
+                htmlFor="legacy-source"
+                className="max-w-105"
               >
-                Cancel
-              </Link>
-            </div>
-          </form>
+                <Field
+                  id="legacy-source"
+                  name="source"
+                  placeholder="AY2025-2 Q&A document"
+                />
+              </FieldRow>
+              <div className="row">
+                <SubmitButton variant="primary" pendingLabel="Importing…">
+                  Import anonymously
+                </SubmitButton>
+                <Link
+                  className={buttonClass({ variant: "quiet" })}
+                  href={`/teach/sections/${sectionId}/backlog`}
+                >
+                  Cancel
+                </Link>
+              </div>
+            </form>
           </section>
         )}
       </div>

@@ -5,12 +5,14 @@ import {
   formInstances,
   formQuestions,
   formResponses,
+  formTemplates,
   privateResponses,
   publicAnswers,
   questionAnswers,
   sourceLinks,
   studentRecords,
   studentSubmissionItems,
+  templateVersions,
   users,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
@@ -608,6 +610,44 @@ async function reviewQueue(
     : [];
   const audiences = await getAudiencesForInstances(db, scopedCycleIds);
 
+  /**
+   * Which FORM each occurrence belongs to.
+   *
+   * An occurrence's label is only ever "Week 3" or "This form", which is
+   * ambiguous the moment a course runs two forms — two of them can each have a
+   * Week 1. The inbox needs the owning form as a separate axis, so it is
+   * resolved here, once, off the version each occurrence snapshotted.
+   *
+   * Nullable on purpose: an occurrence generated before a version was recorded
+   * has no form to name, and the caller groups those as "Other" rather than
+   * dropping them from a queue someone still has to read.
+   */
+  const versionIds = [
+    ...new Set(
+      cycles
+        .map((c) => c.templateVersionId)
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  const formByVersionId = new Map<string, { id: string; title: string }>();
+  if (versionIds.length > 0) {
+    const versionRows = await db
+      .select({
+        versionId: templateVersions.id,
+        formId: formTemplates.id,
+        formTitle: formTemplates.title,
+      })
+      .from(templateVersions)
+      .innerJoin(formTemplates, eq(templateVersions.templateId, formTemplates.id))
+      .where(inArray(templateVersions.id, versionIds));
+    for (const row of versionRows) {
+      formByVersionId.set(row.versionId, {
+        id: row.formId,
+        title: row.formTitle,
+      });
+    }
+  }
+
   return {
     rows: filtered,
     counts,
@@ -616,6 +656,10 @@ async function reviewQueue(
     instances: cycles.map((instance) => ({
       instance,
       label: instanceLabel(instance),
+      /** the form this occurrence is an occurrence OF; null if unrecorded */
+      form: instance.templateVersionId
+        ? (formByVersionId.get(instance.templateVersionId) ?? null)
+        : null,
       /** submissions in this occurrence, across the actor's sections */
       responseCount: countByCycle.get(instance.id) ?? 0,
       /** how many of THIS actor's sections receive it */

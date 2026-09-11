@@ -1,3 +1,5 @@
+import { SubmitButton } from "@/components/ui/submit-button";
+import { RequiredMark } from "@/components/ui/required-mark";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -51,6 +53,14 @@ import {
 import { restoreSkippedCycle, skipCycle } from "@/modules/forms/cycles";
 import type { QuestionDefinition } from "@/modules/forms/questions";
 import { requireUser, toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
+import {
+  Choice,
+  Field,
+  FieldLabel,
+  FieldRow,
+  Select,
+} from "@/components/ui/form";
 
 /**
  * One form: its audience, its delivery, its occurrences, and its base questions.
@@ -262,7 +272,11 @@ export default async function FormDetailPage({
     }
     revalidatePath(`/teach/courses/${courseId}/forms/${formId}`);
     redirect(
-      back(courseId, formId, "Created as a draft. Open it when it should go out."),
+      back(
+        courseId,
+        formId,
+        "Created as a draft. Open it when it should go out.",
+      ),
     );
   }
 
@@ -357,6 +371,7 @@ export default async function FormDetailPage({
           />
         ) : undefined
       }
+      nested
       title={detail.template.title}
       description={
         <MetaList
@@ -382,378 +397,394 @@ export default async function FormDetailPage({
           <>
             <section className="notice">
               <div className="notice__head">
-            <div>
-              <h2>Occurrences</h2>
-            </div>
-            {delivery && <Stamp tone="green">{scheduleSummary}</Stamp>}
-          </div>
-          {instances.length === 0 ? (
-            <div className="notice__body">
-              <EmptyState title="Nothing sent yet">
-                {delivery
-                  ? "The first one appears here as soon as its opening date is within two weeks."
-                  : "Set a schedule below, or create one to open by hand."}
-              </EmptyState>
-            </div>
-          ) : (
-            <div className="table-scroll table-scroll--flush">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Occurrence</th>
-                    <th scope="col">Goes to</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Opens</th>
-                    <th scope="col">Closes</th>
-                    <th scope="col">Responses</th>
-                    <th scope="col">Questions</th>
-                    <th scope="col">
-                      <span className="visually-hidden">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {instances.map((row) => {
-                    const timezone =
-                      row.audienceSections[0]?.timezone ?? "Asia/Manila";
-                    return (
-                      <tr key={row.instance.id}>
-                        <th scope="row">
-                          {row.label}
-                          <MetaList
-                            items={[
-                              row.instance.focusLabel,
-                              row.customized ? "Custom questions" : null,
-                            ]}
-                          />
-                        </th>
-                        <td>
-                          {row.audienceSections.length === 0
-                            ? "—"
-                            : row.audienceSections.length === 1
-                              ? row.audienceSections[0]!.title
-                              : `${row.audienceSections.length} sections`}
-                          {row.audienceHasHiddenSections && " and others"}
-                        </td>
-                        <td>
-                          <CycleStateBadge state={row.instance.state} />
-                        </td>
-                        <td>{formatDateTime(row.instance.openAt, timezone)}</td>
-                        <td>
-                          {formatDateTime(row.instance.deadlineAt, timezone)}
-                        </td>
-                        <td>{row.responseCount}</td>
-                        <td>
-                          {row.questionCount}
-                          {row.editLocked ? " · locked" : ""}
-                        </td>
-                        <td>
-                          <span className="row">
-                            {/* The requested action, named after the thing it
-                                edits: "Customize Week 4", not "Edit cycle". */}
-                            <Link
-                              className="button button--secondary button--small"
-                              href={`/teach/courses/${courseId}/forms/${formId}/instances/${row.instance.id}`}
-                            >
-                              {row.editLocked
-                                ? "View"
-                                : row.customized
-                                  ? `Edit ${row.label}`
-                                  : `Customize ${row.label}`}
-                            </Link>
-                            {(row.instance.state === "draft" ||
-                              row.instance.state === "scheduled") && (
-                              <form
-                                action={instanceAction}
-                                className="inline-form"
-                              >
-                                <input
-                                  type="hidden"
-                                  name="instanceId"
-                                  value={row.instance.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="intent"
-                                  value="open"
-                                />
-                                <button
-                                  className="button button--secondary button--small"
-                                  type="submit"
-                                >
-                                  Open now
-                                </button>
-                              </form>
-                            )}
-                            {row.instance.state === "open" && (
-                              <Dialog
-                                variant="danger"
-                                className="button--small"
-                                label="Close now"
-                                title={`Close ${row.label}?`}
-                                description="Answers already in are locked. Students cannot submit or edit after this."
-                              >
-                                <form action={instanceAction}>
-                                  <input
-                                    type="hidden"
-                                    name="instanceId"
-                                    value={row.instance.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="intent"
-                                    value="close"
-                                  />
-                                  <div className="row">
-                                    <button
-                                      className="button button--danger"
-                                      type="submit"
-                                    >
-                                      Close {row.label}
-                                    </button>
-                                  </div>
-                                </form>
-                              </Dialog>
-                            )}
-                            {row.instance.state === "scheduled" && (
-                              <Dialog
-                                className="button--small"
-                                label="Skip"
-                                title={`Skip ${row.label}?`}
-                                description="Nothing opens. You can restore it later; the other occurrences are not affected."
-                              >
-                                <form action={instanceAction}>
-                                  <input
-                                    type="hidden"
-                                    name="instanceId"
-                                    value={row.instance.id}
-                                  />
-                                  <input
-                                    type="hidden"
-                                    name="intent"
-                                    value="skip"
-                                  />
-                                  <div className="row">
-                                    <button
-                                      className="button button--danger"
-                                      type="submit"
-                                    >
-                                      Skip {row.label}
-                                    </button>
-                                  </div>
-                                </form>
-                              </Dialog>
-                            )}
-                            {row.instance.state === "skipped" && (
-                              <form
-                                action={instanceAction}
-                                className="inline-form"
-                              >
-                                <input
-                                  type="hidden"
-                                  name="instanceId"
-                                  value={row.instance.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="intent"
-                                  value="restore"
-                                />
-                                <button
-                                  className="button button--secondary button--small"
-                                  type="submit"
-                                >
-                                  Restore
-                                </button>
-                              </form>
-                            )}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* A manually-opened form needs a way to make the next one. Closed by
-              default: a scheduled form never needs it. */}
-          <details className="disclose disclose--inset">
-            <summary>
-              <IconChevron className="disclose__mark" size={15} />
-              Create one to open by hand
-            </summary>
-            <div className="disclose__body">
-              <form action={addManual} className="stack-4">
-                <div className="form-grid">
-                  <div className="field-row">
-                    <label htmlFor="manual-title">
-                      Name it <span className="optional-mark">optional</span>
-                    </label>
-                    <input
-                      id="manual-title"
-                      className="field"
-                      name="title"
-                      placeholder="LE 1 feedback"
-                    />
-                  </div>
-                  <div className="field-row">
-                    <label htmlFor="manual-audience">Goes to</label>
-                    <select
-                      id="manual-audience"
-                      className="select-field"
-                      name="audienceMode"
-                      defaultValue="all_sections"
-                    >
-                      <option value="all_sections">
-                        All sections in {course.code}
-                      </option>
-                      <option value="selected_sections">
-                        Only the sections ticked below
-                      </option>
-                    </select>
-                  </div>
-                </div>
-                <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                  <legend className="field-label">Sections</legend>
-                  <div className="form-grid">
-                    {sections.map((section) => (
-                      <label className="choice" key={section.id}>
-                        <input
-                          type="checkbox"
-                          name="sectionIds"
-                          value={section.id}
-                        />
-                        <span>{section.title}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <span className="helper-text">
-                    Ignored unless you chose &ldquo;only the sections ticked
-                    below&rdquo;.
-                  </span>
-                </fieldset>
-                <div className="form-grid">
-                  <div className="field-row">
-                    <label htmlFor="manual-open-date">
-                      Opens <span className="optional-mark">optional</span>
-                    </label>
-                    <input
-                      id="manual-open-date"
-                      className="field"
-                      type="date"
-                      name="openDate"
-                    />
-                    <span className="helper-text">
-                      Leave blank to open it the moment you press Open.
-                    </span>
-                  </div>
-                  <div className="field-row">
-                    <label htmlFor="manual-open-time">at</label>
-                    <input
-                      id="manual-open-time"
-                      className="field"
-                      type="time"
-                      name="openTime"
-                      defaultValue="08:00"
-                    />
-                  </div>
-                  <div className="field-row">
-                    <label htmlFor="manual-deadline-date">Closes</label>
-                    <input
-                      id="manual-deadline-date"
-                      className="field"
-                      type="date"
-                      name="deadlineDate"
-                      required
-                    />
-                  </div>
-                  <div className="field-row">
-                    <label htmlFor="manual-deadline-time">at</label>
-                    <input
-                      id="manual-deadline-time"
-                      className="field"
-                      type="time"
-                      name="deadlineTime"
-                      defaultValue="23:59"
-                      required
-                    />
-                  </div>
-                </div>
                 <div>
-                  <button className="button button--primary" type="submit">
-                    Create as a draft
-                  </button>
+                  <h2 className="panel-title">Occurrences</h2>
                 </div>
-              </form>
-            </div>
-          </details>
-        </section>
-
-        <section className="notice">
-          <div className="notice__head">
-            <div>
-              <h2>Who gets it, and when</h2>
-            </div>
-          </div>
-          <div className="notice__body">
-            <form action={saveDelivery} className="stack-4">
-              <DeliveryFields
-                sections={sections.map((s) => ({
-                  id: s.id,
-                  title: s.title,
-                  term: s.term,
-                }))}
-                courseCode={course.code}
-                defaultMode={delivery?.schedule.deliveryMode ?? "weekly"}
-                defaultAudienceMode={
-                  delivery?.schedule.audienceMode ?? "all_sections"
-                }
-                defaultSectionIds={audienceIds}
-                defaultOpenDayOfWeek={delivery?.schedule.openDayOfWeek ?? 1}
-                defaultOpenTime={(
-                  delivery?.schedule.openTime ?? "08:00:00"
-                ).slice(0, 5)}
-                defaultDeadlineDayOfWeek={
-                  delivery?.schedule.deadlineDayOfWeek ?? 0
-                }
-                defaultDeadlineTime={(
-                  delivery?.schedule.deadlineTime ?? "23:59:00"
-                ).slice(0, 5)}
-                defaultStartDate={delivery?.schedule.startDate ?? ""}
-                defaultEndDate={delivery?.schedule.endDate ?? ""}
-                defaultOccurrenceCount={
-                  delivery?.schedule.occurrenceCount
-                    ? String(delivery.schedule.occurrenceCount)
-                    : ""
-                }
-                defaultIntervalWeeks={delivery?.schedule.intervalWeeks ?? 2}
-              />
-              <div className="row">
-                <button className="button button--primary" type="submit">
-                  {delivery ? "Replace schedule" : "Save schedule"}
-                </button>
+                {delivery && <Stamp tone="green">{scheduleSummary}</Stamp>}
               </div>
-            </form>
-          </div>
-          {delivery?.schedule.active && (
-            <div className="notice__foot">
-              <form action={stopDelivery} className="inline-form">
-                <input
-                  type="hidden"
-                  name="scheduleId"
-                  value={delivery.schedule.id}
-                />
-                <button
-                  className="button button--danger button--small"
-                  type="submit"
-                >
-                  Stop sending new ones
-                </button>
-              </form>
-            </div>
-          )}
+              {instances.length === 0 ? (
+                <div className="notice__body">
+                  <EmptyState title="Nothing sent yet">
+                    {delivery
+                      ? "The first one appears here as soon as its opening date is within two weeks."
+                      : "Set a schedule below, or create one to open by hand."}
+                  </EmptyState>
+                </div>
+              ) : (
+                <div className="table-scroll table-scroll--flush">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Occurrence</th>
+                        <th scope="col">Goes to</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Opens</th>
+                        <th scope="col">Closes</th>
+                        <th scope="col">Responses</th>
+                        <th scope="col">Questions</th>
+                        <th scope="col">
+                          <span className="visually-hidden">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {instances.map((row) => {
+                        const timezone =
+                          row.audienceSections[0]?.timezone ?? "Asia/Manila";
+                        return (
+                          <tr key={row.instance.id}>
+                            <th scope="row">
+                              {row.label}
+                              <MetaList
+                                items={[
+                                  row.instance.focusLabel,
+                                  row.customized ? "Custom questions" : null,
+                                ]}
+                              />
+                            </th>
+                            <td>
+                              {row.audienceSections.length === 0
+                                ? "—"
+                                : row.audienceSections.length === 1
+                                  ? row.audienceSections[0]!.title
+                                  : `${row.audienceSections.length} sections`}
+                              {row.audienceHasHiddenSections && " and others"}
+                            </td>
+                            <td>
+                              <CycleStateBadge state={row.instance.state} />
+                            </td>
+                            <td>
+                              {formatDateTime(row.instance.openAt, timezone)}
+                            </td>
+                            <td>
+                              {formatDateTime(
+                                row.instance.deadlineAt,
+                                timezone,
+                              )}
+                            </td>
+                            <td>{row.responseCount}</td>
+                            <td>
+                              {row.questionCount}
+                              {row.editLocked ? " · locked" : ""}
+                            </td>
+                            <td>
+                              <span className="row">
+                                {/* The requested action, named after the thing it
+                                edits: "Customize Week 4", not "Edit cycle". */}
+                                <Link
+                                  className={buttonClass({
+                                    variant: "secondary",
+                                    size: "small",
+                                  })}
+                                  href={`/teach/courses/${courseId}/forms/${formId}/instances/${row.instance.id}`}
+                                >
+                                  {row.editLocked
+                                    ? "View"
+                                    : row.customized
+                                      ? `Edit ${row.label}`
+                                      : `Customize ${row.label}`}
+                                </Link>
+                                {(row.instance.state === "draft" ||
+                                  row.instance.state === "scheduled") && (
+                                  <form
+                                    action={instanceAction}
+                                    className="inline-form"
+                                  >
+                                    <input
+                                      type="hidden"
+                                      name="instanceId"
+                                      value={row.instance.id}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      name="intent"
+                                      value="open"
+                                    />
+                                    <SubmitButton
+                                      variant="secondary"
+                                      size="small"
+                                      pendingLabel="Opening…"
+                                    >
+                                      Open now
+                                    </SubmitButton>
+                                  </form>
+                                )}
+                                {row.instance.state === "open" && (
+                                  <Dialog
+                                    variant="danger"
+                                    size="small"
+                                    label="Close now"
+                                    title={`Close ${row.label}?`}
+                                    description="Answers already in are locked. Students cannot submit or edit after this."
+                                  >
+                                    <form action={instanceAction}>
+                                      <input
+                                        type="hidden"
+                                        name="instanceId"
+                                        value={row.instance.id}
+                                      />
+                                      <input
+                                        type="hidden"
+                                        name="intent"
+                                        value="close"
+                                      />
+                                      <div className="row">
+                                        <SubmitButton
+                                          variant="danger"
+                                          pendingLabel="Closing…"
+                                        >
+                                          Close {row.label}
+                                        </SubmitButton>
+                                      </div>
+                                    </form>
+                                  </Dialog>
+                                )}
+                                {row.instance.state === "scheduled" && (
+                                  <Dialog
+                                    size="small"
+                                    label="Skip"
+                                    title={`Skip ${row.label}?`}
+                                    description="Nothing opens. You can restore it later; the other occurrences are not affected."
+                                  >
+                                    <form action={instanceAction}>
+                                      <input
+                                        type="hidden"
+                                        name="instanceId"
+                                        value={row.instance.id}
+                                      />
+                                      <input
+                                        type="hidden"
+                                        name="intent"
+                                        value="skip"
+                                      />
+                                      <div className="row">
+                                        <SubmitButton
+                                          variant="danger"
+                                          pendingLabel="Skipping…"
+                                        >
+                                          Skip {row.label}
+                                        </SubmitButton>
+                                      </div>
+                                    </form>
+                                  </Dialog>
+                                )}
+                                {row.instance.state === "skipped" && (
+                                  <form
+                                    action={instanceAction}
+                                    className="inline-form"
+                                  >
+                                    <input
+                                      type="hidden"
+                                      name="instanceId"
+                                      value={row.instance.id}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      name="intent"
+                                      value="restore"
+                                    />
+                                    <SubmitButton
+                                      variant="secondary"
+                                      size="small"
+                                      pendingLabel="Restoring…"
+                                    >
+                                      Restore
+                                    </SubmitButton>
+                                  </form>
+                                )}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* A manually-opened form needs a way to make the next one. Closed by
+              default: a scheduled form never needs it. */}
+              <details className="disclose disclose--inset">
+                <summary>
+                  <IconChevron className="disclose__mark" size={15} />
+                  Create one to open by hand
+                </summary>
+                <div className="disclose__body">
+                  <form action={addManual} className="stack-4">
+                    <div className="form-grid">
+                      <FieldRow label="Name it" htmlFor="manual-title">
+                        <Field
+                          id="manual-title"
+                          name="title"
+                          placeholder="LE 1 feedback"
+                        />
+                      </FieldRow>
+                      <FieldRow label="Goes to" htmlFor="manual-audience">
+                        <Select
+                          id="manual-audience"
+                          name="audienceMode"
+                          defaultValue="all_sections"
+                        >
+                          <option value="all_sections">
+                            All sections in {course.code}
+                          </option>
+                          <option value="selected_sections">
+                            Only the sections ticked below
+                          </option>
+                        </Select>
+                      </FieldRow>
+                    </div>
+                    <fieldset className="m-0 border-0 p-0">
+                      <FieldLabel>Sections</FieldLabel>
+                      <div className="form-grid">
+                        {sections.map((section) => (
+                          <Choice
+                            key={section.id}
+                            type="checkbox"
+                            name="sectionIds"
+                            value={section.id}
+                          >
+                            {section.title}
+                          </Choice>
+                        ))}
+                      </div>
+                      <span className="helper-text">
+                        Ignored unless you chose &ldquo;only the sections ticked
+                        below&rdquo;.
+                      </span>
+                    </fieldset>
+                    <div className="form-grid form-grid--stacked">
+                      <div className="field-row">
+                        <label htmlFor="manual-open-date">Opens</label>
+                        <div className="datetime-pair">
+                          <Field
+                            id="manual-open-date"
+                            type="date"
+                            name="openDate"
+                          />
+                          <label
+                            className="visually-hidden"
+                            htmlFor="manual-open-time"
+                          >
+                            Time it opens
+                          </label>
+                          <Field
+                            id="manual-open-time"
+                            type="time"
+                            name="openTime"
+                            defaultValue="08:00"
+                          />
+                        </div>
+                        <span className="helper-text">
+                          Leave blank to open it the moment you press Open.
+                        </span>
+                      </div>
+                      <div className="field-row">
+                        <label htmlFor="manual-deadline-date">
+                          Closes <RequiredMark />
+                        </label>
+                        <div className="datetime-pair">
+                          <Field
+                            id="manual-deadline-date"
+                            type="date"
+                            name="deadlineDate"
+                            required
+                          />
+                          <label
+                            className="visually-hidden"
+                            htmlFor="manual-deadline-time"
+                          >
+                            Time it closes
+                          </label>
+                          <Field
+                            id="manual-deadline-time"
+                            type="time"
+                            name="deadlineTime"
+                            defaultValue="23:59"
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <SubmitButton variant="primary" pendingLabel="Creating…">
+                        Create as a draft
+                      </SubmitButton>
+                    </div>
+                  </form>
+                </div>
+              </details>
+            </section>
+
+            <section className="notice">
+              <div className="notice__head">
+                <div>
+                  {/* Declarative, like the numbered steps on the new-form page. This page
+                  is NOT numbered, deliberately: its panels are independent, each
+                  with its own save action, so they are not steps in a sequence
+                  and numbering them would promise an order that does not
+                  exist. */}
+                  <h2 className="panel-title">Audience and schedule</h2>
+                </div>
+              </div>
+              <div className="notice__body">
+                <form action={saveDelivery} className="stack-4">
+                  <DeliveryFields
+                    sections={sections.map((s) => ({
+                      id: s.id,
+                      title: s.title,
+                      term: s.term,
+                    }))}
+                    courseCode={course.code}
+                    defaultMode={delivery?.schedule.deliveryMode ?? "weekly"}
+                    defaultAudienceMode={
+                      delivery?.schedule.audienceMode ?? "all_sections"
+                    }
+                    defaultSectionIds={audienceIds}
+                    defaultOpenDayOfWeek={delivery?.schedule.openDayOfWeek ?? 1}
+                    defaultOpenTime={(
+                      delivery?.schedule.openTime ?? "08:00:00"
+                    ).slice(0, 5)}
+                    defaultDeadlineDayOfWeek={
+                      delivery?.schedule.deadlineDayOfWeek ?? 0
+                    }
+                    defaultDeadlineTime={(
+                      delivery?.schedule.deadlineTime ?? "23:59:00"
+                    ).slice(0, 5)}
+                    defaultStartDate={delivery?.schedule.startDate ?? ""}
+                    defaultEndDate={delivery?.schedule.endDate ?? ""}
+                    defaultOccurrenceCount={
+                      delivery?.schedule.occurrenceCount
+                        ? String(delivery.schedule.occurrenceCount)
+                        : ""
+                    }
+                    defaultIntervalWeeks={delivery?.schedule.intervalWeeks ?? 2}
+                  />
+                  <div className="row">
+                    <SubmitButton variant="primary" pendingLabel="Saving…">
+                      {delivery ? "Replace schedule" : "Save schedule"}
+                    </SubmitButton>
+                  </div>
+                </form>
+              </div>
+              {delivery?.schedule.active && (
+                <div className="notice__foot">
+                  <form action={stopDelivery} className="inline-form">
+                    <input
+                      type="hidden"
+                      name="scheduleId"
+                      value={delivery.schedule.id}
+                    />
+                    <SubmitButton
+                      variant="danger"
+                      size="small"
+                      pendingLabel="Stopping…"
+                    >
+                      Stop sending new ones
+                    </SubmitButton>
+                  </form>
+                </div>
+              )}
             </section>
           </>
         )}
@@ -761,11 +792,11 @@ export default async function FormDetailPage({
         <section className="notice">
           <div className="notice__head">
             <div>
-              <h2>Questions</h2>
+              <h2 className="panel-title">Questions</h2>
             </div>
             {!editingQuestions && (
               <Link
-                className="button button--secondary button--small"
+                className={buttonClass({ variant: "secondary", size: "small" })}
                 href={`/teach/courses/${courseId}/forms/${formId}?edit=questions${
                   safeSectionId ? `&sectionId=${safeSectionId}` : ""
                 }`}
@@ -879,7 +910,10 @@ function summarizeDelivery(schedule: {
 }): string {
   if (!schedule.active) return "Stopped";
   const label = DELIVERY_LABELS[schedule.deliveryMode];
-  if (schedule.deliveryMode === "manual" || schedule.deliveryMode === "one_time") {
+  if (
+    schedule.deliveryMode === "manual" ||
+    schedule.deliveryMode === "one_time"
+  ) {
     return label;
   }
   const day =

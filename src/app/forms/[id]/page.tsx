@@ -34,6 +34,7 @@ import type { QuestionOption } from "@/modules/forms/questions";
 import { renderRichText } from "@/modules/richtext/render";
 import { AuthzError } from "@/modules/authz";
 import { requireUser, toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * One form, as the student sees it.
@@ -172,17 +173,17 @@ export default async function StudentFormPage({
               If a staff member replies to something you wrote, the reply appears
               under your submissions — only you and the teaching team can see it.
             </p>
-            <div className="row" style={{ marginTop: "var(--s5)" }}>
+            <div className="row mt-6">
               {safeAttributedSectionId && (
                 <>
                   <Link
-                    className="button button--primary"
+                    className={buttonClass({ variant: "primary" })}
                     href={`/sections/${safeAttributedSectionId}/history`}
                   >
                     See my submissions
                   </Link>
                   <Link
-                    className="button button--secondary"
+                    className={buttonClass({ variant: "secondary" })}
                     href={`/sections/${safeAttributedSectionId}/qa`}
                   >
                     Class Q&amp;A

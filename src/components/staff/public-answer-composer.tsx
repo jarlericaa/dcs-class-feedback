@@ -1,6 +1,8 @@
 "use client";
 
+import { SubmitButton } from "@/components/ui/submit-button";
 import { useRef, useState } from "react";
+import { Choice, FieldRow, Textarea } from "@/components/ui/form";
 
 /**
  * The public-answer composer.
@@ -66,29 +68,29 @@ export function PublicAnswerComposer({
       <input type="hidden" name="selected" value={selectedResponseId} />
       <input type="hidden" name="sectionId" value={sectionId} />
 
-      <div className="field-row">
-        <label htmlFor={`pubq-${itemId}`}>Public version of the question</label>
-        <textarea
+      <FieldRow
+        label="Public version of the question"
+        htmlFor={`pubq-${itemId}`}
+      >
+        <Textarea
           id={`pubq-${itemId}`}
-          className="textarea-field"
           name="publicQuestion"
           rows={3}
           defaultValue={originalQuestion}
           required
         />
-      </div>
+      </FieldRow>
 
-      <div className="field-row">
-        <label htmlFor={`puba-${itemId}`}>
-          Answer <span className="required-mark">Required to publish</span>
-        </label>
-        <textarea
-          id={`puba-${itemId}`}
-          className="textarea-field"
-          name="answerBody"
-          rows={5}
-        />
-      </div>
+      <FieldRow
+        label={
+          <>
+            Answer <span className="qualifier-mark">Required to publish</span>
+          </>
+        }
+        htmlFor={`puba-${itemId}`}
+      >
+        <Textarea id={`puba-${itemId}`} name="answerBody" rows={5} />
+      </FieldRow>
 
       {/* The privacy risk in one line, next to the control that acts on it.
           The behaviour is unchanged: publishNow still re-checks the
@@ -99,18 +101,17 @@ export function PublicAnswerComposer({
         </p>
       )}
 
-      <label className="choice">
-        <input
-          ref={acknowledgmentRef}
-          type="checkbox"
-          name="acknowledged"
-          value="yes"
-          aria-invalid={acknowledgmentError ? "true" : undefined}
-          aria-describedby={acknowledgmentError ? errorId : undefined}
-          onChange={() => setAcknowledgmentError(false)}
-        />
-        <span>I have checked the public wording</span>
-      </label>
+      <Choice
+        ref={acknowledgmentRef}
+        type="checkbox"
+        name="acknowledged"
+        value="yes"
+        aria-invalid={acknowledgmentError ? "true" : undefined}
+        aria-describedby={acknowledgmentError ? errorId : undefined}
+        onChange={() => setAcknowledgmentError(false)}
+      >
+        I have checked the public wording
+      </Choice>
       {acknowledgmentError && (
         <p className="field-error" id={errorId} role="alert">
           Read the public wording once more, then tick the box to publish.
@@ -119,23 +120,23 @@ export function PublicAnswerComposer({
       )}
 
       <div className="row">
-        <button
-          className="button button--secondary"
-          type="submit"
+        <SubmitButton
+          variant="secondary"
           name="intent"
           value="draft"
+          pendingLabel="Saving…"
         >
           Save as a draft
-        </button>
+        </SubmitButton>
         {canPublish && (
-          <button
-            className="button button--primary"
-            type="submit"
+          <SubmitButton
+            variant="primary"
             name="intent"
             value="publish"
+            pendingLabel="Publishing…"
           >
             Publish to this section
-          </button>
+          </SubmitButton>
         )}
       </div>
     </form>
