@@ -104,6 +104,13 @@ const ROUTES = [
   `/teach/courses/${courseId}/sections`,
   `/teach/courses/${courseId}/staff`,
   `/teach/courses/${courseId}/forms/new`,
+  /* The course-owned publishing surfaces (ADR-0005). Walked here because all
+     three are page-shaped staff routes with the usual chrome, and two of them
+     moved from section scope — exactly the kind of move that leaves a stale
+     control or an unrounded surface behind. */
+  `/teach/courses/${courseId}/publications`,
+  `/teach/courses/${courseId}/backlog`,
+  `/courses/${courseId}/qa`,
 ];
 
 /**

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import {
   classSections,
@@ -478,24 +478,104 @@ export async function getStudentRecordByEmail(dbx: DbOrTx, email: string) {
 }
 
 /**
- * Section Q&A archive access: enrolled students and section staff ONLY.
- * "Public" Q&A is public to the class, never to unenrolled users.
+ * Class Q&A archive access, at COURSE scope (ADR-0005).
+ *
+ * The archive is one per course, so the question is "does this person belong to
+ * this course at all?" — through staff standing on the course or any of its
+ * sections, or through an ACTIVE enrolment in any of its sections. A Lab B
+ * student may therefore read an answer that originated in Lab A, which is the
+ * point of making the archive course-wide.
+ *
+ * Still never open to unenrolled users: "public" means public to the class.
  */
-export async function requireSectionQaAccess(
+export async function requireCourseQaAccess(
   dbx: DbOrTx,
   userId: string,
-  sectionId: string,
+  courseId: string,
   opts?: AuthzOptions,
 ): Promise<{ role: "staff" | "student" }> {
+  await requireActiveUser(dbx, userId);
+  const course = await dbx.query.courses.findFirst({
+    where: eq(courses.id, courseId),
+  });
+  if (!course) throw new AuthzError("No access to this course");
+
+  const sections = await dbx.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+  });
+
+  // Staff first, and with the archive rule deferred, so an archived course
+  // reports itself as archived exactly once rather than per membership probe.
   try {
-    await requireSectionStaff(dbx, userId, sectionId, undefined, opts);
+    await requireCourseStaff(dbx, userId, courseId, { allowArchived: true });
+    await enforceArchiveRule(dbx, courseId, opts);
     return { role: "staff" };
   } catch (err) {
-    if (err instanceof CourseArchivedError) throw err;
-    // fall through to student check
+    if (!(err instanceof AuthzError)) throw err;
   }
-  await requireEnrolledStudent(dbx, userId, sectionId, opts);
-  return { role: "student" };
+  for (const section of sections) {
+    const membership = await dbx.query.sectionStaff.findFirst({
+      where: and(
+        eq(sectionStaff.sectionId, section.id),
+        eq(sectionStaff.userId, userId),
+      ),
+    });
+    if (membership) {
+      await enforceArchiveRule(dbx, courseId, opts);
+      return { role: "staff" };
+    }
+  }
+
+  const record = await getStudentRecordForUser(dbx, userId);
+  if (record) {
+    for (const section of sections) {
+      const enrollment = await dbx.query.enrollments.findFirst({
+        where: and(
+          eq(enrollments.sectionId, section.id),
+          eq(enrollments.studentRecordId, record.id),
+          eq(enrollments.status, "active"),
+        ),
+      });
+      if (enrollment) {
+        await enforceArchiveRule(dbx, courseId, opts);
+        return { role: "student" };
+      }
+    }
+  }
+  throw new AuthzError("No access to this course's Class Q&A");
+}
+
+/**
+ * Every section of `courseId` this user is enrolled in with an ACTIVE
+ * enrolment. Empty when they are not a student of the course at all.
+ *
+ * Used where a course-scoped student surface still has to answer a
+ * section-shaped question — which class list to attribute an action to, or
+ * which section's timezone to render a timestamp in.
+ */
+export async function activeStudentSectionsForCourse(
+  dbx: DbOrTx,
+  userId: string,
+  courseId: string,
+): Promise<string[]> {
+  const record = await getStudentRecordForUser(dbx, userId);
+  if (!record) return [];
+  const sections = await dbx.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+    orderBy: [asc(classSections.title), asc(classSections.id)],
+  });
+  const mine: string[] = [];
+  for (const section of sections) {
+    const enrollment = await dbx.query.enrollments.findFirst({
+      where: and(
+        eq(enrollments.sectionId, section.id),
+        eq(enrollments.studentRecordId, record.id),
+        eq(enrollments.status, "active"),
+      ),
+    });
+    if (enrollment) mine.push(section.id);
+  }
+  return mine;
 }
 
 /**
@@ -559,6 +639,45 @@ export const PUBLICATION_PERMISSIONS = [
   "schedulePublication",
 ] as const satisfies readonly SectionPermission[];
 
+/**
+ * Course-level counterpart of {@link requireAnySectionPermission}: course staff,
+ * OR anyone holding ANY of these permissions on at least one section of the
+ * course.
+ *
+ * This is the gate for the course-owned publication surfaces (ADR-0005). It
+ * widens nothing on its own — it says only "this person works on publication
+ * somewhere in this course, so they may open the queue". What they may DO to a
+ * given entry is still decided by the per-action check, and what SOURCE rows
+ * they may read is still decided section by section: a Lab A assistant sees the
+ * course's queue but cannot open a Lab B submission behind it.
+ */
+export async function requireAnyCoursePermission(
+  dbx: DbOrTx,
+  userId: string,
+  courseId: string,
+  permissions: readonly SectionPermission[],
+  opts?: AuthzOptions,
+) {
+  let lastError: unknown;
+  for (const permission of permissions) {
+    try {
+      return await requireCourseStaffOrSectionGrant(
+        dbx,
+        userId,
+        courseId,
+        permission,
+        opts,
+      );
+    } catch (err) {
+      if (err instanceof CourseArchivedError) throw err;
+      lastError = err;
+    }
+  }
+  throw lastError instanceof AuthzError
+    ? lastError
+    : new AuthzError("No access to this course");
+}
+
 export async function requireAnySectionPermission(
   dbx: DbOrTx,
   userId: string,
@@ -587,6 +706,85 @@ export async function requireAnySectionPermission(
 }
 
 export type EffectivePermissions = Record<SectionPermission, boolean>;
+
+/**
+ * READ MODEL ONLY — what this user may do ANYWHERE in this course.
+ *
+ * The union of their course standing (which carries everything) with every
+ * section grant they hold in the course. It answers the question a course-owned
+ * page has to ask to decide which controls to draw: "does this person publish
+ * on this course at all?"
+ *
+ * It is a UNION, so it deliberately does NOT say which sections those grants
+ * came from — and it is therefore never an authorization decision. Reading a
+ * SOURCE submission is still checked section by section, so an assistant who
+ * holds `review_responses` on Lab A only sees the queue but still cannot open a
+ * Lab B submission behind it. Every action re-checks with a require* helper.
+ *
+ * Returns null when the user has no staff standing in the course at all.
+ */
+export async function getCourseCapabilities(
+  dbx: DbOrTx,
+  userId: string,
+  courseId: string,
+): Promise<{
+  permissions: EffectivePermissions;
+  isInstructor: boolean;
+  hasCourseStanding: boolean;
+  archived: boolean;
+} | null> {
+  const user = await dbx.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user || !user.active) return null;
+  const course = await dbx.query.courses.findFirst({
+    where: eq(courses.id, courseId),
+  });
+  if (!course) return null;
+  const archived = !!course.archivedAt;
+
+  const hasCourseStanding =
+    course.ownerUserId === userId ||
+    !!(await dbx.query.courseStaff.findFirst({
+      where: and(
+        eq(courseStaff.courseId, courseId),
+        eq(courseStaff.userId, userId),
+      ),
+    }));
+  if (hasCourseStanding) {
+    return {
+      permissions: allPermissions(true),
+      isInstructor: true,
+      hasCourseStanding: true,
+      archived,
+    };
+  }
+
+  const sections = await dbx.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+  });
+  const permissions = allPermissions(false);
+  let isInstructor = false;
+  let anyStanding = false;
+  for (const section of sections) {
+    const membership = await dbx.query.sectionStaff.findFirst({
+      where: and(
+        eq(sectionStaff.sectionId, section.id),
+        eq(sectionStaff.userId, userId),
+      ),
+    });
+    if (!membership) continue;
+    anyStanding = true;
+    if (membership.role === "teacher" || membership.role === "co_teacher") {
+      isInstructor = true;
+      for (const permission of SECTION_PERMISSIONS) permissions[permission] = true;
+    } else {
+      for (const permission of SECTION_PERMISSIONS) {
+        if (membership[permission]) permissions[permission] = true;
+      }
+    }
+  }
+  if (!anyStanding) return null;
+  return { permissions, isInstructor, hasCourseStanding: false, archived };
+}
 
 function allPermissions(value: boolean): EffectivePermissions {
   return Object.fromEntries(
@@ -742,11 +940,15 @@ export const authz = {
   ) => requireEnrolledStudent(db, userId, sectionId, opts),
   requireItemAsker: (userId: string, itemId: string) =>
     requireItemAsker(db, userId, itemId),
-  requireSectionQaAccess: (
+  getCourseCapabilities: (userId: string, courseId: string) =>
+    getCourseCapabilities(db, userId, courseId),
+  requireCourseQaAccess: (
     userId: string,
-    sectionId: string,
+    courseId: string,
     opts?: AuthzOptions,
-  ) => requireSectionQaAccess(db, userId, sectionId, opts),
+  ) => requireCourseQaAccess(db, userId, courseId, opts),
+  activeStudentSectionsForCourse: (userId: string, courseId: string) =>
+    activeStudentSectionsForCourse(db, userId, courseId),
   requireWritableCourse: (courseId: string) =>
     requireWritableCourse(db, courseId),
   getStudentRecordForUser: (userId: string) =>

@@ -2,6 +2,14 @@
 
 **Status:** [Recommended] starting plan for the next implementation phase.
 
+> **Partly superseded 2026-09-12.** The information architecture below predates
+> [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), which
+> moved the publication queue, the question backlog and Class Q&A to **course**
+> scope. `/sections/[id]/qa` is now `/courses/[id]/qa` and the section-scoped
+> staff routes redirect to their course equivalents. Retained as the record of
+> the plan the build followed; current routes are in
+> [current-state.md](../engineering/current-state.md).
+
 The repository already has domain services and a functional foundation. Build
 the web app in vertical slices around those services so each slice produces a
 usable workflow and can be verified end to end.
@@ -24,7 +32,7 @@ usable workflow and can be verified end to end.
 |---|---|
 | `/sections/[id]` | Complete the current cycle or see that it is closed/submitted |
 | `/sections/[id]/history` | Review personal submissions, private replies, and answer status |
-| `/sections/[id]/qa` | Search published anonymous answers for the section |
+| `/sections/[id]/qa` | Search published anonymous answers for the section — **now `/courses/[id]/qa`**, one archive per course (ADR-0005) |
 
 ### Staff workspace
 

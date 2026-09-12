@@ -18,7 +18,7 @@
 > | D5 | **Closed — (a) hard deadline, no grace.** `reopenCycle` remains the audited teacher escape hatch and now also unlocks locked responses (`manage_weekly_cycles`). |
 > | D6 | **Closed — unpublish is APPROVED.** Instructor-only, reason required, audited, and reversible via restore. An unpublished entry leaves the class archive *and* the linked asker's history (D16). **Approved, not yet built** — [engineering/current-state.md](../engineering/current-state.md) E2 is `schema only`. |
 > | D7 | **Closed — single institution timezone,** repository default `Asia/Manila`, stored per section and used consistently. |
-> | D8 | **Closed — (a).** Merge is within a section and may span cycles; cross-section reuse goes through the course backlog. Merging never alters per-cycle participation. |
+> | D8 | **Closed — (a), scope widened 2026-09-12.** Merge may span cycles and, since [ADR-0005](ADR-0005-course-scoped-teaching-workflow.md), **sections of the same course** — the actor must hold the drafting permission on every source section. Merging never alters per-cycle participation. |
 > | D10 | **Closed — (a).** A dropped student's enrollment is deactivated and their own history stays readable; no data is deleted. |
 > | D11 | **Closed — Drizzle.** |
 >
@@ -39,7 +39,7 @@
 > |---|---|---|
 > | D18 | Is a form owned by a section or by a course? | **By the course.** A form definition belongs to a Course; an explicit **audience** (`form_instance_sections`) says which sections receive each instance. Sections remain the access/roster/permission context and are no longer the primary object in the form workflow. |
 > | D19 | Can one form instance target several sections? | **Yes**, and it is the ordinary case. One instance, one window, one question snapshot, one review queue. Response uniqueness stays `(instance, student_record)` — the attribution section is recorded separately and is deliberately NOT in that key, so a student in two targeted sections still has exactly one response. |
-> | D20 | May a published answer reach several sections at once? | **No — the existing section-scoped rule stands.** A publication goes to the **asker's own** section only, enforced in `draftPublicAnswer` and covered by a test. Sharing a form does not widen an archive; cross-section reuse continues to go through the course backlog (D8). Allowing an explicit multi-section publish would be a privacy-surface change and needs owner approval before it is built. |
+> | D20 | May a published answer reach several sections at once? | **Closed 2026-09-12 — YES, and it is now the only behaviour.** The owner corrected the model: the course is the collaborative teaching-work boundary, so a `PublicAnswer` is **course-owned** and one publication reaches every eligible student of the course. This reverses the provisional "no" recorded here, which had flagged the change as a privacy-surface decision needing owner approval — it got it. See [ADR-0005](ADR-0005-course-scoped-teaching-workflow.md). |
 
 
 > ### Decision recorded 2026-08-07 (student identity)
@@ -208,9 +208,15 @@
 - **Question:** May a merged public answer combine submissions across cycles (and only within a section)?
 - **Options:** (a) within a section, across cycles allowed; (b) within a single cycle only; (c) across sections (via backlog).
 - **Trade-offs:** (a) practical for recurring questions, must preserve per-cycle participation; (b) most restrictive; (c) already covered by course backlog.
-- **Status: CLOSED 2026-08-03 — (a).** Merge is within a section and **may span
-  cycles**; cross-section reuse goes through the course backlog. Merging never
-  alters per-cycle participation. The merge **UI** is a separate, unbuilt item
+- **Status: CLOSED 2026-08-03 — (a). Scope widened 2026-09-12 by
+  [ADR-0005](ADR-0005-course-scoped-teaching-workflow.md).** Merge may span
+  **cycles and sections of the same course**: option (c) was folded into (a)
+  when public Q&A became course-owned, because "cross-section reuse goes through
+  the backlog" only existed to work around a boundary that no longer exists.
+  Merging never alters per-cycle participation, and it never widens access — the
+  actor must hold `draft_public_answers` on **every** source section, so a merge
+  cannot be used to reach a class list they were not authorized to review. The
+  merge **UI** is a separate, unbuilt item
   ([engineering/current-state.md](../engineering/current-state.md) `D3`). See
   [domain/public-qa.md](../domain/public-qa.md#5-merging-multiple-submissions).
 

@@ -195,6 +195,33 @@ export async function getSectionWithCourse(sectionId: string) {
   return { section, course };
 }
 
+/**
+ * The timezone a COURSE schedules in — one rule, in one place (ADR-0005).
+ *
+ * Publication is course-owned, so "which timezone does this publish at?" can no
+ * longer be answered by reading a section. Picking "the first section" wherever
+ * a timezone was needed would give one course two answers depending on which
+ * query ran, which is the bug this exists to prevent.
+ *
+ * The rule: if every one of the course's sections agrees on a timezone, that is
+ * the course's timezone — the normal case, since sections are created with the
+ * institution default. Otherwise, or when the course has no sections yet, the
+ * configured `INSTITUTION_TIMEZONE` wins. There is one institution timezone in
+ * the current product (decision D7), so disagreement means a per-section
+ * override, and a course-level object must not silently inherit one section's
+ * override as if it applied to the whole course.
+ */
+export async function resolveCourseTimezone(
+  courseId: string,
+): Promise<string> {
+  const sections = await db.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+    columns: { timezone: true },
+  });
+  const distinct = new Set(sections.map((section) => section.timezone));
+  return distinct.size === 1 ? [...distinct][0]! : env.INSTITUTION_TIMEZONE;
+}
+
 /** Teaching staff on a section with their permission flags. Staff-only. */
 export async function listSectionStaff(actorUserId: string, sectionId: string) {
   await requireSectionStaff(db, actorUserId, sectionId, undefined, {

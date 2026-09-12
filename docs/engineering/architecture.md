@@ -63,7 +63,11 @@ services. Business rules should not be duplicated in React components.
 | `/` | Role-aware dashboard and section links |
 | `/sections/[id]` | Current student weekly form and submit action |
 | `/sections/[id]/history` | Student submission history |
-| `/sections/[id]/qa` | Section-scoped Q&A archive |
+| `/courses/[id]/qa` | **Course-scoped** Class Q&A archive — one per course, read by every section of it (ADR-0005) |
+| `/sections/[id]/qa` | Legacy — redirects to `/courses/[id]/qa`, preserving the selected entry and filters |
+| `/teach/courses/[id]/publications` | The course's one publication queue |
+| `/teach/courses/[id]/backlog` | The course's one question backlog |
+| `/teach/sections/[id]/publications`, `/teach/sections/[id]/backlog` | Legacy — redirect to the course routes above |
 | `/teach/sections/[id]/review` | Staff review, validity, private/public response actions |
 | `/teach/sections/[id]/roster` | Staff class list: imported students and UP-email link status (no approve/reject) |
 | `/teach/sections/[id]/import` | Forwards to the class list — the import is a modal there |

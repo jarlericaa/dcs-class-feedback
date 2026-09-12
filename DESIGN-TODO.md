@@ -554,12 +554,14 @@ lowest-traffic first:
 
 - [ ] **4.1** `/signin`, `/claim`, `marketing/entry-screen.tsx` — few states,
       no data tables. Proves the utility vocabulary.
-- [ ] **4.2** `/sections/[id]`, `/sections/[id]/qa`, `/sections/[id]/history`,
+- [ ] **4.2** `/sections/[id]`, `/courses/[id]/qa`, `/sections/[id]/history`,
       `student/weekly-form.tsx` — the student surface. Highest reader volume,
-      most benefit from getting the document register exactly right.
-- [ ] **4.3** `/teach/courses/**` — course setup, templates, forms.
-- [ ] **4.4** `/teach/sections/**` — review, publications, backlog,
-      participation, roster, audit, import. Densest tables; do them last, when the
+      most benefit from getting the document register exactly right. (Class Q&A
+      moved to `/courses/[id]/qa` — ADR-0005.)
+- [ ] **4.3** `/teach/courses/**` — course setup, templates, forms, and the
+      course-owned publication queue and question backlog.
+- [ ] **4.4** `/teach/sections/**` — review, participation, roster, import.
+      Densest tables; do them last, when the
       table vocabulary is settled.
 - [ ] **4.5** `layout/workspace-shell.tsx` and the 30 `.ws-*` selectors — the
       shell. Last, because every screen renders inside it and a regression here is
@@ -2663,6 +2665,16 @@ change to the domain rather than to a table.
       | section · Audit history | … › THX › Audit history | CS 33 · THX |
       | section · Class list | … › THX › Class lists | CS 33 · THX |
       | section · Question backlog | … › THX › Question backlog | CS 33 · THX |
+
+      > **Three of those rows moved to course scope, 2026-09-12**
+      > ([ADR-0005](docs/decisions/ADR-0005-course-scoped-teaching-workflow.md)).
+      > Publication queue, Question backlog and Class Q&A are course-owned, so
+      > their trails are `My courses › CS 33 › Publication queue` with the
+      > heading `CS 33` — the same shape as Forms and Responses above, one row
+      > up. The **rule** this table exists to state is unchanged and is what
+      > made the move cheap: the crumb is how you got here, the heading is what
+      > this is, the tab is which view of it. Participation, Class list and the
+      > section's own pages stay section-scoped.
       **Five headings changed to make that true.** Each section page used to set
       its own tab name as the `<h1>` — "Participation", "Audit history" — so the
       page said the same word three times over (crumb, heading, active tab) and

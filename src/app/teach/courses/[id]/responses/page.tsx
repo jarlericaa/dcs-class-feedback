@@ -85,7 +85,6 @@ import {
   FilterChips,
   ItemStamp,
   QuestionBlock,
-  ScopeChip,
   Sheet,
   StudentQuestionRow,
   SubmissionHeader,
@@ -200,6 +199,227 @@ type QueueRow = Awaited<
   ReturnType<typeof getCourseReviewQueue>
 >["rows"][number];
 type QueueItem = QueueRow["items"][number];
+type QueueItemQuestion = QueueItem["item"];
+type PrivateResponse = QueueItem["privateResponses"][number];
+type PublicAnswer = QueueItem["publicAnswers"][number];
+type FeedbackEvent =
+  | { kind: "private"; at: Date; response: PrivateResponse }
+  | { kind: "public"; at: Date; answer: PublicAnswer };
+type FormAction = (formData: FormData) => Promise<void>;
+
+/** The compact conversation shown beneath a handled student item. */
+function FeedbackThread({
+  events,
+  originalQuestion,
+  timezone,
+  courseId,
+  canDraftPublicAnswers,
+}: {
+  events: FeedbackEvent[];
+  originalQuestion: string;
+  timezone: string;
+  /** Both onward links are course-owned destinations (ADR-0005). */
+  courseId: string;
+  canDraftPublicAnswers: boolean;
+}) {
+  return (
+    <Thread>
+      {events.map((event) => {
+        if (event.kind === "private") {
+          const message = event.response;
+          const fromStudent = message.authorRole === "student";
+          return (
+            <ThreadMessage
+              action={fromStudent ? "followed up" : "replied privately"}
+              at={message.createdAt}
+              author={
+                message.authorName ??
+                (fromStudent ? "Identity hidden" : "A teaching team member")
+              }
+              from={fromStudent ? "student" : "staff"}
+              key={`private-${message.id}`}
+              mark={message.authorName ? initials(message.authorName) : null}
+              timezone={timezone}
+            >
+              <p className="thread__body">{message.body}</p>
+            </ThreadMessage>
+          );
+        }
+
+        const { answer } = event;
+        return (
+          <ThreadMessage
+            action={
+              answer.state === "published"
+                ? "answered the section"
+                : answer.state === "scheduled"
+                  ? "scheduled an answer"
+                  : "drafted an answer"
+            }
+            at={event.at}
+            author={answer.authorName ?? "A teaching team member"}
+            from="public"
+            key={`public-${answer.id}`}
+            mark={answer.authorName ? initials(answer.authorName) : null}
+            timezone={timezone}
+          >
+            <p className="mt-1 flex flex-wrap items-center gap-2">
+              <Stamp tone="green">Public answer</Stamp>
+              {answer.publishFailed && (
+                <Stamp tone="red">Publication failed</Stamp>
+              )}
+            </p>
+            {isReworded(originalQuestion, answer.publicQuestionText) && (
+              <>
+                <p className="mt-1 font-sans text-strip uppercase text-ink-muted">
+                  Published as
+                </p>
+                <p className="thread__body">{answer.publicQuestionText}</p>
+              </>
+            )}
+            {answer.answerBody && <AnswerBody>{answer.answerBody}</AnswerBody>}
+            <p className="mt-2">
+              {answer.state === "published" ? (
+                <Link
+                  className={buttonClass({ variant: "secondary", size: "small" })}
+                  href={`/courses/${courseId}/qa?selected=${answer.id}`}
+                >
+                  See in Class Q&amp;A
+                  <IconForward size={15} />
+                </Link>
+              ) : canDraftPublicAnswers ? (
+                <Link
+                  className={buttonClass({ variant: "secondary", size: "small" })}
+                  href={`/teach/courses/${courseId}/publications`}
+                >
+                  Finish it in the publication queue
+                  <IconForward size={15} />
+                </Link>
+              ) : null}
+            </p>
+          </ThreadMessage>
+        );
+      })}
+    </Thread>
+  );
+}
+
+/** Reply and publication actions, kept quiet beneath the words they affect. */
+function FeedbackActions({
+  item,
+  responseId,
+  who,
+  isComment,
+  published,
+  declined,
+  canSendPrivate,
+  canDraftPublicAnswers,
+  canPublishPublicAnswers,
+  canReview,
+  onPrivate,
+  onPublic,
+  onDecline,
+}: {
+  item: QueueItemQuestion;
+  responseId: string;
+  who: string;
+  isComment: boolean;
+  published: boolean;
+  declined: boolean;
+  canSendPrivate: boolean;
+  canDraftPublicAnswers: boolean;
+  canPublishPublicAnswers: boolean;
+  canReview: boolean;
+  onPrivate: FormAction;
+  onPublic: FormAction;
+  onDecline: FormAction;
+}) {
+  return (
+    <div className="post__actions">
+      {canSendPrivate && (
+        <Dialog
+          className="post__action"
+          description={`Only ${who} can see this.`}
+          label={
+            <>
+              <IconPrivate size={15} />
+              Reply privately
+            </>
+          }
+          title="Reply privately"
+          variant="quiet"
+        >
+          <form action={onPrivate}>
+            <input name="itemId" type="hidden" value={item.id} />
+            <input name="responseId" type="hidden" value={responseId} />
+            <FieldRow
+              htmlFor={`private-${item.id}`}
+              label={
+                <>
+                  Your reply <RequiredMark />
+                </>
+              }
+            >
+              <Textarea
+                id={`private-${item.id}`}
+                name="body"
+                required
+                rows={6}
+              />
+            </FieldRow>
+            <div className="row">
+              <SubmitButton pendingLabel="Sending…" variant="primary">
+                Send private reply
+              </SubmitButton>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {!isComment &&
+        !published &&
+        canDraftPublicAnswers && (
+          <Dialog
+            className="post__action"
+            description="Everyone taking this course sees the wording you write here, in Class Q&A. The asker is not named."
+            label={
+              <>
+                <IconPublic size={15} />
+                Answer publicly
+              </>
+            }
+            title="Answer this student's section"
+            variant="quiet"
+          >
+            <PublicAnswerComposer
+              action={onPublic}
+              canPublish={canPublishPublicAnswers}
+              itemId={item.id}
+              originalQuestion={item.originalText}
+              selectedResponseId={responseId}
+            />
+          </Dialog>
+        )}
+
+      {!isComment &&
+        (item.disposition === "undecided" ||
+          item.disposition === "no_response") &&
+        canReview && (
+          <form action={onDecline}>
+            <input name="itemId" type="hidden" value={item.id} />
+            <input name="responseId" type="hidden" value={responseId} />
+            {declined && (
+              <input name="undo" type="hidden" value="yes" />
+            )}
+            <SubmitButton className="post__action" variant="quiet">
+              <IconNoReply size={15} />
+              {declined ? "Put back in the queue" : "Will not answer"}
+            </SubmitButton>
+          </form>
+        )}
+    </div>
+  );
+}
 
 /**
  * Waiting on this reader: a valid response carrying a real question nobody has
@@ -362,9 +582,6 @@ export default async function CourseResponsesPage({
       ? sp.form
       : (defaultInstance?.form?.id ??
         (hasUnassigned ? UNASSIGNED_FORM : undefined));
-
-  /** The chosen form itself, for the times it is context rather than a control. */
-  const currentForm = forms.find((form) => form.id === currentFormId) ?? null;
 
   /** The chosen form's own occurrences — the only ones the week switcher offers. */
   const formInstances = currentFormId
@@ -965,15 +1182,18 @@ export default async function CourseResponsesPage({
     }
 
     /**
-     * Published into the ASKER's own section, which the form carries. A form
-     * shared across the course must not widen a publication: Section A's answer
-     * stays in Section A's archive, and cross-section reuse goes through the
-     * course backlog. `draftPublicAnswer` refuses any other section for this
-     * item, so this is checked twice.
+     * Published into the COURSE's one Class Q&A (ADR-0005). No section is sent
+     * and none is asked for: an answer useful to CS 33 is useful to all of CS
+     * 33, and publishing it three times because the course runs three labs was
+     * the defect this removed.
+     *
+     * The course comes from the page's own route, never from the form.
+     * `draftPublicAnswer` independently re-derives the asker's section from the
+     * item and refuses an actor who does not hold `draft_public_answers` there,
+     * so naming an item is not a way to reach a section you cannot review.
      */
-    const publishSectionId = String(formData.get("sectionId") ?? "");
     const answer = await draftPublicAnswer(uid, {
-      sectionId: publishSectionId,
+      courseId,
       itemIds: [itemId],
       publicQuestionText,
       answerBody: answerBody || undefined,
@@ -988,7 +1208,7 @@ export default async function CourseResponsesPage({
           // The draft is already saved, so send the user to it rather than
           // leaving an invisible orphan behind.
           redirect(
-            `/teach/sections/${publishSectionId}/publications?warn=${encodeURIComponent(
+            `/teach/courses/${courseId}/publications?warn=${encodeURIComponent(
               err.warnings.join(" | "),
             )}`,
           );
@@ -1006,7 +1226,7 @@ export default async function CourseResponsesPage({
     done.set(
       "ok",
       intent === "publish"
-        ? "Published to the asker's section without their name on it."
+        ? "Published to Class Q&A without the asker's name on it."
         : "Saved as a draft. Finish it in the publication queue.",
     );
     done.set("at", responseId);
@@ -1235,7 +1455,7 @@ export default async function CourseResponsesPage({
                     variant="warning"
                   >
                     The week&rsquo;s participation credit is kept until an
-                    instructor decides. The student is never told a flag exists.
+                    instructor decides.
                     {lastFlag && (
                       <>
                         {" "}
@@ -1250,10 +1470,9 @@ export default async function CourseResponsesPage({
                 )}
               </div>
 
-              {/* Each region of a submission is its own sheet, titled, with a
-                  3px accent batten down its left edge — the approved way to
-                  tell the fixed form answers from the student's own question
-                  and from what staff said back. The container owns the gaps. */}
+              {/* Each region of a submission is its own quiet sheet. The common
+                  one-question case follows Panel 3 directly; multi-item posts
+                  stay compact inside one Questions & feedback sheet. */}
               <div className="grid gap-4">
                 <Sheet title="Form answers" tone="accent">
                   {row.answers.length === 0 ? (
@@ -1274,15 +1493,90 @@ export default async function CourseResponsesPage({
                   )}
                 </Sheet>
 
-                {/* ONE sheet for everything the student raised.
-
-                    This was a pair of full-size sheets per item — a titled
-                    `Student question` card and a titled `Instructor response`
-                    card — so a submission carrying a comment and a question
-                    became four stacked cards and read as four separate pages.
-                    The distinction between the student's words and staff
-                    handling is real and is kept, but it is a rule and a small
-                    heading inside one block, not two more containers. */}
+                {row.items.length === 1 ? (
+                  (() => {
+                    const entry = row.items[0]!;
+                    const { item, privateResponses, publicAnswers } = entry;
+                    const events: FeedbackEvent[] = [
+                      ...privateResponses.map((response) => ({
+                        kind: "private" as const,
+                        at: response.createdAt,
+                        response,
+                      })),
+                      ...publicAnswers.map((answer) => ({
+                        kind: "public" as const,
+                        at: answer.publishedAt ?? answer.createdAt,
+                        answer,
+                      })),
+                    ].sort((a, b) => a.at.getTime() - b.at.getTime());
+                    const published = publicAnswers.some(
+                      (answer) => answer.state === "published",
+                    );
+                    const isComment = item.kind === "general_comment";
+                    const declined = item.disposition === "no_response";
+                    return (
+                      <>
+                        <Sheet
+                          aside={
+                            <ItemStamp
+                              declined={declined}
+                              isComment={isComment}
+                              published={published}
+                              settled={entry.settled}
+                            />
+                          }
+                          title="Student question"
+                        >
+                          <CategoryFlair value={item.category} />
+                          <p className="mt-3 max-w-measure font-document text-doc-dense text-ink whitespace-pre-wrap">
+                            {item.originalText}
+                          </p>
+                          <FeedbackActions
+                            canDraftPublicAnswers={canOn(
+                              sectionId,
+                              "draftPublicAnswers",
+                            )}
+                            canPublishPublicAnswers={canOn(
+                              sectionId,
+                              "publishPublicAnswers",
+                            )}
+                            canReview={canOn(
+                              sectionId,
+                              "reviewResponses",
+                            )}
+                            canSendPrivate={canOn(
+                              sectionId,
+                              "sendPrivateResponses",
+                            )}
+                            declined={declined}
+                            isComment={isComment}
+                            item={item}
+                            onDecline={declineAnswer}
+                            onPrivate={sendPrivate}
+                            onPublic={draftOrPublish}
+                            published={published}
+                            responseId={row.response.id}
+                            who={who}
+                          />
+                        </Sheet>
+                        {events.length > 0 && (
+                          <Sheet title="Instructor response">
+                            <FeedbackThread
+                              canDraftPublicAnswers={canOn(
+                                sectionId,
+                                "draftPublicAnswers",
+                              )}
+                              courseId={courseId}
+                              events={events}
+                              originalQuestion={item.originalText}
+                              timezone={timezone}
+                            />
+                          </Sheet>
+                        )}
+                      </>
+                    );
+                  })()
+                ) : (
                 <Sheet title="Questions &amp; feedback" tone="accent">
                   {row.items.length === 0 ? (
                     /* They answered the form and asked nothing. There is no
@@ -1337,307 +1631,52 @@ export default async function CourseResponsesPage({
                               {item.originalText}
                             </blockquote>
 
-                            {/* Staff handling, nested under the words it answers —
-                            rendered only when there IS handling. An empty
-                            region explaining that a general comment is never
-                            triaged was a paragraph of domain rules where the
-                            stamp above already says "No reply needed". */}
                             {events.length > 0 && (
                               <div className="mt-4">
-                                <p className="font-sans text-strip uppercase text-ink-muted">
-                                  Instructor response
-                                </p>
-                                <Thread>
-                                  {events.map((event) => {
-                                    if (event.kind === "private") {
-                                      const message = event.response;
-                                      const fromStudent =
-                                        message.authorRole === "student";
-                                      return (
-                                        <ThreadMessage
-                                          action={
-                                            fromStudent
-                                              ? "followed up"
-                                              : "replied privately"
-                                          }
-                                          at={message.createdAt}
-                                          author={
-                                            message.authorName ??
-                                            (fromStudent
-                                              ? "Identity hidden"
-                                              : "A teaching team member")
-                                          }
-                                          from={
-                                            fromStudent ? "student" : "staff"
-                                          }
-                                          key={`private-${message.id}`}
-                                          mark={
-                                            message.authorName
-                                              ? initials(message.authorName)
-                                              : null
-                                          }
-                                          timezone={timezone}
-                                        >
-                                          <p className="thread__body">
-                                            {message.body}
-                                          </p>
-                                        </ThreadMessage>
-                                      );
-                                    }
-
-                                    const { answer } = event;
-                                    return (
-                                      <ThreadMessage
-                                        action={
-                                          answer.state === "published"
-                                            ? "answered the section"
-                                            : answer.state === "scheduled"
-                                              ? "scheduled an answer"
-                                              : "drafted an answer"
-                                        }
-                                        at={event.at}
-                                        author={
-                                          answer.authorName ??
-                                          "A teaching team member"
-                                        }
-                                        from="public"
-                                        key={`public-${answer.id}`}
-                                        mark={
-                                          answer.authorName
-                                            ? initials(answer.authorName)
-                                            : null
-                                        }
-                                        timezone={timezone}
-                                      >
-                                        <p className="mt-1 flex flex-wrap items-center gap-2">
-                                          <Stamp tone="green">
-                                            Public answer
-                                          </Stamp>
-                                          {answer.publishFailed && (
-                                            <Stamp tone="red">
-                                              Publication failed
-                                            </Stamp>
-                                          )}
-                                        </p>
-                                        {/* The public question, ONLY when staff
-                                        actually reworded it.
-
-                                        A published answer stores the public
-                                        version of the question beside the
-                                        answer, and printing it unconditionally
-                                        repeated the student's own words a few
-                                        centimetres under the Student question
-                                        section that had just shown them — the
-                                        reader could not tell whether they were
-                                        looking at one question or two. When
-                                        the wording was genuinely changed the
-                                        difference is the point, so it is
-                                        labelled and kept; when it was not,
-                                        there is nothing to say. The original
-                                        is immutable and lives above either
-                                        way. */}
-                                        {isReworded(
-                                          item.originalText,
-                                          answer.publicQuestionText,
-                                        ) && (
-                                          <>
-                                            <p className="mt-1 font-sans text-strip uppercase text-ink-muted">
-                                              Published as
-                                            </p>
-                                            <p className="thread__body">
-                                              {answer.publicQuestionText}
-                                            </p>
-                                          </>
-                                        )}
-                                        {/* The staff answer, and the reason this
-                                        section exists. `answerBody` is the
-                                        persisted answer field — never the
-                                        title, the public question or any draft
-                                        metadata. */}
-                                        {answer.answerBody && (
-                                          <AnswerBody>
-                                            {answer.answerBody}
-                                          </AnswerBody>
-                                        )}
-                                        <p className="mt-2">
-                                          {answer.state === "published" ? (
-                                            /* A real button, not a quiet inline
-                                           link: this is the only way to reach
-                                           the published result, and a sentence
-                                           of body text is not where a reader
-                                           looks for a destination. Secondary,
-                                           because it is navigation rather than
-                                           this screen's work. */
-                                            <Link
-                                              className={buttonClass({
-                                                variant: "secondary",
-                                                size: "small",
-                                              })}
-                                              href={`/sections/${sectionId}/qa?selected=${answer.id}`}
-                                            >
-                                              See in Class Q&amp;A
-                                              <IconForward size={15} />
-                                            </Link>
-                                          ) : canOn(
-                                              sectionId,
-                                              "draftPublicAnswers",
-                                            ) ? (
-                                            <Link
-                                              className={buttonClass({
-                                                variant: "secondary",
-                                                size: "small",
-                                              })}
-                                              href={`/teach/sections/${sectionId}/publications`}
-                                            >
-                                              Finish it in the publication queue
-                                              <IconForward size={15} />
-                                            </Link>
-                                          ) : null}
-                                        </p>
-                                      </ThreadMessage>
-                                    );
-                                  })}
-                                </Thread>
+                                <FeedbackThread
+                                  canDraftPublicAnswers={canOn(
+                                    sectionId,
+                                    "draftPublicAnswers",
+                                  )}
+                                  courseId={courseId}
+                                  events={events}
+                                  originalQuestion={item.originalText}
+                                  timezone={timezone}
+                                />
                               </div>
                             )}
 
-                            <div className="post__actions">
-                              {canOn(sectionId, "sendPrivateResponses") && (
-                                <Dialog
-                                  className="post__action"
-                                  description={`Only ${who} can see this.`}
-                                  label={
-                                    <>
-                                      <IconPrivate size={15} />
-                                      Reply privately
-                                    </>
-                                  }
-                                  title="Reply privately"
-                                  variant="quiet"
-                                >
-                                  <form action={sendPrivate}>
-                                    <input
-                                      name="itemId"
-                                      type="hidden"
-                                      value={item.id}
-                                    />
-                                    <input
-                                      name="responseId"
-                                      type="hidden"
-                                      value={row.response.id}
-                                    />
-                                    <FieldRow
-                                      htmlFor={`private-${item.id}`}
-                                      label={
-                                        <>
-                                          Your reply <RequiredMark />
-                                        </>
-                                      }
-                                    >
-                                      <Textarea
-                                        id={`private-${item.id}`}
-                                        name="body"
-                                        required
-                                        rows={6}
-                                      />
-                                    </FieldRow>
-                                    <div className="row">
-                                      <SubmitButton
-                                        pendingLabel="Sending…"
-                                        variant="primary"
-                                      >
-                                        Send private reply
-                                      </SubmitButton>
-                                    </div>
-                                  </form>
-                                </Dialog>
+                            <FeedbackActions
+                              canDraftPublicAnswers={canOn(
+                                sectionId,
+                                "draftPublicAnswers",
                               )}
-
-                              {/* A general comment is never triaged and can never
-                                become a Q&A entry — the schema enforces it. And
-                                once an answer IS published, offering to answer
-                                publicly again presents a settled item as
-                                unresolved; the button above goes to the result
-                                instead. */}
-                              {!isComment &&
-                                !published &&
-                                canOn(sectionId, "draftPublicAnswers") && (
-                                  <Dialog
-                                    className="post__action"
-                                    description={`Everyone enrolled in ${sectionTitleOf(sectionId) ?? "their section"} sees the wording you write here. No other section does.`}
-                                    label={
-                                      <>
-                                        <IconPublic size={15} />
-                                        Answer publicly
-                                      </>
-                                    }
-                                    title="Answer this student's section"
-                                    variant="quiet"
-                                  >
-                                    <PublicAnswerComposer
-                                      action={draftOrPublish}
-                                      canPublish={canOn(
-                                        sectionId,
-                                        "publishPublicAnswers",
-                                      )}
-                                      itemId={item.id}
-                                      originalQuestion={item.originalText}
-                                      /* The asker's own section. A shared form
-                                       must not widen a publication, so the
-                                       target is carried explicitly and
-                                       re-checked server-side. */
-                                      sectionId={sectionId}
-                                      selectedResponseId={row.response.id}
-                                    />
-                                  </Dialog>
-                                )}
-
-                              {/* The third outcome. A question can be replied to,
-                                published, or deliberately left — and without a
-                                way to say the third, the queue never empties.
-                                Reversible, audited, and invisible to the
-                                student either way, so it needs no
-                                confirmation. */}
-                              {!isComment &&
-                                (item.disposition === "undecided" ||
-                                  item.disposition === "no_response") &&
-                                canOn(sectionId, "reviewResponses") && (
-                                  <form action={declineAnswer}>
-                                    <input
-                                      name="itemId"
-                                      type="hidden"
-                                      value={item.id}
-                                    />
-                                    <input
-                                      name="responseId"
-                                      type="hidden"
-                                      value={row.response.id}
-                                    />
-                                    {declined && (
-                                      <input
-                                        name="undo"
-                                        type="hidden"
-                                        value="yes"
-                                      />
-                                    )}
-                                    <SubmitButton
-                                      className="post__action"
-                                      variant="quiet"
-                                    >
-                                      <IconNoReply size={15} />
-                                      {declined
-                                        ? "Put back in the queue"
-                                        : "Will not answer"}
-                                    </SubmitButton>
-                                  </form>
-                                )}
-                            </div>
+                              canPublishPublicAnswers={canOn(
+                                sectionId,
+                                "publishPublicAnswers",
+                              )}
+                              canReview={canOn(sectionId, "reviewResponses")}
+                              canSendPrivate={canOn(
+                                sectionId,
+                                "sendPrivateResponses",
+                              )}
+                              declined={declined}
+                              isComment={isComment}
+                              item={item}
+                              onDecline={declineAnswer}
+                              onPrivate={sendPrivate}
+                              onPublic={draftOrPublish}
+                              published={published}
+                              responseId={row.response.id}
+                              who={who}
+                            />
                           </li>
                         );
                       })}
                     </ul>
                   )}
                 </Sheet>
+                )}
               </div>
             </div>
           );
@@ -1675,26 +1714,16 @@ export default async function CourseResponsesPage({
                 <input name="q" type="hidden" value={sp.q} />
               )}
 
-              {/* The scope: which form's responses this whole page is, before
-                  anything narrows it.
-
-                  Two controls, because they are two questions. The form is the
-                  outer axis and the occurrence lives inside it; one merged list
-                  of every form's weeks could offer two indistinguishable
-                  "Week 1"s.
-
-                  Both live in one GET form, so changing the form resubmits the
-                  previous form's `cycle` along with it. That is handled above,
-                  by correcting the URL rather than by splitting the controls
-                  into two forms — a second form would break the `noscript`
-                  submit, which is the only way this bar works before
-                  hydration. */}
+              {/* The scope: form (on the question axis), occurrence, and
+                  section are peers in one compact selector row. Keeping them
+                  in one GET form preserves the current cycle when a teacher
+                  changes the outer form; stale cycles are corrected above. */}
               {instances.length > 0 && (
                 <>
-                  {forms.length + (hasUnassigned ? 1 : 0) > 1 ? (
+                  {view === "question" && currentFormId && (
                     <AutoSubmitSelect
                       className="w-auto max-w-[28ch]"
-                      defaultValue={currentFormId ?? ""}
+                      defaultValue={currentFormId}
                       id="feed-form"
                       label="Which form"
                       name="form"
@@ -1710,16 +1739,8 @@ export default async function CourseResponsesPage({
                         </option>
                       )}
                     </AutoSubmitSelect>
-                  ) : (
-                    /* One form is not a choice, so it is not a control — but it
-                       is still the first thing a reader needs to know about
-                       what they are looking at. Drawn with the selector's own
-                       geometry so the cluster reads "this form, this week,
-                       these sections" whether or not any of the three happens
-                       to be selectable. */
-                    currentForm && <ScopeChip>{currentForm.title}</ScopeChip>
                   )}
-                  {formInstances.length > 1 && (
+                  {currentCycleId && formInstances.length > 0 && (
                     <AutoSubmitSelect
                       className="w-auto max-w-[24ch]"
                       defaultValue={currentCycleId ?? ""}
@@ -1756,17 +1777,12 @@ export default async function CourseResponsesPage({
                 </>
               )}
 
-              {/* By submission keeps a page-wide search, because there it has
-                  an obvious subject: a student, or something they wrote. It
-                  takes its own line under the scope cluster: which week am I
-                  reading is one decision, what am I looking for in it is
-                  another, and squeezing the two into one row made them read as
-                  a single bank of filters.
-
-                  Filter and order are on the Submissions list's own header and
-                  chips, where the thing they act on is visible. */}
+              {/* By submission keeps a page-wide search because its subject is
+                  a student or something they wrote. It shares this compact row
+                  with the week and section selectors, as in the approved
+                  submission panel. Filter and order remain on the list sheet. */}
               {view === "submission" && (
-                <span className="feedbar__search w-full basis-full">
+                <span className="feedbar__search min-w-0 w-[20rem] max-w-full flex-[0_1_20rem]">
                   <IconSearch size={15} />
                   <label className="visually-hidden" htmlFor="feed-q">
                     Search student name or content
@@ -2043,11 +2059,6 @@ export default async function CourseResponsesPage({
                             published={published}
                             validity={row.response.validity}
                           />
-                          {/* This reader's own marker, and only theirs. Never
-                              shown to the student: whether staff have opened a
-                              submission is not a promise this product
-                              makes. */}
-                          {isUnread(row) && <Stamp tone="amber">Unread</Stamp>}
                         </span>
                       }
                       /* Always the section, when its title is known. Which
@@ -2254,7 +2265,7 @@ function ValidityAction({
   if (validity === "valid" && canFlag && !isInstructor) {
     return (
       <Dialog
-        description="The week's credit is kept until an instructor decides. The student is never told a flag exists."
+        description="Credit is kept until an instructor decides."
         label="Flag for the instructor"
         size="small"
         title="Flag this submission?"
@@ -2390,7 +2401,10 @@ function InvalidatedNotice({
   at: string | null;
 }) {
   return (
-    <Alert title="This submission is invalidated" variant="error">
+    <Alert title="Invalidated submission" variant="error">
+      <p className="mb-2">
+        <Stamp tone="red">Invalidated</Stamp>
+      </p>
       <p>It does not count toward this week&rsquo;s participation.</p>
       <dl className="mt-2 grid gap-1">
         <div className="flex flex-wrap gap-x-2">

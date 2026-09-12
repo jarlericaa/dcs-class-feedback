@@ -2341,6 +2341,10 @@ kbd {
   gap: var(--s2);
   justify-items: start;
 }
+.longtext--quiet .post__words {
+  padding-left: 0;
+  border-left: 0;
+}
 .post__words--clamped {
   display: -webkit-box;
   -webkit-box-orient: vertical;

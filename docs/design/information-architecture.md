@@ -32,6 +32,26 @@ conventions, and the Q&A archive's browse/search strategy.
 >       └── Class lists & access  (/sections)    rosters, staff & access, section details
 > ```
 >
+> **Extended 2026-09-12 — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md).**
+> The course is now the boundary for *collaborative teaching work*, not only for
+> forms. The publication queue, the question backlog and Class Q&A moved to
+> course scope with it, so the staff column reads:
+>
+> ```
+> Course workspace  (/teach/courses/[id])
+>       ├── Forms · Responses                    the work objects
+>       ├── Publication queue  (/publications)   ONE queue per course
+>       ├── Question backlog   (/backlog)        ONE backlog per course
+>       └── Class Q&A          (/courses/[id]/qa) ONE archive, read by every section
+> ```
+>
+> This **resolves F1's third finding below** — "Question backlog sits in the
+> section group, but the backlog is course-level… the IA contradicts the domain
+> model" — by moving the route rather than annotating the mismatch, and it
+> retires the §4 trade-off note that cross-section work is expensive: the
+> weekly publication pass is now one pass for the whole course. Sections keep
+> the class list, delegation and participation, which are genuinely per-section.
+>
 > Students reach a **form**, not a section: `/forms/[id]`. `/sections/[id]`
 > survives as a resolver, and `/teach/sections/[id]/review` redirects into the
 > course inbox with that section preselected.
@@ -196,6 +216,9 @@ readiness-ordering was trying to do:
 
 \* Question backlog moves to a course-level destination when that route exists;
 until then it stays here with the correct parent noted. See §8.
+**Resolved 2026-09-12:** that route now exists — `/teach/courses/[id]/backlog` —
+and the backlog has its correct parent ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)).
+The publication queue and Class Q&A moved with it, for the same reason.
 
 Participation moves out of the weekly group because it is a periodic export task,
 not weekly triage — grouping it with the inbox implies a cadence it does not have.
@@ -375,9 +398,18 @@ weekly visit — the wrong cost for the highest-frequency task.
 comparing two sections means returning to the hub. That is the right trade here
 (sections are genuinely independent; deny-by-default authorization is per-section)
 but it becomes wrong if a teacher ever routinely handles many sections at once.
-The course-level rail already present in the Q&A workspace
-([qa/page.tsx:147-150](../../src/app/sections/[id]/qa/page.tsx#L147-L150)) is the
-seed of the answer if that day comes.
+The course-level rail already present in the Q&A workspace is the seed of the
+answer if that day comes.
+
+> **That day came, 2026-09-12.** A course running several laboratory sections is
+> exactly the case this paragraph anticipated, and the owner confirmed it is the
+> normal one. The collaborative work — forms, responses, the queue, the backlog,
+> the archive — is course-scoped
+> ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)).
+> "Sections are genuinely independent" was the mistaken premise: they are
+> independent as *class lists and delegation scopes*, not as copies of the
+> course. Deny-by-default authorization stays per-section for source data,
+> which is what made the move safe.
 
 **Grouping rule.** Groups are named for **cadence**, not for role or module:
 *This week* (weekly), *Class list* (per-term, plus corrections), *Manage*

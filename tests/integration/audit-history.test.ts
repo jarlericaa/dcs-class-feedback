@@ -46,7 +46,6 @@ import {
 import { submitResponse } from "@/modules/forms/submission";
 import {
   importLegacyEntries,
-  makeVisibleToSection,
   setBacklogState,
 } from "@/modules/backlog";
 import {
@@ -772,11 +771,12 @@ describe("audit history: what a row is allowed to say", () => {
    * so naming it is what turns a code into "published an answer to …".
    */
   it("names a public question as the object of a publication", async () => {
-    const { teacher, section } = await setup();
+    const { teacher, section, course } = await setup();
     const [answer] = await db
       .insert(publicAnswers)
       .values({
-        sectionId: section.id,
+        courseId: course.id,
+        originSectionId: section.id,
         publicQuestionText: "When will the practice set be available?",
         answerBody: "Friday.",
         state: "published",
@@ -809,11 +809,12 @@ describe("audit history: what a row is allowed to say", () => {
   });
 
   it("flattens a subject that was authored as rich text", async () => {
-    const { teacher, section } = await setup();
+    const { teacher, section, course } = await setup();
     const [answer] = await db
       .insert(publicAnswers)
       .values({
-        sectionId: section.id,
+        courseId: course.id,
+        originSectionId: section.id,
         // Staff may author `$...$` and Markdown; a `<select>`-free sentence is
         // still plain text, so the label arrives flattened rather than as
         // markup this page would have to render.
@@ -947,13 +948,14 @@ describe("audit history: what a row is allowed to say", () => {
     expect(JSON.stringify(page.rows)).not.toContain(theirs.course.code);
   });
 
-  it("resolves nothing for a public answer belonging to another section", async () => {
+  it("resolves nothing for a public answer belonging to another course", async () => {
     const mine = await setup();
     const theirs = await setup();
     const [alien] = await db
       .insert(publicAnswers)
       .values({
-        sectionId: theirs.section.id,
+        courseId: theirs.course.id,
+        originSectionId: theirs.section.id,
         publicQuestionText: "A question from another class",
         state: "published",
         publishedAt: new Date(),
@@ -1492,7 +1494,16 @@ describe("audit history: every writer records the scope it belongs to", () => {
     expect(actions).toContain("section.created");
   });
 
-  it("keeps another course's records out, and keeps a sibling section's own act out", async () => {
+  /**
+   * Course-level backlog rows are shared by every section of the course and by
+   * none of another course's.
+   *
+   * The old version of this test also asserted that exposing a backlog question
+   * to ONE section stayed out of its sibling's history. That act no longer
+   * exists: publishing from the backlog produces one course-wide answer
+   * (ADR-0005), so there is no per-section exposure to scope.
+   */
+  it("keeps another course's records out of a section's history", async () => {
     const teacher = await makeUser({ isTeacher: true });
     const course = await createCourse(teacher.id, { code: "CS 33", title: "A" });
     const a = await createSection(teacher.id, {
@@ -1521,10 +1532,6 @@ describe("audit history: every writer records the scope it belongs to", () => {
     const question = legacy.created[0]!;
     await setBacklogState(teacher.id, question.id, "needs_review");
     await setBacklogState(teacher.id, question.id, "answerable");
-    // Exposing a backlog question is an act on ONE section. It is scoped to
-    // that section, so its sibling — same course, same backlog — must not see
-    // it, even though both share every course-level row.
-    await makeVisibleToSection(teacher.id, question.id, a.id);
 
     const inA = (
       await listSectionAuditEvents(teacher.id, a.id, { pageSize: 100 })
@@ -1538,13 +1545,13 @@ describe("audit history: every writer records the scope it belongs to", () => {
       })
     ).rows.map((r) => r.event.action);
 
-    expect(inA).toContain("backlog.made_visible_to_section");
-    expect(inB).not.toContain("backlog.made_visible_to_section");
     // The course-level rows are shared by both sections of the course...
+    expect(inA).toContain("legacy.imported");
     expect(inB).toContain("legacy.imported");
+    expect(inB).toContain("backlog.state_changed");
     // ...and reach neither the other course's section.
     expect(inOther).not.toContain("legacy.imported");
-    expect(inOther).not.toContain("backlog.made_visible_to_section");
+    expect(inOther).not.toContain("backlog.state_changed");
   });
 
   it("still shows a staff removal, whose section_staff row no longer exists", async () => {
@@ -1620,7 +1627,7 @@ describe("audit history: every writer records the scope it belongs to", () => {
     await setResponseReviewState(teacher.id, submitted.responseId, "under_review");
     await createPrivateResponse(teacher.id, submitted.studentItemId!, "See slide 4.");
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [submitted.studentItemId!],
       publicQuestionText: "How does recursion work?",
       answerBody: "A function that calls itself.",
@@ -1635,12 +1642,22 @@ describe("audit history: every writer records the scope it belongs to", () => {
     for (const action of [
       "response.review_state_changed",
       "private_response.created",
+    ]) {
+      expect(byAction.get(action), action).toBeDefined();
+      expect(byAction.get(action)!.sectionId, action).toBe(section.id);
+    }
+    /**
+     * Publication rows carry the COURSE, not a section (ADR-0005). They still
+     * reach this section's history — through the source-link fan-out, which is
+     * how a course-owned answer belongs to the section that fed it.
+     */
+    for (const action of [
       "public_answer.drafted",
       "source_link.created",
       "public_answer.published",
     ]) {
       expect(byAction.get(action), action).toBeDefined();
-      expect(byAction.get(action)!.sectionId, action).toBe(section.id);
+      expect(byAction.get(action)!.courseId, action).toBe(course.id);
     }
 
     const actions = (

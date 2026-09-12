@@ -4,6 +4,7 @@ import { db, type DbOrTx } from "@/db";
 import {
   classSections,
   courses,
+  courseStaff,
   emailOutbox,
   enrollments,
   formResponses,
@@ -111,6 +112,26 @@ async function sectionScope(dbx: DbOrTx, sectionId: string) {
     courseCode: course?.code ?? "Course",
     sectionTitle: section.title,
     timezone: section.timezone,
+  };
+}
+
+/**
+ * Course labels, for mail about a COURSE-owned object (ADR-0005).
+ *
+ * `sectionTitle` is still required by the template, so it carries the course
+ * title — the honest answer for a publication that belongs to the whole course
+ * rather than to one class list. Nothing here names a section, because naming
+ * one would be inventing a scope the object does not have.
+ */
+async function courseScope(dbx: DbOrTx, courseId: string) {
+  const course = await dbx.query.courses.findFirst({
+    where: eq(courses.id, courseId),
+  });
+  if (!course) return null;
+  return {
+    courseId,
+    courseCode: course.code,
+    sectionTitle: course.title,
   };
 }
 
@@ -309,7 +330,7 @@ export async function enqueuePublicAnswerLinked(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) return 0;
-  const scope = await sectionScope(dbx, answer.sectionId);
+  const scope = await courseScope(dbx, answer.courseId);
   if (!scope) return 0;
   const links = await dbx.query.sourceLinks.findMany({
     where: eq(sourceLinks.publicAnswerId, publicAnswerId),
@@ -322,6 +343,10 @@ export async function enqueuePublicAnswerLinked(
     .select({
       itemId: studentSubmissionItems.id,
       studentRecordId: formResponses.studentRecordId,
+      /* The asker's OWN section — where their history lives. The answer is
+         course-owned and has no section, but a student reads their submissions
+         through the class list they answered through. */
+      sectionId: formResponses.sectionId,
     })
     .from(studentSubmissionItems)
     .innerJoin(
@@ -342,13 +367,13 @@ export async function enqueuePublicAnswerLinked(
         recipient.id,
       ]),
       recipientUserId: recipient.id,
-      sectionId: scope.sectionId,
+      sectionId: asker.sectionId,
       courseId: scope.courseId,
       context: {
         courseCode: scope.courseCode,
         sectionTitle: scope.sectionTitle,
         recipientName: recipient.displayName,
-        linkPath: `/sections/${answer.sectionId}/history`,
+        linkPath: `/sections/${asker.sectionId}/history`,
       },
     });
     queued += 1;
@@ -402,7 +427,13 @@ export async function enqueueValidityChanged(
   });
 }
 
-/** Instructors on the section are told a TA draft needs approval. */
+/**
+ * Instructors on the COURSE are told a TA draft needs approval.
+ *
+ * Course-wide since ADR-0005, and deliberately so: the draft will publish to
+ * the whole course, so the whole course's instructors are the right approvers —
+ * not only those who happen to staff the section the question came from.
+ */
 export async function enqueueApprovalRequested(
   dbx: DbOrTx,
   publicAnswerId: string,
@@ -411,19 +442,37 @@ export async function enqueueApprovalRequested(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) return 0;
-  const scope = await sectionScope(dbx, answer.sectionId);
+  const scope = await courseScope(dbx, answer.courseId);
   if (!scope) return 0;
-  const staff = await dbx
-    .select({ userId: sectionStaff.userId, displayName: users.displayName })
-    .from(sectionStaff)
-    .innerJoin(users, eq(users.id, sectionStaff.userId))
-    .where(
-      and(
-        eq(sectionStaff.sectionId, answer.sectionId),
-        inArray(sectionStaff.role, ["teacher", "co_teacher"]),
-        eq(users.active, true),
-      ),
-    );
+  const sections = await dbx.query.classSections.findMany({
+    where: eq(classSections.courseId, answer.courseId),
+  });
+  const sectionRows = sections.length
+    ? await dbx
+        .select({ userId: sectionStaff.userId, displayName: users.displayName })
+        .from(sectionStaff)
+        .innerJoin(users, eq(users.id, sectionStaff.userId))
+        .where(
+          and(
+            inArray(
+              sectionStaff.sectionId,
+              sections.map((section) => section.id),
+            ),
+            inArray(sectionStaff.role, ["teacher", "co_teacher"]),
+            eq(users.active, true),
+          ),
+        )
+    : [];
+  const courseRows = await dbx
+    .select({ userId: courseStaff.userId, displayName: users.displayName })
+    .from(courseStaff)
+    .innerJoin(users, eq(users.id, courseStaff.userId))
+    .where(and(eq(courseStaff.courseId, answer.courseId), eq(users.active, true)));
+  // One mail per person: an instructor holding both a course row and a section
+  // row is one approver, not two.
+  const staff = [...new Map(
+    [...courseRows, ...sectionRows].map((row) => [row.userId, row]),
+  ).values()];
   for (const person of staff) {
     await enqueueEmail(dbx, {
       eventType: "approval_requested",
@@ -434,13 +483,12 @@ export async function enqueueApprovalRequested(
         person.userId,
       ]),
       recipientUserId: person.userId,
-      sectionId: scope.sectionId,
       courseId: scope.courseId,
       context: {
         courseCode: scope.courseCode,
         sectionTitle: scope.sectionTitle,
         recipientName: person.displayName,
-        linkPath: `/teach/sections/${answer.sectionId}/approvals`,
+        linkPath: `/teach/courses/${answer.courseId}/publications`,
       },
     });
   }
@@ -458,7 +506,7 @@ export async function enqueueApprovalDecided(
   });
   if (!answer) return;
   const target = answer.submittedByUserId ?? answer.createdByUserId;
-  const scope = await sectionScope(dbx, answer.sectionId);
+  const scope = await courseScope(dbx, answer.courseId);
   if (!scope) return;
   const recipient = await dbx.query.users.findFirst({
     where: eq(users.id, target),
@@ -474,14 +522,13 @@ export async function enqueueApprovalDecided(
       target,
     ]),
     recipientUserId: target,
-    sectionId: scope.sectionId,
     courseId: scope.courseId,
     context: {
       courseCode: scope.courseCode,
       sectionTitle: scope.sectionTitle,
       recipientName: recipient.displayName,
       decision,
-      linkPath: `/teach/sections/${answer.sectionId}/publications`,
+      linkPath: `/teach/courses/${answer.courseId}/publications`,
     },
   });
 }

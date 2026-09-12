@@ -578,7 +578,6 @@ describe("staffSectionTabs — active state", () => {
     expect(active("/teach/sections/sec-1/participation")).toEqual([
       "/teach/sections/sec-1/participation",
     ]);
-    expect(active("/sections/sec-1/qa")).toEqual(["/sections/sec-1/qa"]);
   });
 
   /**
@@ -716,7 +715,7 @@ describe("staffSectionTabGroups", () => {
     for (const path of [
       "/teach/sections/sec-1/roster",
       "/teach/courses/course-1/responses",
-      "/sections/sec-1/qa",
+      "/courses/course-1/qa",
     ]) {
       expect(activeHrefs(staffSectionTabGroups(a, path)).length, path).toBe(1);
     }
@@ -773,31 +772,46 @@ describe("studentSectionTabs", () => {
     for (const path of [
       "/sections/sec-1",
       "/sections/sec-1/history",
-      "/sections/sec-1/qa",
+      "/courses/course-1/qa",
     ]) {
-      expect(studentSectionTabs("sec-1", path).map((t) => t.label)).toEqual([
-        "This week's form",
-        "My submissions",
-        "Class Q&A",
-      ]);
+      expect(
+        studentSectionTabs("sec-1", "course-1", path).map((t) => t.label),
+      ).toEqual(["This week's form", "My submissions", "Class Q&A"]);
     }
+  });
+
+  /**
+   * Two of the three are the SECTION's; Class Q&A is the COURSE's one archive
+   * (ADR-0005), so it is addressed at course scope even though it is listed
+   * beside them.
+   */
+  it("addresses Class Q&A at course scope", () => {
+    expect(
+      studentSectionTabs("sec-1", "course-1", "/sections/sec-1").map(
+        (t) => t.href,
+      ),
+    ).toEqual([
+      "/sections/sec-1",
+      "/sections/sec-1/history",
+      "/courses/course-1/qa",
+    ]);
   });
 
   it("marks exactly one, and the right one", () => {
     const active = (path: string) =>
-      studentSectionTabs("sec-1", path)
+      studentSectionTabs("sec-1", "course-1", path)
         .filter((t) => t.active)
         .map((t) => t.href);
     expect(active("/sections/sec-1")).toEqual(["/sections/sec-1"]);
     expect(active("/sections/sec-1/history")).toEqual([
       "/sections/sec-1/history",
     ]);
-    expect(active("/sections/sec-1/qa")).toEqual(["/sections/sec-1/qa"]);
+    expect(active("/courses/course-1/qa")).toEqual(["/courses/course-1/qa"]);
   });
 
   it("marks Forms while a form instance is open", () => {
     expect(
-      studentSectionTabs("sec-1", "/forms/i1", {
+      studentSectionTabs("sec-1", "course-1", "/forms/i1", {
         activeHref: "/sections/sec-1",
       })
         .filter((t) => t.active)
@@ -821,7 +835,7 @@ describe("firstStaffSectionHref", () => {
 
   it("falls through to the archive when nothing else is granted", () => {
     expect(firstStaffSectionHref(access({ role: "ta" }))).toBe(
-      "/sections/sec-1/qa",
+      "/courses/course-1/qa",
     );
   });
 
@@ -850,7 +864,7 @@ describe("firstStaffSectionHref", () => {
       firstStaffSectionHref(
         access({ role: "ta", permissions: { draftPublicAnswers: true } }),
       ),
-    ).toBe("/teach/sections/sec-1/publications");
+    ).toBe("/teach/courses/course-1/publications");
   });
 
   /**
@@ -861,19 +875,43 @@ describe("firstStaffSectionHref", () => {
     const href = firstStaffSectionHref(
       access({
         hasCourseStanding: true,
-        permissions: { viewStudentIdentities: true },
+        /* `exportParticipation` is what gives this reader a section
+           destination at all. Their class list is the course's INDEX — the
+           section roster is deliberately absent for a course-standing reader —
+           and since ADR-0005 the queue, backlog and archive are course-owned
+           too, so a reader holding only `viewStudentIdentities` now genuinely
+           has nothing inside the section. The property under test is that a
+           section destination OUTRANKS a course one, which needs one to exist. */
+        permissions: { viewStudentIdentities: true, exportParticipation: true },
       }),
     );
     /**
-     * Asserted as a property rather than as one page. The reader holds the
-     * course, so their class list is the course's index and is deliberately
-     * absent from the section's own list — but whatever this resolves to must
-     * still be a destination INSIDE the section, never a course href, because
-     * the caller uses it to answer "/teach/sections/[id]".
+     * Asserted as a property rather than as one page: whatever this resolves
+     * to must be a destination INSIDE the section, never a course href,
+     * because the caller uses it to answer "/teach/sections/[id]".
      */
     expect(href).not.toBeNull();
     expect(href).not.toContain("/teach/courses/");
+    expect(href).not.toContain("/courses/");
     expect(href).toContain("sec-1");
+  });
+
+  /**
+   * ...but a reader whose ONLY work is publishing has no section destination
+   * at all, because the queue, the backlog and the archive are course-owned
+   * (ADR-0005). Returning null for them would read as "no access" on a section
+   * they genuinely hold, so the course's destinations are the fallback.
+   */
+  it("falls back to the course's queue for a publish-only assistant", () => {
+    expect(
+      firstStaffSectionHref(
+        access({
+          role: "ta",
+          hasCourseStanding: false,
+          permissions: { publishPublicAnswers: true },
+        }),
+      ),
+    ).toBe("/teach/courses/course-1/publications");
   });
 
   it("is null without staff standing, so the caller must refuse", () => {

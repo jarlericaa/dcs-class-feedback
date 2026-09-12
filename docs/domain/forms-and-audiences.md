@@ -121,7 +121,9 @@ silently move an existing response between sections.
 | The form definition and its versions | Enrollments and rosters |
 | The instance, its window, its state, its question snapshot | Staff membership and the TA permission catalog |
 | Response counts on the teacher's form list and the review inbox | Class-list import and email-based student access |
-| The review inbox itself (one inbox per form, filterable by section) | The public Q&A archive (`public_answers.section_id`) |
+| The review inbox itself (one inbox per form, filterable by section) | — |
+| The public Q&A archive (`public_answers.course_id` — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)) | — |
+| The publication queue, and the backlog's publishing step | — |
 | Bonus periods (already course-scoped, [D14](../decisions/open-decisions.md)) | Participation exports (per section) |
 | The question backlog and lessons/topics (already course-scoped) | Private replies (scoped by the asker's own response) |
 
@@ -219,12 +221,19 @@ enforcement point.
   `form_responses.section_id IN (authorized sections)`. Aggregate counts shown to
   a staff member are computed over the same filtered set — a TA on Section A is
   never shown a course-wide total that lets them infer Section B's volume.
-- **Public Q&A stays section-scoped.** A published answer is written to exactly
-  one section: the **asker's own attribution section**. This preserves
-  [ADR-0002](../decisions/ADR-0002-section-scoped-public-qa.md) unchanged. Sharing a
-  form across sections does not broaden a publication, and there is no code path
-  that publishes to an audience. Cross-section reuse continues to go through the
-  course backlog, exactly as [D8](../decisions/open-decisions.md) says.
+- **Public Q&A is course-scoped** ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), 2026-09-12). A published answer belongs to the **course** and is read by every student with an active enrolment in any eligible section of it. There is one archive, one queue, and one entry per publication.
+
+  > **Superseded.** This bullet previously read: *"Public Q&A stays section-scoped. A published
+  > answer is written to exactly one section: the asker's own attribution section… Cross-section
+  > reuse continues to go through the course backlog."* That was ADR-0002's scope, and it made a
+  > course with three laboratory sections publish the same answer three times.
+
+  What is unchanged, and is the reason this does not widen anything unsafely: the **source**
+  submission still belongs to the asker's attribution section, staff read models still filter on
+  `form_responses.section_id IN (authorized sections)`, and drafting from a submission still
+  requires the permission on **that submission's own section**. The audience machinery
+  (`FormScheduleSections` / `FormInstanceSections`) is untouched — it governs who receives a form,
+  which is a different question from who reads an answer.
 - **Students see nothing new.** The student projection of an instance carries the
   course code, the form title, the optional focus label, the window, the
   questions, and their own response. It carries no audience list, no other
@@ -363,7 +372,7 @@ keys enforce everything else.
 | `src/modules/forms/templates.ts` | `purpose`, course-level form list with delivery/audience/state |
 | `src/modules/review/index.ts` | course-level review core; section view is a filter over it |
 | `src/modules/review/validity.ts` | section resolved from the response, not the instance |
-| `src/modules/publishing/index.ts` | publication section = the asker's attribution section |
+| `src/modules/publishing/index.ts` | publication is **course-owned**; source authorization is still per section (ADR-0005) |
 | `src/modules/participation/index.ts` | per-section derivation over audience-visible instances |
 | `src/modules/email/outbox.ts` | recipients across the audience; instance-keyed links |
 | `src/modules/audit/index.ts` | new actions; audit fan-out via the audience table |

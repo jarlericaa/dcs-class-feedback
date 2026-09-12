@@ -70,7 +70,11 @@ export default async function HistoryPage({
       user={toShellUser(user)}
       workspace="student"
       navGroups={await primaryNavFor(user, `/sections/${sectionId}/history`)}
-      tabs={studentSectionTabs(sectionId, `/sections/${sectionId}/history`)}
+      tabs={studentSectionTabs(
+        sectionId,
+        course.id,
+        `/sections/${sectionId}/history`,
+      )}
       tabsLabel={course.code}
       contextLabel={`${course.code} · ${section.title}`}
       title="My submissions"
@@ -218,7 +222,7 @@ export default async function HistoryPage({
 
           <p className="meta">
             Looking for an answer that went out to everyone?{" "}
-            <Link className="link" href={`/sections/${sectionId}/qa`}>
+            <Link className="link" href={`/courses/${course.id}/qa`}>
               Browse the class Q&amp;A
             </Link>
             .

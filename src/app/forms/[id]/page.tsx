@@ -133,9 +133,12 @@ export default async function StudentFormPage({
     /* A form instance is what the section's Forms view leads to, not a peer of
        it, so the strip marks that tab rather than showing nothing selected. */
     tabs: safeAttributedSectionId
-      ? studentSectionTabs(safeAttributedSectionId, `/forms/${instanceId}`, {
-          activeHref: `/sections/${safeAttributedSectionId}`,
-        })
+      ? studentSectionTabs(
+          safeAttributedSectionId,
+          course.id,
+          `/forms/${instanceId}`,
+          { activeHref: `/sections/${safeAttributedSectionId}` },
+        )
       : undefined,
     tabsLabel: course.code,
     /* The course code is the identity. The section is not in the label: the
@@ -185,7 +188,7 @@ export default async function StudentFormPage({
                   </Link>
                   <Link
                     className={buttonClass({ variant: "secondary" })}
-                    href={`/sections/${safeAttributedSectionId}/qa`}
+                    href={`/courses/${course.id}/qa`}
                   >
                     Class Q&amp;A
                   </Link>

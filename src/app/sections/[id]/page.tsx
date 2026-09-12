@@ -58,7 +58,7 @@ export default async function SectionEntryPage({
     user: toShellUser(user),
     workspace: "student" as const,
     navGroups: await primaryNavFor(user, `/sections/${sectionId}`),
-    tabs: studentSectionTabs(sectionId, `/sections/${sectionId}`),
+    tabs: studentSectionTabs(sectionId, course.id, `/sections/${sectionId}`),
     tabsLabel: course.code,
     contextLabel: course.code,
     roomy: true,
@@ -74,7 +74,7 @@ export default async function SectionEntryPage({
         <div className="row mt-4">
           <Link
             className={buttonClass({ variant: "secondary" })}
-            href={`/sections/${sectionId}/qa`}
+            href={`/courses/${course.id}/qa`}
           >
             Class Q&amp;A archive
           </Link>

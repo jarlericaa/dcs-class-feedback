@@ -17,7 +17,7 @@ import {
   questionCategory,
   sourceOrigin,
 } from "./enums";
-import { bonusPeriods, classSections, lessonsTopics } from "./catalog";
+import { bonusPeriods, classSections, courses, lessonsTopics } from "./catalog";
 import { studentSubmissionItems } from "./responses";
 import { weeklyCycles } from "./forms";
 import { backlogQuestions } from "./backlog";
@@ -35,10 +35,16 @@ const tsvector = customType<{ data: string; driverData: string }>({
 });
 
 /**
- * An anonymous public Q&A entry, section-scoped. "Public" means visible to
- * that section's enrolled students and staff ONLY — never the open internet.
- * Carries the reworded question text; the original student wording stays
- * immutable on the source StudentSubmissionItem. No identity fields exist here.
+ * An anonymous public Q&A entry, COURSE-scoped (ADR-0005). "Public" means
+ * visible to the course's enrolled students and staff ONLY — never the open
+ * internet. Carries the reworded question text; the original student wording
+ * stays immutable on the source StudentSubmissionItem. No identity fields
+ * exist here.
+ *
+ * One publication, one entry. A course with three lab sections publishes an
+ * answer ONCE and every eligible student reads that same row — the section a
+ * question came from is provenance, never an audience boundary
+ * (ADR-0005 supersedes ADR-0002).
  *
  * Lifecycle (docs/domain/domain-model.md §3.6):
  *   draft → awaiting_approval → published → unpublished, with edits producing
@@ -48,9 +54,25 @@ export const publicAnswers = pgTable(
   "public_answers",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    sectionId: uuid("section_id")
+    /**
+     * The owning course — the authoritative visibility and access key.
+     *
+     * Every read model, every authorization check and every scheduler lookup
+     * keys on this. Nothing keys on a section.
+     */
+    courseId: uuid("course_id")
       .notNull()
-      .references(() => classSections.id),
+      .references(() => courses.id),
+    /**
+     * PROVENANCE ONLY — the section an entry was originally published through,
+     * before public Q&A became course-scoped (ADR-0005). Staff/internal.
+     *
+     * It is NOT ownership, NOT a publishing target, NOT a visibility key, and
+     * nothing builds a per-section archive from it. New rows leave it null;
+     * `SourceLink → StudentSubmissionItem → FormResponse.sectionId` is the
+     * live answer to "which class did this come from".
+     */
+    originSectionId: uuid("origin_section_id").references(() => classSections.id),
     publicQuestionText: text("public_question_text").notNull(),
     answerBody: text("answer_body"),
     state: publicAnswerState("state").notNull().default("draft"),
@@ -135,11 +157,11 @@ export const publicAnswers = pgTable(
       sql`(${t.approvedAt} IS NULL) = (${t.approvedByUserId} IS NULL)`,
     ),
     uniqueIndex("public_answers_request_token_unique")
-      .on(t.sectionId, t.requestToken)
+      .on(t.courseId, t.requestToken)
       .where(sql`${t.requestToken} IS NOT NULL`),
-    index("public_answers_section_idx").on(t.sectionId),
+    index("public_answers_course_idx").on(t.courseId),
     index("public_answers_state_idx").on(t.state),
-    index("public_answers_archive_idx").on(t.sectionId, t.state, t.publishedAt),
+    index("public_answers_archive_idx").on(t.courseId, t.state, t.publishedAt),
     index("public_answers_cycle_idx").on(t.sourceCycleId),
     index("public_answers_period_idx").on(t.bonusPeriodId),
     index("public_answers_search_idx").using("gin", t.searchVector),

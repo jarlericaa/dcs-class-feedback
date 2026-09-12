@@ -392,35 +392,9 @@ function ViewOption({
 /* ========================================================================== */
 
 /**
- * A scope fact that is not a choice — the form's name when a course runs only
- * one of them.
- *
- * It takes the SELECT's geometry, not a label's: same 38px control height, same
- * 6px radius, same paper fill and hairline, same interface type, so it sits in
- * the control cluster as a peer of the week selector rather than as bold text
- * floating beside it. What it deliberately does not take is a caret, a hover or
- * a focus ring — there is nothing to open, and a control that looks clickable
- * and is not is worse than a plain word. It is not greyed out either: the fact
- * is current, it is simply not a decision.
- */
-export function ScopeChip({ children }: { children: ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex min-h-control items-center rounded-control",
-        "border border-control-edge bg-paper px-control-pad",
-        "font-sans text-ui text-ink",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-/**
  * The sheet every region of this page is drawn on. `.notice`'s geometry.
  *
- * `tone` draws a 3px batten down the sheet's left edge — green for a normal
+ * `tone` draws a quiet 1px batten down the sheet's left edge — green for a normal
  * region, maroon for the invalidated one. It is the batten DESIGN.md §5
  * sanctions: drawn INSIDE the element's own edge as a `::before`, so switching
  * it on shifts no content and it is not a coloured `border-left` (anti-pattern
@@ -452,15 +426,15 @@ export function Sheet({
         tone &&
           cn(
             "relative before:absolute before:inset-y-0 before:left-0",
-            "before:w-[3px] before:rounded-l-panel before:content-['']",
+            "before:w-px before:rounded-l-panel before:content-['']",
             tone === "accent" ? "before:bg-accent" : "before:bg-red",
           ),
-        title === undefined && !flush ? "p-6" : "",
+        title === undefined && !flush ? "p-4" : "",
         className,
       )}
     >
       {title !== undefined && (
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-rule px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-rule px-4 py-3">
           <h2 className="min-w-0 font-document text-panel-title font-bold text-ink">
             {title}
           </h2>
@@ -470,7 +444,7 @@ export function Sheet({
       {title === undefined || flush ? (
         children
       ) : (
-        <div className="p-6">{children}</div>
+        <div className="p-4">{children}</div>
       )}
     </section>
   );
@@ -545,15 +519,15 @@ export function QuestionBlock({
   const meta = rendered.get(question.questionId);
   const responded = aggregate.responded;
   return (
-    <Sheet>
+    <Sheet className="p-4">
       <div
         className={cn(
           // A grid, not `flex-wrap`: wrapping let the prompt shrink to a
           // three-word column on a phone rather than pushing the search onto
-          // its own line. One column below `sm`, two above it, and the prompt
+          // its own line. One column below `xs`, two above it, and the prompt
           // never competes with the control beside it.
           "grid items-start gap-x-6 gap-y-3",
-          "sm:grid-cols-[minmax(0,1fr)_auto]",
+          "xs:grid-cols-[minmax(0,1fr)_auto]",
         )}
       >
         <div className="grid min-w-0 gap-2">
@@ -590,7 +564,7 @@ export function QuestionBlock({
         )}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-3">
         {aggregate.kind === "choice" ? (
           <Distribution buckets={aggregate.buckets} total={responded} />
         ) : aggregate.kind === "scale" ? (
@@ -694,7 +668,7 @@ export function Distribution({
               // Narrow: the option and its numbers share a line and the bar
               // takes the one below. Wide: the mockup's three columns.
               "grid-cols-[minmax(0,1fr)_auto]",
-              "sm:grid-cols-[minmax(5rem,11rem)_minmax(0,1fr)_5.5rem]",
+              "xs:grid-cols-[minmax(5rem,11rem)_minmax(0,1fr)_5.5rem]",
             )}
             key={bucket.key}
           >
@@ -776,7 +750,7 @@ export function ScaleSummary({
   const tallest = Math.max(1, ...aggregate.buckets.map((b) => b.count));
   if (aggregate.responded === 0) return <NoAnswersYet />;
   return (
-    <ul className="m-0 flex max-w-[26rem] list-none items-end gap-2 p-0">
+    <ul className="m-0 flex max-w-[22rem] list-none items-end gap-2 p-0">
       {aggregate.buckets.map((bucket) => {
         const percent = share(bucket.count, aggregate.responded);
         const height = Math.round((bucket.count / tallest) * 100);
@@ -799,7 +773,7 @@ export function ScaleSummary({
                 the bars stand on. A zero bucket draws a zero-height rect,
                 which is nothing — no box, no colour, no false equivalence
                 with the bucket beside it that actually has answers. */}
-            <span className="block h-12 w-full border-b border-rule">
+            <span className="block h-10 w-full border-b border-rule">
               <svg
                 aria-hidden="true"
                 className="block h-full w-full"
@@ -1018,7 +992,7 @@ export function CategoryFlair({
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center justify-center px-2",
+        "inline-flex h-5 items-center justify-center px-2",
         "rounded-stamp border",
         "font-sans text-strip uppercase",
         CATEGORY_TONE[value ?? ""] ?? CATEGORY_FALLBACK,
@@ -1059,8 +1033,7 @@ export function StudentQuestionRow({
       <Link
         className={cn(
           "grid items-center gap-x-4 gap-y-2 px-5 py-3",
-          "grid-cols-[auto_minmax(0,1fr)_auto]",
-          "sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_auto]",
+          "grid-cols-[6.5rem_minmax(0,1fr)_auto_auto]",
           "text-left no-underline",
           "transition-colors duration-120 hover:bg-paper-quiet",
           "active:not-disabled:duration-0",
@@ -1190,8 +1163,7 @@ export function SubmissionRow({
       <Link
         className={cn(
           "grid items-center gap-x-4 gap-y-2 px-5 py-3 no-underline",
-          "grid-cols-[auto_minmax(0,1fr)_auto]",
-          "sm:grid-cols-[auto_minmax(0,1fr)_auto_auto]",
+          "grid-cols-[auto_minmax(0,1fr)_auto_auto]",
           "transition-colors duration-120 hover:bg-paper-quiet",
           "active:not-disabled:duration-0",
         )}
@@ -1257,7 +1229,7 @@ export function AnswerBlock({
 }) {
   const meta = rendered.get(question.questionId);
   return (
-    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-rule py-4 first:border-t-0 first:pt-0">
+    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-rule py-3 first:border-t-0 first:pt-0">
       <span
         aria-hidden="true"
         className="font-sans text-meta font-bold tabular-nums text-ink-faint"
@@ -1303,8 +1275,8 @@ function SubmittedAnswer({ question }: { question: AnswerRow }) {
        carries, no radius and no control border. `LongText` still clamps an
        essay so one answer cannot bury the two below it. */
     return (
-      <div className="max-w-measure bg-paper-quiet py-2 pr-3">
-        <LongText text={question.freeText ?? ""} />
+      <div className="max-w-measure rounded-control border border-rule bg-paper-quiet px-3 py-2">
+        <LongText surface="quiet" text={question.freeText ?? ""} />
       </div>
     );
   }
@@ -1386,7 +1358,7 @@ export function ScaleAnswer({
           {steps.map((step) => (
             <span
               className={cn(
-                "h-6 min-w-0 flex-1 rounded-[3px] border",
+                "h-5 min-w-0 flex-1 rounded-[2px] border",
                 /* Every segment UP TO the value, in the solid accent — the
                    approved treatment. A single lit box four places along reads
                    as "the fourth option"; a filled run reads as "four out of
@@ -1436,9 +1408,9 @@ export function AnswerBody({ children }: { children: ReactNode }) {
 /**
  * Who this submission is from, when it arrived, and the one exceptional action.
  *
- * Three zones, left to right: identity, the timestamp held quiet under its own
- * label, and the action. The action slot is state-dependent and carries exactly
- * one control — `Invalidate submission` or `Revert invalidation`, never both.
+ * The identity and submitted time share the first two columns; the action stays
+ * in the third, so the common narrow Panel 3 case keeps its header on one
+ * compact sheet instead of pushing the action below the metadata.
  */
 export function SubmissionHeader({
   who,
@@ -1452,8 +1424,8 @@ export function SubmissionHeader({
   action?: ReactNode;
 }) {
   return (
-    <Sheet className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4 p-5">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
+    <Sheet className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 p-3">
+      <div className="col-span-2 flex min-w-0 items-start gap-3">
         <span
           aria-hidden="true"
           className={cn(
@@ -1464,23 +1436,25 @@ export function SubmissionHeader({
         >
           {initials(who)}
         </span>
-        <div className="grid min-w-0 gap-1.5">
-          <h2 className="min-w-0 font-document text-panel-title font-bold text-ink">
+        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
+          <h2 className="min-w-0 truncate font-document text-panel-title font-bold text-ink">
             {who}
           </h2>
-          <TagList items={tags} />
+          <p className="col-start-2 row-start-1 font-sans text-meta tabular-nums text-ink-muted">
+            <span className="block text-ink-soft">Submitted</span>
+            <span className="block whitespace-nowrap">{submitted}</span>
+          </p>
+          <TagList className="col-span-2" items={tags} />
         </div>
       </div>
-      <p className="shrink-0 font-sans text-meta tabular-nums text-ink-muted">
-        <span className="block text-ink-soft">Submitted</span>
-        <span className="block whitespace-nowrap">{submitted}</span>
-      </p>
       {action && (
         /* Wraps, and does not `shrink-0`. Two controls side by side — `Mark as
            unread` beside `Invalidate submission` — are wider than a 320px
            phone's content column, and an unshrinkable row of them pushed the
            page into horizontal scroll. */
-        <div className="flex flex-wrap items-center gap-2">{action}</div>
+        <div className="col-start-3 row-span-2 flex flex-wrap items-center justify-end gap-2">
+          {action}
+        </div>
       )}
     </Sheet>
   );

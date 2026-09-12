@@ -1,7 +1,9 @@
 # Public Q&A & Source Linking
 
 > **Status:** Product/privacy rule specification with an implemented foundation.
-> This document **owns** private/public responses, rewording rules, source-link invariants, small-class anonymity rules, scheduled publication, the public archive, and the student submission-history view. States: [domain/domain-model.md](domain-model.md#3-state-models). Scheduling infrastructure: [engineering/architecture-history.md](../engineering/architecture-history.md#scheduling).
+> This document **owns** private/public responses, rewording rules, source-link invariants, small-class anonymity rules, scheduled publication, the public archive, and the student submission-history view.
+>
+> **Scope: the COURSE owns public Q&A** ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), 2026-09-12). One publication is one entry, read by every student holding an active enrolment in any eligible section of the course. ADR-0002, which made the archive section-scoped, is superseded on that point only — every anonymity and source-linking rule it set is retained and matters more, because a published entry now reaches a larger audience. States: [domain/domain-model.md](domain-model.md#3-state-models). Scheduling infrastructure: [engineering/architecture-history.md](../engineering/architecture-history.md#scheduling).
 > Label key as in [product/requirements.md](../product/requirements.md).
 
 ## 1. Response types **[Confirmed]**
@@ -42,6 +44,8 @@ When a teacher publishes a student-originated question publicly, the public entr
 
 **Invariant:** `SourceLink` is internal-only; no source identity ever appears in any student-visible public field.
 
+**The source section survives here and only here.** A `PublicAnswer` records no section; which class a question came from is reachable internally as `SourceLink → StudentSubmissionItem → FormResponse.sectionId`, for staff traceability and audit. It is never a visibility key, never a publishing target, and never part of a student payload ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)). Rows published before that change may carry `origin_section_id` as historical provenance, which is read by nothing.
+
 <a id="5-merging-multiple-submissions"></a>
 
 ## 5. Merging multiple submissions **[Confirmed]**
@@ -53,7 +57,9 @@ When multiple submissions merge into one public answer:
 - The public version must **not reveal any source student identity**.
 - The public wording must **not imply it came from exactly one student** unless that is safe and intentional.
 
-- **[Confirmed — D8, closed 2026-08-03]** Merge scope is within a single class section, and it **may span cycles**; cross-section reuse goes through the course backlog ([decisions/open-decisions.md](../decisions/open-decisions.md)). Merging is a publishing concern only — each source student's per-cycle participation is unaffected (see [participation.md](participation.md#3-participation-derivation)).
+- **[Confirmed — D8, closed 2026-08-03; scope widened by [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md) 2026-09-12]** Merge scope is within a single **course**, and it **may span cycles and sections**. One course, one answer: merging Lab A's and Lab B's versions of the same question is now the ordinary case rather than something that had to detour through the backlog.
+  - **Authorization does not widen with it.** The actor must hold `draft_public_answers` on **every** source submission's own section, so a merge cannot become a way to reach a class list they were never authorized to review.
+  - Merging remains a publishing concern only — each source student's per-cycle participation is unaffected (see [participation.md](participation.md#3-participation-derivation)).
 
 ## 6. Student submission-history view **[Confirmed]**
 
@@ -69,7 +75,8 @@ Students must **not** see: invalidity status; invalidation reason; no-response d
 
 Teachers can: publish immediately; schedule for a future date/time; edit a scheduled post; cancel scheduled publication; view scheduled posts; see whether scheduled publication succeeded; and resolve failed scheduled-publication jobs. Public-answer states: [domain/domain-model.md](domain-model.md#36-public-answer-state).
 
-- **[Confirmed]** Scheduling uses the institution timezone, stored on each section — **D7** closed 2026-08-03; per-section overrides are deferred ([decisions/open-decisions.md](../decisions/open-decisions.md)).
+- **[Confirmed]** Scheduling uses the institution timezone — **D7** closed 2026-08-03; per-section overrides are deferred ([decisions/open-decisions.md](../decisions/open-decisions.md)).
+- **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)]** A publication is course-owned, so its timezone is resolved at **course** scope by one rule (`resolveCourseTimezone`): the sections' shared timezone when they all agree, and the configured `INSTITUTION_TIMEZONE` otherwise. Reading "the first section" would give one course different answers depending on which query ran.
 - **[Confirmed]** Prefer **database-backed scheduling** before recommending message brokers — see [engineering/architecture-history.md](../engineering/architecture-history.md#scheduling).
 
 ### 7.1 Idempotency & failure handling **[Recommended]**
@@ -80,14 +87,18 @@ Teachers can: publish immediately; schedule for a future date/time; edit a sched
 
 ## 8. Public class Q&A archive **[Confirmed]**
 
-Each class section has a **searchable, public-to-class** archive of published Q&A. It replaces the manually compiled answer documents.
+Each **course** has one **searchable, public-to-class** archive of published Q&A ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)). It replaces the manually compiled answer documents.
+
+**One course, one archive.** A course running three laboratory sections publishes a useful answer **once**; students in all three read that same entry. Publishing the same answer once per section — the previous model — is the defect this replaced, not a feature to preserve.
 
 Entries may be organized by: Content / Logistics / Miscellaneous; lesson/lecture/module/topic; publication date; weekly cycle; legacy vs current source.
 
-- **[Confirmed]** Teachers choose which imported legacy/backlog questions become visible to the current class — nothing from the backlog appears automatically (see [domain/question-backlog.md](question-backlog.md)).
+- **[Confirmed]** Teachers choose which imported legacy/backlog questions are answered publicly — nothing from the backlog appears automatically (see [domain/question-backlog.md](question-backlog.md)). What they no longer choose is a **target section**: answering a backlog question produces one course entry.
 - **[Confirmed]** Archive filters: full-text search over the public question and answer, topic and
   category, date range, source form/cycle, and bonus period, with pagination. Access requires
-  course/section enrollment or staff standing.
+  staff standing on the course, or an **active enrolment in any one of its sections** — a student in
+  Lab B reads an answer that originated in Lab A, which is the point of a shared archive.
+- **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)]** There is **no section filter** on the archive, and adding one would be a regression. Which class a question came from is not part of navigating a shared archive, and offering it as a facet would invite exactly the inference §3's anonymity rules exist to prevent. The student payload carries no origin section at all.
 - **[Confirmed]** Each entry shows a last-updated timestamp when it has been edited. Staff-only
   revision metadata — the prior text, the editor, and the revision count — is **never** in the
   student payload.
@@ -100,6 +111,7 @@ Entries may be organized by: Content / Logistics / Miscellaneous; lesson/lecture
   exception to CONTENT-VOICE P3, recorded there.
 - **Still excluded:** voting/upvotes, "I also have this question," and public student identities
   ([product/scope.md](../product/scope.md)). Reactions and moderated comments are **approved** as `P2` — see §8A.
+- **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)]** Reactions and comments follow their subject: any eligible enrolled student of the course may react or comment under the existing moderation rules, comments stay pseudonymous to classmates, staff always see the real author, and no discussion is bound to the entry's origin section.
 
 ## 8A. Approval, revision, and unpublishing **[Confirmed — product/specification.md §6.8, §10]**
 
@@ -136,10 +148,14 @@ Entries may be organized by: Content / Logistics / Miscellaneous; lesson/lecture
 
 ## 9. Decisions affecting this area
 
-D6 (unpublish — **approved**; not yet built, see [engineering/current-state.md](../engineering/current-state.md) E2), D7 (institution timezone), D8 (cross-cycle merge
-within a section), D16 (unpublish hides from the asker too) are **closed**. See
+D6 (unpublish — **approved**; not yet built, see [engineering/current-state.md](../engineering/current-state.md) E2), D7 (institution timezone), D8 (cross-cycle merge —
+**now within a course**, see §5), D16 (unpublish hides from the asker too) are **closed**. See
 [decisions/open-decisions.md](../decisions/open-decisions.md).
+
+[ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md) (2026-09-12) moved public Q&A,
+the publication queue and the backlog's publishing step from section scope to **course** scope, and
+supersedes [ADR-0002](../decisions/ADR-0002-section-scoped-public-qa.md) on scope alone.
 
 ## 10. Related documents
 
-[domain/domain-model.md](domain-model.md) · [domain/question-backlog.md](question-backlog.md) · [domain/legacy-question-import.md](legacy-question-import.md) · [participation.md](participation.md) · [domain/roles-and-permissions.md](roles-and-permissions.md) · [engineering/architecture-history.md](../engineering/architecture-history.md) · [decisions/open-decisions.md](../decisions/open-decisions.md)
+[decisions/ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md) · [domain/domain-model.md](domain-model.md) · [domain/question-backlog.md](question-backlog.md) · [domain/legacy-question-import.md](legacy-question-import.md) · [participation.md](participation.md) · [domain/roles-and-permissions.md](roles-and-permissions.md) · [engineering/architecture-history.md](../engineering/architecture-history.md) · [decisions/open-decisions.md](../decisions/open-decisions.md)

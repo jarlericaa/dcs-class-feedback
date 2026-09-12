@@ -248,11 +248,18 @@ export const backlogRecommendations = pgTable(
 );
 
 /**
- * Explicit, per-section exposure of a backlog question. Nothing from the
- * backlog ever appears in a section automatically (docs/domain/question-backlog.md §5).
+ * HISTORICAL ONLY — superseded by ADR-0005. Not written to, not read by any
+ * live code path, and not a visibility mechanism.
+ *
+ * It recorded the old model's explicit per-section exposure of a backlog
+ * question, back when publishing a backlog item meant choosing which sections
+ * would see it. Publication is now one course-owned PublicAnswer, so there is
+ * no section to choose. The table is retained under a name that says what it
+ * is, so the provenance of past exposures survives and no query can pick it up
+ * again believing it still governs who sees what.
  */
-export const sectionBacklogVisibility = pgTable(
-  "section_backlog_visibility",
+export const backlogSectionExposureHistory = pgTable(
+  "backlog_section_exposure_history",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     backlogQuestionId: uuid("backlog_question_id")
@@ -269,7 +276,7 @@ export const sectionBacklogVisibility = pgTable(
       .defaultNow(),
   },
   (t) => [
-    uniqueIndex("section_backlog_visibility_unique").on(
+    uniqueIndex("backlog_section_exposure_history_unique").on(
       t.backlogQuestionId,
       t.sectionId,
     ),
