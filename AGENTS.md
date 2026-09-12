@@ -28,8 +28,8 @@ Full goals and background: [docs/product/requirements.md](docs/product/requireme
 
 | Concept | Meaning |
 |---|---|
-| **Course** | The primary workspace, identified by its **course code** (`CS 33`). Owns forms, lessons/topics, the question backlog, bonus periods, and its class sections. |
-| **Class Section** | A class list of a course: the access/audience context. Owns its students (identified by their UP email), staff and TA permissions, participation exports, and public Q&A archive. It is **not** the primary object in the form workflow. |
+| **Course** | The primary workspace and **the collaborative teaching-work boundary** ([ADR-0005](docs/decisions/ADR-0005-course-scoped-teaching-workflow.md)), identified by its **course code** (`CS 33`). Owns forms, lessons/topics, the question backlog, **the publication queue, public answers and the Class Q&A archive**, bonus periods, and its class sections. |
+| **Class Section** | A class list of a course: the enrolment, access/audience, delegation and **response-attribution** context. Owns its students (identified by their UP email), staff and TA permissions, and participation exports. It is **not** the primary object in the form workflow, and **not** a parallel copy of the course — there is no per-section queue, backlog or Q&A archive. |
 | **Form definition** | A reusable form belonging to a course: title, optional purpose, and immutable versions of its questions. `weekly` is **not** part of its identity. |
 | **Form audience** | The explicit set of sections that receive a form — all sections of the course, several, or one. Auditable rows, never inferred. |
 | **Form instance** | The questionnaire students actually answer: its own audience, window, state, and question snapshot. One per delivery occurrence. |
@@ -37,7 +37,7 @@ Full goals and background: [docs/product/requirements.md](docs/product/requireme
 | **Teacher-created form questions** | Structured questions (Google Forms-style types) snapshotted into each form instance, and editable **for one occurrence only**. |
 | **Student-originated question/feedback section** | Always-present part of every form where a student submits their own question / feedback / concern / clarification / suggestion. |
 | **Private teacher responses** | Reply visible only to the asking student and authorized staff. |
-| **Public anonymous Q&A archive** | Per-section searchable archive of published questions + answers, with the asker anonymous. |
+| **Public anonymous Q&A archive** | **Per-course** searchable archive of published questions + answers, with the asker anonymous. One publication, one entry, read by every student enrolled in any of the course's sections ([ADR-0005](docs/decisions/ADR-0005-course-scoped-teaching-workflow.md)). |
 | **Source link** | Internal link tying a published public answer back to its original student submission(s) — never exposed to other students. |
 | **Course-level question backlog** | Course-scoped pool of answerable-later questions, separate from the weekly dashboard. |
 | **Legacy question import** | Historical questions brought in from old Typst files, Q&A docs, and spreadsheets — anonymous by default. |
@@ -80,10 +80,10 @@ flowchart LR
 
 | Actor | What they do |
 |---|---|
-| **Student** | Signs in with an authorized university Google account; completes the weekly form per section; answers teacher questions; submits their own question/feedback; views their history, private replies, and whether their question was publicly answered; searches the class's anonymous Q&A archive. Cannot see other students' identities, validity decisions, drafts, notes, audit, or (MVP) participation totals. |
-| **Teacher** | Administers the courses/sections they own. Manages courses, sections, rosters, staff, TA permissions, schedules, templates, and questions; reviews responses; marks validity; sends private responses; drafts/rewords/publishes/schedules public answers; merges questions; manages the backlog and legacy imports; exports participation; views audit history. |
+| **Student** | Signs in with an authorized university Google account; completes the weekly form per section; answers teacher questions; submits their own question/feedback; views their history, private replies, and whether their question was publicly answered; searches the course's anonymous Q&A archive — one per course, shared across its sections. Cannot see other students' identities, validity decisions, drafts, notes, audit, or (MVP) participation totals. |
+| **Teacher** | Administers the courses/sections they own. Manages courses, sections, rosters, staff, TA permissions, schedules, templates, and questions; reviews responses; marks validity; sends private responses; drafts/rewords/publishes/schedules public answers; merges questions; manages the backlog and legacy imports; exports participation; views audit history. Publishes **once per answer**, to the course. |
 | **Co-teacher / Co-instructor** | Holds **every** teacher capability on whatever they are assigned to — nothing about them is configurable (`docs/product/specification.md` §4.1: "all instructors assigned to a course have equal permissions"). Assigned at one of two scopes: **course-wide** (every section, including ones added later) or one named class list. Only the course owner assigns either ([ADR-0004](docs/decisions/ADR-0004-course-wide-staff-standing.md)). |
-| **Student Assistant (TA)** | Holds a **per-section, configurable** subset of teacher capabilities (view identities, review, respond, draft/reword/publish/schedule, mark validity, export, manage cycles/templates/backlog). The class owner controls these flags. This catalog exists **only** at section scope — there is no course-wide Student Assistant. |
+| **Student Assistant (TA)** | Holds a **per-section, configurable** subset of teacher capabilities (view identities, review, respond, draft/reword/publish/schedule, mark validity, export, manage cycles/templates/backlog). The class owner controls these flags. This catalog exists **only** at section scope — there is no course-wide Student Assistant. A publishing flag admits them to the course's **shared** queue; it never widens which sections' **source** responses they may read ([docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md) §2.3). |
 | **Platform Administrator** | Selected accounts only. Platform-wide settings, user-access issues, account/system troubleshooting, platform-level audit access. Gains **no** automatic content access to arbitrary courses/sections. |
 
 Full role definitions, the TA permission catalog, and the permission→action matrix: [docs/domain/roles-and-permissions.md](docs/domain/roles-and-permissions.md).
@@ -92,11 +92,11 @@ Full role definitions, the TA permission catalog, and the permission→action ma
 
 ## 4. Key concepts (rules that shape everything)
 
-- **The course owns forms; the section is who receives them.** Forms, backlog, lessons/topics, bonus periods, and (future) course materials live at the **course** level; students, staff, participation exports, and the public archive live at the **section** level. A form's **audience** is an explicit set of sections. See [docs/domain/forms-and-audiences.md](docs/domain/forms-and-audiences.md).
+- **The course is the collaborative teaching-work boundary; the section is who receives, who is enrolled, and who may act.** Forms, the backlog, lessons/topics, bonus periods, **the publication queue, public answers and the Class Q&A archive**, and (future) course materials live at the **course** level; students, staff, delegation, response attribution and participation exports live at the **section** level. A form's **audience** is an explicit set of sections. See [docs/domain/forms-and-audiences.md](docs/domain/forms-and-audiences.md) and [ADR-0005](docs/decisions/ADR-0005-course-scoped-teaching-workflow.md).
 - **Four delivery modes, of which weekly is one.** A delivery configuration (mode, audience, window controls, source form version) generates instances that **auto-open** on time — except `Open manually`, which only a person opens. Generation and open/close are **idempotent** with a **reconciliation poller** backstop.
 - **One submission per student per form instance**, enforced by a uniqueness constraint on `(instance, student record)`. The section a response is attributed to is recorded separately and is deliberately **not** in that key, so a student in two targeted sections cannot produce two responses. A student may save a draft and **edit that same response until the deadline**; at the deadline the latest submitted version locks. No late submission, no late edit. An edit never mints a second participation credit.
 - **Forms snapshot on generate.** Generating an instance copies the form's questions into it; later edits to the form create a new version and never mutate an already-generated instance. **One occurrence's questions can be varied on their own** — the base form and every other occurrence are untouched.
-- **A shared form never widens visibility.** Staff see only the audience sections they hold the permission on; a published answer goes to the **asker's own** section only.
+- **A shared form never widens SOURCE visibility.** Staff read only the audience sections they hold the permission on, and drafting from a submission requires the permission on that submission's own section. What a published **answer** reaches is different and deliberate: it belongs to the course and is read by every eligible student of it. Making the outputs course-wide did **not** make source data course-wide.
 - **Original student wording is immutable.** Teachers may reword the *public* version; the original is never overwritten.
 - **Public answers are anonymous** to other students but stay **internally source-linked** to the original submission(s), including when multiple submissions are **merged** into one answer.
 - **Participation is derived**, not a mutable counter: a student participated in a cycle iff a submitted (non-draft) response exists for that `(cycle, student)` whose validity is not `Invalid`. Credit rolls up into **course-scoped bonus periods**, one credit per cycle at most.
@@ -219,7 +219,7 @@ sequenceDiagram
   Teacher->>App: publish now OR schedule (institution timezone)
   App->>App: create PublicAnswer + SourceLink(s) (internal only)
   Note over App: Scheduled publication is idempotent; reconciliation catches missed jobs; failures surface in-app.
-  App-->>Class: anonymous public entry in section archive
+  App-->>Class: anonymous public entry in the COURSE's Class Q&A (one entry, every section)
   App-->>Student: "Answered" + reworded text + answer, via their own history
   Note over App,Class: Merge = many SourceLinks → one answer; no source identity revealed; must not imply a single asker unless safe.
 ```
@@ -234,7 +234,7 @@ flowchart LR
   end
   Sources --> Backlog["Course-level backlog<br/>Imported → Needs review → Answerable"]
   Backlog --> Draft["Drafting → Scheduled → Published"]
-  Draft -->|"explicit per-section choice"| Section["Visible/published to a specific class section"]
+  Draft -->|"explicit publish; no section chosen"| Course["One entry in the course's Class Q&A"]
   Backlog -.->|"never automatic"| Section
   Note1["Legacy items never count toward participation.<br/>Source identity preserved only when explicitly chosen."]
 ```
@@ -307,12 +307,12 @@ erDiagram
   STUDENT_SUBMISSION_ITEM ||--o{ SOURCE_LINK : ""
   BACKLOG_QUESTION ||--o{ SOURCE_LINK : ""
   PUBLIC_ANSWER ||--o{ SOURCE_LINK : "many sources = merge"
-  CLASS_SECTION ||--o{ PUBLIC_ANSWER : ""
+  COURSE ||--o{ PUBLIC_ANSWER : "ADR-0005 — not per-section"
   IMPORT_BATCH ||--o{ STUDENT_RECORD : "roster import"
   IMPORT_BATCH ||--o{ BACKLOG_QUESTION : "legacy import"
 ```
 
-Core entities: **User · StudentRecord · Course · CourseStaff · ClassSection · SectionStaff · Enrollment · RecurrenceSchedule (delivery configuration) · FormScheduleSections + FormInstanceSections (audiences) · FormInstance · FormTemplate (form definition) · TemplateVersion · FormQuestion · FormResponse · QuestionAnswer · StudentSubmissionItem · PrivateResponse · PublicAnswer · SourceLink · BacklogQuestion · ImportBatch · Lesson/Topic · AuditEvent.**
+Core entities: **User · StudentRecord · Course · CourseStaff · ClassSection · SectionStaff · Enrollment · RecurrenceSchedule (delivery configuration) · FormScheduleSections + FormInstanceSections (audiences) · FormInstance · FormTemplate (form definition) · TemplateVersion · FormQuestion · FormResponse · QuestionAnswer · StudentSubmissionItem · PrivateResponse · PublicAnswer (course-owned) · SourceLink · BacklogQuestion · ImportBatch · Lesson/Topic · AuditEvent.**
 
 `CourseMaterial` is reserved for the future (post-MVP) — the model stays compatible via course-level ownership and topic tags, but material management is not built in MVP. Participation is **derived** from valid `FormResponse`s, not a stored entity.
 
@@ -323,7 +323,7 @@ Core entities: **User · StudentRecord · Course · CourseStaff · ClassSection 
 These are invariants. Treat them as hard constraints when implementation eventually begins. Full risk register: [docs/product/requirements.md](docs/product/requirements.md#7-security--privacy-risk-register).
 
 - **Students must not see other students' identities.**
-- **Public Q&A is anonymous to students** — the asker is never revealed or safely implied.
+- **Public Q&A is anonymous to students** — the asker is never revealed or safely implied. It is **course-wide** ([ADR-0005](docs/decisions/ADR-0005-course-scoped-teaching-workflow.md)), so a published entry reaches a larger audience than before and the student payload carries no source link, no identity, and **no origin section**.
 - **Original student wording is never overwritten** — rewording produces public text alongside the immutable original.
 - **Public reworded questions stay internally source-linked** to their originating submission(s) so the asker sees "Answered" without exposing identity to others.
 - **Student identity is the UP email, and only the UP email** — exact equality after trim + lowercase, unique across student records, enforced in the database. A full name is a label and is never an identity key. An email that is missing, malformed, off an allowed domain, duplicated in one file, or already held by another record blocks its class-list row rather than being guessed at.
@@ -411,6 +411,35 @@ Read the first three, then by area. Each concept has a single owning document; o
 - **Do not silently promote recommendations into confirmed requirements** — keep the [Confirmed]/[Recommended]/[Assumption]/[Open] labels intact.
 - **Always check [docs/decisions/open-decisions.md](docs/decisions/open-decisions.md) before implementation work.** If a relevant decision is marked "wait for owner approval," stop and surface it rather than guessing.
 - **Preserve the scope boundary** in [docs/product/scope.md](docs/product/scope.md); do not pull a deferred item in on your own. `P3` (AI) stays parked.
+- **The COURSE owns collaborative teaching content** ([ADR-0005](docs/decisions/ADR-0005-course-scoped-teaching-workflow.md)): forms, responses, the backlog, the publication queue, public answers and Class Q&A. Do **not** reintroduce a per-section queue, backlog or archive, do not add a section target to publication, and do not treat `public_answers.origin_section_id` as anything but dead provenance. Sections remain correct for enrolment, rosters, delegation, response attribution, participation and the Responses **filter** — the one place narrowing by section is intended.
+- **Run `npm run build`, not just `typecheck`, `lint` and `test`.** Those three
+  pass on a change that cannot start the app: a `"use client"` file importing
+  anything from a module that also imports `next/headers` (or the database)
+  drags that server-only dependency into the browser bundle, and only
+  `next build` reports it. A module imported from **both** sides of the boundary
+  must import nothing itself — `src/lib/rail-cookie.ts` is the worked example.
+- **Never run `npm run build` while `npm run dev` is running.** They share
+  `.next`; the build replaces the module graph under the running server and
+  every route starts returning 500, which reads as a code defect and is not one.
+- **A declared height is not a rendered height — check the page, not the
+  source.** `--spacing-control: 38px`, `DESIGN.md` §6 and `button.tsx`'s own
+  comment all said a button was 38px tall while every button in the app drew
+  **41**, because `min-height` is a floor and the padding overshot it. Four
+  faults of that kind shipped past a clean `typecheck`, a clean `lint` and 245
+  passing tests, including a shared `Dialog` that attached no event listeners
+  (a `useEffect` with `[]` deps running before its portal mounted) so no dialog
+  could be reopened after Escape. Run **`npm run design:check`** for anything
+  touching a control, a floating surface or dialog chrome; it reads
+  `getComputedStyle` off the running app, which is the only place these are
+  visible. `tests/unit/theme-tokens.test.ts` covers what the stylesheet alone
+  can decide. See `DESIGN-TODO.md` §7a.
+- **Before adding a UI component, read `DESIGN-TODO.md` §13.** A second
+  component for a pattern that already has one is the defect, not the fix.
+- **Register every custom `@theme` scale with `tailwind-merge`** (see
+  `src/lib/cn.ts`). `text-*` is both a font size and a text colour; the library
+  tells them apart by recognising the value, so an unregistered custom step
+  makes it group a size with a colour and **silently delete one of them**. That
+  shipped every small primary button with dark ink on a dark green fill.
 - **Prefer small, reviewable changes.**
 - **Keep docs cross-linked** — one owning doc per concept; link instead of duplicating.
 - **When unsure, document the uncertainty** as an open decision instead of inventing a business rule.

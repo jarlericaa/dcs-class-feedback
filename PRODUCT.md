@@ -137,8 +137,9 @@ form question types with required/optional; one submission per student per secti
 per cycle (DB-enforced); an always-present student-originated question/feedback
 section; teacher review dashboard; private responses; anonymous public answers;
 rewording with the original preserved; merge with all source links preserved;
-immediate and scheduled publication; searchable class Q&A archive; course-level
-question backlog with explicit per-section publish; legacy import that is
+immediate and scheduled publication; one searchable Class Q&A archive per course,
+read by every section of it; a course-level question backlog whose answers publish
+once to that archive; legacy import that is
 anonymous-by-default and never counts toward participation; participation validity,
 weekly tracking, and three CSV exports; student submission history; audit history
 with actor, action, timestamp, entity, and before/after values.

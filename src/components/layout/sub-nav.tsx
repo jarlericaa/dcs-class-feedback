@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { IconChevron } from "@/components/ui/icons";
+import { NavCount } from "./nav-count";
 import type { NavGroup, NavItem } from "./nav";
 
 /**
@@ -33,10 +34,7 @@ export function SubNav({
   const labelId = "ws-subnav-label";
   if (mode === "menu" && !groups) {
     return (
-      <nav
-        className="ws-subnav ws-subnav--menu"
-        aria-labelledby={labelId}
-      >
+      <nav className="ws-subnav ws-subnav--menu" aria-labelledby={labelId}>
         <p className="ws-subnav__heading" id={labelId}>
           {label}
         </p>
@@ -57,19 +55,62 @@ export function SubNav({
     );
   }
 
+  /*
+    `sidebar.md` §6/§20.15: the frequent sections stay visible as tabs and the
+    rest fold into a `More` menu, so a section with nine destinations does not
+    become a cramped nine-tab row.
+
+    The split is read off `item.secondary`, which the nav builders set — the
+    view does not decide which sections are frequent. Flattened across groups
+    first: the group headings never render in a horizontal bar anyway (they
+    exist for the vertical column this used to have), so grouping would only
+    fragment the row.
+  */
+  const flat = resolvedGroups.flatMap((group) => group.items);
+  const primary = flat.filter((item) => !item.secondary);
+  const secondary = flat.filter((item) => item.secondary);
+  // If the reader is ON a folded destination, `More` has to say so — otherwise
+  // the bar shows no active tab at all and the page looks orphaned.
+  const secondaryActive = secondary.some((item) => item.active);
+
   return (
     <nav className="ws-subnav" aria-labelledby={labelId}>
       <p className="ws-subnav__heading" id={labelId}>
         {label}
       </p>
-      {resolvedGroups.map((group, index) => (
-        <div className="ws-subnav__group" key={group.label || `group-${index}`}>
-          {group.label && (
-            <p className="ws-subnav__group-heading">{group.label}</p>
-          )}
-          <SubNavList items={group.items} />
+      {/*
+        The tabs scroll; the `More` menu does NOT live inside that scroller.
+        Its popover is a child of the menu, so a scrolling ancestor would clip
+        it — and did: the panel rendered 199px below a bar whose `overflow-y`
+        is `hidden`, so five destinations were invisible behind the content.
+        Keeping the scroller to the tab list is what lets the panel escape.
+      */}
+      <div className="ws-subnav__scroll">
+        <div className="ws-subnav__group">
+          <SubNavList items={primary} />
         </div>
-      ))}
+      </div>
+      {secondary.length > 0 && (
+        <details className="ws-subnav__menu">
+          <summary
+            className={secondaryActive ? "ws-subnav__menu--current" : undefined}
+          >
+            More
+            <IconChevron
+              className="ws-subnav__menu-chevron"
+              size={13}
+              aria-hidden="true"
+            />
+          </summary>
+          <ul className="ws-subnav__menu-list">
+            {secondary.map((item) => (
+              <li key={item.href}>
+                <MenuItem item={item} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </nav>
   );
 }
@@ -87,12 +128,7 @@ function SubNavList({ items }: { items: NavItem[] }) {
             aria-current={item.active ? "page" : undefined}
           >
             <span className="ws-subnav__text">{item.label}</span>
-            {item.count ? (
-              <span className="ws-subnav__count">
-                {item.count}
-                <span className="visually-hidden"> needing review</span>
-              </span>
-            ) : null}
+            {item.count ? <NavCount value={item.count} /> : null}
           </Link>
         </li>
       ))}
@@ -110,12 +146,7 @@ function MenuItem({ item }: { item: NavItem }) {
       aria-current={item.active ? "page" : undefined}
     >
       <span>{item.label}</span>
-      {item.count ? (
-        <span className="ws-subnav__count">
-          {item.count}
-          <span className="visually-hidden"> needing review</span>
-        </span>
-      ) : null}
+      {item.count ? <NavCount value={item.count} /> : null}
     </Link>
   );
 }

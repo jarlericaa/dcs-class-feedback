@@ -5,6 +5,9 @@ import { writeAudit } from "@/modules/audit";
 
 /**
  * Scheduled-publication executor (docs/domain/public-qa.md §7.1).
+ *
+ * Course-scoped since ADR-0005: a due answer publishes ONCE, into its course's
+ * Class Q&A, and there is no per-section fan-out to get wrong.
  * Idempotent: the transition is state-guarded (`scheduled` → `published`
  * only), so re-runs and replays never double-publish. A failure leaves the
  * answer `scheduled` with publishFailed + reason, surfaced in-app for staff
@@ -53,7 +56,9 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
           entityType: "public_answer",
           entityId: answer.id,
           metadata: { scheduled: true, ...(late ? { late: true } : {}) },
-          sectionId: answer.sectionId,
+          // Course-scoped: a scheduled publication has no target section
+          // (ADR-0005). It goes to the course's one archive.
+          courseId: answer.courseId,
         });
         published += 1;
       });
@@ -74,7 +79,7 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
         entityType: "public_answer",
         entityId: answer.id,
         metadata: { reason },
-        sectionId: answer.sectionId,
+        courseId: answer.courseId,
       });
     }
   }

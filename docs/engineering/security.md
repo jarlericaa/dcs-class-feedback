@@ -41,7 +41,7 @@ detail.
   bad email cell can never silently drop somebody from a class.
 - Section staff access is resource-scoped; TA permissions are explicit.
 - Platform-admin status does not automatically grant course content access.
-- Public Q&A is only for enrolled students and authorized staff in that section.
+- Public Q&A is only for enrolled students and authorized staff of that **course** — an active enrolment in any one of its sections, or staff standing on the course or any section of it ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)). Never the open internet, and never an unenrolled account.
 - The original student wording remains immutable and is never used as the public
   text without the publish warning/review flow.
 - Source links are internal-only.
@@ -64,7 +64,14 @@ detail.
 - [ ] No `.env`, seeded credentials, or real student data is in the repository,
       screenshots, fixtures, or documentation.
 - [ ] Every student/staff route and server action performs server-side authz.
-- [ ] Public archive queries filter by section membership.
+- [ ] Public archive queries filter by **course** membership (`public_answers.course_id`), and the
+      student projection carries no source link, no identity and no origin section. A course-wide
+      archive reaches more readers than a section one did, so the anonymity checks matter more:
+      rewording, the pre-publish warning and the internal-only `SourceLink` are unchanged.
+- [ ] Making the OUTPUTS course-wide did not make SOURCE DATA course-wide: staff response reads
+      still filter `form_responses.section_id IN (authorized sections)`, and drafting from a
+      submission still requires the permission on that submission's own section — including for
+      every co-source in a merge.
 - [ ] Publish UI clearly communicates who can see an answer and warns about
       identifying context.
 - [ ] CSV exports are permission-checked, scoped, and audited.

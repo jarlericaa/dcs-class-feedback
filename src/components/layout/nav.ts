@@ -83,6 +83,23 @@ export interface NavItem {
   active?: boolean;
   /** real count only — never a decorative number */
   count?: number;
+  /**
+   * Folded into the tab bar's `More` menu instead of shown as a tab
+   * (`sidebar.md` §6, §20.15).
+   *
+   * Set HERE rather than matched by label in `SubNav`, because which sections
+   * are frequent is domain knowledge — it belongs with the thing that knows
+   * what each destination is, and a view matching on `"Question backlog"`
+   * would break the moment someone renamed it.
+   *
+   * The split the owner specified: Forms, Responses, Class Q&A and
+   * Participation stay visible; Publication queue, Question backlog, Class
+   * lists and Teaching team fold away. (Audit history was in that second list
+   * until the route moved to the admin area.) A destination being secondary
+   * says nothing about permission — it is still authorized the same way and
+   * still reachable.
+   */
+  secondary?: boolean;
 }
 
 export interface NavGroup {
@@ -310,6 +327,63 @@ export function courseTabs(
 }
 
 /**
+ * The course's PUBLISHING destinations: the queue, the backlog that feeds it,
+ * and the archive it publishes into.
+ *
+ * All three are COURSE-owned (ADR-0005), so there is exactly one of each per
+ * course and this builder is the only place they are named. It is called from
+ * the course's own column and from a section's column alike — a delegated
+ * assistant working inside one class list still works on the course's single
+ * queue, not a copy of their own.
+ *
+ * Filtered by effective permissions. Class Q&A carries none: every member of
+ * the course can read the archive, which is what makes it the archive.
+ */
+export function coursePublishingTabs(
+  courseId: string,
+  perms: {
+    draftPublicAnswers: boolean;
+    rewordPublicQuestions: boolean;
+    publishPublicAnswers: boolean;
+    schedulePublication: boolean;
+    manageBacklogImports: boolean;
+  },
+): NavItem[] {
+  const items: NavItem[] = [];
+  if (
+    perms.draftPublicAnswers ||
+    perms.rewordPublicQuestions ||
+    perms.publishPublicAnswers ||
+    perms.schedulePublication
+  ) {
+    items.push({
+      href: `/teach/courses/${courseId}/publications`,
+      label: "Publication queue",
+      secondary: true,
+    });
+  }
+  if (perms.manageBacklogImports) {
+    items.push({
+      href: `/teach/courses/${courseId}/backlog`,
+      label: "Question backlog",
+      secondary: true,
+    });
+  }
+  items.push({ href: `/courses/${courseId}/qa`, label: "Class Q&A" });
+  return items;
+}
+
+/** Every publishing destination — the course's own column, where the reader is
+ *  course staff and therefore holds all of them. */
+const ALL_PUBLISHING_PERMS = {
+  draftPublicAnswers: true,
+  rewordPublicQuestions: true,
+  publishPublicAnswers: true,
+  schedulePublication: true,
+  manageBacklogImports: true,
+};
+
+/**
  * How the course is CONFIGURED, as opposed to worked on.
  *
  * "Class lists" is plural on purpose: it is the index of the course's sections,
@@ -327,8 +401,16 @@ export function courseSetupTabs(
 ): NavItem[] {
   return mark(
     [
-      { href: `/teach/courses/${courseId}/sections`, label: "Class lists" },
-      { href: `/teach/courses/${courseId}/staff`, label: "Teaching team" },
+      {
+        href: `/teach/courses/${courseId}/sections`,
+        label: "Class lists",
+        secondary: true,
+      },
+      {
+        href: `/teach/courses/${courseId}/staff`,
+        label: "Teaching team",
+        secondary: true,
+      },
     ],
     currentPath,
     opts.activeHref,
@@ -361,6 +443,14 @@ export function staffSectionTabGroups(
      * and must therefore contain section views only.
      */
     courseStrip?: boolean;
+    /**
+     * Whether to print the course's publishing group (queue, backlog, Class
+     * Q&A). Separate from `courseStrip` because the two callers differ:
+     * `courseTabGroups` prints this group itself and must not get it twice, but
+     * `staffSectionTabs` — which suppresses the strip — still WANTS it, because
+     * it is the honest list of what this reader can reach from here.
+     */
+    publishingGroup?: boolean;
   } = {},
 ): NavGroup[] {
   const id = access.section.id;
@@ -441,30 +531,28 @@ export function staffSectionTabGroups(
     });
   }
 
-  // The recurring cycle: draft and publish this week's answers, then the
-  // archive students actually read once they are out. Any publication
-  // capability can READ the queue; each action inside is gated by its own
-  // flag, so a publish-only assistant still sees their work.
-  const weeklyReview: NavItem[] = [];
-  if (
-    perms.draftPublicAnswers ||
-    perms.rewordPublicQuestions ||
-    perms.publishPublicAnswers ||
-    perms.schedulePublication
-  ) {
-    weeklyReview.push({
-      href: `/teach/sections/${id}/publications`,
-      label: "Publication queue",
-    });
+  /**
+   * The recurring cycle: draft and publish this week's answers, then the
+   * archive students actually read once they are out.
+   *
+   * These are the COURSE's destinations even while the reader is standing in a
+   * section (ADR-0005). There is one queue, one backlog and one archive per
+   * course, and a section is not a parallel copy of the course — so a section
+   * column that listed its own three was describing objects that do not exist.
+   *
+   * Printed here even for a reader with course standing, who also sees the
+   * course strip above: that strip carries Forms and Responses only, so these
+   * three appear exactly once either way.
+   *
+   * Any publication capability can READ the queue; each action inside is gated
+   * by its own flag, so a publish-only assistant still sees their work.
+   */
+  if (opts.publishingGroup !== false) {
+    const weeklyReview = coursePublishingTabs(access.section.courseId, perms);
+    if (weeklyReview.length > 0) {
+      groups.push({ label: "Weekly review", items: weeklyReview });
+    }
   }
-  if (perms.manageBacklogImports) {
-    weeklyReview.push({
-      href: `/teach/sections/${id}/backlog`,
-      label: "Question backlog",
-    });
-  }
-  weeklyReview.push({ href: `/sections/${id}/qa`, label: "Class Q&A" });
-  groups.push({ label: "Weekly review", items: weeklyReview });
 
   // Read-only history: how the section is doing, and what changed.
   const reports: NavItem[] = [];
@@ -472,12 +560,23 @@ export function staffSectionTabGroups(
     reports.push({
       href: `/teach/sections/${id}/participation`,
       label: "Participation",
+      /**
+       * Folded into `More`, and the two publication destinations came out of
+       * it in the same move (owner, 2026-09-11). The visible five are now the
+       * weekly loop itself — author, read, answer, publish, triage — and
+       * Participation is the report you open at the end of a term, not
+       * something you pass through on the way to answering a question.
+       */
+      secondary: true,
     });
   }
-  // Audit browsing is not delegable to a TA in the MVP permission catalog.
-  if (staff.role !== "ta") {
-    reports.push({ href: `/teach/sections/${id}/audit`, label: "Audit history" });
-  }
+  /**
+   * No "Audit history" row. The section-scoped audit browser is gone (owner,
+   * 2026-09-11): change records are a platform concern rather than something a
+   * teacher opens between classes, and they are going to the admin area
+   * instead. Nothing about the LOG changed — every mutation still writes to it
+   * in its own transaction; what went is the one screen that read it back.
+   */
   if (reports.length > 0) groups.push({ label: "Reports", items: reports });
 
   /**
@@ -516,7 +615,11 @@ export function staffSectionTabGroups(
      * reader who does not always gets the roster, because it is the only
      * class list they can reach.
      */
-    setup.push({ href: `/teach/sections/${id}/roster`, label: "Class list" });
+    setup.push({
+      href: `/teach/sections/${id}/roster`,
+      label: "Class list",
+      secondary: true,
+    });
   }
   /**
    * No "Section setup" row. That page was a second teaching-team table over
@@ -593,27 +696,44 @@ export function staffSectionTabs(
 export function firstStaffSectionHref(access: SectionAccess): string | null {
   const tabs = staffSectionTabs(access, "");
   /**
-   * Two rows are poor landing pages and are passed over when the reader holds
-   * anything else.
+   * The Q&A archive is a poor landing page and is passed over when the reader
+   * holds anything else: it is offered to every section member, so it is
+   * always present — which makes it a bad default precisely when the reader
+   * has real work here.
    *
-   * The Q&A archive is offered to every section member, so it is always
-   * present — which makes it a bad default precisely when the reader has real
-   * work here. The audit log is worse: it is granted to everyone who is not a
-   * TA, so it is nearly always present too, and it opens on a wall of change
-   * records rather than on anything the reader came to do.
-   *
-   * Both are written as "not this href" rather than as a position, so
-   * reordering the groups cannot silently change where a reader lands — which
-   * is exactly what happened when the class list moved into Setup, below
-   * Reports, and quietly made the audit log the landing page for a course
+   * The audit log used to sit in this set for the same reason and no longer
+   * needs to, because the route is gone. Kept as a SET rather than collapsed
+   * to one comparison: it is written as "not this href" rather than as a
+   * position, so reordering the groups cannot silently change where a reader
+   * lands — which is exactly what happened once, when the class list moved
+   * into Setup and quietly made the audit log the landing page for a course
    * teacher whose only other row it was.
    */
-  const poorLanding = new Set([
-    `/sections/${access.section.id}/qa`,
-    `/teach/sections/${access.section.id}/audit`,
-  ]);
-  const preferred = tabs.find((tab) => !poorLanding.has(tab.href));
-  return preferred?.href ?? tabs[0]?.href ?? null;
+  const poorLanding = new Set([`/courses/${access.section.courseId}/qa`]);
+
+  /**
+   * SECTION destinations lead; the course's are the fallback.
+   *
+   * `/teach/sections/[id]` is a section route, so landing its reader inside the
+   * section is right whenever they have anything to do there — and the list
+   * above now mixes both scopes, because the queue, the backlog and the archive
+   * became course-owned (ADR-0005). A delegated assistant whose only permission
+   * is a publishing one has NO section destination at all, and returning null
+   * would read as "no access" on a section they genuinely hold. So the course's
+   * destinations catch them, rather than outranking a section page for someone
+   * who has one.
+   */
+  const isSectionScoped = (href: string) =>
+    href.startsWith(`/teach/sections/`) || href.startsWith(`/sections/`);
+  const tiers = [
+    tabs.filter((tab) => isSectionScoped(tab.href)),
+    tabs.filter((tab) => !isSectionScoped(tab.href)),
+  ];
+  for (const tier of tiers) {
+    const preferred = tier.find((tab) => !poorLanding.has(tab.href));
+    if (preferred) return preferred.href;
+  }
+  return tabs[0]?.href ?? null;
 }
 
 /**
@@ -646,12 +766,31 @@ export function courseTabGroups(
   const groups: NavGroup[] = [
     { label: FORMS_GROUP, items: courseTabs(courseId, currentPath, opts) },
   ];
+  /**
+   * The course's publication queue, backlog and Class Q&A — course-owned
+   * (ADR-0005), so they belong to this column whether the course has one
+   * section or twelve.
+   *
+   * Printed HERE and never by the folded section below, so the heading appears
+   * exactly once. Filtered by the folded section's permissions when there is
+   * one, because that reader may be a delegated assistant; otherwise
+   * unfiltered, since reaching the course column at all means course standing.
+   */
+  groups.push({
+    label: "Weekly review",
+    items: coursePublishingTabs(
+      courseId,
+      singleSectionAccess?.staff?.permissions ?? ALL_PUBLISHING_PERMS,
+    ),
+  });
   if (singleSectionAccess) {
     // `courseStrip: false`: this function already opened with the course's own
     // destinations, and staffSectionTabGroups would otherwise add them again.
+    // `publishingGroup: false`: likewise for the group just pushed above.
     groups.push(
       ...staffSectionTabGroups(singleSectionAccess, currentPath, {
         courseStrip: false,
+        publishingGroup: false,
       }),
     );
   }
@@ -686,9 +825,18 @@ export function courseTabGroups(
   }));
 }
 
-/** Peer views of ONE class, as a student sees them. */
+/**
+ * Peer views of ONE class, as a student sees them.
+ *
+ * The first two are genuinely the section's: the form this student answers and
+ * the submissions they made through this class list. Class Q&A is the COURSE's
+ * one archive (ADR-0005) — a student in Lab B reads the same entries as a
+ * student in Lab A, including answers that originated in the other lab — so it
+ * is listed here as a peer view but addressed at course scope.
+ */
 export function studentSectionTabs(
   sectionId: string,
+  courseId: string,
   currentPath: string,
   opts: { activeHref?: string } = {},
 ): NavItem[] {
@@ -696,7 +844,7 @@ export function studentSectionTabs(
     [
       { href: `/sections/${sectionId}`, label: "This week's form" },
       { href: `/sections/${sectionId}/history`, label: "My submissions" },
-      { href: `/sections/${sectionId}/qa`, label: "Class Q&A" },
+      { href: `/courses/${courseId}/qa`, label: "Class Q&A" },
     ],
     currentPath,
     opts.activeHref,

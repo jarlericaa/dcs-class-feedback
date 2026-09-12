@@ -1,11 +1,10 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   backlogQuestions,
   classSections,
   importBatches,
   publicAnswers,
-  sectionBacklogVisibility,
   sourceLinks,
   studentSubmissionItems,
 } from "@/db/schema";
@@ -19,7 +18,9 @@ import { getItemWithSection } from "@/modules/review";
 /**
  * Course-level question backlog + legacy import
  * (docs/domain/question-backlog.md, docs/domain/legacy-question-import.md).
- * - the backlog belongs to the COURSE; exposure to a section is explicit
+ * - the backlog belongs to the COURSE, and so does what it publishes into:
+ *   one backlog item becomes ONE course PublicAnswer (ADR-0005). There is no
+ *   per-section exposure step and no section to choose;
  * - legacy imports are ANONYMOUS BY DEFAULT; identity preserved only on
  *   explicit choice
  * - backlog/legacy items never count toward participation (they never create
@@ -56,28 +57,17 @@ export async function listBacklogForCourse(
       (!opts.state || row.state === opts.state) &&
       (!term || row.text.toLowerCase().includes(term)),
   );
-  const visibility = rows.length
-    ? await db.query.sectionBacklogVisibility.findMany({
-        where: inArray(
-          sectionBacklogVisibility.backlogQuestionId,
-          rows.map((r) => r.id),
-        ),
-      })
-    : [];
-  const visibleSections = new Map<string, string[]>();
-  for (const row of visibility) {
-    const list = visibleSections.get(row.backlogQuestionId) ?? [];
-    list.push(row.sectionId);
-    visibleSections.set(row.backlogQuestionId, list);
-  }
   const counts: Record<string, number> = {};
   for (const row of rows) counts[row.state] = (counts[row.state] ?? 0) + 1;
 
+  /**
+   * No per-question section list any more. Under the old model a backlog item
+   * carried the set of sections it had been exposed to, because publishing meant
+   * choosing them; publishing now produces one course-wide answer, so there is
+   * nothing per-section left to report.
+   */
   return {
-    questions: filtered.map((question) => ({
-      question,
-      visibleSectionIds: visibleSections.get(question.id) ?? [],
-    })),
+    questions: filtered.map((question) => ({ question })),
     counts,
     total: rows.length,
   };
@@ -105,6 +95,29 @@ export async function copyOrMoveToBacklog(
   }
 
   return db.transaction(async (tx) => {
+    /*
+     * A row action can be clicked more than once, and the page can be opened
+     * in two tabs. Source-preserving current items are the stable identity for
+     * this workflow, so an existing source link is a successful no-op rather
+     * than another backlog question. The database keeps a non-unique index for
+     * historical imports, so this guard belongs in the domain transaction.
+     */
+    if (opts.preserveSource) {
+      /* The schema deliberately retains a non-unique source index for legacy
+         rows. Serialize this source item while checking it so two quick clicks
+         (or two tabs) cannot both observe "not yet added" and insert a pair. */
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${item.id}, 0))`,
+      );
+      const existing = await tx.query.backlogQuestions.findFirst({
+        where: and(
+          eq(backlogQuestions.courseId, courseId),
+          eq(backlogQuestions.sourceItemId, item.id),
+        ),
+      });
+      if (existing) return existing;
+    }
+
     const [question] = await tx
       .insert(backlogQuestions)
       .values({
@@ -142,6 +155,36 @@ export async function copyOrMoveToBacklog(
     });
     return question!;
   });
+}
+
+/**
+ * Read the source-preserving backlog membership for an already-authorized
+ * course review list. This is intentionally a bounded lookup by the item ids
+ * currently on screen, not a second unbounded backlog feed.
+ */
+export async function listBacklogSourceItemIds(
+  actorUserId: string,
+  courseId: string,
+  itemIds: string[],
+) {
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "manageBacklogImports",
+    { allowArchived: true },
+  );
+  if (itemIds.length === 0) return new Set<string>();
+  const rows = await db.query.backlogQuestions.findMany({
+    where: and(
+      eq(backlogQuestions.courseId, courseId),
+      inArray(backlogQuestions.sourceItemId, itemIds),
+    ),
+    columns: { sourceItemId: true },
+  });
+  return new Set(
+    rows.flatMap((row) => (row.sourceItemId ? [row.sourceItemId] : [])),
+  );
 }
 
 export interface LegacyEntry {
@@ -286,83 +329,40 @@ export async function setBacklogState(
 }
 
 /**
- * Explicit per-section exposure. Nothing from the backlog ever reaches a
- * section's archive automatically.
- */
-export async function makeVisibleToSection(
-  actorUserId: string,
-  backlogQuestionId: string,
-  sectionId: string,
-) {
-  const question = await db.query.backlogQuestions.findFirst({
-    where: eq(backlogQuestions.id, backlogQuestionId),
-  });
-  if (!question) throw new Error("Backlog question not found");
-  await requireSectionStaff(db, actorUserId, sectionId, "manageBacklogImports");
-  const section = await db.query.classSections.findFirst({
-    where: eq(classSections.id, sectionId),
-  });
-  if (section?.courseId !== question.courseId) {
-    throw new Error("Section does not belong to this backlog's course");
-  }
-
-  await db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(sectionBacklogVisibility)
-      .values({
-        backlogQuestionId,
-        sectionId,
-        madeVisibleByUserId: actorUserId,
-      })
-      .onConflictDoNothing()
-      .returning();
-    if (row) {
-      await writeAudit(tx, {
-        actorUserId,
-        action: "backlog.made_visible_to_section",
-        entityType: "backlog_question",
-        entityId: backlogQuestionId,
-        after: { sectionId },
-        // This one act names a single section, so it is scoped to that section
-        // rather than to the course: the other sections were not exposed.
-        sectionId,
-        courseId: question.courseId,
-      });
-    }
-  });
-}
-
-/**
- * Draft a section PublicAnswer from a backlog question. Requires explicit
- * visibility (created here if missing). The answer links back to the backlog
- * question via SourceLink; a deliberately-anonymous legacy question publishes
- * with that backlog link only — never a student identity. Publishing then
- * uses the normal publishNow/schedulePublication path.
+ * Draft the course's PublicAnswer from a backlog question (ADR-0005).
+ *
+ * One backlog item, one course entry — no target section is asked for and none
+ * is recorded. The answer links back to the backlog question via SourceLink, so
+ * a deliberately-anonymous legacy question publishes with that backlog link
+ * only and never a student identity. Publishing then uses the normal
+ * publishNow/schedulePublication path.
  */
 export async function draftFromBacklog(
   actorUserId: string,
   backlogQuestionId: string,
-  sectionId: string,
-  input: { publicQuestionText?: string; answerBody?: string },
+  input: { publicQuestionText?: string; answerBody?: string } = {},
 ) {
   const question = await db.query.backlogQuestions.findFirst({
     where: eq(backlogQuestions.id, backlogQuestionId),
   });
   if (!question) throw new Error("Backlog question not found");
-  await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    question.courseId,
+    "draftPublicAnswers",
+  );
   if (!["answerable", "drafting"].includes(question.state)) {
     throw new Error(
       `Backlog question must be answerable/drafting to draft (is ${question.state})`,
     );
   }
 
-  await makeVisibleToSection(actorUserId, backlogQuestionId, sectionId);
-
   return db.transaction(async (tx) => {
     const [answer] = await tx
       .insert(publicAnswers)
       .values({
-        sectionId,
+        courseId: question.courseId,
         publicQuestionText: input.publicQuestionText ?? question.text,
         answerBody:
           input.answerBody ??
@@ -370,7 +370,8 @@ export async function draftFromBacklog(
         state: "draft",
         category: question.category,
         topicId: question.topicId,
-        sourceOrigin: question.provenance === "legacy_import" ? "legacy" : "current",
+        sourceOrigin:
+          question.provenance === "legacy_import" ? "legacy" : "current",
         createdByUserId: actorUserId,
       })
       .returning();
@@ -396,8 +397,8 @@ export async function draftFromBacklog(
       action: "public_answer.drafted",
       entityType: "public_answer",
       entityId: answer!.id,
-      after: { fromBacklog: backlogQuestionId, sectionId },
-      sectionId,
+      after: { fromBacklog: backlogQuestionId, courseId: question.courseId },
+      courseId: question.courseId,
     });
     await writeAudit(tx, {
       actorUserId,
@@ -405,7 +406,7 @@ export async function draftFromBacklog(
       entityType: "source_link",
       entityId: link!.id,
       after: { publicAnswerId: answer!.id, backlogQuestionId },
-      sectionId,
+      courseId: question.courseId,
     });
     return answer!;
   });

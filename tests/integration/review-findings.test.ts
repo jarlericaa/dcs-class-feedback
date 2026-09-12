@@ -13,6 +13,7 @@ import {
   makeUser,
 } from "./fixtures";
 import {
+  backlogQuestions,
   formResponses,
   studentRecords,
   studentSubmissionItems,
@@ -20,7 +21,7 @@ import {
 import {
   AuthzError,
   requireEnrolledStudent,
-  requireSectionQaAccess,
+  requireCourseQaAccess,
 } from "@/modules/authz";
 import { getSubmissionDetail } from "@/modules/review";
 import { listSectionStaff, updateSection } from "@/modules/catalog";
@@ -40,11 +41,12 @@ import {
 } from "@/modules/publishing";
 import { detailedResponseCsv } from "@/modules/participation";
 import {
+  copyOrMoveToBacklog,
   importLegacyEntries,
   listBacklogForCourse,
   setBacklogState,
 } from "@/modules/backlog";
-import { listPublicationQueue } from "@/modules/publishing";
+import { listCoursePublicationQueue } from "@/modules/publishing";
 import { zonedTimeToUtc } from "@/modules/forms/timezone";
 
 /**
@@ -138,14 +140,16 @@ describe("section staff standing without a named permission", () => {
     await truncateAll();
   });
 
-  it("lets a TA read the class Q&A archive", async () => {
-    const { section } = await makeSectionWithSubmission();
+  it("lets a TA read the course's Class Q&A archive", async () => {
+    const { course, section } = await makeSectionWithSubmission();
     const ta = await makeUser();
     await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
 
-    await expect(
-      requireSectionQaAccess(db, ta.id, section.id),
-    ).resolves.toEqual({ role: "staff" });
+    // Standing on ONE section of the course is enough to read the course's
+    // shared archive — the archive is what the whole class already sees.
+    await expect(requireCourseQaAccess(db, ta.id, course.id)).resolves.toEqual({
+      role: "staff",
+    });
   });
 
   it("lets a TA read the teaching-team list on the setup page", async () => {
@@ -175,10 +179,10 @@ describe("section staff standing without a named permission", () => {
   });
 
   it("still refuses someone with no standing at all", async () => {
-    const { section } = await makeSectionWithSubmission();
+    const { course } = await makeSectionWithSubmission();
     const outsider = await makeUser();
     await expect(
-      requireSectionQaAccess(db, outsider.id, section.id),
+      requireCourseQaAccess(db, outsider.id, course.id),
     ).rejects.toBeInstanceOf(AuthzError);
   });
 
@@ -301,9 +305,9 @@ describe("the anonymity check is enforced by the service", () => {
   });
 
   it("blocks publish-now without an acknowledgment", async () => {
-    const { teacher, section, item } = await makeSectionWithSubmission();
+    const { teacher, course, item } = await makeSectionWithSubmission();
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Why did my lab group get a different brief?",
       answerBody: "A",
@@ -317,9 +321,9 @@ describe("the anonymity check is enforced by the service", () => {
   });
 
   it("blocks SCHEDULING without an acknowledgment, so the background publish cannot bypass it", async () => {
-    const { teacher, section, item } = await makeSectionWithSubmission();
+    const { teacher, course, item } = await makeSectionWithSubmission();
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Why did my lab group get a different brief?",
       answerBody: "A",
@@ -342,11 +346,11 @@ describe("the anonymity check is enforced by the service", () => {
   });
 
   it("uses the persisted text and real source count, not caller-supplied values", async () => {
-    const { teacher, section, item } = await makeSectionWithSubmission();
+    const { teacher, course, item } = await makeSectionWithSubmission();
     // Neutral wording, but a single source still warrants the small-class
     // warning — and the count comes from the source links, not the caller.
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Will the slides be posted?",
       answerBody: "Yes.",
@@ -359,9 +363,9 @@ describe("the anonymity check is enforced by the service", () => {
   });
 
   it("refuses to reword a scheduled answer, so an acknowledgment cannot cover new text", async () => {
-    const { teacher, section, item } = await makeSectionWithSubmission();
+    const { teacher, course, item } = await makeSectionWithSubmission();
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Will the slides be posted?",
       answerBody: "Yes.",
@@ -448,6 +452,27 @@ describe("section-scoped grants make advertised permissions usable", () => {
     ).resolves.not.toThrow();
   });
 
+  it("keeps a source-preserving current item idempotent in the backlog", async () => {
+    const { teacher, course, item } = await makeSectionWithSubmission();
+
+    const [first, second] = await Promise.all([
+      copyOrMoveToBacklog(teacher.id, item.id, course.id, {
+        move: false,
+        preserveSource: true,
+      }),
+      copyOrMoveToBacklog(teacher.id, item.id, course.id, {
+        move: false,
+        preserveSource: true,
+      }),
+    ]);
+    const rows = await db.query.backlogQuestions.findMany({
+      where: eq(backlogQuestions.sourceItemId, item.id),
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(rows).toHaveLength(1);
+  });
+
   it("still refuses a section TA without the flag", async () => {
     const { course, section } = await makeSectionWithSubmission();
     const ta = await makeUser();
@@ -465,21 +490,23 @@ describe("section-scoped grants make advertised permissions usable", () => {
     ).rejects.toBeInstanceOf(AuthzError);
   });
 
-  it("lets a publish-only TA read the publication queue", async () => {
-    const { section } = await makeSectionWithSubmission();
+  it("lets a publish-only TA read the course publication queue", async () => {
+    const { course, section } = await makeSectionWithSubmission();
     const ta = await makeUser();
     await addSectionStaff(section.id, ta.id, "ta", {
       publishPublicAnswers: true,
     });
-    await expect(listPublicationQueue(ta.id, section.id)).resolves.toBeTruthy();
+    await expect(
+      listCoursePublicationQueue(ta.id, course.id),
+    ).resolves.toBeTruthy();
   });
 
   it("still refuses a TA with no publication capability", async () => {
-    const { section } = await makeSectionWithSubmission();
+    const { course, section } = await makeSectionWithSubmission();
     const ta = await makeUser();
     await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
     await expect(
-      listPublicationQueue(ta.id, section.id),
+      listCoursePublicationQueue(ta.id, course.id),
     ).rejects.toBeInstanceOf(AuthzError);
   });
 });
@@ -490,9 +517,10 @@ describe("detailed CSV reports publication accurately", () => {
   });
 
   it("does not report a draft or a scheduled answer as published", async () => {
-    const { teacher, section, item } = await makeSectionWithSubmission();
+    const { teacher, course, section, item } =
+      await makeSectionWithSubmission();
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Will the slides be posted?",
       answerBody: "Yes.",

@@ -37,6 +37,26 @@ export function formatDate(
   }).format(value);
 }
 
+/**
+ * "4:38 pm" — the clock half of a timestamp, on its own.
+ *
+ * A list of submissions compares days first and minutes second, so the two
+ * halves are set on two lines and each needs its own formatter. Same explicit
+ * timezone as everything else here: never the server's.
+ */
+export function formatTime(
+  value: Date | null | undefined,
+  timeZone: string = DEFAULT_ZONE,
+): string {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(value);
+}
+
 /** "Friday, 5:00 pm" — the deadline phrasing used across cycle status text. */
 export function formatDeadline(
   value: Date | null | undefined,

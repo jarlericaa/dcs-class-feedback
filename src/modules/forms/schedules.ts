@@ -59,7 +59,7 @@ export type DeliveryMode = (typeof DELIVERY_MODES)[number];
 export const DELIVERY_LABELS: Record<DeliveryMode, string> = {
   one_time: "One time",
   weekly: "Every week",
-  custom_recurring: "Custom schedule",
+  custom_recurring: "Custom interval",
   manual: "Open manually",
 };
 

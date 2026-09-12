@@ -199,8 +199,32 @@ async function sectionAuditScope(
         where: inArray(privateResponses.itemId, itemIds),
       })
     : [];
+  /**
+   * Public answers belonging to THIS section's history.
+   *
+   * A public answer is course-owned now (ADR-0005), so "this section's" can no
+   * longer be a column comparison. It means the answers this section's
+   * submissions FED — reached through their source links — plus, for rows
+   * published before the change, the ones that still carry this section as
+   * origin provenance. Both arms are needed: the first is how a current answer
+   * belongs to a section at all, the second is what keeps an old section audit
+   * history reading the way it always did.
+   */
+  const linksFromItems = itemIds.length
+    ? await db.query.sourceLinks.findMany({
+        where: inArray(sourceLinks.itemId, itemIds),
+      })
+    : [];
   const answers = await db.query.publicAnswers.findMany({
-    where: eq(publicAnswers.sectionId, sectionId),
+    where: linksFromItems.length
+      ? or(
+          eq(publicAnswers.originSectionId, sectionId),
+          inArray(
+            publicAnswers.id,
+            linksFromItems.map((l) => l.publicAnswerId),
+          ),
+        )
+      : eq(publicAnswers.originSectionId, sectionId),
   });
   const links = answers.length
     ? await db.query.sourceLinks.findMany({
@@ -243,10 +267,14 @@ async function sectionAuditScope(
   const mergeGroups = await db.query.questionMergeGroups.findMany({
     where: eq(questionMergeGroups.sectionId, sectionId),
   });
-  const comments = await db.query.publicAnswerComments.findMany({
-    where: eq(publicAnswerComments.sectionId, sectionId),
-  });
   const answerIds = answers.map((a) => a.id);
+  // Comments follow their subject, which is course-owned: a comment belongs to
+  // this section's history when the answer it sits under does.
+  const comments = answerIds.length
+    ? await db.query.publicAnswerComments.findMany({
+        where: inArray(publicAnswerComments.publicAnswerId, answerIds),
+      })
+    : [];
   const approvals = answerIds.length
     ? await db.query.publicAnswerApprovals.findMany({
         where: inArray(publicAnswerApprovals.publicAnswerId, answerIds),
@@ -592,12 +620,15 @@ async function resolveSubjects(
     switch (entityType) {
       case "public_answer": {
         const answers = await db.query.publicAnswers.findMany({
-          // Constrained to THIS section as well as to the ids: an id that
+          // Constrained to THIS COURSE as well as to the ids: an id that
           // reached the log by another route resolves to nothing rather than to
-          // another class's published wording.
+          // another course's published wording. Course rather than section
+          // because that is what now owns the answer (ADR-0005) — and a reader
+          // of this section's history is, by construction, staff of this
+          // course, so nothing widens.
           where: and(
             inArray(publicAnswers.id, ids),
-            eq(publicAnswers.sectionId, scope.sectionId),
+            eq(publicAnswers.courseId, scope.courseId),
           ),
           columns: { id: true, publicQuestionText: true },
         });

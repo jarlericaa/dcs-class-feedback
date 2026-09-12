@@ -1,4 +1,7 @@
+import { SubmitButton } from "@/components/ui/submit-button";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { Dialog } from "@/components/ui/dialog";
+import { Field, FieldRow, Textarea } from "@/components/ui/form";
 
 /**
  * Import the class list, as a modal on the class list itself.
@@ -37,17 +40,22 @@ export function RosterImportDialog({
       description={`This replaces the whole class list for ${sectionTitle}.`}
     >
       <form action={action} encType="multipart/form-data">
-        <div className="field-row">
-          <label htmlFor="roster-file">
-            The class list, as CSV or Excel{" "}
-            <span className="required-mark">Required</span>
-          </label>
-          <input
+        <FieldRow
+          label={
+            <>
+              The class list, as CSV or Excel <RequiredMark />
+            </>
+          }
+          htmlFor="roster-file"
+        >
+          <Field
             id="roster-file"
-            className="field"
             type="file"
             name="file"
             accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            // The asterisk beside the label promises this; without it the
+            // browser would let an empty submit through to the server.
+            required
           />
           <span className="helper-text">
             Upload a CRS-style .xlsx or CSV file with a student number, a name
@@ -55,25 +63,23 @@ export function RosterImportDialog({
             so a row without a usable one is not imported. Sex and gender
             columns are refused.
           </span>
-        </div>
+        </FieldRow>
 
         {/* Kept because it is how a short list or a corrected row actually
             arrives — pasted out of the spreadsheet. Same parser, same rules. */}
         <details className="disclose disclose--inset">
           <summary>Or paste the rows instead</summary>
           <div className="disclose__body">
-            <div className="field-row">
-              <label htmlFor="roster-csv">Rows as CSV</label>
-              <textarea
+            <FieldRow label="Rows as CSV" htmlFor="roster-csv">
+              <Textarea
                 id="roster-csv"
-                className="textarea-field"
                 name="csv"
                 rows={6}
                 placeholder={
                   "Student Number,Name,UP Mail\n2026-00001,Juan Dela Cruz,juan@up.edu.ph"
                 }
               />
-            </div>
+            </FieldRow>
           </div>
         </details>
 
@@ -85,9 +91,9 @@ export function RosterImportDialog({
         </p>
 
         <div className="row">
-          <button className="button button--primary" type="submit">
+          <SubmitButton variant="primary" pendingLabel="Importing…">
             Import and apply
-          </button>
+          </SubmitButton>
         </div>
       </form>
     </Dialog>

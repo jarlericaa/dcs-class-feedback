@@ -3,6 +3,23 @@
 import { useActionState, useEffect, useId, useState } from "react";
 import { PreRenderedRichText } from "@/components/rich-text-client";
 import { Alert, FieldError } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import {
+  Choice,
+  ChoiceList,
+  Field,
+  FieldRow,
+  Label,
+  OwnItem,
+  OwnItemBlock,
+  Question,
+  QuestionDesc,
+  ScaleList,
+  ScaleInput,
+  Select,
+  Textarea,
+} from "@/components/ui/form";
+import { RequiredMark } from "@/components/ui/required-mark";
 
 /**
  * The student form. A client component for ONE reason: input must survive a
@@ -91,6 +108,30 @@ export function questionErrorAttributes(
     "aria-invalid": error ? ("true" as const) : undefined,
     "aria-describedby": describedBy,
   };
+}
+
+/**
+ * "Optional" beside a prompt, or the required asterisk on it.
+ *
+ * One helper for all three places a prompt is marked — the teacher's
+ * questions, the student's own question, the general comment — because they
+ * were three copies of the same decision and had already drifted: two said
+ * "Optional." with a full stop under the question, one said "OPTIONAL" in
+ * small caps beside it.
+ *
+ * No vertical-align override. The word is 12px against an 18px serif prompt,
+ * and `align-middle` centred it on the prompt's box, which floats it above the
+ * text it sits beside; the default baseline alignment is what "in line with
+ * the question" means.
+ */
+function PromptMark({ required }: { required: boolean }) {
+  return required ? (
+    <RequiredMark />
+  ) : (
+    <span className="ml-2 font-sans text-meta font-normal text-ink-muted">
+      Optional
+    </span>
+  );
 }
 
 export function WeeklyForm({
@@ -262,7 +303,7 @@ export function WeeklyForm({
         <input type="hidden" name="expectedRevision" value={revision} />
       )}
       {state.status === "error" && (
-        <div style={{ marginBottom: "var(--s5)" }}>
+        <div className="mb-6">
           <Alert variant="error" title="Your form was not submitted">
             {formError ??
               `Check the highlighted field${errorCount === 1 ? "" : "s"} below. Everything you typed has been kept.`}
@@ -271,7 +312,7 @@ export function WeeklyForm({
       )}
       {(state.status === "saved" || state.status === "submitted") &&
         state.message && (
-          <div style={{ marginBottom: "var(--s5)" }}>
+          <div className="mb-6">
             <Alert variant={state.status === "saved" ? "info" : "success"}>
               {state.message}
             </Alert>
@@ -292,40 +333,51 @@ export function WeeklyForm({
         const value = values[question.id];
 
         return (
-          <fieldset className="question" key={question.id}>
-            <legend id={legendId}>
-              {question.promptHtml ? (
-                <PreRenderedRichText
-                  html={question.promptHtml}
-                  className="rich-text--inline"
-                />
-              ) : (
-                question.prompt
-              )}
-            </legend>
-            <p className="question__note">
-              <span
-                className={
-                  question.required ? "required-mark" : "optional-mark"
-                }
-              >
-                {question.required ? "Required" : "Optional"}
-              </span>
-            </p>
-            {(question.descriptionHtml || question.description) && (
-              <div className="question__desc" id={`desc-${question.id}`}>
-                {question.descriptionHtml ? (
-                  <PreRenderedRichText html={question.descriptionHtml} />
+          <Question
+            key={question.id}
+            legendId={legendId}
+            /*
+              Required is a red asterisk ON the prompt, the way every form a
+              student has already filled in marks it (owner, 2026-09-11) — and
+              `RequiredMark` is exactly that, already carrying the three
+              channels that let the glyph replace the word: its presence
+              against unmarked questions, a visually-hidden "required", and the
+              control's own `required` attribute.
+
+              Optional says so beside the prompt rather than under it. It used
+              to be a line of its own below the question, which gave a
+              one-word qualifier the same vertical weight as the question it
+              qualified.
+            */
+            legend={
+              <>
+                {question.promptHtml ? (
+                  <PreRenderedRichText
+                    html={question.promptHtml}
+                    className="rich-text--inline"
+                  />
                 ) : (
-                  <p>{question.description}</p>
+                  question.prompt
                 )}
+                <PromptMark required={question.required} />
+              </>
+            }
+          >
+            {(question.descriptionHtml || question.description) && (
+              <div id={`desc-${question.id}`}>
+                <QuestionDesc>
+                  {question.descriptionHtml ? (
+                    <PreRenderedRichText html={question.descriptionHtml} />
+                  ) : (
+                    <p>{question.description}</p>
+                  )}
+                </QuestionDesc>
               </div>
             )}
 
             {(question.type === "short_answer" ||
               question.type === "paragraph") && (
-              <textarea
-                className="textarea-field"
+              <Textarea
                 name={`q_${question.id}`}
                 aria-labelledby={legendId}
                 rows={question.type === "paragraph" ? 4 : 2}
@@ -337,8 +389,7 @@ export function WeeklyForm({
 
             {(question.type === "multiple_choice" ||
               question.type === "checkboxes") && (
-              <div
-                className="choice-list"
+              <ChoiceList
                 role="group"
                 aria-labelledby={legendId}
                 {...questionErrorAttributes(error, describedBy)}
@@ -349,31 +400,30 @@ export function WeeklyForm({
                       ? Array.isArray(value) && value.includes(option.stableId)
                       : value === option.stableId;
                   return (
-                    <label className="choice" key={option.stableId}>
-                      <input
-                        type={
-                          question.type === "checkboxes" ? "checkbox" : "radio"
-                        }
-                        name={`q_${question.id}`}
-                        value={option.stableId}
-                        checked={checked}
-                        onChange={() =>
-                          question.type === "checkboxes"
-                            ? toggleCheckbox(question.id, option.stableId)
-                            : setValue(question.id, option.stableId)
-                        }
-                        {...questionErrorAttributes(error, describedBy)}
-                      />
+                    <Choice
+                      key={option.stableId}
+                      type={
+                        question.type === "checkboxes" ? "checkbox" : "radio"
+                      }
+                      name={`q_${question.id}`}
+                      value={option.stableId}
+                      checked={checked}
+                      onChange={() =>
+                        question.type === "checkboxes"
+                          ? toggleCheckbox(question.id, option.stableId)
+                          : setValue(question.id, option.stableId)
+                      }
+                      {...questionErrorAttributes(error, describedBy)}
+                    >
                       <span>{option.label}</span>
-                    </label>
+                    </Choice>
                   );
                 })}
-              </div>
+              </ChoiceList>
             )}
 
             {question.type === "dropdown" && (
-              <select
-                className="select-field"
+              <Select
                 name={`q_${question.id}`}
                 aria-labelledby={legendId}
                 value={typeof value === "string" ? value : ""}
@@ -386,35 +436,22 @@ export function WeeklyForm({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
 
             {question.type === "linear_scale" && question.scale && (
-              <div
-                className="scale-list"
-                role="group"
-                aria-labelledby={legendId}
+              <ScaleInput
+                labelledBy={legendId}
+                name={`q_${question.id}`}
+                onValueChange={(next) => setValue(question.id, next)}
+                scale={question.scale}
+                value={typeof value === "string" ? value : ""}
                 {...questionErrorAttributes(error, describedBy)}
-              >
-                {scaleValues(question.scale).map((v) => (
-                  <label className="choice" key={v}>
-                    <input
-                      type="radio"
-                      name={`q_${question.id}`}
-                      value={v}
-                      checked={value === String(v)}
-                      onChange={() => setValue(question.id, String(v))}
-                      {...questionErrorAttributes(error, describedBy)}
-                    />
-                    <span>{v}</span>
-                  </label>
-                ))}
-              </div>
+              />
             )}
 
             {question.type === "yes_no" && (
-              <div
-                className="scale-list"
+              <ScaleList
                 role="group"
                 aria-labelledby={legendId}
                 {...questionErrorAttributes(error, describedBy)}
@@ -423,81 +460,82 @@ export function WeeklyForm({
                   { key: "yes", label: "Yes" },
                   { key: "no", label: "No" },
                 ].map((option) => (
-                  <label className="choice" key={option.key}>
-                    <input
-                      type="radio"
-                      name={`q_${question.id}`}
-                      value={option.key}
-                      checked={value === option.key}
-                      onChange={() => setValue(question.id, option.key)}
-                      {...questionErrorAttributes(error, describedBy)}
-                    />
+                  <Choice
+                    key={option.key}
+                    type="radio"
+                    name={`q_${question.id}`}
+                    value={option.key}
+                    checked={value === option.key}
+                    onChange={() => setValue(question.id, option.key)}
+                    {...questionErrorAttributes(error, describedBy)}
+                  >
                     <span>{option.label}</span>
-                  </label>
+                  </Choice>
                 ))}
-              </div>
+              </ScaleList>
             )}
 
             {(question.type === "date" || question.type === "time") && (
-              <input
-                className="field"
+              <Field
                 type={question.type}
                 name={`q_${question.id}`}
                 aria-labelledby={legendId}
                 value={typeof value === "string" ? value : ""}
                 onChange={(e) => setValue(question.id, e.target.value)}
                 {...questionErrorAttributes(error, describedBy)}
-                style={{ maxWidth: 220 }}
+                className="max-w-55"
               />
             )}
 
-            <div className="question__error">
+            <div className="mt-2">
               <FieldError id={errorId} message={error} />
             </div>
-          </fieldset>
+          </Question>
         );
       })}
 
       {config.maxStudentQuestions > 0 && (
-        <fieldset className="own-item">
-          <legend>
-            {config.studentQuestionPrompt ?? "Anything you want to raise?"}
-          </legend>
-          {/* One line, not two paragraphs. What a student needs before typing
-              is the privacy consequence — that an answer may go to the whole
-              class, reworded, without their name. How staff track items
-              internally is not their concern. */}
-          <p className="own-item__note">
-            <span className="optional-mark">Optional.</span> Staff may reply
-            privately, or rewrite the question and answer it for the whole class
-            — never with your name or your own wording.
-          </p>
+        <OwnItem
+          legend={
+            <>
+              {config.studentQuestionPrompt ?? "Anything you want to raise?"}
+              <PromptMark required={false} />
+            </>
+          }
+        >
 
           {questionItems.map((item, index) => {
             const refused = item.itemId ? rejected.has(item.itemId) : false;
             const readOnly = locked || !item.editable;
             return (
-              <div key={item.clientKey} className="own-item__block">
+              <OwnItemBlock key={item.clientKey}>
                 {/* "Question 1" numbers nothing when only one is allowed. */}
                 {config.maxStudentQuestions > 1 && (
-                  <div className="own-item__block-head">
-                    <p className="label">Question {index + 1}</p>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <Label className="text-ink-soft">
+                      Question {index + 1}
+                    </Label>
                     {questionItems.length > 1 && !readOnly && (
-                      <button
-                        type="button"
-                        className="button button--quiet button--small"
+                      <Button
+                        variant="quiet"
+                        size="small"
                         onClick={() => removeQuestion(item.clientKey)}
                       >
                         Remove
-                      </button>
+                      </Button>
                     )}
                   </div>
                 )}
 
                 {!item.editable && !locked && (
+                  /* Short enough for one line. It read "Staff have already
+                     replied to or published this one, so its original wording
+                     is kept as it was." — 95 characters, which cannot fit one
+                     line inside the 68ch reading measure no matter how the box
+                     is laid out, so the fix is the sentence and not the CSS
+                     (owner, 2026-09-11). */
                   <Alert variant="info">
-                    Staff have already replied to or published this one, so its
-                    original wording is kept as it was.
+                    Answered by staff, so its wording is kept as it was.
                   </Alert>
                 )}
                 {refused && (
@@ -507,14 +545,13 @@ export function WeeklyForm({
                   </Alert>
                 )}
 
-                <div className="form-grid" style={{ marginBottom: 12 }}>
-                  <div className="field-row">
-                    <label htmlFor={`item_type_${item.clientKey}`}>
-                      What is this?
-                    </label>
-                    <select
+                <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] items-start gap-4">
+                  <FieldRow
+                    label="What is this?"
+                    htmlFor={`item_type_${item.clientKey}`}
+                  >
+                    <Select
                       id={`item_type_${item.clientKey}`}
-                      className="select-field"
                       value={item.submissionType}
                       disabled={readOnly}
                       onChange={(e) =>
@@ -528,15 +565,14 @@ export function WeeklyForm({
                       <option value="concern">Concern</option>
                       <option value="clarification">Clarification</option>
                       <option value="suggestion">Suggestion</option>
-                    </select>
-                  </div>
-                  <div className="field-row">
-                    <label htmlFor={`item_category_${item.clientKey}`}>
-                      Topic area
-                    </label>
-                    <select
+                    </Select>
+                  </FieldRow>
+                  <FieldRow
+                    label="Topic area"
+                    htmlFor={`item_category_${item.clientKey}`}
+                  >
+                    <Select
                       id={`item_category_${item.clientKey}`}
-                      className="select-field"
                       value={item.category}
                       disabled={readOnly}
                       onChange={(e) =>
@@ -546,16 +582,15 @@ export function WeeklyForm({
                       <option value="content">Course content</option>
                       <option value="logistics">Logistics</option>
                       <option value="misc">Something else</option>
-                    </select>
-                  </div>
+                    </Select>
+                  </FieldRow>
                 </div>
-                <div className="field-row">
-                  <label htmlFor={`item_text_${item.clientKey}`}>
-                    Your message
-                  </label>
-                  <textarea
+                <FieldRow
+                  label="Your message"
+                  htmlFor={`item_text_${item.clientKey}`}
+                >
+                  <Textarea
                     id={`item_text_${item.clientKey}`}
-                    className="textarea-field"
                     rows={4}
                     maxLength={10000}
                     value={item.text}
@@ -569,49 +604,36 @@ export function WeeklyForm({
                       state.errors.item ? "error-item" : undefined
                     }
                   />
-                </div>
-              </div>
+                </FieldRow>
+              </OwnItemBlock>
             );
           })}
 
           <FieldError id="error-item" message={state.errors.item} />
 
           {questionItems.length < config.maxStudentQuestions && !locked && (
-            <button
-              type="button"
-              className="button button--secondary own-item__add"
-              onClick={addQuestion}
-            >
+            <Button variant="secondary" className="mt-4" onClick={addQuestion}>
               Add another question
-            </button>
+            </Button>
           )}
-        </fieldset>
+        </OwnItem>
       )}
 
       {config.generalCommentEnabled && commentItem && (
-        <fieldset className="own-item">
-          <legend>{config.generalCommentPrompt ?? "Anything else?"}</legend>
-          <p className="own-item__note">
-            <span
-              className={
-                config.generalCommentRequired
-                  ? "required-mark"
-                  : "optional-mark"
-              }
-            >
-              {config.generalCommentRequired ? "Required." : "Optional."}
-            </span>{" "}
-            {/* Kept: it is the difference between this box and the one above,
-                and a student could otherwise expect an answer here. */}
-            Never published to the class.
-          </p>
-          <div className="field-row">
+        <OwnItem
+          legend={
+            <>
+              {config.generalCommentPrompt ?? "Anything else?"}
+              <PromptMark required={config.generalCommentRequired} />
+            </>
+          }
+        >
+          <div className="grid gap-tight">
             <label className="visually-hidden" htmlFor="general_comment">
               General comment
             </label>
-            <textarea
+            <Textarea
               id="general_comment"
-              className="textarea-field"
               rows={3}
               maxLength={10000}
               value={commentItem.text}
@@ -619,9 +641,7 @@ export function WeeklyForm({
               onChange={(e) =>
                 updateItem(commentItem.clientKey, { text: e.target.value })
               }
-              aria-invalid={
-                state.errors.generalComment ? "true" : undefined
-              }
+              aria-invalid={state.errors.generalComment ? "true" : undefined}
               aria-describedby={
                 state.errors.generalComment
                   ? "error-general-comment"
@@ -633,74 +653,84 @@ export function WeeklyForm({
             id="error-general-comment"
             message={state.errors.generalComment}
           />
-        </fieldset>
+        </OwnItem>
       )}
 
       {preview ? (
-        <div className="submit-bar">
-          <p className="submit-bar__note">
+        <div
+          className={
+            "mt-6 flex flex-wrap items-center justify-between gap-4 border-t-2 border-t-rule-ink pt-6 max-md:flex-col-reverse max-md:items-stretch"
+          }
+        >
+          <p className="text-ui-sm text-ink-muted">
             This is a preview. Students see a submit button here.
           </p>
         </div>
       ) : (
-      <div className="submit-bar">
-        <p className="submit-bar__note">
-          {locked ? (
-            <>This form is closed, so it can no longer be changed.</>
-          ) : lifecycle === "submitted" ? (
+        <div
+          className={
+            "mt-6 flex flex-wrap items-center justify-between gap-4 border-t-2 border-t-rule-ink pt-6 max-md:flex-col-reverse max-md:items-stretch"
+          }
+        >
+          {/*
+            `basis-full`, and no `max-w-[44ch]`.
+
+            Two faults, one line. The clamp broke "Submitted. You can keep
+            editing until Sunday 13 Sept, 11:59 pm." after about half of it,
+            and it was an ad-hoc geometry value of the kind §7 greps for. Even
+            unclamped it would still wrap, because it was a flex item beside
+            the Save and Submit buttons and lost the width contest on anything
+            but a very wide panel — so it takes a row of its own.
+          */}
+          <p className="basis-full text-ui-sm text-ink-muted">
+            {locked ? (
+              <>This form is closed, so it can no longer be changed.</>
+            ) : lifecycle === "submitted" ? (
+              <>
+                Submitted
+                {lastEditedLabel ? ` · last edited ${lastEditedLabel}` : ""}.
+                You can keep editing until {deadlineLabel}.
+              </>
+            ) : (
+              <>
+                Closes {deadlineLabel}. Save a draft as often as you like; you
+                can still edit after submitting, until the deadline.
+              </>
+            )}
+          </p>
+          {!locked && (
             <>
-              Submitted
-              {lastEditedLabel ? ` · last edited ${lastEditedLabel}` : ""}. You
-              can keep editing until {deadlineLabel}.
-            </>
-          ) : (
-            <>
-              Closes {deadlineLabel}. Save a draft as often as you like; you can
-              still edit after submitting, until the deadline.
-            </>
-          )}
-        </p>
-        {!locked && (
-          <>
-            {lifecycle !== "submitted" && (
-              <button
-                className="button button--secondary"
+              {lifecycle !== "submitted" && (
+                <Button
+                  variant="secondary"
+                  type="submit"
+                  name="intent"
+                  value="draft"
+                  disabled={pending}
+                  className="max-md:w-full"
+                >
+                  {pending ? "Saving…" : "Save draft"}
+                </Button>
+              )}
+              <Button
+                variant="primary"
                 type="submit"
                 name="intent"
-                value="draft"
+                value={lifecycle === "submitted" ? "edit" : "submit"}
                 disabled={pending}
+                className="max-md:w-full"
               >
-                {pending ? "Saving…" : "Save draft"}
-              </button>
-            )}
-            <button
-              className="button button--primary"
-              type="submit"
-              name="intent"
-              value={lifecycle === "submitted" ? "edit" : "submit"}
-              disabled={pending}
-            >
-              {pending
-                ? "Working…"
-                : lifecycle === "submitted"
-                  ? "Save changes"
-                  : "Submit this form"}
-            </button>
-          </>
-        )}
-      </div>
+                {pending
+                  ? "Working…"
+                  : lifecycle === "submitted"
+                    ? "Save changes"
+                    : "Submit this form"}
+              </Button>
+            </>
+          )}
+        </div>
       )}
     </form>
   );
 }
 
-function scaleValues(scale: {
-  min: number;
-  max: number;
-  step: number;
-}): number[] {
-  const step = scale.step > 0 ? scale.step : 1;
-  const values: number[] = [];
-  for (let v = scale.min; v <= scale.max; v += step) values.push(v);
-  return values;
-}

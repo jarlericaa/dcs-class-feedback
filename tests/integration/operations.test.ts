@@ -28,7 +28,7 @@ import { submitResponse } from "@/modules/forms/submission";
 import {
   draftPublicAnswer,
   getPublicAnswerForEditing,
-  listPublicationQueue,
+  listCoursePublicationQueue,
   publishNow,
   schedulePublication,
 } from "@/modules/publishing";
@@ -296,24 +296,40 @@ describe("publication queue", () => {
     await truncateAll();
   });
 
-  it("needs the draft_public_answers capability", async () => {
-    const { section } = await makeSubmittedItem();
+  /**
+   * The queue is course-scoped (ADR-0005) but its gate is unchanged: a
+   * publication capability, held anywhere in the course. `review_responses`
+   * alone is not one of them.
+   */
+  it("needs a publication capability, not merely review access", async () => {
+    const { course, section } = await makeSubmittedItem();
     const ta = await makeUser();
     await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
     await expect(
-      listPublicationQueue(ta.id, section.id),
+      listCoursePublicationQueue(ta.id, course.id),
     ).rejects.toBeInstanceOf(AuthzError);
   });
 
+  /** ...and a section-scoped assistant who DOES hold one reaches the course
+   *  queue, because there is no section-level queue left for them to use. */
+  it("admits a section assistant holding a publication flag", async () => {
+    const { course, section } = await makeSubmittedItem();
+    const ta = await makeUser();
+    await addSectionStaff(section.id, ta.id, "ta", { draftPublicAnswers: true });
+    await expect(
+      listCoursePublicationQueue(ta.id, course.id),
+    ).resolves.toBeTruthy();
+  });
+
   it("separates drafts, scheduled answers and published entries", async () => {
-    const { teacher, section, item } = await makeSubmittedItem();
+    const { teacher, course, item } = await makeSubmittedItem();
     const draft = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Can slides use a larger font?",
       answerBody: "Yes, from next week.",
     });
-    const queue1 = await listPublicationQueue(teacher.id, section.id);
+    const queue1 = await listCoursePublicationQueue(teacher.id, course.id);
     expect(queue1.drafts).toHaveLength(1);
     expect(queue1.drafts[0]!.sourceCount).toBe(1);
 
@@ -323,20 +339,20 @@ describe("publication queue", () => {
       new Date(Date.now() + 86_400_000),
       { anonymityAcknowledged: true },
     );
-    const queue2 = await listPublicationQueue(teacher.id, section.id);
+    const queue2 = await listCoursePublicationQueue(teacher.id, course.id);
     expect(queue2.drafts).toHaveLength(0);
     expect(queue2.scheduled).toHaveLength(1);
 
     await publishNow(teacher.id, draft.id, { anonymityAcknowledged: true });
-    const queue3 = await listPublicationQueue(teacher.id, section.id);
+    const queue3 = await listCoursePublicationQueue(teacher.id, course.id);
     expect(queue3.scheduled).toHaveLength(0);
     expect(queue3.published).toHaveLength(1);
   });
 
   it("surfaces a failed publication for retry instead of hiding it", async () => {
-    const { teacher, section, item } = await makeSubmittedItem();
+    const { teacher, course, item } = await makeSubmittedItem();
     const draft = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Q",
       answerBody: "A",
@@ -352,22 +368,22 @@ describe("publication queue", () => {
       .set({ publishFailed: true, publishFailureReason: "simulated failure" })
       .where(eq(publicAnswers.id, draft.id));
 
-    const queue = await listPublicationQueue(teacher.id, section.id);
+    const queue = await listCoursePublicationQueue(teacher.id, course.id);
     expect(queue.failed).toHaveLength(1);
     expect(queue.failed[0]!.answer.publishFailureReason).toBe(
       "simulated failure",
     );
 
     await publishNow(teacher.id, draft.id, { anonymityAcknowledged: true });
-    const after = await listPublicationQueue(teacher.id, section.id);
+    const after = await listCoursePublicationQueue(teacher.id, course.id);
     expect(after.failed).toHaveLength(0);
     expect(after.published).toHaveLength(1);
   });
 
   it("gives staff the original wording as context for the editor", async () => {
-    const { teacher, section, item } = await makeSubmittedItem();
+    const { teacher, course, item } = await makeSubmittedItem();
     const draft = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Can slides use a larger font?",
     });
@@ -378,11 +394,11 @@ describe("publication queue", () => {
     expect(editing.warnings.length).toBeGreaterThan(0);
   });
 
-  it("refuses a staff member from another section", async () => {
+  it("refuses a staff member from another course", async () => {
     const a = await makeSubmittedItem();
     const b = await makeSubmittedItem();
     const draft = await draftPublicAnswer(a.teacher.id, {
-      sectionId: a.section.id,
+      courseId: a.course.id,
       itemIds: [a.item.id],
       publicQuestionText: "Q",
     });
@@ -489,9 +505,9 @@ describe("review read models mask identity in the data", () => {
   });
 
   it("does not treat an unpublished draft as answered", async () => {
-    const { teacher, section, item } = await makeSubmittedItem();
+    const { teacher, course, section, item } = await makeSubmittedItem();
     await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [item.id],
       publicQuestionText: "Q",
       answerBody: "A",

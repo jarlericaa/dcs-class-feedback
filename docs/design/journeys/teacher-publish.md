@@ -10,8 +10,19 @@ runs today, without it.)
 **Owns:** the staff journey from reviewing a student item to a published
 anonymous public answer — rewording, the anonymity check, acknowledgment,
 publish, and schedule.
+> **Route names superseded 2026-09-12 — [ADR-0005](../../decisions/ADR-0005-course-scoped-teaching-workflow.md).**
+> Publication is **course**-owned: the queue is `/teach/courses/[id]/publications`,
+> the archive is `/courses/[id]/qa`, and drafting happens in the course's
+> Responses workspace. The old section routes redirect. Every finding below is
+> about the flow — rewording, the anonymity check, the acknowledgment, the
+> emphasis between draft and publish — and holds unchanged; what changed is the
+> **reach** of the act: publishing once now goes to the whole course, which makes
+> the anonymity judgement F7 is about matter more, not less. One thing the move
+> retired outright: there is no "which section should see this?" step, so the
+> flow has one fewer decision than this audit describes.
+
 **Routes audited:** `/teach/sections/[id]/review` and
-`/teach/sections/[id]/publications` —
+`/teach/sections/[id]/publications` (as they were at the time of the audit) —
 [review/page.tsx](../../../src/app/teach/sections/[id]/review/page.tsx),
 [public-answer-composer.tsx](../../../src/components/staff/public-answer-composer.tsx),
 [publications/page.tsx](../../../src/app/teach/sections/[id]/publications/page.tsx),
@@ -266,7 +277,7 @@ actions), and gate publish on the preview in F7 having been shown.
 ### F7 · P2 · The teacher never sees what the class will see
 
 **Evidence.** Two textareas. No rendering of the resulting archive entry. The
-published form exists only at `/sections/[id]/qa`, after the fact.
+published form exists only in Class Q&A (now `/courses/[id]/qa`), after the fact.
 
 **Why it matters.** The judgement being asked — *could a classmate work out who
 asked this* — is a judgement about a **published artifact**, and it is currently

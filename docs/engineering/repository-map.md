@@ -33,9 +33,10 @@ second architecture document; durable runtime decisions belong in
 | src/app/page.tsx | Authenticated role-aware dashboard |
 | src/app/admin/ | Platform-admin accounts and teacher-role grants |
 | src/app/actions/ | Shared server actions (sign-out) |
-| src/app/sections/[id]/ | Student section home, history, and Q&A archive |
-| src/app/teach/courses/ | Course/section creation and template authoring |
-| src/app/teach/sections/[id]/ | Staff review, setup, roster, import, participation, publications, backlog, audit |
+| src/app/sections/[id]/ | Student section home and history (`/qa` here is a redirect to the course archive) |
+| src/app/courses/[id]/qa/ | **Class Q&A — one archive per course** (ADR-0005) |
+| src/app/teach/courses/ | Course/section creation, template authoring, forms, responses, **publication queue** and **question backlog** |
+| src/app/teach/sections/[id]/ | Staff section work: review, roster, import, participation (publications/backlog here are redirects to the course routes) |
 | src/app/api/auth/ | Auth.js callback route |
 | src/app/api/internal/scheduler/ | Secret-protected scheduler tick endpoint |
 | src/app/favicon.ico/ | Cacheable repository-native application icon route |

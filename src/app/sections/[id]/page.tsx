@@ -9,6 +9,7 @@ import { listOpenInstancesForStudent } from "@/modules/forms/submission";
 import { AuthzError } from "@/modules/authz";
 import { getSectionWithCourse } from "@/modules/catalog";
 import { requireUser, toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * A student's class-section entry point.
@@ -57,7 +58,7 @@ export default async function SectionEntryPage({
     user: toShellUser(user),
     workspace: "student" as const,
     navGroups: await primaryNavFor(user, `/sections/${sectionId}`),
-    tabs: studentSectionTabs(sectionId, `/sections/${sectionId}`),
+    tabs: studentSectionTabs(sectionId, course.id, `/sections/${sectionId}`),
     tabsLabel: course.code,
     contextLabel: course.code,
     roomy: true,
@@ -70,15 +71,15 @@ export default async function SectionEntryPage({
           Forms open on a schedule set by your teaching team. When the next one
           opens it appears here, and you will have until its deadline to send it.
         </EmptyState>
-        <div className="row" style={{ marginTop: "var(--s4)" }}>
+        <div className="row mt-4">
           <Link
-            className="button button--secondary"
-            href={`/sections/${sectionId}/qa`}
+            className={buttonClass({ variant: "secondary" })}
+            href={`/courses/${course.id}/qa`}
           >
             Class Q&amp;A archive
           </Link>
           <Link
-            className="button button--quiet"
+            className={buttonClass({ variant: "quiet" })}
             href={`/sections/${sectionId}/history`}
           >
             My submissions

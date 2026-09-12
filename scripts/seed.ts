@@ -17,7 +17,7 @@ async function main() {
   const { db } = await import("../src/db");
   const { classSections, courses, courseStaff, sectionStaff, users } =
     await import("../src/db/schema");
-  const { and, desc, eq, isNull } = await import("drizzle-orm");
+  const { and, desc, eq, inArray, isNull } = await import("drizzle-orm");
   const { env } = await import("../src/env");
 
   async function upsertUser(u: {
@@ -89,69 +89,137 @@ async function main() {
       .values({ courseId: course!.id, userId: teacher.id, role: "teacher" });
   }
 
-  let section = await db.query.classSections.findFirst({
-    where: eq(classSections.courseId, course!.id),
+  /**
+   * CS 33 as it actually runs: one course, three laboratory sections with
+   * different lab instructors (ADR-0005).
+   *
+   * The point of seeding three is to make the course-scoped model visible and
+   * falsifiable in dev. The teaching team gets ONE form, ONE response
+   * workspace, ONE question backlog, ONE publication queue and ONE Class Q&A;
+   * the three sections differ only in who is enrolled, who staffs them, and
+   * which section a response is attributed to.
+   */
+  const LAB_TITLES = ["Lab A", "Lab B", "Lab C"] as const;
+
+  // An older local seed used a single section called "THX" (and before that
+  // "DCS-101 Section A"). Rename it into Lab A rather than orphaning its
+  // roster, responses and answers.
+  const legacySingle = await db.query.classSections.findFirst({
+    where: and(
+      eq(classSections.courseId, course!.id),
+      inArray(classSections.title, ["THX", "DCS-101 Section A"]),
+    ),
   });
-  if (!section) {
-    [section] = await db
-      .insert(classSections)
-      .values({
-        courseId: course!.id,
-        term: "AY2026-1",
-        title: "THX",
-        timezone: env.INSTITUTION_TIMEZONE,
-      })
-      .returning();
-    await db.insert(sectionStaff).values([
-      {
-        sectionId: section!.id,
-        userId: teacher.id,
-        role: "teacher",
-      },
-      {
-        sectionId: section!.id,
-        userId: ta.id,
-        role: "ta",
-        reviewResponses: true,
-        sendPrivateResponses: true,
-      },
-    ]);
-  } else if (section.title === "DCS-101 Section A") {
-    // Keep an existing local seed recognizable after the course key changes.
-    [section] = await db
+  if (legacySingle) {
+    await db
       .update(classSections)
-      .set({ title: "THX" })
-      .where(eq(classSections.id, section.id))
-      .returning();
+      .set({ title: "Lab A" })
+      .where(eq(classSections.id, legacySingle.id));
   }
 
+  const labs: (typeof classSections.$inferSelect)[] = [];
+  for (const title of LAB_TITLES) {
+    let lab = await db.query.classSections.findFirst({
+      where: and(
+        eq(classSections.courseId, course!.id),
+        eq(classSections.title, title),
+      ),
+    });
+    if (!lab) {
+      [lab] = await db
+        .insert(classSections)
+        .values({
+          courseId: course!.id,
+          term: "AY2026-1",
+          title,
+          timezone: env.INSTITUTION_TIMEZONE,
+        })
+        .returning();
+    }
+    const hasStaff = await db.query.sectionStaff.findFirst({
+      where: eq(sectionStaff.sectionId, lab!.id),
+    });
+    if (!hasStaff) {
+      await db.insert(sectionStaff).values({
+        sectionId: lab!.id,
+        userId: teacher.id,
+        role: "teacher",
+      });
+    }
+    labs.push(lab!);
+  }
+
+  /**
+   * The demo assistant is delegated to Lab A ALONE.
+   *
+   * That is what makes the authorization half of ADR-0005 checkable by hand:
+   * they can open the course's shared publication queue and Class Q&A, and they
+   * still cannot read a Lab B or Lab C submission. Making outputs course-wide
+   * did not make source data course-wide.
+   */
+  const [labA, labB, labC] = labs as [
+    typeof classSections.$inferSelect,
+    typeof classSections.$inferSelect,
+    typeof classSections.$inferSelect,
+  ];
+  const taRow = await db.query.sectionStaff.findFirst({
+    where: and(
+      eq(sectionStaff.sectionId, labA.id),
+      eq(sectionStaff.userId, ta.id),
+    ),
+  });
+  if (!taRow) {
+    await db.insert(sectionStaff).values({
+      sectionId: labA.id,
+      userId: ta.id,
+      role: "ta",
+      reviewResponses: true,
+      sendPrivateResponses: true,
+      draftPublicAnswers: true,
+    });
+  }
   // --- roster + demo student account ---
   const { parseRosterCsv, commitRosterImport } = await import(
     "../src/modules/roster-import"
   );
   const { enrollments } = await import("../src/db/schema");
-  const hasRoster = await db.query.enrollments.findFirst({
-    where: eq(enrollments.sectionId, section!.id),
-  });
-  if (!hasRoster) {
-    // The UP email is the access key: importing this list is the whole grant.
-    // student@up.edu.ph is deliberately Juan's address, so the dev-login student
-    // lands in this section immediately with no claiming step.
+  /**
+   * One class list per lab. The UP email is the access key: importing these
+   * lists IS the whole grant.
+   *
+   * student@up.edu.ph is deliberately Juan's address, so the dev-login student
+   * lands in Lab A with no claiming step. Maria sits in Lab B and Pedro in Lab
+   * C, which is what lets the seeded data demonstrate the acceptance case: a
+   * question asked in one lab, answered once, read by all three.
+   */
+  const ROSTERS: Record<string, string> = {
+    [labA.id]: [
+      "student number,full name,up mail",
+      // Real UP shape — four-digit entry year, five-digit serial. The demo
+      // list used to carry four-digit serials, which made the class list read
+      // "Student number ending 0001" and hid what the format actually looks
+      // like (GitHub issue #12).
+      "2026-00001,Juan Dela Cruz,student@up.edu.ph",
+    ].join("\n"),
+    [labB.id]: [
+      "student number,full name,up mail",
+      "2026-00002,Maria Clara Santos,maria.santos@up.edu.ph",
+    ].join("\n"),
+    [labC.id]: [
+      "student number,full name,up mail",
+      "2026-00003,Pedro Penduko,pedro.penduko@up.edu.ph",
+    ].join("\n"),
+  };
+  for (const lab of labs) {
+    const hasRoster = await db.query.enrollments.findFirst({
+      where: eq(enrollments.sectionId, lab.id),
+    });
+    if (hasRoster) continue;
     await commitRosterImport(
       teacher.id,
-      section!.id,
-      parseRosterCsv(
-        [
-          "student number,full name,up mail",
-          // Real UP shape — four-digit entry year, five-digit serial. The
-          // demo list used to carry four-digit serials, which made the class
-          // list read "Student number ending 0001" and hid what the format
-          // actually looks like (GitHub issue #12).
-          "2026-00001,Juan Dela Cruz,student@up.edu.ph",
-          "2026-00002,Maria Clara Santos,maria.santos@up.edu.ph",
-        ].join("\n"),
-      ),
-      "seed roster",
+      lab.id,
+      parseRosterCsv(ROSTERS[lab.id]!),
+      `seed roster — ${lab.title}`,
     );
   }
   // Demo student accounts. Nothing links either account to a roster record
@@ -163,6 +231,10 @@ async function main() {
   const maria = await upsertUser({
     email: "maria.santos@up.edu.ph",
     displayName: "Maria Clara Santos",
+  });
+  const pedro = await upsertUser({
+    email: "pedro.penduko@up.edu.ph",
+    displayName: "Pedro Penduko",
   });
 
   // --- weekly form template + recurrence schedule + cycles ---
@@ -286,6 +358,37 @@ async function main() {
     ),
     orderBy: desc(formInstances.openAt),
   });
+  /**
+   * Bring the open occurrence's audience up to date with the course's sections.
+   *
+   * A form instance SNAPSHOTS its audience when it is generated, and that is
+   * correct domain behaviour — adding a section later must not silently change
+   * who an already-generated occurrence went to. But this seed adds Lab B and
+   * Lab C to a course that, on a database seeded before they existed, already
+   * has occurrences naming only Lab A. Without this the three-lab demonstration
+   * cannot be seeded at all on an existing dev database: the Lab B student is
+   * refused the form they are supposed to answer.
+   *
+   * Seed-only reconciliation, deliberately not a service call: nothing in the
+   * app rewrites a generated audience, and nothing here should teach that it may.
+   */
+  if (openInstance) {
+    const { formInstanceSections } = await import("../src/db/schema");
+    const existing = await db.query.formInstanceSections.findMany({
+      where: eq(formInstanceSections.instanceId, openInstance.id),
+    });
+    const have = new Set(existing.map((row) => row.sectionId));
+    const missing = labs.filter((lab) => !have.has(lab.id));
+    if (missing.length > 0) {
+      await db.insert(formInstanceSections).values(
+        missing.map((lab) => ({
+          instanceId: openInstance.id,
+          sectionId: lab.id,
+        })),
+      );
+    }
+  }
+
   const snapshotQuestions = openInstance
     ? await db.query.formQuestions.findMany({
         where: eq(formQuestions.cycleId, openInstance.id),
@@ -363,6 +466,12 @@ async function main() {
     }
   }
 
+  /**
+   * One response per lab, so the seeded week proves the acceptance case:
+   * Juan asks in Lab A, Maria in Lab B, Pedro comments from Lab C, and all
+   * three answer the SAME shared occurrence. Responses keep their attribution
+   * section; the answer the team publishes does not have one.
+   */
   const demoResponses = [
     {
       user: student,
@@ -391,6 +500,17 @@ async function main() {
         submissionType: "feedback" as const,
         category: "misc" as const,
         text: "The pacing felt better once we started working through examples.",
+      },
+    },
+    {
+      user: pedro,
+      email: "pedro.penduko@up.edu.ph",
+      item: {
+        clientKey: "seed-pedro-question",
+        kind: "question" as const,
+        submissionType: "question" as const,
+        category: "content" as const,
+        text: "Is the AVL balance factor checked before or after the rotation?",
       },
     },
   ];
@@ -457,8 +577,16 @@ async function main() {
           })
         : undefined;
       if (!publicAnswer) {
+        /**
+         * ONE answer for the course — not one per lab.
+         *
+         * Maria asked it from Lab B; Juan in Lab A and Pedro in Lab C read the
+         * same published entry, and neither can tell which lab it came from.
+         * That single row is the whole of ADR-0005 in the seed data: a course
+         * with three sections ends up with one PublicAnswer, not three.
+         */
         publicAnswer = await draftPublicAnswer(teacher.id, {
-          sectionId: section!.id,
+          courseId: course!.id,
           itemIds: [itemId],
           publicQuestionText: "When will the practice set for this topic be available?",
           answerBody: "The practice set will be available before the next class.",
@@ -477,9 +605,12 @@ async function main() {
     admin: admin.email,
     teacher: teacher.email,
     ta: ta.email,
-    student: "student@up.edu.ph (Juan Dela Cruz, 2026-00001 — rostered, no claim step)",
+    student: "student@up.edu.ph (Juan Dela Cruz, 2026-00001 — Lab A, no claim step)",
     course: course!.code,
-    section: section!.title,
+    sections: labs.map((lab) => lab.title).join(", "),
+    /* The assistant is delegated to Lab A only — the fixture for "course-wide
+       outputs did not make source data course-wide". */
+    assistantScope: `${ta.email} reviews ${labA.title} only`,
     responses: openInstance
       ? `${seededResponseCount} new response${seededResponseCount === 1 ? "" : "s"} seeded`
       : "No open form instance",

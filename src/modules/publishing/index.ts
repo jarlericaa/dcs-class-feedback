@@ -1,11 +1,13 @@
-import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  classSections,
   formInstances,
   formQuestions,
   formResponses,
   privateResponses,
   publicAnswers,
+  publicAnswerApprovals,
   questionAnswers,
   sourceLinks,
   studentSubmissionItems,
@@ -14,9 +16,11 @@ import {
 import { writeAudit } from "@/modules/audit";
 import {
   PUBLICATION_PERMISSIONS,
-  requireAnySectionPermission,
+  AuthzError,
+  requireAnyCoursePermission,
+  requireCourseQaAccess,
+  requireCourseStaffOrSectionGrant,
   requireEnrolledStudent,
-  requireSectionQaAccess,
   requireSectionStaff,
 } from "@/modules/authz";
 import { hasSequence, instanceLabel } from "@/modules/forms/instances";
@@ -33,17 +37,51 @@ export { publishDueAnswers } from "./publish";
  * - every source stays linked (merge = many SourceLinks → one answer);
  * - SourceLink is internal-only: no student-visible public read model ever
  *   includes source/identity data;
- * - "public" = visible to that section's class only (authz-gated).
+ * - "public" = visible to the COURSE's class only (authz-gated, ADR-0005):
+ *   one publication, one entry, read by every eligible student of the course.
+ *
+ * The section a question came from survives as internal provenance through
+ * SourceLink → StudentSubmissionItem → FormResponse.sectionId. It is never an
+ * audience boundary and never reaches a student-visible payload.
  */
 
 /**
- * Draft a public answer from one or more student submission items (merge =
- * multiple items; D8 provisional: same section, cross-cycle allowed).
+ * Authorize a WRITE to one course-owned public answer.
+ *
+ * Course staff qualify; so does a section assistant holding the named flag on
+ * any section of the course, because that is the scope the flag advertises now
+ * that the queue is course-wide. This governs the ENTRY only — reading the
+ * SOURCE submissions behind it stays section-scoped and is checked separately,
+ * per source, on the drafting path.
+ */
+async function requireAnswerCapability(
+  courseId: string,
+  actorUserId: string,
+  permission:
+    | "draftPublicAnswers"
+    | "rewordPublicQuestions"
+    | "publishPublicAnswers"
+    | "schedulePublication",
+) {
+  return requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    permission,
+  );
+}
+
+/**
+ * Draft a public answer from one or more student submission items.
+ *
+ * Merge = multiple items. They may now span sections of the same course (one
+ * course, one answer), but the actor must hold the permission on each source
+ * section — see the check below.
  */
 export async function draftPublicAnswer(
   actorUserId: string,
   input: {
-    sectionId: string;
+    courseId: string;
     itemIds: string[];
     publicQuestionText: string;
     answerBody?: string;
@@ -57,26 +95,33 @@ export async function draftPublicAnswer(
   if (!input.publicQuestionText.trim()) {
     throw new Error("Public question text is required");
   }
-  await requireSectionStaff(db, actorUserId, input.sectionId, "draftPublicAnswers");
+  await requireAnswerCapability(input.courseId, actorUserId, "draftPublicAnswers");
 
   /**
-   * Merge scope: every source item must belong to THIS section — where "belong"
-   * means the ASKER answered through it (`formResponses.sectionId`), not that the
-   * form instance happened to be shared with it.
+   * Merge scope: every source item must belong to THIS course, and the actor
+   * must hold `draft_public_answers` on EVERY source section individually.
    *
-   * This is what keeps a shared form from widening a publication. Sharing one
-   * questionnaire across CS 33's sections must not make Section A's published
-   * answer visible to Section B; cross-section reuse still goes through the
-   * course backlog (D8, ADR-0002).
+   * That second condition is what stops a merge becoming a permission bypass.
+   * A course-wide answer may now legitimately draw on Lab A and Lab B at once —
+   * it is one course, one answer — but an assistant authorized on Lab A only
+   * still cannot reach into Lab B's submissions by naming them as co-sources.
+   * The section a source came from is read from `formResponses.sectionId` (the
+   * section the ASKER answered through), never from the instance audience.
    */
   const items: (typeof studentSubmissionItems.$inferSelect)[] = [];
+  const sourceSectionIds = new Set<string>();
   for (const itemId of input.itemIds) {
     const { item, sectionId } = await getItemWithSection(itemId);
-    if (sectionId !== input.sectionId) {
+    const section = await db.query.classSections.findFirst({
+      where: eq(classSections.id, sectionId),
+    });
+    if (section?.courseId !== input.courseId) {
       throw new Error(
-        "All merged items must belong to the same class section (cross-section publishing goes through the course backlog)",
+        "All merged items must belong to the same course",
       );
     }
+    await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
+    sourceSectionIds.add(sectionId);
     items.push(item);
   }
 
@@ -84,7 +129,7 @@ export async function draftPublicAnswer(
     const [answer] = await tx
       .insert(publicAnswers)
       .values({
-        sectionId: input.sectionId,
+        courseId: input.courseId,
         publicQuestionText: input.publicQuestionText,
         answerBody: input.answerBody,
         state: "draft",
@@ -110,7 +155,7 @@ export async function draftPublicAnswer(
         entityType: "source_link",
         entityId: link!.id,
         after: { publicAnswerId: answer!.id, itemId: item.id },
-        sectionId: input.sectionId,
+        courseId: input.courseId,
       });
 
       const merged = items.length > 1;
@@ -138,11 +183,14 @@ export async function draftPublicAnswer(
       action: "public_answer.drafted",
       entityType: "public_answer",
       entityId: answer!.id,
-      sectionId: input.sectionId,
+      courseId: input.courseId,
       after: {
-        sectionId: input.sectionId,
+        courseId: input.courseId,
         sourceCount: items.length,
         merged: items.length > 1,
+        /* Internal provenance for the audit trail only — which class lists the
+           sources came through. Never part of a student-visible payload. */
+        sourceSectionIds: [...sourceSectionIds],
       },
     });
     return answer!;
@@ -160,7 +208,7 @@ export async function rewordPublicQuestion(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "rewordPublicQuestions");
+  await requireAnswerCapability(answer.courseId, actorUserId, "rewordPublicQuestions");
   // A scheduled answer already carries an acknowledged anonymity check for its
   // current wording. Allowing an edit here would let different text go out
   // under that acknowledgment, so the schedule must be cancelled first.
@@ -182,7 +230,7 @@ export async function rewordPublicQuestion(
       entityId: publicAnswerId,
       before: { publicQuestionText: answer.publicQuestionText },
       after: { publicQuestionText: newText },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
@@ -196,7 +244,7 @@ export async function updateAnswerBody(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "draftPublicAnswers");
+  await requireAnswerCapability(answer.courseId, actorUserId, "draftPublicAnswers");
   if (answer.state !== "draft") {
     throw new Error(
       `Cannot edit an answer in state ${answer.state}. Cancel the schedule first.`,
@@ -214,7 +262,7 @@ export async function updateAnswerBody(
       entityId: publicAnswerId,
       before: { answerBody: answer.answerBody },
       after: { answerBody },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
@@ -295,7 +343,7 @@ export async function publishNow(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "publishPublicAnswers");
+  await requireAnswerCapability(answer.courseId, actorUserId, "publishPublicAnswers");
   if (answer.state !== "draft" && answer.state !== "scheduled") {
     throw new Error(`Cannot publish an answer in state ${answer.state}`);
   }
@@ -327,7 +375,7 @@ export async function publishNow(
       entityId: publicAnswerId,
       before: { state: answer.state },
       after: { state: "published" },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
@@ -342,7 +390,7 @@ export async function schedulePublication(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "schedulePublication");
+  await requireAnswerCapability(answer.courseId, actorUserId, "schedulePublication");
   if (answer.state !== "draft" && answer.state !== "scheduled") {
     throw new Error(`Cannot schedule an answer in state ${answer.state}`);
   }
@@ -375,7 +423,7 @@ export async function schedulePublication(
       entityType: "public_answer",
       entityId: publicAnswerId,
       after: { scheduledAt: scheduledAt.toISOString() },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
@@ -388,7 +436,7 @@ export async function cancelScheduledPublication(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "schedulePublication");
+  await requireAnswerCapability(answer.courseId, actorUserId, "schedulePublication");
   if (answer.state !== "scheduled") {
     throw new Error("Only a scheduled answer can be cancelled");
   }
@@ -409,36 +457,40 @@ export async function cancelScheduledPublication(
       entityType: "public_answer",
       entityId: publicAnswerId,
       before: { scheduledAt: answer.scheduledAt?.toISOString() },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
 
 /**
  * Publication queue: drafts, scheduled answers, failed publications and the
- * most recent published entries for one section. Staff-only — it carries the
- * source-link counts and failure reasons that never reach students.
+ * most recent published entries for one COURSE (ADR-0005). Staff-only — it
+ * carries the source-link counts and failure reasons that never reach students.
+ *
+ * One queue per course, not per section: the teaching team of CS 33 works one
+ * pipeline, and an answer drafted from a Lab A question is the same object
+ * every instructor on the course sees.
  *
  * `publishFailed` rows stay in `scheduled` state by design (see
  * publishing/publish.ts), so staff can retry with publishNow or reschedule.
  */
-export async function listPublicationQueue(
+export async function listCoursePublicationQueue(
   actorUserId: string,
-  sectionId: string,
+  courseId: string,
 ) {
-  await requireAnySectionPermission(
+  await requireAnyCoursePermission(
     db,
     actorUserId,
-    sectionId,
+    courseId,
     PUBLICATION_PERMISSIONS,
     { allowArchived: true },
   );
   const rows = await db.query.publicAnswers.findMany({
-    where: eq(publicAnswers.sectionId, sectionId),
+    where: eq(publicAnswers.courseId, courseId),
     orderBy: desc(publicAnswers.updatedAt),
   });
   if (rows.length === 0) {
-    return { drafts: [], scheduled: [], failed: [], published: [] };
+    return { drafts: [], scheduled: [], failed: [], published: [], items: [] };
   }
   const links = await db.query.sourceLinks.findMany({
     where: inArray(
@@ -446,17 +498,89 @@ export async function listPublicationQueue(
       rows.map((r) => r.id),
     ),
   });
+  const itemIds = links
+    .map((link) => link.itemId)
+    .filter((itemId): itemId is string => Boolean(itemId));
+  const items = itemIds.length
+    ? await db.query.studentSubmissionItems.findMany({
+        where: inArray(studentSubmissionItems.id, itemIds),
+      })
+    : [];
+  const responses = items.length
+    ? await db.query.formResponses.findMany({
+        where: inArray(
+          formResponses.id,
+          items.map((item) => item.responseId),
+        ),
+      })
+    : [];
+  const cycles = responses.length
+    ? await db.query.formInstances.findMany({
+        where: inArray(
+          formInstances.id,
+          responses.map((response) => response.cycleId),
+        ),
+      })
+    : [];
+  const creatorIds = [...new Set(rows.map((row) => row.createdByUserId))];
+  const creators = await db.query.users.findMany({
+    where: inArray(users.id, creatorIds),
+  });
+  const approvals = await db.query.publicAnswerApprovals.findMany({
+    where: inArray(
+      publicAnswerApprovals.publicAnswerId,
+      rows.map((row) => row.id),
+    ),
+    orderBy: desc(publicAnswerApprovals.createdAt),
+  });
   const sourceCount = new Map<string, number>();
+  const sourceSubmissionCount = new Map<string, number>();
+  const firstSourceCycle = new Map<string, (typeof formInstances.$inferSelect)>();
   for (const link of links) {
     sourceCount.set(
       link.publicAnswerId,
       (sourceCount.get(link.publicAnswerId) ?? 0) + 1,
     );
+    if (link.itemId) {
+      sourceSubmissionCount.set(
+        link.publicAnswerId,
+        (sourceSubmissionCount.get(link.publicAnswerId) ?? 0) + 1,
+      );
+      const item = items.find((candidate) => candidate.id === link.itemId);
+      const response = item
+        ? responses.find((candidate) => candidate.id === item.responseId)
+        : undefined;
+      const cycle = response
+        ? cycles.find((candidate) => candidate.id === response.cycleId)
+        : undefined;
+      if (cycle && !firstSourceCycle.has(link.publicAnswerId)) {
+        firstSourceCycle.set(link.publicAnswerId, cycle);
+      }
+    }
   }
+  const latestApproval = new Map<string, (typeof publicAnswerApprovals.$inferSelect)>();
+  for (const approval of approvals) {
+    if (!latestApproval.has(approval.publicAnswerId)) {
+      latestApproval.set(approval.publicAnswerId, approval);
+    }
+  }
+  const creatorById = new Map(creators.map((creator) => [creator.id, creator]));
   const decorated = rows.map((answer) => ({
     answer,
     sourceCount: sourceCount.get(answer.id) ?? 0,
+    linkedSubmissionCount: sourceSubmissionCount.get(answer.id) ?? 0,
+    creatorName: creatorById.get(answer.createdByUserId)?.displayName ?? null,
+    sourceOccurrence: (() => {
+      const cycle = firstSourceCycle.get(answer.id);
+      return cycle && hasSequence(cycle)
+        ? instanceLabel(cycle)
+        : null;
+    })(),
+    latestApproval: latestApproval.get(answer.id) ?? null,
   }));
+  const active = decorated.filter(
+    (item) => item.answer.state !== "published" && item.answer.state !== "unpublished",
+  );
   return {
     drafts: decorated.filter((d) => d.answer.state === "draft"),
     scheduled: decorated.filter(
@@ -466,6 +590,13 @@ export async function listPublicationQueue(
     published: decorated
       .filter((d) => d.answer.state === "published")
       .slice(0, 20),
+    /**
+     * The editorial list keeps the persisted state intact. `latestApproval` is
+     * only a projection for the queue: an approval rejection returns the
+     * PublicAnswer to `draft`, but remains useful as a Rejected filter result
+     * until the next revision or approval decision.
+     */
+    items: active,
   };
 }
 
@@ -482,10 +613,10 @@ export async function getPublicAnswerForEditing(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireAnySectionPermission(
+  await requireAnyCoursePermission(
     db,
     actorUserId,
-    answer.sectionId,
+    answer.courseId,
     PUBLICATION_PERMISSIONS,
     { allowArchived: true },
   );
@@ -498,32 +629,71 @@ export async function getPublicAnswerForEditing(
         where: inArray(studentSubmissionItems.id, itemIds),
       })
     : [];
+  const visibleSources: {
+    id: string;
+    submissionType: (typeof studentSubmissionItems.$inferSelect)["submissionType"];
+    category: (typeof studentSubmissionItems.$inferSelect)["category"];
+    originalText: string;
+  }[] = [];
+  let hiddenSourceCount = 0;
+  for (const item of items) {
+    const { sectionId } = await getItemWithSection(item.id);
+    try {
+      await requireSectionStaff(
+        db,
+        actorUserId,
+        sectionId,
+        "reviewResponses",
+        { allowArchived: true },
+      );
+      visibleSources.push({
+        id: item.id,
+        submissionType: item.submissionType,
+        category: item.category,
+        originalText: item.originalText,
+      });
+    } catch (err) {
+      if (err instanceof AuthzError) {
+        hiddenSourceCount += 1;
+        continue;
+      }
+      throw err;
+    }
+  }
   return {
     answer,
-    sources: items.map((item) => ({
-      id: item.id,
-      submissionType: item.submissionType,
-      category: item.category,
-      originalText: item.originalText,
-    })),
+    sources: visibleSources,
+    hiddenSourceCount,
     backlogSourceCount: links.filter((l) => l.backlogQuestionId).length,
     warnings: anonymityWarnings(answer.publicQuestionText, links.length),
   };
 }
 
 /**
- * Section Q&A archive — the class-facing read model. Access limited to that
- * section's enrolled students and staff. The projection is intentionally
- * identity-free: no source links, no student data, no drafts.
+ * Class Q&A archive — the class-facing read model, one per COURSE (ADR-0005).
+ *
+ * Access is limited to the course's staff and to students holding an active
+ * enrolment in ANY of its sections. A Lab B student reading an answer that
+ * originated in Lab A is the intended behaviour, not a leak: the projection is
+ * identity-free AND provenance-free — no source links, no student data, no
+ * drafts, and no origin section.
+ *
+ * There is deliberately no section filter here. Which class a question came
+ * from is not part of navigating a shared archive, and offering it would invite
+ * exactly the inference the anonymity rules exist to prevent.
  */
-export async function listSectionQa(
+export async function listCourseQa(
   actorUserId: string,
-  sectionId: string,
-  opts: { search?: string; category?: "content" | "logistics" | "misc" } = {},
+  courseId: string,
+  opts: {
+    search?: string;
+    category?: "content" | "logistics" | "misc";
+    sort?: "newest" | "oldest";
+  } = {},
 ) {
-  await requireSectionQaAccess(db, actorUserId, sectionId, { allowArchived: true });
+  await requireCourseQaAccess(db, actorUserId, courseId, { allowArchived: true });
   const conditions = [
-    eq(publicAnswers.sectionId, sectionId),
+    eq(publicAnswers.courseId, courseId),
     eq(publicAnswers.state, "published"),
   ];
   if (opts.category) {
@@ -544,7 +714,10 @@ export async function listSectionQa(
   }
   const rows = await db.query.publicAnswers.findMany({
     where: and(...conditions),
-    orderBy: desc(publicAnswers.publishedAt),
+    orderBy:
+      opts.sort === "oldest"
+        ? asc(publicAnswers.publishedAt)
+        : desc(publicAnswers.publishedAt),
   });
 
   /**
@@ -659,6 +832,9 @@ export async function getStudentHistory(userId: string, sectionId: string) {
         where: eq(sourceLinks.itemId, item.id),
       });
       let publicView: {
+        /** deep-links the asker straight to the entry in the course archive */
+        id: string;
+        courseId: string;
         rewordedQuestion: string;
         answer: string | null;
         publishedAt: Date | null;
@@ -672,6 +848,8 @@ export async function getStudentHistory(userId: string, sectionId: string) {
         });
         if (answer) {
           publicView = {
+            id: answer.id,
+            courseId: answer.courseId,
             rewordedQuestion: answer.publicQuestionText,
             answer: answer.answerBody,
             publishedAt: answer.publishedAt,

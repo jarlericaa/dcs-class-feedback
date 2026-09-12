@@ -58,7 +58,11 @@ export function ThreadAudience({
 }) {
   return (
     <>
-      {scope === "public" ? <IconPublic size={12} /> : <IconPrivate size={12} />}
+      {scope === "public" ? (
+        <IconPublic size={12} />
+      ) : (
+        <IconPrivate size={12} />
+      )}
       {children}
     </>
   );

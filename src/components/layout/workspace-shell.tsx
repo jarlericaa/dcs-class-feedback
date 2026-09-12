@@ -1,16 +1,15 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { signOutAction } from "@/app/actions/session";
+import { Suspense, type ReactNode } from "react";
 import { initials } from "@/lib/datetime";
-import {
-  IconBack,
-  IconChevron,
-  IconMenu,
-  IconSearch,
-} from "@/components/ui/icons";
+import { IconBack, IconMenu, IconSearch } from "@/components/ui/icons";
 import { FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
 import { SubNav } from "./sub-nav";
-import { NAV_ICONS, type NavGroup, type NavItem } from "./nav";
+import type { NavGroup, NavItem } from "./nav";
+import { Rail } from "./rail";
+import { RailToggle } from "./rail-toggle";
+import { readRailCollapsed } from "@/lib/rail-state";
+import { cn } from "@/lib/cn";
+import { Announcer } from "@/components/ui/announcer";
 
 /**
  * The workspace chrome: a white top bar with a hairline under it, a left rail
@@ -38,78 +37,7 @@ export interface ShellUser {
   email: string;
 }
 
-function Rail({
-  user,
-  workspaceLabel,
-  navGroups,
-  footer,
-}: {
-  user: ShellUser;
-  workspaceLabel?: string;
-  navGroups?: NavGroup[];
-  footer?: ReactNode;
-}) {
-  return (
-    <>
-      {navGroups?.map((group) => {
-        const rows = group.items.map((item) => {
-          const Glyph = item.icon ? NAV_ICONS[item.icon] : null;
-          return (
-            <Link
-              key={item.href}
-              className={`ws-rail__item ${item.active ? "ws-rail__item--active" : ""}`}
-              href={item.href}
-              aria-current={item.active ? "page" : undefined}
-            >
-              <span className="ws-rail__icon">
-                {Glyph && <Glyph size={16} />}
-              </span>
-              <span className="ws-rail__text">{item.label}</span>
-              {item.count ? (
-                <span className="ws-rail__count">
-                  {item.count}
-                  <span className="visually-hidden"> needing review</span>
-                </span>
-              ) : null}
-            </Link>
-          );
-        });
-
-        /* Always `open`. The disclosure lets a reader fold a long course list
-           away for the session; it does not remember, because a rail whose
-           height depended on where you had been is the instability this model
-           exists to remove. */
-        return group.collapsible ? (
-          <details className="ws-rail__group" key={group.label} open>
-            <summary className="ws-rail__heading ws-rail__heading--toggle">
-              {group.label}
-              <IconChevron className="ws-rail__chevron" size={13} />
-            </summary>
-            {rows}
-          </details>
-        ) : (
-          <div key={group.label}>
-            <p className="ws-rail__heading">{group.label}</p>
-            {rows}
-          </div>
-        );
-      })}
-
-      <div className="ws-rail__footer">
-        {workspaceLabel && <p>{workspaceLabel}</p>}
-        {footer}
-        <p style={{ marginTop: 4, overflowWrap: "anywhere" }}>{user.email}</p>
-        <form action={signOutAction}>
-          <button className="ws-signout" type="submit">
-            Sign out
-          </button>
-        </form>
-      </div>
-    </>
-  );
-}
-
-export function WorkspaceShell({
+export async function WorkspaceShell({
   user,
   contextTitle,
   workspaceLabel,
@@ -159,6 +87,13 @@ export function WorkspaceShell({
    */
   const hasRail = !!navGroups?.length;
 
+  /**
+   * Read on the server so the rail paints in the shape the reader chose, first
+   * time, on every navigation (decision N-2). A preference held only in the
+   * browser would show the expanded rail and snap it narrow after hydration.
+   */
+  const railCollapsed = await readRailCollapsed();
+
   const rail = () => (
     <Rail
       user={user}
@@ -172,10 +107,20 @@ export function WorkspaceShell({
     /* Two shell modes (globals.css): a single-column route is an ordinary
        scrolling document; a multi-pane route owns one viewport box whose panes
        scroll independently. `listPane` is what decides which. */
-    <div className={`ws${listPane ? " ws--panes" : ""}`}>
+    <div className={cn("ws", listPane && "ws--panes")}>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
+
+      {/*
+        Announces `?ok=` / `?error=` once, politely (§5.4). Here rather than in
+        `AppShell` so the two-pane routes that render this shell directly are
+        covered too, and here rather than at thirty call sites because the
+        message is already in the URL — see `announcer.tsx`.
+      */}
+      <Suspense fallback={null}>
+        <Announcer />
+      </Suspense>
 
       <header className="ws-topbar">
         <Link className="ws-brand" href="/">
@@ -199,6 +144,11 @@ export function WorkspaceShell({
                 Menu
               </summary>
               <nav className="ws-drawer__panel" aria-label="Primary menu">
+                {/* The same rail, and deliberately never collapsed: this panel
+                    is a full-width sheet on a phone, where 60px of icons would
+                    be a worse answer than the sheet the reader just opened. It
+                    stays expanded because `data-rail` lives on the rail `<nav>`
+                    below, which this is not inside. */}
                 {rail()}
               </nav>
             </details>
@@ -212,49 +162,172 @@ export function WorkspaceShell({
         </div>
       </header>
 
-      <div className="ws-body">
+      {/*
+        `data-rail` lives on the BODY, not on the rail, because the collapse
+        handle is now a sibling of the rail rather than a child of it
+        (`sidebar.md` §4) and has to read the same state. The mobile drawer is
+        in the header, outside this element, so it still never inherits the
+        collapsed shape — which was the reason the attribute was moved off the
+        shell root in the first place.
+      */}
+      <div
+        className="ws-body relative"
+        data-rail={railCollapsed ? "min" : "full"}
+        id="ws-body"
+      >
         {hasRail && (
-          <nav className="ws-rail" aria-label="Primary">
+          <nav
+            className={cn(
+              /*
+                `ws-rail` is KEPT as a hook, with no geometry attached to it any
+                more — three rules elsewhere still select it and all three are
+                still wanted: the rail's focus ring and text selection (scoped
+                to `.ws-rail` AND `.ws-drawer__panel`, since `--focus` is
+                invisible on this ground), `display: none` below 860px, and the
+                print block. Dropping the class silently un-hid the rail on a
+                phone, so it rendered behind the drawer — caught by measuring,
+                not by looking.
+
+                The rail's geometry, in utilities (`sidebar.md`). 35 `.ws-rail*`
+                rules were deleted from `legacy.css` in the same change.
+              */
+              "ws-rail",
+              "flex shrink-0 flex-col overflow-y-auto overflow-x-hidden",
+              /*
+                §15: below 860px the rail goes and the drawer takes over. This
+                HAS to be a utility: `legacy.css` already said
+                `@media (max-width: 860px) { .ws-rail { display: none } }`, but
+                that file is imported into `@layer components` and `flex` above
+                is a utility — a later layer — so the utility won and the rail
+                rendered on a phone behind the open drawer. Layer order beats
+                media queries, and a rule in the wrong layer is a rule that does
+                nothing.
+              */
+              "max-lg:hidden",
+              /*
+                Single-column routes scroll the page, so the rail sticks under
+                the top bar and keeps its own full height — the rule that used
+                to do this went with the block, and without it the rail scrolls
+                away on a long page.
+              */
+              "sticky top-topbar h-[calc(100dvh-var(--spacing-topbar))] self-start",
+              "bg-rail px-4 pt-5 pb-5",
+              "border-r border-r-rail-deep",
+              /*
+                §5: 248 → 72 on a 200ms transition, and the LAYOUT resizes with
+                it. `width` and `flex-basis` move together because a flex item's
+                main size comes from the basis; animating one without the other
+                would have transitioned nothing.
+
+                It does not overlay the page. An earlier version expanded over
+                the content on hover, which §5 rules out ("pushing/resizing the
+                application layout rather than sitting over the content") — and
+                removing it is what lets the toggle live inside the rail at all,
+                since nothing re-expands the rail while the button holds focus.
+              */
+              "w-rail flex-[0_0_var(--spacing-rail)]",
+              "in-data-[rail=min]:w-rail-min",
+              "in-data-[rail=min]:flex-[0_0_var(--spacing-rail-min)]",
+              "in-data-[rail=min]:px-4",
+              "transition-[width,flex-basis] duration-200 ease-out",
+              /*
+                §15: a tablet gets the icon rail and a phone gets the drawer.
+                Below 1024px the rail is forced narrow and the toggle is hidden
+                with it — offering a control that cannot change anything is the
+                defect this whole pass started with.
+              */
+              "max-xl:w-rail-min max-xl:flex-[0_0_var(--spacing-rail-min)]",
+            )}
+            aria-label="Primary"
+            id="ws-rail"
+          >
             {rail()}
           </nav>
         )}
 
-        {/* The resource's own views, between the workspace and the page. */}
-        {tabGroups && tabGroups.length > 0 && (
-          <SubNav groups={tabGroups} label={tabsLabel ?? contextTitle} />
-        )}
-        {!tabGroups && tabs && tabs.length > 0 && (
-          <SubNav
-            items={tabs}
-            label={tabsLabel ?? contextTitle}
-            mode={tabsMode}
-          />
-        )}
+        {/*
+          THE COLLAPSE HANDLE (`sidebar.md` §4).
 
-        {listPane}
+          A sibling of the rail, not a child, and `fixed` rather than absolute.
+          Both of those are forced:
 
-        {listPane ? (
-          <main
-            className={`ws-detail ${
-              selection && !selection.active ? "ws-detail--hidden" : ""
-            }`}
-            id="main-content"
-            tabIndex={-1}
+          - **Not a child.** The rail is its own scroll container
+            (`overflow-y: auto`), so a handle inside it that straddles the right
+            edge would be clipped by it. The same constraint killed the per-row
+            flyout twice; this time the element simply lives outside.
+          - **`fixed`, not `absolute`.** §4 wants it vertically centred on the
+            sidebar. `.ws-body` can be far taller than the viewport on a long
+            page, so `absolute top-1/2` would centre it on the DOCUMENT and
+            scroll away. The rail is a sticky, viewport-tall column, so the
+            viewport's middle IS the sidebar's middle.
+
+          `-translate-x-1/2` is what makes it straddle the boundary rather than
+          sit beside it, and `left` transitions with the rail so the handle stays
+          attached to the edge for the whole 200ms (§5).
+        */}
+        {hasRail && (
+          <div
+            className={cn(
+              "fixed top-1/2 z-30 -translate-x-1/2 -translate-y-1/2",
+              "left-rail in-data-[rail=min]:left-rail-min",
+              "transition-[left] duration-200 ease-out",
+              // Below 1024px the width is forced, so the control cannot change
+              // anything; below 860px there is no rail to collapse at all.
+              "max-xl:hidden",
+            )}
           >
-            <div className="ws-detail__inner">
-              {selection?.active && (
-                <Link className="ws-backlink" href={selection.backHref}>
-                  <IconBack size={15} /> Back to the list
-                </Link>
-              )}
-              {children}
-            </div>
-          </main>
-        ) : (
-          <main className="ws-page" id="main-content" tabIndex={-1}>
-            <div className="ws-page__inner">{children}</div>
-          </main>
+            <RailToggle collapsed={railCollapsed} />
+          </div>
         )}
+
+        {/*
+          ONE sidebar, then the content column (`sidebar.md` §1, §17).
+
+          The course's own views used to be a second 200px vertical column
+          sitting between the rail and the page — a nested sidebar, which §17
+          forbids outright. They are now a horizontal tab bar at the top of this
+          column, above the panes, so the hierarchy reads
+          rail → course tabs → content instead of rail → rail → content.
+        */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {tabGroups && tabGroups.length > 0 && (
+            <SubNav groups={tabGroups} label={tabsLabel ?? contextTitle} />
+          )}
+          {!tabGroups && tabs && tabs.length > 0 && (
+            <SubNav
+              items={tabs}
+              label={tabsLabel ?? contextTitle}
+              mode={tabsMode}
+            />
+          )}
+
+          <div className="flex min-h-0 min-w-0 flex-1">
+            {listPane}
+
+            {listPane ? (
+              <main
+                className={`ws-detail ${
+                  selection && !selection.active ? "ws-detail--hidden" : ""
+                }`}
+                id="main-content"
+                tabIndex={-1}
+              >
+                <div className="ws-detail__inner">
+                  {selection?.active && (
+                    <Link className="ws-backlink" href={selection.backHref}>
+                      <IconBack size={15} /> Back to the list
+                    </Link>
+                  )}
+                  {children}
+                </div>
+              </main>
+            ) : (
+              <main className="ws-page" id="main-content" tabIndex={-1}>
+                <div className="ws-page__inner">{children}</div>
+              </main>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

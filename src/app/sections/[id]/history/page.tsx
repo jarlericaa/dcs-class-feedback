@@ -70,7 +70,11 @@ export default async function HistoryPage({
       user={toShellUser(user)}
       workspace="student"
       navGroups={await primaryNavFor(user, `/sections/${sectionId}/history`)}
-      tabs={studentSectionTabs(sectionId, `/sections/${sectionId}/history`)}
+      tabs={studentSectionTabs(
+        sectionId,
+        course.id,
+        `/sections/${sectionId}/history`,
+      )}
       tabsLabel={course.code}
       contextLabel={`${course.code} · ${section.title}`}
       title="My submissions"
@@ -106,7 +110,7 @@ export default async function HistoryPage({
             {history.map((entry) => (
               <article className="record" key={entry.responseId}>
                 <div className="record__head">
-                  <h2>Week {entry.cycleIndex}</h2>
+                  <h2 className="panel-title">Week {entry.cycleIndex}</h2>
                   <span className="meta">
                     Submitted{" "}
                     {formatDateTime(entry.submittedAt, section.timezone)}
@@ -129,9 +133,8 @@ export default async function HistoryPage({
                     item.privateResponses.length > 0 || !!item.publicAnswer;
                   return (
                     <div
-                      className="stack-3"
+                      className="stack-3 mt-6"
                       key={item.id}
-                      style={{ marginTop: "var(--s5)" }}
                     >
                       <Quote label={`Your ${item.submissionType}`}>
                         {item.originalText}
@@ -204,7 +207,7 @@ export default async function HistoryPage({
                       ) : (
                         <p className="meta">
                           <Stamp tone="neutral">No reply yet</Stamp>{" "}
-                          <span style={{ marginLeft: 8 }}>
+                          <span className="ml-2">
                             Your teaching team has not written back about this
                             one.
                           </span>
@@ -219,7 +222,7 @@ export default async function HistoryPage({
 
           <p className="meta">
             Looking for an answer that went out to everyone?{" "}
-            <Link className="link" href={`/sections/${sectionId}/qa`}>
+            <Link className="link" href={`/courses/${course.id}/qa`}>
               Browse the class Q&amp;A
             </Link>
             .

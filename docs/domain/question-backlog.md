@@ -2,7 +2,7 @@
 
 > **Status:** Product rule specification; implementation is partial and tracked
 > in [engineering/current-state.md](../engineering/current-state.md).
-> This document **owns** the course-level backlog concept and its per-section publish flow. Backlog states: [domain/domain-model.md](domain-model.md#37-backlog-question-state). Legacy sourcing detail: [domain/legacy-question-import.md](legacy-question-import.md).
+> This document **owns** the course-level backlog concept and its publish flow. Backlog states: [domain/domain-model.md](domain-model.md#37-backlog-question-state). Legacy sourcing detail: [domain/legacy-question-import.md](legacy-question-import.md).
 > Label key as in [product/requirements.md](../product/requirements.md).
 
 ## 1. Purpose **[Confirmed]**
@@ -10,7 +10,7 @@
 A separate **course-level** question backlog area for collecting questions that may be answered publicly later. It is **separate from the normal weekly response dashboard**.
 
 - The backlog belongs to the **course**, not a single class section.
-- Teachers choose which backlog questions become visible to a specific **current** class section.
+- Teachers choose which backlog questions get answered publicly. What they do **not** choose is a target section: answering one produces **one course-wide** Class Q&A entry ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)).
 
 ## 2. What the backlog may contain **[Confirmed]**
 
@@ -53,8 +53,8 @@ topic and free-form tags · priority · assigned staff member · date added · o
 linked duplicate questions and their askers · draft answer · recommendation state · approval state.
 
 Staff may **take ownership** of an item or reassign it to another staff member on the course.
-The backlog stays **course-scoped** and is reachable both from a section and from its own
-course-level route.
+The backlog stays **course-scoped** and is reached from the course
+(`/teach/courses/[id]/backlog`). The old section route forwards to it.
 
 ## 4. Backlog lifecycle **[Confirmed]** states
 
@@ -76,12 +76,22 @@ review` until an Instructor has confirmed it belongs in the backlog.
 - Merge and unmerge are transactional and audited, and submitting the same merge twice returns the
   existing merge rather than creating a second one.
 
-## 5. Publishing from the backlog **[Confirmed]**
+## 5. Publishing from the backlog **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), 2026-09-12]**
 
-- Backlog questions do **not** automatically appear in any public Q&A archive.
-- Teachers must **explicitly choose** which backlog questions to publish to a class section.
-- **[Recommended]** Publishing to a section records a `SectionBacklogVisibility` (which section, by whom) and creates a `PublicAnswer` in that section, following the rewording, anonymity, source-link, and scheduling rules in [public-qa.md](public-qa.md).
-- Because the backlog is course-level and publishing is per-section, the same backlog question can be published to different sections independently.
+The flow is:
+
+`BacklogQuestion → draft / reword / answer → publication queue → one course Class Q&A entry`
+
+- Backlog questions do **not** automatically appear in the Class Q&A archive. Publishing stays an explicit, audited staff act.
+- Drafting an answer creates **one** course-owned `PublicAnswer`, linked back to the backlog question by `SourceLink`, and follows the rewording, anonymity, source-link and scheduling rules in [public-qa.md](public-qa.md).
+- **No target section is chosen, and none is recorded.** The published entry is read by every student of the course.
+
+> **Superseded.** This section previously read: *"Teachers must explicitly choose which backlog
+> questions to publish to a class section… publishing to a section records a
+> `SectionBacklogVisibility`… the same backlog question can be published to different sections
+> independently."* That per-section publishing dimension is gone. `SectionBacklogVisibility` was
+> retained as `backlog_section_exposure_history` — provenance only, read by nothing, and not a
+> visibility mechanism.
 
 ## 6. Relationship to participation
 
@@ -89,8 +99,7 @@ Backlog and legacy questions never count toward current participation ([particip
 
 ## 7. Decisions affecting the backlog
 
-- **D8 — closed:** merge is within a section and may span cycles; cross-section consolidation goes
-  through this course-level backlog. Merging never alters per-cycle participation.
+- **D8 — closed; scope widened by [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md):** merge is within a **course** and may span cycles and sections. Consolidating across sections no longer has to detour through the backlog — though the backlog remains the right home for a question worth answering later. Merging never alters per-cycle participation, and the actor must hold the permission on every source section.
 
 See [decisions/open-decisions.md](../decisions/open-decisions.md).
 

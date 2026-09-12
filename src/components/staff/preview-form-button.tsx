@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { TemplatePreview } from "@/components/staff/template-preview";
 import type { FormQuestionView } from "@/components/student/weekly-form";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * "Preview form" for a page that is only *reading* a form.
@@ -17,13 +18,11 @@ import type { FormQuestionView } from "@/components/student/weekly-form";
  */
 export function PreviewFormButton({
   questions,
-  formTitle,
   config,
   label = "Preview form",
   primary = false,
 }: {
   questions: FormQuestionView[];
-  formTitle: string;
   config: {
     maxStudentQuestions: number;
     studentQuestionPrompt: string | null;
@@ -38,7 +37,7 @@ export function PreviewFormButton({
   return (
     <>
       <button
-        className={`button button--${primary ? "primary" : "secondary"}`}
+        className={buttonClass({ variant: primary ? "primary" : "secondary" })}
         type="button"
         onClick={() => setOpen(true)}
       >
@@ -49,7 +48,6 @@ export function PreviewFormButton({
           open={open}
           onClose={() => setOpen(false)}
           questions={questions}
-          templateName={formTitle}
           config={config}
         />
       )}

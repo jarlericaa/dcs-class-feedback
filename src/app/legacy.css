@@ -1,0 +1,4537 @@
+/**
+ * The hand-written system, pending migration to Tailwind utilities.
+ *
+ * Imported by `globals.css` INTO `@layer components`, which is the load-bearing
+ * detail: unlayered CSS beats every layered rule, so while this sheet was
+ * unlayered its element reset — `button, input, select, textarea { font:
+ * inherit; color: inherit }` — silently overrode `font-document`, `text-white`
+ * and every other utility on a form control. Utilities live in a later layer, so
+ * from here they win, and a converted component's classes actually apply.
+ *
+ * This file shrinks as routes are converted and is deleted when the last rule
+ * has a Tailwind equivalent. Nothing new belongs in it.
+ */
+
+/* ==========================================================================
+   Tokens
+   ========================================================================== */
+
+:root {
+  /**
+   * STRICTLY DERIVED. Every value here is `var(--<theme token>)` and never a
+   * second literal (§2.1).
+   *
+   * Why the file needs the block at all: the hand-written rules below are plain
+   * CSS and cannot use a Tailwind utility, so they need short names for the
+   * same values. Why every one of them is a `var()`: a colour with two literal
+   * definitions is a colour that can drift, and this block had twenty-four of
+   * them — every ground, ink step, rule and signal was written out twice, in
+   * two files, with nothing but review standing between them and disagreeing.
+   *
+   * A hex belongs in exactly one place: the `@theme` block in `globals.css`.
+   * `tests/unit/theme-tokens.test.ts` enforces it, so a literal reintroduced
+   * here fails the suite rather than being noticed later.
+   *
+   * This block dies with the last hand-written rule (§2.5).
+   */
+
+  /* ground and paper */
+  --board: var(--color-board);
+  --board-deep: var(--color-board-deep);
+  --paper: var(--color-paper);
+  --paper-quiet: var(--color-paper-quiet);
+
+  /* ink — contrast on paper: 16.7 / 8.8 / 5.3 / 3.2 */
+  --ink: var(--color-ink);
+  --ink-soft: var(--color-ink-soft);
+  --ink-muted: var(--color-ink-muted);
+  --ink-faint: var(--color-ink-faint);
+
+  /* rules. Interactive boundaries need a clear edge; resting rules stay quiet. */
+  --rule: var(--color-rule);
+  --rule-strong: var(--color-rule-strong);
+  --rule-ink: var(--color-rule-ink);
+  --control-edge: var(--color-control-edge);
+
+  /* the one accent — UP Forest Green (D-D). 8.3:1 under white text,
+     11.4:1 as `-deep` text on paper. */
+  --accent: var(--color-accent);
+  --accent-deep: var(--color-accent-deep);
+  --accent-wash: var(--color-accent-wash);
+  --accent-edge: var(--color-accent-edge);
+  --accent-press: var(--color-accent-press);
+  /* The one pairing that inverts in dark mode (§6A.2). */
+  --on-accent: var(--color-on-accent);
+
+  /* the two signals */
+  --amber: var(--color-amber);
+  --amber-deep: var(--color-amber-deep);
+  --amber-wash: var(--color-amber-wash);
+  --amber-edge: var(--color-amber-edge);
+  --red: var(--color-red);
+  --red-deep: var(--color-red-deep);
+  --red-wash: var(--color-red-wash);
+  --red-edge: var(--color-red-edge);
+  --red-press: var(--color-red-press);
+  /* The faintest step: the fill on an input the server rejected. This twin was
+     MISSING while a rule below already referenced it, so the invalid-field
+     background resolved to nothing at all — the exact failure mode this block's
+     discipline exists to prevent, and the reason the test now covers it. */
+  --red-tint: var(--color-red-tint);
+
+  /* The rail's dark ground — see the `@theme` block in globals.css for what
+     each one is measured at. Legal only inside `.ws-rail` and
+     `.ws-drawer__panel`. */
+  --rail: var(--color-rail);
+  --rail-deep: var(--color-rail-deep);
+  --rail-raised: var(--color-rail-raised);
+  --rail-ink: var(--color-rail-ink);
+  --rail-ink-muted: var(--color-rail-ink-muted);
+  --rail-icon: var(--color-rail-icon);
+  --rail-rule: var(--color-rail-rule);
+  --rail-focus: var(--color-rail-focus);
+  --rail-count: var(--color-rail-count);
+  --rail-count-edge: var(--color-rail-count-edge);
+  --rail-handle: var(--color-rail-handle);
+
+  /* The focus ring IS the deep accent — it is not a fifth colour, and when the
+     accent moved (D-D) the ring had to move with it or the interface would
+     have kept a teal ring on a green palette. Stated as a reference so that
+     cannot come apart again. */
+  --focus: var(--color-accent-deep);
+
+  /* radius — 6 / 5 / 12, confirmed by decision D-A on 2026-09-11. */
+  --r-control: var(--radius-control);
+  --r-stamp: var(--radius-stamp);
+  --r-panel: var(--radius-panel);
+
+  /* Control geometry. `--h-control-compact` is the 34px step §12.5 found typed
+     six times; `--h-bar` and `--h-topbar` are the two chrome bands the sticky
+     layout does arithmetic against; `--h-touch` is a coarse-pointer floor. */
+  --h-control: var(--spacing-control);
+  --h-control-compact: var(--spacing-control-compact);
+  --h-control-sm: var(--spacing-control-sm);
+  --h-bar: var(--spacing-bar);
+  --h-topbar: var(--spacing-topbar);
+  --h-touch: var(--spacing-touch);
+
+  /* Spacing that is NOT on the 4px layout ladder, named so it stops reading as
+     an accident (§12.2): the declared 6px tight step, and the horizontal inset
+     inside a small control (DESIGN.md §6). */
+  --tight: var(--spacing-tight);
+  --pad-control: var(--spacing-control-pad);
+
+  /* the one elevation */
+  --overlay-shadow: var(--shadow-overlay);
+  --scrim: var(--color-scrim);
+
+  /* The spacing ladder, derived from the declared 4px base so that changing the
+     base moves the ladder with it. These names die in §2.5; until then they are
+     what the hand-written rules below spell `--s4`. */
+  --s1: calc(var(--spacing) * 1);
+  --s2: calc(var(--spacing) * 2);
+  --s3: calc(var(--spacing) * 3);
+  --s4: calc(var(--spacing) * 4);
+  --s5: calc(var(--spacing) * 6);
+  --s6: calc(var(--spacing) * 8);
+  --s7: calc(var(--spacing) * 12);
+  --s8: calc(var(--spacing) * 16);
+
+  /* The two registers and the mono face, by reference (DESIGN.md §2). All
+     three resolve to the one face loaded in layout.tsx as
+     `--font-document-face`. */
+  --sans: var(--font-sans);
+  --serif: var(--font-document);
+  --mono: var(--font-mono);
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--board);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--board);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 700;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+code,
+kbd {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+/* One visible focus treatment everywhere. Never remove it. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-control);
+}
+
+::selection {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+/* ==========================================================================
+   Route boundaries — loading, error, not-found (DESIGN-TODO §5.2, §5.3)
+   ==========================================================================
+   These render WITHOUT the shell. `AppShell` needs `user` and `navGroups`,
+   which a loading file cannot await and a client error boundary cannot read, so
+   a boundary paints its own ground rather than faking chrome it has no data
+   for.
+   ========================================================================== */
+
+.boundary {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: var(--s8) var(--s4);
+  background: var(--board);
+}
+.boundary__sheet {
+  width: 100%;
+  max-width: 52ch;
+  padding: var(--s6);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+}
+
+/**
+ * The skeleton moved to `src/components/ui/skeleton.tsx` (2026-09-11).
+ *
+ * Six rules went with it — `.skeleton`, `.skeleton__bar`, its two modifiers,
+ * three `nth-child` widths, the `skeleton-pulse` keyframes and the
+ * reduced-motion block. They drew ONE shape for all 26 routes, which is the
+ * thing the owner asked to fix: a placeholder whose shape differs from the page
+ * it precedes makes the content jump when it lands.
+ *
+ * What replaced them is a set of primitives sized off the real tokens, and a
+ * `SkeletonPage` frame that draws the actual shell, so each route composes a
+ * placeholder matching its own layout. `motion-safe:` on the pulse replaces the
+ * media query — as a variant it sits on the thing it modifies and cannot be
+ * left behind when the rule moves.
+ */
+
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  z-index: 60;
+  padding: var(--pad-control) var(--s4);
+  color: var(--on-accent);
+  background: var(--accent-deep);
+  font-weight: 600;
+}
+.skip-link:focus {
+  left: 0;
+  top: 0;
+}
+
+/* ==========================================================================
+   Type registers
+   ==========================================================================
+   Charter is reserved for text a person wrote or a title of the thing they
+   are reading. Everything the system says stays on the platform sans. */
+
+.doc {
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.6;
+  max-width: 68ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.doc--staff {
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/**
+ * The page's subject — a course code, a class list's name.
+ *
+ * Moved up one step of the ramp on 2026-09-11 (owner: "make the heading text or
+ * the course title larger"): `--text-title` (24-30px) → `--text-headline`
+ * (26-34px). A STEP, not a nudge — the values come from the ramp rather than
+ * being typed here, so the heading cannot drift off it, and the tracking and
+ * leading move with the size instead of being left behind at the old step's
+ * numbers.
+ *
+ * `--text-headline` was already the entry screen's `h1`, which is the right
+ * pairing: both are the largest thing on their page, and the app now has one
+ * answer to "how big is the subject of this page" rather than two.
+ */
+.page-title {
+  font-family: var(--serif);
+  font-size: var(--text-headline);
+  font-weight: 700;
+  line-height: var(--text-headline--line-height);
+  letter-spacing: var(--text-headline--letter-spacing);
+}
+
+.object-title {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.object-title__sub {
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+
+.panel-title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.008em;
+}
+/* a title that opens a padded notice earns air beneath it */
+.notice--pad > .panel-title,
+.notice__body > .panel-title:first-child {
+  margin-bottom: var(--s4);
+}
+
+/* The batten: a printed strip label with a rule under it. Replaces the
+   eyebrow/kicker pattern, which is gone. */
+.strip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 2px solid var(--rule-ink);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.strip__count {
+  color: var(--ink-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+* + .strip {
+  margin-top: var(--s6);
+}
+
+.label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+.small {
+  font-size: 13px;
+}
+.meta {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ident {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: -0.01em;
+}
+
+/* Metadata as separate facts.
+   No middle dots at all: whitespace does the separating, so each fact reads as
+   its own thing rather than as a clause in a generated sentence, a fact can be
+   dropped without leaving a stray dot behind, and the row wraps BETWEEN facts
+   instead of mid-phrase. On a narrow screen they stack cleanly. */
+.meta-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--s4);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.meta-list__item {
+  white-space: nowrap;
+}
+/* A long fact — an email, a hand-typed term — may wrap on its own. */
+.meta-list__item:only-child,
+.meta-list__item:last-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* What this object needs from the reader, as a sentence. Never a count pair. */
+.status-line {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.status-line--attention {
+  color: var(--amber-deep);
+  font-weight: 600;
+}
+.measure {
+  max-width: 68ch;
+}
+.link {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-weight: 600;
+}
+.link:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* ==========================================================================
+   Layout primitives
+   ========================================================================== */
+
+/* A grid item defaults to min-width:auto, so one wide child (a data table, a
+   long unbroken string) can push a whole page past the viewport. Every grid
+   in this system opts out of that. */
+.stack-2 > *,
+.stack-3 > *,
+.stack-4 > *,
+.stack-5 > *,
+.stack-6 > *,
+.form-grid > *,
+.figure-row > *,
+.composers > * {
+  min-width: 0;
+}
+
+.stack-2 {
+  display: grid;
+  gap: var(--s2);
+}
+.stack-3 {
+  display: grid;
+  gap: var(--s3);
+}
+.stack-4 {
+  display: grid;
+  gap: var(--s4);
+}
+.stack-5 {
+  display: grid;
+  gap: var(--s5);
+}
+.stack-6 {
+  display: grid;
+  gap: var(--s6);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.row--between {
+  justify-content: space-between;
+}
+.row--top {
+  align-items: flex-start;
+}
+.spread {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  margin-bottom: var(--s6);
+}
+.page-head__text {
+  min-width: 0;
+}
+.page-head__description {
+  display: grid;
+  gap: var(--s1);
+  margin-top: var(--s2);
+  max-width: 68ch;
+  color: var(--ink-muted);
+}
+
+/* `.breadcrumbs` lived here and is now utilities in `ui/surface.tsx`. The
+   separator moved with it: it had been the character `" /"` inside each `<li>`,
+   which put punctuation into the accessible name ("My courses slash CS 33"),
+   and is now an `aria-hidden` drawn chevron outside the link. */
+
+
+/* ==========================================================================
+   The notice — a sheet on the board. Squared corners softened to a small
+   rounded rectangle; still flat, still never lifted (no shadow at rest).
+   ========================================================================== */
+
+.notice {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+}
+.notice--quiet {
+  background: var(--paper-quiet);
+}
+.notice__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s5) var(--s5) var(--s3);
+  border-bottom: 1px solid var(--rule);
+}
+/**
+ * `.notice__head h2/h3` lived here: a complete, byte-for-byte second copy of
+ * `.panel-title` (§3.5). Two more copies existed — `.empty h2` and
+ * `.record__head h2` — each an INCOMPLETE one, which is the part that matters:
+ * `.empty h2` dropped the line-height and tracking, and `.record__head h2`
+ * dropped those plus the weight. So the panel title was defined four times and
+ * rendered three different ways, and nothing in the markup said which a given
+ * heading would get.
+ *
+ * The thirteen headings now carry `className="panel-title"` and all three
+ * copies are deleted. A heading's register is stated where the heading is.
+ */
+.notice__description {
+  display: grid;
+  gap: var(--s1);
+  margin-top: var(--s1);
+  max-width: 68ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.notice__body {
+  padding: var(--s5);
+}
+.notice__body--flush {
+  padding: 0;
+}
+.notice__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  padding: var(--s4) var(--s5);
+  border-top: 1px solid var(--rule);
+  background: var(--paper-quiet);
+  /* Its own fill would otherwise square off the panel's rounded bottom. */
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+}
+.notice--pad {
+  padding: var(--s5);
+}
+/* student surfaces breathe more than staff surfaces */
+.notice--roomy .notice__head {
+  padding: var(--s6) var(--s6) var(--s4);
+}
+.notice--roomy .notice__body {
+  padding: var(--s6);
+}
+.notice--roomy.notice--pad {
+  padding: var(--s6);
+}
+
+/* Quoted or attributed text: a 1px rule and an indent. The serif does the
+   rest. Never a heavy coloured bar. */
+.quote {
+  padding-left: var(--s4);
+  border-left: 1px solid var(--rule-strong);
+}
+.quote__label {
+  margin-bottom: var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.quote--private {
+  border-left-color: var(--amber-edge);
+}
+.quote--public {
+  border-left-color: var(--accent-edge);
+}
+
+/* A whole notice that is itself a link — one class section on the board. */
+.section-notice {
+  display: block;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
+}
+.section-notice:hover {
+  border-color: var(--rule-ink);
+  background: var(--paper-quiet);
+}
+.section-notice__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--rule);
+}
+.section-notice__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tight);
+  color: var(--accent-deep);
+  font-size: 13px;
+  font-weight: 600;
+}
+.section-notice:hover .section-notice__action {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ==========================================================================
+   Stamps — status as word + shape + tone
+   ========================================================================== */
+
+/* Sentence case, not tracked caps.
+   The stamp still carries three redundant channels — a word, a drawn shape and
+   a tone — so it survives grayscale and colourblindness exactly as before. What
+   changed is that a screen full of them no longer SHOUTS: all-caps status was
+   the single largest contributor to the interface reading as machine-generated.
+   Recorded in DESIGN.md §9. */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tight);
+  padding: 3px var(--s2);
+  border: 1px solid;
+  border-radius: var(--r-stamp);
+  /**
+   * The stamp uses its OWN type step (§3.3).
+   *
+   * It had been `font-size: 12px` — `--text-meta`, the metadata step — while
+   * the ramp declares `--text-stamp: 11px` for exactly this and nothing else.
+   * So the one component the step exists for was the one component not using
+   * it, and every stamp in the app rendered a pixel too large.
+   *
+   * Taking the step brings its tracking with it: `--text-stamp` is 11px at
+   * 0.06em with a line-height of 1, which is what makes a short uppercase-ish
+   * label read as a stamp rather than as small body text. The `letter-spacing:
+   * 0` this replaces was actively cancelling that.
+   */
+  font-size: var(--text-stamp);
+  line-height: var(--text-stamp--line-height);
+  letter-spacing: var(--text-stamp--letter-spacing);
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.stamp__mark {
+  flex: 0 0 auto;
+}
+.stamp--green {
+  color: var(--accent-deep);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+}
+.stamp--amber {
+  color: var(--amber-deep);
+  border-color: var(--amber-edge);
+  background: var(--amber-wash);
+}
+.stamp--red {
+  color: var(--red-deep);
+  border-color: var(--red-edge);
+  background: var(--red-wash);
+}
+.stamp--neutral {
+  color: var(--ink-soft);
+  border-color: var(--rule-strong);
+  background: var(--paper-quiet);
+}
+
+/* Category: a word and a shape, never a colour. */
+/**
+ * A category is METADATA, not a status — so it stays on `--text-meta` rather
+ * than joining the stamp on `--text-stamp` (§3.3).
+ *
+ * That is the distinction worth preserving: a stamp has a border, a fill and a
+ * tone and says what STATE something is in; a category has a word and a drawn
+ * silhouette and no colour at all (DESIGN.md §3, "categories carry no colour").
+ * Putting the two on one type step would make them look like one kind of thing.
+ */
+.category {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tight);
+  color: var(--ink-soft);
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
+  font-weight: 600;
+}
+.category__mark {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+}
+
+/* ==========================================================================
+   Figures — a real count and what it counts. Never decorative.
+   ========================================================================== */
+
+.figure-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 0;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+/* In a panel head the row is squeezed into the trailing slot, where
+   `auto-fit minmax(132px, 1fr)` collapses to a single column: the figures
+   stack, and the dividers — written for a horizontal row — leave the pair
+   looking like one box with a seam missing. Side by side, always. */
+.notice__head .figure-row {
+  display: flex;
+  flex-wrap: nowrap;
+}
+.notice__head .figure {
+  white-space: nowrap;
+}
+.figure {
+  padding: var(--s3) var(--s4);
+  border-right: 1px solid var(--rule);
+}
+.figure:last-child {
+  border-right: 0;
+}
+.figure strong {
+  display: block;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.figure span {
+  display: block;
+  margin-top: var(--s1);
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.figure--attention strong {
+  color: var(--amber-deep);
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: var(--h-control);
+  padding: 9px var(--s4);
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+/**
+ * A press must feel immediate; only the release needs easing. Overriding the
+ * DURATION rather than the whole shorthand means entering `:active` is instant
+ * and leaving it still runs the 0.12s above (§12.1).
+ *
+ * A disabled control is not pressable, so it keeps its disabled treatment.
+ */
+.button:active:not([disabled]):not([aria-disabled="true"]) {
+  transition-duration: 0s;
+}
+.button--primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.button--primary:hover {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+.button--primary:active {
+  background: var(--accent-press);
+  border-color: var(--accent-press);
+}
+.button--secondary {
+  color: var(--ink);
+  border-color: var(--control-edge);
+  background: var(--paper);
+}
+.button--secondary:hover {
+  background: var(--paper-quiet);
+}
+.button--secondary:active {
+  background: var(--board-deep);
+}
+.button--quiet {
+  color: var(--ink-muted);
+  background: transparent;
+}
+.button--quiet:hover {
+  color: var(--ink);
+  background: var(--paper-quiet);
+}
+.button--quiet:active {
+  color: var(--ink);
+  background: var(--board-deep);
+}
+.button--danger {
+  color: var(--red-deep);
+  border-color: var(--red);
+  background: var(--paper);
+}
+.button--danger:hover {
+  background: var(--red-wash);
+}
+.button--danger:active {
+  background: var(--red-press);
+}
+.button--small {
+  min-height: var(--h-control-sm);
+  padding: var(--tight) var(--pad-control);
+  font-size: 13px;
+}
+.button[disabled],
+.button[aria-disabled="true"] {
+  color: var(--ink-faint);
+  border-color: var(--rule);
+  background: var(--paper-quiet);
+  cursor: not-allowed;
+}
+.button--primary[disabled] {
+  color: var(--ink-faint);
+  background: var(--paper-quiet);
+}
+
+/* ==========================================================================
+   Alerts
+   ========================================================================== */
+
+.alert {
+  display: flex;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid;
+  border-radius: var(--r-panel);
+  font-size: 13px;
+  /* The reading measure belongs to the BOX, not to the text inside it. It was
+     on `.alert__body`, so a wide alert drew a full-width border and then
+     stopped its sentence two thirds of the way across — the box and its
+     content disagreed about where the line ended, which is what reads as
+     "not all the way" (owner, 2026-09-11). Now they end together and the
+     measure is still honoured (DESIGN.md §2). */
+  max-width: 68ch;
+}
+.alert__icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.alert__body {
+  min-width: 0;
+}
+.alert strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 14px;
+}
+.alert ul {
+  margin: var(--s2) 0 0;
+  padding-left: 18px;
+}
+.alert li + li {
+  margin-top: var(--s1);
+}
+.alert--error {
+  color: var(--red-deep);
+  border-color: var(--red-edge);
+  background: var(--red-wash);
+}
+.alert--success {
+  color: var(--accent-deep);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+}
+.alert--warning {
+  color: var(--amber-deep);
+  border-color: var(--amber-edge);
+  background: var(--amber-wash);
+}
+.alert--info {
+  color: var(--ink-soft);
+  border-color: var(--rule-strong);
+  background: var(--paper-quiet);
+}
+
+/* ==========================================================================
+   Empty states
+   ========================================================================== */
+
+.empty {
+  padding: var(--s7) var(--s5);
+  border: 1px dashed var(--rule-strong);
+  background: transparent;
+  text-align: center;
+}
+
+.empty__description {
+  max-width: 52ch;
+  margin: var(--s2) auto 0;
+  color: var(--ink-muted);
+}
+.empty .button {
+  margin-top: var(--s4);
+}
+
+/* ==========================================================================
+   Forms
+   ========================================================================== */
+
+.field-row {
+  display: grid;
+  gap: var(--tight);
+}
+/* `.field-label` was in this selector list and is now `FieldLabel` (§3.2).
+   `.field-row > label` stays only for the four compound date/time rows §10.4.5
+   is about to restructure. */
+.field-row > label {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+/**
+ * Optional is now the DEFAULT and says nothing. A field with no mark is
+ * optional; only required fields are marked, so the page carries one annotation
+ * instead of one per field.
+ *
+ * Kept as a class because a few staff-only labels still qualify a value rather
+ * than a requirement ("optional" beside a per-occurrence override).
+ */
+.optional-mark {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+/**
+ * A red asterisk - which REPLACES the previous rule here that "Required is a
+ * word, never a bare asterisk and never colour alone" (owner request, §10.4.4).
+ *
+ * The rule it protected still holds, because the meaning is not in the colour:
+ * the SIGNAL is the presence of the glyph against fields that have none, which
+ * survives grayscale and colour blindness. `RequiredMark` pairs it with a
+ * visually-hidden "required" for assistive tech, and the control keeps its
+ * native `required` attribute, so three independent channels carry it.
+ */
+.required-mark {
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+/**
+ * A CONDITIONAL requirement, which has to stay words. "Required to publish" is
+ * not the same claim as an asterisk: the draft saves fine without it, so a flat
+ * "required" would be false. This is the treatment `.required-mark` used to
+ * have, kept for the cases the asterisk cannot honestly express.
+ */
+.qualifier-mark {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.helper-text {
+  color: var(--ink-muted);
+  font-size: 13px;
+  max-width: 68ch;
+}
+
+/**
+ * The three control classes — `.field`, `.select-field`, `.textarea-field` —
+ * and everything scoped to them lived here, and are now `Field` / `Select` /
+ * `Textarea` in `src/components/ui/form.tsx` (§3.2).
+ *
+ * Sixty-eight declarations across thirteen rules: the shared border and fill,
+ * the two focus treatments that deliberately disagree (pointer focus gets the
+ * warm wash ring, keyboard focus keeps the global outline and the ring steps
+ * aside so the two never stack), the date/time/number exception where Chrome
+ * will not match `:focus-visible` on the control itself, and the invalid state.
+ * All of it was transcribed into the component rather than redesigned, and
+ * verified by rendering the old classes and the new utilities side by side and
+ * diffing computed styles — the only differences were the ramp's own leading
+ * arriving on the label and helper text.
+ *
+ * `.textarea-field--data` went with them and had no call site at all.
+ *
+ * What remains below is `.field-error` and `.field-row`: the error line still
+ * has call sites, and four compound date/time rows keep `.field-row` until
+ * §10.4.5 restructures them into one control per boundary.
+ */
+
+.field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tight);
+  color: var(--red-deep);
+  font-size: 13px;
+  font-weight: 600;
+}
+.field-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+/* Fields sharing a row share a left edge and a top edge. `align-items: end`
+   was bottom-aligning cells of different heights, so a textarea beside a select
+   dragged its label out of line with its neighbour's — the misalignment visible
+   at every width in the template editor. */
+/**
+ * A moment in time is ONE field, so its date and its time sit on one row under
+ * one label (§10.4.5). The "at" between them was a second `<label>`, which made
+ * the browser and a screen reader treat "Opens" and "at" as two unrelated
+ * questions; it is now visually hidden, still naming the time input.
+ *
+ * NB the wire format is unchanged - two inputs, `openDate` + `openAtTime` -
+ * because merging them into one `datetime-local` would change four server
+ * actions, two zod schemas and the field-error labels. That is a separate
+ * change, and scheduling is the wrong place to do validation work blind.
+ */
+.datetime-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+.datetime-pair > input[type="date"] {
+  flex: 1 1 11ch;
+}
+.datetime-pair > input[type="time"] {
+  flex: 0 1 9ch;
+}
+/* Opens, then Closes UNDER it - not side by side, where the pair of dates read
+   as one range and the two times were easy to transpose. */
+.form-grid--stacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: start;
+  gap: var(--s4);
+}
+/* a submit sitting in the grid keeps its own width instead of stretching */
+.form-grid > .button {
+  justify-self: start;
+}
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+.inline-form {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+/* A search/filter strip above a list. One row on desktop, stacked on a phone. */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+}
+/* `.toolbar .field` / `.toolbar .select-field` lived here — flex sizing for a
+   search row. Moved onto the controls as utilities (§3.2). */
+.toolbar .button {
+  flex: 0 0 auto;
+}
+
+/* --- progressive disclosure ----------------------------------------------
+   An occasional form (create a course, add a section, configure a TA, import a
+   set of old questions) is a <details>, not a permanently-open panel. Closed,
+   it costs one control's height; open, it is an ordinary bordered region. Works
+   before hydration, and the summary IS the action's name, so the page header no
+   longer has to compete with a form the reader did not ask for. */
+.disclose {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+  /* Clips the summary's hover fill to the rounded corners. */
+  overflow: hidden;
+}
+.disclose > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.disclose > summary::-webkit-details-marker {
+  display: none;
+}
+.disclose > summary:hover {
+  background: var(--paper-quiet);
+}
+.disclose[open] > summary {
+  border-bottom: 1px solid var(--control-edge);
+}
+/* A drawn chevron that rotates. The only rotation in the system, and it is
+   describing state, not decorating. */
+.disclose__mark {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  transition: transform 0.12s ease;
+}
+.disclose[open] .disclose__mark {
+  transform: rotate(90deg);
+}
+.disclose__body {
+  padding: var(--s4);
+}
+/* Nested inside a notice (a per-course "add a section"), it is a row of that
+   notice rather than a box within a box. */
+.disclose--inset {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+  overflow: visible;
+  background: var(--paper-quiet);
+}
+.disclose--inset[open] > summary {
+  border-bottom: 1px solid var(--rule);
+}
+
+/* ==========================================================================
+   Template editor
+   ==========================================================================
+   The list's heading carries the list's own actions, so "Add question" does not
+   have to sit at the bottom of the whole form competing with save. */
+
+/* The two reference disclosures, side by side when there is room. */
+/* `.editor-refs` went with the two `Disclose` rows it laid out; they are now
+   a list of lines with an `InfoTip` each (§10.4.8.1). */
+.editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin: var(--s5) 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 2px solid var(--rule-ink);
+}
+.editor-head__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.editor-head__count {
+  color: var(--ink-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A question is a hairline-divided row, not a card inside a card. */
+/**
+ * The question list and its cards — `.q-list`, `.q-item` and their eight
+ * relatives — lived here, and are now utilities in
+ * `src/components/staff/template-editor.tsx` (§10.4.6, §3.2).
+ *
+ * The reason they moved rather than being extended: the owner asked for a
+ * hover/active treatment on 2026-09-11 ("the alternating bg is not enough"),
+ * which meant adding states — and adding states to this file is the wrong
+ * direction while its acceptance test is that it reaches zero (§11.6b). The
+ * recipe is now three constants at the top of that component with the state
+ * table written out beside them.
+ *
+ * What changed in the move, and it is a real change: **the alternating
+ * `nth-child(even)` ground is gone.** Striping says something about a
+ * question's POSITION, and the thing a person actually needs to see is which
+ * question their caret is in — so the ground is now uniform and its variation
+ * is spent on state instead: `--paper-quiet` at rest, `--paper` plus an
+ * `--accent-edge` batten on hover, `--paper` plus an `--accent` batten and an
+ * accent chip on `:focus-within`.
+ */
+
+
+/* Answer choices: one real row per choice. A textarea of newline-separated
+   labels made each option look like an accidental line break and gave a teacher
+   nothing to click to remove one. */
+.options {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.options__list {
+  display: grid;
+  gap: var(--tight);
+  margin: var(--tight) 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: none;
+}
+.options__row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+.options__number {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.options__remove {
+  flex: 0 0 auto;
+}
+.options__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-top: var(--s3);
+}
+
+@media (max-width: 480px) {
+  .q-item {
+    padding: var(--s4);
+  }
+  /* The number stays with its field; the remove control drops beneath rather
+     than squeezing the input to nothing. */
+  .options__row {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+  .options__remove {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* ==========================================================================
+   Student-form preview
+   ==========================================================================
+   A native <dialog>, so the focus trap, Escape and aria-modal are the
+   platform's. It renders the real student form; nothing in it can submit. */
+
+.preview {
+  width: min(760px, calc(100vw - var(--s5)));
+  max-width: none;
+  max-height: min(88vh, 900px);
+  padding: 0;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--overlay-shadow);
+  overflow: hidden;
+}
+.preview::backdrop {
+  /* Was `rgba(28, 30, 32, 0.42)` — a hand-written second copy of
+     `--color-scrim`, which holds that exact value. The same colour under two
+     names is what §2.1 removed from `:root`; this one survived because it sits
+     in a rule rather than in the token block, which is precisely the blind spot
+     `theme-tokens.test.ts` had. Found 2026-09-11 by sweeping declarations, not
+     just the token block. */
+  background: var(--scrim);
+}
+.preview__bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.preview__title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.008em;
+}
+.preview__sub {
+  margin-top: var(--s1);
+  max-width: 52ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.preview__body {
+  padding: var(--s5);
+  overflow-y: auto;
+  max-height: calc(min(88vh, 900px) - 86px);
+}
+
+@media (max-width: 480px) {
+  .preview {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .preview__bar {
+    padding: var(--s3) var(--s4);
+  }
+  .preview__body {
+    padding: var(--s4);
+    max-height: calc(100dvh - 84px);
+  }
+}
+
+/* The academic term builder: two inputs and the year they derive, said back. */
+.term-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.term-fields__grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s3);
+  max-width: 420px;
+  margin-top: var(--tight);
+}
+.term-fields__year {
+  font-variant-numeric: tabular-nums;
+}
+.term-fields__derived {
+  margin-top: var(--tight);
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.term-fields__derived strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 400px) {
+  .term-fields__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A segmented choice: pick a mode, do not perform an action. It must never look
+   like a primary button, because the page's one primary action is elsewhere. */
+.segment {
+  display: inline-flex;
+  margin-bottom: var(--s3);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  overflow: hidden;
+}
+.segment__option {
+  min-height: var(--h-control-compact);
+  padding: 7px 14px;
+  border: 0;
+  color: var(--ink-muted);
+  background: var(--paper);
+  font-size: 13px;
+  font-weight: 600;
+}
+.segment__option + .segment__option {
+  border-left: 1px solid var(--control-edge);
+}
+.segment__option:hover {
+  background: var(--paper-quiet);
+}
+.segment__option[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--board-deep);
+}
+.segment__option:focus-visible {
+  outline-offset: -3px;
+}
+
+/**
+ * `.choice-list`, `.choice`, `.scale-list` and their overrides lived here, and
+ * are now `ChoiceList` / `Choice` / `ScaleList` in
+ * `src/components/ui/form.tsx` (§3.2).
+ *
+ * `:has(input:checked)` carried the checked appearance and still does, as
+ * `has-[input:checked]:` — the native input stays the source of truth for
+ * checkedness and no JavaScript is involved in how a checked choice looks.
+ * `.scale-list .choice`'s `min-width: 58px; justify-content: center` survives
+ * as `ScaleList`'s `[&>label]:min-w-scale-cell [&>label]:justify-center`, which
+ * is why the linear-scale cells are still equal width.
+ *
+ * One factual correction came out of the conversion: DESIGN.md §6 said a
+ * checked choice shifts its border to `--accent-edge`. Both the stylesheet and
+ * the component use `--accent`. The doc was wrong and has been fixed.
+ */
+
+/* ==========================================================================
+   Lists and tables
+   ========================================================================== */
+
+.data-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.data-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--rule);
+}
+.data-list > li:last-child {
+  border-bottom: 0;
+}
+.data-list__main {
+  min-width: 0;
+}
+.data-list__main strong {
+  display: block;
+  font-size: 14px;
+}
+.data-list__main small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+}
+/* The common case: sitting flush inside a .notice, 0 padding between them.
+   A second border there would double the parent's, 1px apart, and the two
+   round corners never quite line up. Radius stays, to clip the header row's
+   fill to the parent's curve; the visible edge is .notice's border alone. */
+.table-scroll--flush {
+  border: 0;
+}
+
+/**
+ * What changed, by named field (GitHub issue #16).
+ *
+ * A definition list, because that is what it is: a field and its transition.
+ * The two values sit on one line with an arrow between them, so a reader scans
+ * the arrows down the entry rather than reading each pair as a sentence — and
+ * the arrow is `aria-hidden` in the markup with the words "changed to" beside
+ * it, since a screen reader cannot say a glyph.
+ *
+ * The old value is quieter than the new one. Both are present, but the thing a
+ * reader came for is what it is NOW.
+ */
+.audit-diff {
+  display: grid;
+  gap: 2px;
+  margin: var(--s2) 0 0;
+  font-size: 12px;
+}
+.audit-diff__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+.audit-diff dt {
+  color: var(--ink-muted);
+  font-weight: 600;
+  min-width: 8rem;
+}
+.audit-diff dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.audit-diff__from {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--rule-strong);
+}
+.audit-diff__to {
+  color: var(--ink);
+}
+
+/* The raw payload, folded away. Needed perhaps once a term, and it must not be
+   what a reader reads past to reach the next entry. */
+.audit-raw {
+  margin-top: var(--s2);
+}
+.audit-raw > summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.audit-raw > summary:hover {
+  color: var(--ink-soft);
+}
+/* Said inside the disclosure, not outside it: a warning a reader has to read
+   before opening would be a warning they learn to skip. */
+.audit-raw__note {
+  margin: var(--s2) 0 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+/* A raw before/after payload in the audit log. Data, so monospace is earned. */
+.code-block {
+  margin: var(--tight) 0 0;
+  padding: var(--s3);
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  background: var(--paper-quiet);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Paginated lists: links, so a page is shareable and works without JS. */
+/* "Page 1 of 4" at the leading edge, Previous/Next at the trailing one
+   (owner, 2026-09-11). Clustering both at the right was tried and reverted:
+   the summary belongs where reading starts, and the controls where the thumb
+   and the eye already are for "next". */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+/* No `.notice > .pagination` rule any more. It padded a pagination nested
+   INSIDE a table panel, and nothing nests one there: paging is navigation
+   between views of a table, not a row of it, so both call sites now place it
+   under the panel where the page stack supplies the gap (owner, 2026-09-11).
+   Rules went nowhere else — the element simply stopped being a panel child. */
+.pagination__summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+.pagination__controls [aria-disabled="true"] {
+  color: var(--ink-faint);
+  border-color: var(--rule);
+  background: var(--paper-quiet);
+  cursor: not-allowed;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.data-table caption,
+.data-table th,
+.data-table td {
+  /* An absolutely-positioned .visually-hidden child otherwise resolves against
+     the initial containing block, escaping .table-scroll and widening the whole
+     document at phone widths. Positioning the cell keeps it clipped. */
+  position: relative;
+}
+.data-table th,
+.data-table td {
+  padding: var(--s2) var(--s3);
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.data-table thead th {
+  color: var(--ink-soft);
+  background: var(--paper-quiet);
+  border-bottom: 2px solid var(--rule-ink);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.data-table tbody tr:last-child td,
+/* `th` too, not only `td`. The first cell of a row is a `<th scope="row">`,
+   so clearing `td` alone left one short rule under the leading column and
+   nothing under the rest — the stub of a line the last row appeared to hang
+   off. */
+.data-table tbody tr:last-child th {
+  border-bottom: 0;
+}
+.data-table td.wrap {
+  white-space: normal;
+  min-width: 200px;
+}
+.data-table td.num {
+  text-align: right;
+}
+
+/* Row actions in a data table.
+   Kept on ONE line and pushed to the trailing edge, so a row with two buttons
+   and a row with one still agree about where actions begin. Wrapping was what
+   made them look crooked: the cell is narrow, the two triggers are different
+   widths, and a wrapped flex line left them stacked and ragged. The table
+   already lives in .table-scroll, so refusing to wrap scrolls the table
+   instead of crushing the column. */
+.data-table td.actions {
+  text-align: right;
+}
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s2);
+}
+.table-actions > * {
+  flex: 0 0 auto;
+}
+/* Equal height regardless of label length, and no label broken mid-word. */
+.table-actions .button {
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Workspace chrome
+   ==========================================================================
+   Top bar, account rail, contextual band, list pane, detail pane. The rail is
+   derived from the same effective permissions the server enforces; hiding a link
+   is presentation, never authorization. */
+
+/**
+ * Two shell modes, because the two route shapes want opposite scroll behaviour.
+ *
+ * A SINGLE-COLUMN route (setup, participation, courses, the student form) is an
+ * ordinary document: the page scrolls, so browser find, End, anchor links and
+ * screenshots all behave. It gets no height at all beyond a viewport floor.
+ *
+ * A MULTI-PANE route (review inbox, Class Q&A) is an application view: the
+ * shell owns exactly one viewport box and each pane scrolls inside it. See
+ * `.ws--panes` below for why that one is taken out of flow.
+ */
+.ws {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.ws-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex: 0 0 auto;
+  height: var(--h-topbar);
+  padding: 0 var(--s4);
+  background: var(--paper);
+  border-bottom: 1px solid var(--rule-strong);
+}
+.ws-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+/* The product mark is identity, not action, so it does NOT take the accent —
+   the accent has to mean "this is the thing to click". */
+/**
+ * The product mark: `cf` on UP Maroon.
+ *
+ * It was `--ink` — a dark grey square, which is a placeholder rather than a
+ * mark. Maroon here on 2026-09-11 (owner: "i kinda want to add more maroon
+ * colors to the overall site"), and this is the safest possible place for it
+ * and the reason is structural: a product mark carries **no state**. It is the
+ * same in every condition of every page, so it cannot be mistaken for the
+ * problem signal, and it is the one element on screen whose whole job is to say
+ * which institution's system this is.
+ *
+ * `--red-deep` (`#7b1113`) is the official UP Maroon, not the derived `--red`,
+ * because a mark should be the real colour. Paper on it measures **10.9:1**.
+ *
+ * It also matches the owner's own reference mockup, where this square is
+ * maroon — so the app and the reference now agree about the one element a
+ * reader sees on every single page.
+ */
+.ws-brand__mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-control);
+  color: var(--paper);
+  background: var(--red-deep);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.ws-brand__name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.ws-topbar__divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 20px;
+  background: var(--rule-strong);
+}
+.ws-topbar__title {
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: var(--text-ui-sm);
+  line-height: var(--text-ui-sm--line-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-topbar__spacer {
+  flex: 1;
+}
+.ws-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: 0 0 auto;
+}
+.ws-account {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  color: var(--ink-muted);
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
+}
+.ws-account__mark {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-control);
+  color: var(--ink-soft);
+  background: var(--paper-quiet);
+  font-size: var(--text-stamp);
+  font-weight: 700;
+}
+.ws-account__email {
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-signout {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-deep);
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+/* It is a real control stripped to look like a link, so it needs the states a
+   link gets. Thickening the rule rather than tinting a background: there is no
+   box here to fill (§12.7d). */
+.ws-signout:hover {
+  text-decoration-thickness: 2px;
+}
+.ws-signout:active {
+  color: var(--accent-press);
+  transition-duration: 0s;
+}
+
+.ws-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  /* Without this a pane with an internal scroller refuses to shrink below its
+     content height and pushes the whole shell past the viewport. */
+  min-height: 0;
+}
+
+/**
+ * The multi-pane workspace: one viewport box, three independent scrollers.
+ *
+ * `position: fixed` rather than `height: 100dvh` alone, and that is deliberate.
+ * Next renders `<next-route-announcer>` as an absolutely-positioned sibling
+ * after the app. With the shell merely 100dvh tall and in flow, the announcer
+ * lands at y = 100dvh and pushes `documentElement.scrollHeight` past the
+ * viewport — a 48px strip of dead page under the rail and list, which is
+ * exactly the band this pass was asked to remove. Taking the shell out of flow
+ * leaves nothing for the announcer to sit below.
+ *
+ * `dvh` so a phone's collapsing browser chrome does not clip the last row.
+ */
+.ws--panes {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/**
+ * One transition for every interactive control in the navigation (§12.7c).
+ *
+ * These disagreed: the rail row animated `background-color`, the tab-bar item
+ * `color, border-color`, the same selector in the column `background-color`
+ * again, and the rail's group toggle, the menu summary, the menu rows and the
+ * sign-out link animated nothing at all — so the same gesture eased in one
+ * region and snapped in the next. Declaring the set once, here, means each
+ * control animates whichever of the three it actually changes and none of them
+ * has to remember to say so.
+ *
+ * `:active` still overrides the DURATION to 0s at each site: a press must land
+ * immediately and only the release eases (§12.1). Reduced-motion kills the
+ * whole thing further down the file.
+ */
+.ws-subnav__item,
+.ws-subnav__menu > summary,
+.ws-subnav__menu-item,
+.ws-drawer > summary,
+.ws-signout {
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    text-decoration-thickness 0.12s ease;
+}
+
+/* --- rail ----------------------------------------------------------------- */
+
+/**
+ * The rail's 30-odd rules lived here and are now utilities in
+ * `src/components/layout/rail.tsx`, rebuilt to `sidebar.md` (owner spec,
+ * 2026-09-11).
+ *
+ * What the redesign changed, beyond moving:
+ *
+ *   - **248/72px**, from 216/60, with a 200ms transition on the width — and the
+ *     layout resizes with it rather than the rail overlaying the page (§5).
+ *   - **The active row is no longer a white sheet.** It was `--paper` with
+ *     `--accent-deep` ink, the one inversion on the rail; §7 asked for
+ *     something "refined" instead of "a huge bright green block", so it is now a
+ *     faint white overlay plus brighter ink, a weight change and a 2px accent
+ *     batten. DESIGN.md §3's rail paragraph was corrected to match.
+ *   - **A fixed icon column** (§13), so every label starts at the same
+ *     x-coordinate instead of each icon being positioned on its own.
+ *   - **No product identity at the top** (§1, §16) — the header owns that — and
+ *     the account moved to the bottom behind a divider (§10).
+ *
+ * The focus-ring and selection rules below did NOT move: they are scoped to
+ * `.ws-rail` AND `.ws-drawer__panel`, and the drawer still needs them.
+ */
+
+/* The focus ring and the selection highlight are both derived from the light
+   ground and neither survives this one: `--focus` (#014421) reads 1.4:1 on the
+   rail, which is a focus ring nobody can see. Scoped, not global. */
+.ws-rail :focus-visible,
+.ws-drawer__panel :focus-visible {
+  outline-color: var(--rail-focus);
+}
+.ws-rail ::selection,
+.ws-drawer__panel ::selection {
+  background: var(--rail-focus);
+  color: var(--rail-deep);
+}
+
+@media (pointer: coarse) {
+  /* The rail's rows moved out of this list with the rest of the rail: they
+     carry `pointer-coarse:min-h-touch` themselves now, next to the row it
+     applies to rather than 100 lines away from it. */
+  .ws-drawer > summary,
+  .ws-subnav__menu > summary {
+    min-height: var(--h-touch);
+  }
+}
+
+/* --- list pane ------------------------------------------------------------ */
+
+.ws-list {
+  flex: 0 0 360px;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--paper);
+  border-right: 1px solid var(--rule-strong);
+}
+/* The promoted filter: full width, reads its own current value, above search. */
+.ws-list__primary {
+  flex: 0 0 auto;
+  padding: var(--s3) var(--s3) var(--s2);
+}
+/* `.ws-list__primary .select-field { width: 100% }` — REDUNDANT even before
+   the conversion: the control recipe is already `w-full` (§3.2). */
+
+.ws-search {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 0 0 auto;
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--rule);
+}
+.ws-search__icon {
+  flex: 0 0 auto;
+  color: var(--ink-faint);
+}
+.ws-search input {
+  width: 100%;
+  min-height: var(--h-control-sm);
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+}
+.ws-search input::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+/*
+ * `.ws-search input:focus-visible` was DELETED 2026-09-11: every declaration in
+ * it — `outline-width: 3px`, `outline-offset: 2px`, `border-radius:
+ * var(--r-control)` — restated the global `:focus-visible` rule exactly, so it
+ * changed nothing. Its comment said the ring "belongs to the input, not to the
+ * whole strip", which was true and was already true without this rule: nothing
+ * ever ringed the strip.
+ *
+ * The ring here stays on the input and that remains right — unlike
+ * `.feedbar__search`, this strip is a full-width band with no box of its own,
+ * so ringing it would be the "heavy box around the entire control" the original
+ * comment was guarding against. The search ICON sitting outside the ring is a
+ * known consequence and was accepted when the strip was designed.
+ *
+ * Verified by reading the input's computed outline before and after: identical.
+ */
+.ws-filterbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  flex: 0 0 auto;
+  padding: var(--tight) var(--s3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.ws-filterbar__current {
+  min-width: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-filterbar__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: 0 0 auto;
+}
+.ws-filter {
+  position: relative;
+  flex: 0 0 auto;
+}
+.ws-filter > summary {
+  display: inline-flex;
+  align-items: center;
+  /* was `gap: 5px; padding: 3px 7px` — three values on no scale at all. */
+  gap: var(--tight);
+  padding: var(--s1) var(--s2);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.ws-filter > summary::-webkit-details-marker {
+  display: none;
+}
+.ws-filter[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+}
+.ws-filter__menu {
+  position: absolute;
+  right: 0;
+  z-index: 30;
+  min-width: 190px;
+  /* A term's worth of weeks is a long list; it scrolls inside the menu rather
+     than running off the bottom of the pane. */
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: var(--tight);
+  padding: var(--s1) 0;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  /* Floats clear of its trigger, so every corner is exposed and takes the
+     full panel step. Was square. */
+  border-radius: var(--r-panel);
+  box-shadow: var(--overlay-shadow);
+}
+.ws-filter__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--tight) var(--s3);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.ws-filter__item:hover {
+  background: var(--paper-quiet);
+}
+.ws-filter__check {
+  flex: 0 0 14px;
+  color: var(--accent-deep);
+}
+
+.ws-list__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ws-list__note {
+  padding: var(--s5) var(--s4);
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.ws-daygroup {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--tight) var(--s4);
+  background: var(--board-deep);
+  border-bottom: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/**
+ * A queue row reads like a posted notice: who it is from, what it says, and
+ * when it arrived — in that order, with room to breathe.
+ *
+ * `--flush` is the dense original, still used by the Q&A archive where the rows
+ * are one-line questions rather than submissions to triage.
+ */
+.ws-row {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 2px var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--rule);
+  border-left: 1px solid transparent;
+  transition: background-color 0.12s ease;
+}
+.ws-row--flush {
+  display: block;
+  /* Was 10px, 2px tighter than `.ws-row` above it for no stated reason — two
+     kinds of row with two vertical rhythms in one list. They now share the
+     ladder step; the variant is about the grid, not the padding (§12.2). */
+  padding: var(--s3) var(--s4);
+}
+/* The asker's mark. Initials when the reader may see identities, a neutral
+   silhouette when they may not — never a colour that could sort students. */
+.ws-row__mark {
+  grid-row: 1 / span 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-control);
+  color: var(--ink-muted);
+  background: var(--paper-quiet);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.ws-row__excerpt {
+  color: var(--ink-soft);
+  /* Sans, not the document register. An excerpt in the list column is chrome -
+     something you SCAN to pick a row - and setting it in Charter made the whole
+     navigation read as an unfamiliar serif. The document register belongs to
+     the reading surface (.post__words, .doc, .question), not to the index. */
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  /* Two lines is enough to tell two questions apart; more turns the queue into
+     a reading surface and hides how much is waiting. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.ws-row:hover {
+  background: var(--paper-quiet);
+}
+.ws-row--active {
+  border-left-color: var(--accent);
+  background: var(--accent-wash);
+}
+.ws-row--unread .ws-row__title {
+  font-weight: 700;
+}
+.ws-row--flush.ws-row--unread .ws-row__title {
+  font-weight: 700;
+}
+.ws-row__top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.ws-row__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.ws-row--flush .ws-row__title {
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 400;
+}
+.ws-row__flags {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+.ws-row__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  margin-top: var(--tight);
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* Redundant since `.category` takes `--text-meta` by reference: this was
+   setting the same 12px a second time (§3.3). */
+
+/* --- detail pane and single-column pages ---------------------------------- */
+
+/* ==========================================================================
+   Responses — what is left of the old review column
+   ==========================================================================
+
+   The review feed this section used to style is gone. Responses is now two
+   views over one week — by question and by submission — and both are built
+   from `src/app/teach/courses/[id]/responses/parts.tsx` with utilities and
+   tokens, per §13's rule that nothing new goes in this file.
+
+   Deleted with the feed: `.feedbar`, `.feedbar__line`, `.feedbar__status`
+   (and the "N responses shown / nothing waiting" line it drew), `.feed`,
+   `.post` and its card/column/status-edge rules, `.post__item`/`__ask`/
+   `__prompt`/`__askdesc`/`__blank`/`__itemmeta`, the `.meters`/`.meter`
+   compact answer block, `.post__foot`/`.post__validity`, and the container
+   query that keyed off `.post`. Roughly 450 lines.
+
+   What survives is what is still rendered, and only that:
+   ========================================================================== */
+
+/**
+ * The search composite: a bordered 38px box holding an icon and a bare input.
+ *
+ * Used by the by-submission search and by the per-question search on a long
+ * answer. It is a COMPOSITE, which is why the focus rules below are the way
+ * they are — see the note on the ring.
+ */
+.feedbar__search {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 0 var(--pad-control);
+  height: var(--h-control);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  background: var(--paper);
+  color: var(--ink-faint);
+}
+.feedbar__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 14px;
+}
+.feedbar__search input::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+/* Keep the visually-hidden label readable to automated contrast tooling too. */
+.feedbar__search .visually-hidden {
+  color: var(--ink-soft);
+}
+/**
+ * The ring belongs to the WRAPPER, because the wrapper is the control.
+ *
+ * `.feedbar__search` is a composite: a 38px bordered, rounded box holding an
+ * icon and a **bare** input (`border: 0; background: none`). The global
+ * `:focus-visible` rule applied to that inner input, so focusing the search
+ * drew a 3px ring around the 23px text area — **inside** the box's own border,
+ * which was simultaneously turning accent-green. Two concentric green rings
+ * with the placeholder squeezed between them. Owner-reported 2026-09-11.
+ *
+ * The ring is **moved, not removed** — which is the distinction DESIGN.md §10's
+ * "the ring is never removed" is actually protecting. The element a reader
+ * perceives as the control is the box, so that is what gets ringed; the input
+ * inside it is an implementation detail of the composite and must not draw a
+ * second indicator for one focus.
+ *
+ * `:has(input:focus-visible)` rather than `:focus-within`, deliberately: the
+ * border already changes on `:focus-within` and that is the pointer treatment,
+ * while the RING should follow the same `:focus-visible` semantics every other
+ * control in the app uses. The two states are separate on purpose.
+ */
+.feedbar__search:focus-within {
+  border-color: var(--accent);
+}
+.feedbar__search:has(input:focus-visible) {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.feedbar__search input:focus-visible {
+  /* Not a removal: the ring is on the wrapper, two rules up. A composite
+     control gets ONE focus indicator, on the thing that looks like the
+     control. */
+  outline: none;
+}
+/* --- one student-written item inside a post ------------------------------- */
+
+/* The form answers now sit above, so every question is separated from what
+   precedes it — not only from a sibling question. */
+.longtext {
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+}
+.longtext--quiet .post__words {
+  width: 100%;
+  max-width: none;
+  padding-left: 0;
+  border-left: 0;
+}
+.post__words--clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  line-clamp: 8;
+  overflow: hidden;
+}
+.longtext__toggle {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-muted);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.longtext__toggle:hover {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.longtext__toggle:focus-visible {
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .longtext__toggle {
+    min-height: var(--h-touch);
+  }
+}
+/* The student's own words. Document register, because a person wrote them, and
+   a rule down the side so they cannot be mistaken for the platform speaking. */
+.post__words {
+  margin: 0;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--rule-strong);
+  /* A measure, not the container's full width. Past roughly 70 characters the
+     eye loses the line it is returning to, which is the difference between
+     reading thirty answers and skimming them. Matches the 68ch the student's
+     own form uses for the same text. */
+  max-width: 68ch;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  /* A pasted list or a stanza keeps its breaks: collapsing them turned a
+     student's structure into one paragraph. */
+  white-space: pre-wrap;
+}
+/* Above the words it describes, so it reads as a label rather than a caption. */
+.post__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+}
+.post__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tight);
+  /* A text action still has to be hittable: the label is 13px, the target is
+     not. */
+  min-height: var(--h-control-compact);
+  padding: var(--s2) 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--ink-muted);
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.post__action:hover {
+  color: var(--accent-deep);
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.post__action:focus-visible {
+  outline-offset: 1px;
+}
+
+/* --- unified reply dialog ------------------------------------------------- */
+
+/*
+   The two visibility choices are one decision, not two actions. Native radios
+   keep that relationship available to keyboards and assistive technology;
+   the labels carry the segmented-control treatment from the existing system.
+*/
+.reply-dialog {
+  display: grid;
+  gap: var(--s4);
+}
+.reply-dialog__modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  background: var(--paper-quiet);
+}
+.reply-dialog__choice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.reply-dialog__tab {
+  display: grid;
+  min-height: var(--h-control);
+  place-items: center;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-control);
+  color: var(--ink-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.reply-dialog__choice:checked + .reply-dialog__tab {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.reply-dialog__choice:focus-visible + .reply-dialog__tab {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.reply-dialog__panel {
+  display: none;
+  gap: var(--s4);
+}
+.reply-dialog:has(.reply-dialog__choice[id^="reply-private-"]:checked)
+  .reply-dialog__panel--private,
+.reply-dialog:has(.reply-dialog__choice[id^="reply-public-"]:checked)
+  .reply-dialog__panel--public {
+  display: grid;
+}
+.reply-dialog__panel > form {
+  display: grid;
+  gap: var(--s4);
+}
+.reply-dialog__notice,
+.reply-dialog__unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s3);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.reply-dialog__notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.reply-dialog__notice--private {
+  background: var(--paper-quiet);
+  color: var(--ink-muted);
+}
+.reply-dialog__notice--public {
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+  color: var(--accent-deep);
+}
+.reply-dialog__unavailable {
+  color: var(--ink-muted);
+  background: var(--paper-quiet);
+}
+/* On a touch screen the finger, not the label, sets the size. */
+@media (pointer: coarse) {
+  .post__action {
+    min-height: var(--h-touch);
+  }
+}
+
+/**
+ * Too narrow for a column of its own: the date rejoins the name line rather
+ * than taking a third of the row away from the words.
+ *
+ * A dedicated column earns its place by letting a reader compare dates down the
+ * page without reading the rows. Below this width it stops paying for itself —
+ * the student's question is what the column is for.
+ */
+/* --- what has already been said back -------------------------------------- */
+
+/**
+ * Indented past the question, not level with it.
+ *
+ * The thread's rule used to start at the same x as the quote's, so a reply read
+ * as a sibling of the question rather than as an answer to it — the indent was
+ * there but had nothing to be indented FROM. Offsetting it to where the
+ * question's own text begins is what makes the subordination legible.
+ */
+.thread {
+  margin-top: var(--s3);
+  /* One value, from the question's own left edge. It was split across two rules
+     while a border sat between them; with the border gone, two numbers making
+     one offset is just somewhere for them to drift apart. */
+  margin-left: var(--s5);
+}
+/**
+ * The audience of the conversation, stated once — where it is stated at all.
+ *
+ * The student's own history keeps it: they are deciding what is safe to write,
+ * and they do not have a colleague's context for it. The staff column drops it,
+ * because there every message already says "replied privately" or "answered the
+ * section", and the composer states the audience again at the moment of
+ * consequence. Three sentences of the same promise is how a promise stops being
+ * read.
+ */
+.thread__audience {
+  display: flex;
+  align-items: center;
+  gap: var(--tight);
+  flex-wrap: wrap;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+/**
+ * The conversation, indented once under the question it belongs to.
+ *
+ * One rule for the whole thread, not one per message: the indentation already
+ * says these are subordinate to the question, and a rule beside every line
+ * turns a group of replies into a stack of containers. DESIGN.md §5 rules out
+ * that nesting for the same reason it rules out cards.
+ */
+/**
+ * Indented, and nothing more.
+ *
+ * No rule down the side and none across the top. The offset says these hang off
+ * the question, and each message already carries a mark that fixes its own left
+ * edge — a line beside them was drawing a boundary the alignment had already
+ * drawn.
+ */
+.thread__messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.thread__msg {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: var(--s2);
+}
+/**
+ * The mark carries who is speaking — tinted, filled, and without a border, so
+ * it reads as a person rather than as another small box.
+ *
+ * Squared to 2px, not round. DESIGN.md §5 allows exactly three radii and a
+ * circle is none of them; the noticeboard this system is built on stamps a
+ * name, it does not print a profile photo. Colour here is reinforcement only:
+ * the author's name sits beside it in words.
+ */
+.thread__mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-control);
+  color: var(--ink-soft);
+  background: var(--board-deep);
+  font-size: 11px;
+  font-weight: 700;
+}
+.thread__msg--student > .thread__mark {
+  color: var(--amber-deep);
+  background: var(--amber-wash);
+}
+.thread__msg--public > .thread__mark {
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+}
+.thread__main {
+  min-width: 0;
+}
+/* Author, what they did, and when — one line, so the words start immediately
+   under the name instead of a field away from it. */
+.thread__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tight);
+  flex-wrap: wrap;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.thread__author {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.thread__when {
+  font-variant-numeric: tabular-nums;
+  /* The exact time is in `title` and read out by assistive technology, so the
+     cursor should say so. */
+  cursor: help;
+}
+.thread__body {
+  margin-top: 1px;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* --- contextual band ------------------------------------------------------ */
+
+/**
+ * The resource's own views, after the workspace rail and above the page.
+ *
+ * It is a horizontal band rather than a second fixed column: the rail answers
+ * where this account can go, while these links answer which peer view of the
+ * current course or section is open. The band stays visible while a pane scrolls
+ * and leaves the content its full width.
+ */
+.ws-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-content__body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.ws-content__panes {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+/**
+ * The contextual navigation has TWO shapes, and they used to be two rules for
+ * the same bare class 1,000 lines apart — a 48px horizontal strip here and a
+ * 200px vertical column further down that cancelled eleven of its properties
+ * (§12.7b). Nothing from the strip's container survived at desktop, so the
+ * first definition was dead weight that still had to be read and reasoned
+ * about, and the `--menu` variant below inherited whichever half of the pair
+ * its own rules happened not to override.
+ *
+ * Now there is one definition per shape, and the shape is chosen by the only
+ * thing that actually decides it — the viewport:
+ *
+ *   - the COLUMN is the unconditional definition (it is what fits inside
+ *     `.ws-body`, which is a flex ROW at desktop). See "grouped contextual
+ *     navigation" near the end of this file;
+ *   - the STRIP lives in the `max-width: 860px` block beside it, where
+ *     `.ws-body` turns into a column and a full-width band is possible.
+ *
+ * `.ws-subnav__scroll` was deleted with them: no component has rendered it
+ * since the strip stopped being the desktop shape.
+ */
+
+/**
+ * Section pages have more destinations than belong in a list of links, so they
+ * carry the label plus one disclosure. Keeping those links available should not
+ * make the navigation change shape, so this is a CONTENT mode, not a geometry:
+ * it takes whichever of the two shapes above the viewport has chosen.
+ *
+ * `overflow: visible` and the positioning context are what it genuinely needs —
+ * the popover has to escape the column's own scroller. `justify-content:
+ * space-between` used to live here too, and that was the bug §12.7b found: in
+ * the column it is not "label left, control right" but "label at the top of a
+ * full-height box, control pressed against the bottom edge", which is what
+ * every section staff route rendered at desktop. It now lives in the strip
+ * block, where a line actually runs left to right.
+ */
+.ws-subnav--menu {
+  position: relative;
+  z-index: 3;
+  overflow: visible;
+}
+/* The label stays visible in this mode — it is the only thing naming the
+   resource once the destinations are folded into a disclosure. It used to say
+   so in eight declarations that un-did an inline copy of `.visually-hidden`
+   (§12.4); that copy is gone, so this only has to say what it looks like. */
+.ws-subnav--menu .ws-subnav__heading {
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+  border-bottom: 0;
+  color: var(--ink-soft);
+  font-size: var(--text-meta);
+  line-height: var(--text-meta--line-height);
+  font-weight: 700;
+}
+.ws-subnav__menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+/**
+ * `More` is a TAB, not a button — the owner's note, and the reference shows it:
+ * at rest it reads exactly like an inactive tab, and opening it lifts it into a
+ * white tab joined to the panel below (rounded at the top, no bottom edge).
+ *
+ * It had been a bordered white pill with a 6px radius, which read as an action
+ * you press rather than as the last item in a row of tabs.
+ */
+/*
+  `More` must match `.ws-subnav__item` exactly — it stands in a row with them
+  and 12d.3 is the item that made it stop reading as a pressed pill. So every
+  number here moved with the tabs on 2026-09-11: 14px, weight 500, a 3px
+  underline, and the 2px padding asymmetry that compensates for it.
+
+  **That the two rules have to be edited in lockstep is the defect, not the
+  rule.** They are one control drawn twice, and a change to one silently sits
+  the other a pixel off and a step smaller. It is on §4.5's list for the shell's
+  move to utilities; until then this comment is the only thing linking them.
+*/
+.ws-subnav__menu > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tight);
+  min-height: var(--h-bar);
+  /*
+    ONE pixel more below than above — and unlike the asymmetry deleted from
+    `.ws-subnav__item`, this one is real. `More` carries a 1px TOP border that a
+    tab does not (it needs one to become a welded white tab when open, 12d.3),
+    so its content box starts a pixel lower and the same arithmetic comes out
+    `padBottom = padTop + 1`. Measured: 9/9 left its label 0.5px below its
+    neighbours' baseline; 9/10 lands it on them.
+  */
+  padding: 9px var(--s2) 10px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-bottom: 3px solid transparent;
+  color: var(--ink-soft);
+  background: none;
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  font-weight: 500;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+}
+.ws-subnav__menu > summary::-webkit-details-marker {
+  display: none;
+}
+/* `More` carries the active state when the reader is on a destination folded
+   inside it — maroon, matching the tab underline, so the bar always shows where
+   you are (`sidebar.md` §6, §7). */
+/* On a folded destination, `More` takes the tab's own active treatment —
+   maroon text over a maroon underline — so the bar always shows where you are
+   and does so in one visual language. */
+.ws-subnav__menu--current {
+  color: var(--red-deep);
+  border-bottom-color: var(--red);
+  /* 700, matching `.ws-subnav__item--active`. */
+  font-weight: 700;
+}
+.ws-subnav__menu > summary:hover {
+  color: var(--ink);
+}
+/* Open: a white tab welded to the panel beneath it. The bottom border goes
+   transparent so the two read as one surface. */
+.ws-subnav__menu[open] > summary {
+  border-color: var(--rule-strong);
+  /* Painted out so the tab and its panel read as one surface (12d.3). Follows
+     the 3px above: a 2px value here would leave a hairline of the strip's own
+     border showing through the weld. */
+  border-bottom-color: var(--paper);
+  border-radius: var(--r-control) var(--r-control) 0 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 600;
+}
+.ws-subnav__menu > summary:active {
+  background: var(--board-deep);
+  transition-duration: 0s;
+}
+/* Points DOWN at rest — it is a dropdown, and `IconChevron` draws it pointing
+   right, so the resting state is the rotated one. Up when open. */
+.ws-subnav__menu-chevron {
+  color: var(--ink-faint);
+  transform: rotate(90deg);
+  transition: transform 0.12s ease;
+}
+.ws-subnav__menu[open] .ws-subnav__menu-chevron {
+  transform: rotate(-90deg);
+}
+.ws-subnav__menu-list {
+  position: absolute;
+  /* Flush under the open tab, so the two are one surface. */
+  top: 100%;
+  right: 0;
+  /* Above the page content. The bar itself no longer clips this (it is
+     `overflow: visible`), but the panel still has to outrank what it covers. */
+  z-index: 40;
+  min-width: 220px;
+  margin: 0;
+  padding: var(--s1);
+  list-style: none;
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  /* The panel is flush against the bar's bottom edge across its whole width
+     (`top: 100%`), so its top corners are welded and its bottom two are free —
+     the same split `.notice__foot` makes for the same reason. It had NO radius
+     at all, which made the one floating surface in the app with square corners
+     on a screen of 12px ones. Owner-reported, 2026-09-11. */
+  border-radius: 0 0 var(--r-panel) var(--r-panel);
+  box-shadow: var(--overlay-shadow);
+}
+.ws-subnav__menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  /* Was 40px — the last undeclared height in the file. An overlay menu row is
+     a real click target, so it takes the control step (§12.5). */
+  min-height: var(--h-control);
+  padding: var(--s2) var(--pad-control);
+  color: var(--ink-soft);
+  font-size: var(--text-ui-sm);
+  line-height: var(--text-ui-sm--line-height);
+}
+.ws-subnav__menu-item:hover,
+.ws-subnav__menu-item--active {
+  color: var(--ink);
+  background: var(--paper-quiet);
+}
+.ws-subnav__menu-item:active {
+  background: var(--board-deep);
+  transition-duration: 0s;
+}
+.ws-subnav__menu-item--active {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+.ws-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--s6) var(--s6) var(--s8);
+  background: var(--paper);
+}
+.ws-detail__inner {
+  max-width: 820px;
+}
+.ws-mobile-only-title {
+  display: none;
+}
+.ws-page {
+  flex: 1;
+  min-width: 0;
+}
+/* In multi-pane mode a single-column child still has to scroll itself. */
+.ws--panes .ws-page {
+  overflow-y: auto;
+}
+.ws-page__inner {
+  width: min(1080px, calc(100% - var(--s8)));
+  margin: 0 auto;
+  padding: var(--s7) 0 var(--s8);
+}
+.ws-backlink {
+  display: none;
+  align-items: center;
+  gap: var(--tight);
+  margin-bottom: var(--s4);
+  color: var(--accent-deep);
+  font-size: var(--text-ui-sm);
+  line-height: var(--text-ui-sm--line-height);
+  font-weight: 600;
+}
+.ws-empty-detail {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+  padding: var(--s5);
+  color: var(--ink-muted);
+  text-align: center;
+}
+.ws-empty-detail p {
+  max-width: 52ch;
+}
+
+/* `.ws-rail__count` and `.ws-subnav__count` lived here and are now one
+   component, `layout/nav-count.tsx` (§12.6). They were the same rule in every
+   shareable property and differed only in the fill — which is a real, measured
+   ground exception rather than a drift, and is now stated once instead of
+   implied by two rules that happened to agree. The accessible name
+   ("needing review") moved with them; it had been written out three times. */
+
+/* --- mobile drawer -------------------------------------------------------- */
+
+.ws-drawer {
+  display: none;
+  flex: 0 0 auto;
+}
+.ws-drawer > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tight);
+  min-height: var(--h-control-compact);
+  padding: var(--s1) var(--pad-control);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: var(--text-ui-sm);
+  line-height: var(--text-ui-sm--line-height);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.ws-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+.ws-drawer[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+}
+.ws-drawer > summary:active {
+  background: var(--board-deep);
+}
+.ws-drawer__panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--h-topbar);
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s4) var(--s3) var(--s5);
+  overflow-y: auto;
+  /* The drawer IS the rail on a phone — same component, same ground. */
+  background: var(--rail);
+  /* NO radius, deliberately, and it is the one floating surface exempt: this is
+     pinned to all four edges below the top bar, so it is a full-bleed sheet
+     rather than a panel on the board. A 12px corner here would round against
+     the viewport, which is the one thing DESIGN.md §5's `0` case is for. */
+  border-top: 1px solid var(--rail-deep);
+  box-shadow: var(--overlay-shadow);
+}
+
+/* ==========================================================================
+   Entry screen — the signed-out front door at / and /signin
+   ==========================================================================
+   One posted notice on the board: what this is, who may enter, and the way
+   in. No marketing funnel, no gradient, no illustration. */
+
+.entry {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: var(--s5);
+  background: var(--board);
+}
+.entry__mast {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: min(880px, 100%);
+  margin: 0 auto;
+}
+.entry__sheet {
+  width: min(880px, 100%);
+  margin: var(--s6) auto;
+  align-self: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+  /* Clips .entry__signin's own fill to the rounded corners. */
+  overflow: hidden;
+}
+.entry__grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+}
+.entry__about {
+  padding: var(--s7) var(--s6);
+  border-right: 1px solid var(--rule);
+}
+/* The entry screen's one headline — the largest step in the ramp, and the only
+   place it is used (§3.5). It was restating all three of the step's values. */
+.entry__about h1 {
+  max-width: 20ch;
+  font-family: var(--serif);
+  font-size: var(--text-headline);
+  line-height: var(--text-headline--line-height);
+  letter-spacing: var(--text-headline--letter-spacing);
+  font-weight: 700;
+}
+.entry__lede {
+  max-width: 42ch;
+  margin-top: var(--s4);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.entry__terms {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s6) 0 0;
+  padding: var(--s4) 0 0;
+  border-top: 1px solid var(--rule);
+  list-style: none;
+}
+.entry__terms li {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: var(--s3);
+  max-width: 46ch;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+/* Neutral: a tick beside a commitment is punctuation, not an action. */
+.entry__terms svg {
+  margin-top: var(--s1);
+  color: var(--ink-faint);
+}
+.entry__signin {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--s7) var(--s6);
+  background: var(--paper-quiet);
+}
+.entry__signin h2 {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+}
+.entry__signin > p {
+  margin-top: var(--s2);
+  max-width: 40ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.entry__actions {
+  display: grid;
+  gap: var(--s3);
+  margin-top: var(--s5);
+}
+.entry__actions .button {
+  width: 100%;
+  min-height: var(--h-touch);
+}
+.entry__dev {
+  margin-top: var(--s5);
+  padding: var(--s4);
+  border: 1px dashed var(--rule-strong);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+}
+.entry__dev h3 {
+  font-size: var(--text-ui-sm);
+  line-height: var(--text-ui-sm--line-height);
+}
+.entry__dev p {
+  margin: var(--s1) 0 var(--s3);
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+/* Moved onto the control as `mb-2` (§3.2). */
+.entry__foot {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+/* ==========================================================================
+   Student weekly form
+   ========================================================================== */
+
+.form-sheet {
+  max-width: 720px;
+}
+.question {
+  margin: 0;
+  padding: var(--s5) 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+.question:first-of-type {
+  border-top: 0;
+  padding-top: var(--s2);
+}
+/* Float the legend so it sits below the rule rather than being struck
+   through by it — a <legend> is otherwise painted over the fieldset border. */
+.question > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.question > legend + * {
+  clear: both;
+}
+.question__note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: var(--s2) 0 var(--s3);
+  max-width: 68ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.question__desc {
+  margin: 0 0 var(--s3);
+  max-width: 68ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.question__error {
+  margin-top: var(--s2);
+}
+
+/* A repeated block inside the student's own section: divided by a hairline,
+   never a nested card (DESIGN.md §11.1). */
+.own-item__block {
+  padding-top: var(--s4);
+  margin-top: var(--s4);
+  border-top: 1px solid var(--rule);
+}
+.own-item__block:first-of-type {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+.own-item__block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+}
+.own-item__block-head .label {
+  color: var(--ink-soft);
+}
+.own-item__block .alert {
+  margin-bottom: var(--s3);
+}
+.own-item__add {
+  margin-top: var(--s4);
+}
+
+/* The student's own item. It used to be a green-washed bordered container with
+   tinted inputs — a decorative coloured box, and on a phone most of the page.
+   It is now the same hairline rhythm as every other question on the sheet: the
+   sheet reads as one continuous form instead of a form with two boxes glued to
+   the end. */
+.own-item {
+  margin: 0;
+  padding: var(--s5) 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+.own-item > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.own-item > legend + * {
+  clear: both;
+}
+.own-item__note {
+  margin: var(--s2) 0 var(--s3);
+  max-width: 68ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.submit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  margin-top: var(--s5);
+  padding-top: var(--s5);
+  border-top: 2px solid var(--rule-ink);
+}
+.submit-bar__note {
+  max-width: 44ch;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* ==========================================================================
+   Student history
+   ========================================================================== */
+
+.record {
+  padding: var(--s5);
+  border-bottom: 1px solid var(--rule);
+}
+.record:last-child {
+  border-bottom: 0;
+}
+.record__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.answers {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s4) 0 0;
+}
+/**
+ * The QUESTION outranks the answer.
+ *
+ * This was inverted: the prompt was a 12px grey sans label and the answer 16px
+ * Charter, so a reader scanning a submission met the reply before the thing it
+ * replied to. The prompt now takes the question register it was drawn for and
+ * the answer sits under it at the soft ink step - same family, so they read as
+ * one exchange rather than two unrelated blocks.
+ */
+.answers dt {
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.answers dd {
+  margin: var(--s1) 0 0;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+/* ==========================================================================
+   Published answer (class Q&A detail)
+   ========================================================================== */
+
+.answer {
+  padding-top: var(--s4);
+  border-top: 2px solid var(--rule-ink);
+}
+.answer__by {
+  margin-bottom: var(--s3);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* ==========================================================================
+   Staff review — one submission is the object; responses are activity below it
+   ========================================================================== */
+
+.submission {
+  padding-bottom: var(--s5);
+  border-bottom: 1px solid var(--rule);
+}
+.submission__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s3);
+  margin-top: var(--s2);
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.item {
+  padding: var(--s5) 0;
+  border-bottom: 1px solid var(--rule);
+}
+.item:last-child {
+  border-bottom: 0;
+}
+.item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+/* NB: a `.thread` rule used to live here, left behind by markup that no longer
+   exists. Nothing rendered it, so it sat quietly until a new component took the
+   same name — and inherited a border nobody asked for. `.item` and `.event`
+   below are orphaned the same way. */
+.event {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: var(--s3);
+  padding: var(--s3) 0;
+}
+.event + .event {
+  border-top: 1px solid var(--rule);
+}
+.event__mark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-control);
+  color: var(--ink-muted);
+  background: var(--paper-quiet);
+}
+.event--private .event__mark {
+  color: var(--amber-deep);
+  border-color: var(--amber-edge);
+  background: var(--amber-wash);
+}
+.event--public .event__mark {
+  color: var(--accent-deep);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+}
+.event__meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.event__meta strong {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.event__body {
+  margin-top: var(--tight);
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.event__body--lead {
+  font-weight: 700;
+}
+
+.validity {
+  display: grid;
+  gap: var(--s3);
+}
+.validity__history summary {
+  cursor: pointer;
+}
+.validity__history .data-list {
+  margin-top: var(--s2);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.validity__history .data-list > li {
+  padding: var(--s2) var(--s3);
+}
+
+.composers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s4);
+  margin-top: var(--s4);
+}
+/* Two destinations for one reply — to the student, or to the whole class. The
+   boundary is a privacy boundary, so the two stay visually separate; but they
+   are hairline regions on the page's own paper, not filled cards inside a card.
+   The amber visibility note is what should catch the eye here. */
+.composer {
+  padding: var(--s4);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  background: var(--paper);
+}
+/* A composer's sub-heading is deliberately NOT a panel title: it is the label
+   on one control inside a notice, so it sits in the interface register at the
+   interface step rather than in the document register at 20px (§3.5). */
+.composer > h3 {
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.composer > p {
+  margin: var(--s1) 0 var(--s3);
+  max-width: 46ch;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.composer form {
+  display: grid;
+  gap: var(--s3);
+}
+/* `.composer .textarea-field { background: paper }` — REDUNDANT: the control
+   recipe is already `bg-paper` (§3.2). */
+
+/* the visibility warning sits with the action that changes visibility */
+.visibility-note {
+  padding: var(--s3);
+  border: 1px solid var(--amber-edge);
+  border-radius: var(--r-panel);
+  background: var(--amber-wash);
+  color: var(--amber-deep);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 1180px) {
+  .ws-list {
+    flex-basis: 320px;
+    width: 320px;
+  }
+  .ws-detail {
+    padding: var(--s5) var(--s5) var(--s8);
+  }
+}
+
+@media (max-width: 1024px) {
+  /* `.ws-rail` narrowed to 192px here. `sidebar.md` §15 gives a tablet the
+     collapsed icon rail instead, which the rail states itself as `max-xl:`. */
+  .ws-list {
+    flex-basis: 300px;
+    width: 300px;
+  }
+  .ws-page__inner {
+    width: calc(100% - var(--s7));
+  }
+  .entry__grid {
+    grid-template-columns: 1fr;
+  }
+  .entry__about {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+}
+
+@media (max-width: 860px) {
+  /* Stacked: one column, ordinary page scroll, so the shell returns to flow. */
+  .ws--panes {
+    position: static;
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+  .ws--panes .ws-page,
+  .ws--panes .ws-detail,
+  .ws--panes .ws-list__scroll {
+    overflow: visible;
+  }
+  .ws--panes .ws-list,
+  .ws--panes .ws-detail {
+    min-height: 0;
+  }
+  /* `.ws-rail { display: none }` was here and could not work: this file is
+     `@layer components` and the rail's own `flex` is a utility, so the utility
+     won regardless of the media query. The rail states `max-lg:hidden` itself.
+     `.ws-drawer` still works because nothing sets its display in a later
+     layer. */
+  .ws-drawer {
+    display: block;
+  }
+  .ws-body {
+    position: relative;
+  }
+  .ws-list {
+    flex: 1;
+    width: auto;
+    border-right: 0;
+  }
+  .ws-list--hidden {
+    display: none;
+  }
+  .ws-detail--hidden {
+    display: none;
+  }
+  .ws-backlink {
+    display: inline-flex;
+  }
+  .ws-topbar__title,
+  .ws-topbar__divider {
+    display: none;
+  }
+  /* A `.ws-subnav__heading` un-hide used to sit here — nine declarations that
+     could never apply, because the later block at this same breakpoint sets
+     `display: none` on it. Deleted 2026-09-11. */
+  .ws-mobile-only-title {
+    display: block;
+    margin-bottom: var(--s4);
+    font-family: var(--serif);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.012em;
+  }
+}
+
+@media (max-width: 720px) {
+  .ws-topbar {
+    padding: 0 var(--s3);
+    gap: var(--s3);
+  }
+  .ws-account__email {
+    display: none;
+  }
+  .ws-detail {
+    padding: var(--s4) var(--s4) var(--s7);
+  }
+  .ws-page__inner {
+    width: calc(100% - var(--s5));
+    padding: var(--s5) 0 var(--s7);
+  }
+  /* With the rail gone the body has one column of content, so it stacks: the
+     band on top, the page under it. The band remains a single scrolling row;
+     wrapping it would move the page heading as labels reflow. */
+  .ws-body {
+    flex-direction: column;
+  }
+  .ws-content__panes {
+    flex-direction: column;
+  }
+  /* The strip used to be re-declared here as well, in full and at identical
+     values, and again in the `max-width: 860px` block further down — so a
+     phone-width sub-nav was defined three times over. The one that ships is the
+     860px block (it comes last and this breakpoint is inside it); this copy was
+     dead. Its ONE unique declaration, `margin-bottom: -1px` on a tab, moved
+     there rather than being dropped (§12.2, §12.7b).
+
+     Why `display: contents` on the group lives there now: a group's own heading
+     stacked over its list would fight the single scrolling row, so the group is
+     unwrapped and its list joins that row directly, the same as the flat case.
+     Losing the category label is an acceptable trade at this width — the
+     resource heading is already gone for the same reason. */
+  .page-head {
+    margin-bottom: var(--s5);
+  }
+  .post {
+    /* Narrow screens keep the vertical/horizontal asymmetry the wide layout
+       has — the separation between two responses is the point, and it is worth
+       more than the sliver of width square padding would win back. */
+    padding: var(--s5) var(--s4);
+  }
+  .page-title {
+    font-size: 24px;
+  }
+  .notice__head,
+  .notice--roomy .notice__head {
+    flex-direction: column;
+    gap: var(--s2);
+    padding: var(--s4) var(--s4) var(--s3);
+  }
+  .notice__body,
+  .notice--roomy .notice__body,
+  .notice--pad,
+  .notice--roomy.notice--pad {
+    padding: var(--s4);
+  }
+  .notice__foot {
+    padding: var(--s3) var(--s4);
+  }
+  .own-item {
+    padding: var(--s4) 0;
+  }
+  .form-actions,
+  .submit-bar {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+  .form-actions .button,
+  .submit-bar .button {
+    width: 100%;
+  }
+  .data-list > li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--s2);
+    padding: var(--s3) var(--s4);
+  }
+  .record {
+    padding: var(--s4);
+  }
+  .entry {
+    padding: var(--s4);
+  }
+  .entry__about,
+  .entry__signin {
+    padding: var(--s5) var(--s4);
+  }
+  .figure-row {
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  }
+}
+
+@media (max-width: 400px) {
+  .data-table th,
+  .data-table td {
+    padding: var(--tight) var(--s2);
+  }
+  .empty {
+    padding: var(--s5) var(--s4);
+  }
+  .ws-drawer > summary {
+    padding: var(--s1) var(--s2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- grouped contextual navigation ----------------------------------------
+
+   The course's own views used to render as a **200px vertical column** here,
+   between the rail and the page. `sidebar.md` §1 and §17 forbid that outright —
+   "there must NEVER be sidebar → sidebar → main content" — so the column form
+   is deleted and the horizontal strip, which already existed as this
+   component's phone shape, is now its only shape at every width.
+
+   What that means for the earlier §12.7b note kept below for history: the two
+   shapes it disentangled are now one. The strip moved INTO the content column
+   (see `workspace-shell.tsx`), so it sits above the page rather than beside it,
+   and the hierarchy reads rail → course tabs → content.
+
+   Its rules live with the strip, roughly 700 lines above. */
+
+/* `.ws-body { flex-direction: column }` was unwrapped to here by mistake while
+   promoting the tab bar out of its media query. It belongs to the phone layout
+   (the 720px block above still has it) and unconditionally it made the shell
+   stack: the rail became a flex item on the COLUMN axis, so `flex: 0 0 248px`
+   set its HEIGHT and the rail rendered 248x248 with the tab bar beneath it.
+   `.ws-body` is a ROW at desktop — rail beside the content column. */
+
+/**
+ * THE COURSE TAB BAR — the contextual navigation's ONLY shape
+ * (`sidebar.md` §1, §7, §17).
+ *
+ * It used to be this file's phone shape, wrapped in `@media (max-width: 860px)`
+ * while a 200px vertical column was the desktop one. §17 forbids that column
+ * ("there must NEVER be sidebar → sidebar → main content"), so the column is
+ * deleted and this is promoted to the base: one horizontal tab bar, at every
+ * width, sitting at the top of the content column rather than beside it.
+ *
+ * It can be a full-width band at any width now because the shell puts it inside
+ * a flex COLUMN — which is the structural change that made §17 satisfiable at
+ * all. Previously it was a flex child of a row and had nowhere to span.
+ */
+.ws:not(.ws--panes) .ws-subnav,
+.ws-subnav {
+  position: static;
+  align-self: auto;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: var(--s4);
+  width: 100%;
+  min-width: 0;
+  min-height: var(--h-bar);
+  height: auto;
+  /* §8: a light rule defines the navigation area, and the bar is separated from
+     the content below it rather than sitting flush against it — the alert on a
+     course page was touching the tabs. */
+  margin-bottom: var(--s5);
+  border-right: 0;
+  border-bottom: 1px solid var(--rule);
+  /* NOT a scroll container. The `More` popover is a descendant, so a scrolling
+     ancestor clips it — `.ws-subnav__scroll` below is the scroller instead. */
+  overflow: visible;
+}
+/* The tabs scroll when they do not fit; the `More` menu sits outside this. */
+.ws-subnav__scroll {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+/* The resource label is hidden: the bar needs its width for destinations, the
+   page heading already says where you are, and the top bar names the course
+   (`sidebar.md` §2). */
+.ws-subnav__heading {
+  display: none;
+}
+/* The compact variant puts its disclosure at the far end of the line. */
+.ws-subnav--menu {
+  justify-content: space-between;
+}
+.ws-subnav__group {
+  display: contents;
+}
+.ws-subnav__group-heading {
+  display: none;
+}
+.ws-subnav__list {
+  display: flex;
+  gap: var(--s1);
+  flex-wrap: nowrap;
+  width: max-content;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ws-subnav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: var(--h-bar);
+  /*
+    SYMMETRIC, and the asymmetry that used to be here was a misconception.
+
+    It read "1px more above than below so the label sits centred over the 2px
+    underline rather than over the box" — reasoning about a normal-flow box.
+    This is `display: flex; align-items: center` with `min-height: var(--h-bar)`
+    and `box-sizing: border-box`, so the label is centred by flex inside the
+    content box, and the arithmetic comes out the other way:
+
+      45 = padTop + contentH + padBottom   (48px box, less the 3px rule)
+      glyph centre  = top + padTop + contentH / 2
+      target centre = top + 45 / 2
+      ⇒ padTop = padBottom
+
+    Any asymmetry therefore pushes the label AWAY from centre by half of it.
+    Measured: at 10/8 the glyph sat 1px low; at 9/9 it lands on 271.5 against
+    an available centre of 271.5. The old 10/9 was 0.5px low for the same
+    reason, which is why nobody saw it.
+  */
+  padding: 9px var(--s2);
+  /* The tab's 2px underline sits ON the strip's own bottom border rather than
+     above it. This used to be declared only below 720px, so between 721 and
+     860 the underline floated a pixel clear of the seam — the same shape, two
+     results, decided by a breakpoint nobody meant to draw (§12.2). */
+  margin-bottom: -1px;
+  border: 0;
+  border-radius: 0;
+  /*
+    3px, not 2px (owner 2026-09-11: "make the underline also a bit thicker to
+    emphasis maroon colors"). The underline is the only place the active tab's
+    maroon appears as a FILL rather than as text, so its weight is how much
+    maroon the bar actually shows — at 2px it was a hairline carrying the
+    colour the owner wanted to see.
+  */
+  border-bottom: 3px solid transparent;
+  color: var(--ink-soft);
+  /*
+    One step up the ramp, 13px → 14px (owner: "make the sections clickable a
+    bit larger"). `--text-ui` is the body-UI step, which is what these are:
+    words you read and click, not chrome labels.
+  */
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  /*
+    500 at rest. The tabs were 400 — the same weight as body prose — so a row
+    of destinations read as a sentence. This makes them read as controls
+    without pre-empting the active one, which is 700 below.
+  */
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ws-subnav__item:hover {
+  color: var(--ink);
+  background: none;
+}
+/* A strip tab has no fill to darken, so the press is carried by the underline
+   arriving early — the same affordance the active tab uses (§12.1). */
+.ws-subnav__item:active {
+  color: var(--red-deep);
+  background: none;
+  border-bottom-color: var(--accent-edge);
+  transition-duration: 0s;
+}
+/**
+ * The active tab is MAROON (`sidebar.md` §7: "maroon text, subtle maroon
+ * underline").
+ *
+ * This is a deliberate widening of what maroon means, and it is worth being
+ * explicit because DESIGN.md §3 had reserved it. Maroon was the *problem*
+ * signal only — invalid, failed, destructive. §9 of the spec adds "UP-inspired
+ * maroon for primary actions and active/high-priority accents", so it now does
+ * double duty, and DESIGN.md §3 records that rather than being left to
+ * contradict this rule.
+ *
+ * What keeps the two readings apart is that a problem is never *only* maroon:
+ * every status in this app is a `Stamp` — a word AND a shape AND a tone (§9) —
+ * so a maroon tab label cannot be mistaken for an invalid stamp. The signal
+ * discipline survives because it never depended on maroon's exclusivity.
+ */
+.ws-subnav__item--active {
+  color: var(--red-deep);
+  background: none;
+  border-bottom-color: var(--red);
+  /*
+    700, up from 600. With the rest of the strip at 500 the gap was one step
+    and the active tab had to carry it on colour alone — which is the thing
+    this design system refuses to rely on. Two steps of weight, plus the
+    maroon, plus a 3px rule, plus `aria-current`.
+  */
+  font-weight: 700;
+}
+.ws-subnav__text {
+  flex: 0 0 auto;
+}
+
+
+@media print {
+  .ws-topbar,
+  .ws-rail,
+  .ws-drawer,
+  .ws-list,
+  .ws-subnav,
+  .skip-link {
+    display: none !important;
+  }
+  .ws,
+  .ws--panes,
+  .ws-body {
+    position: static;
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+  .ws-detail,
+  .ws-page {
+    overflow: visible;
+  }
+  /* Deliberately a literal, not `var(--paper)`: paper is white regardless of
+     which theme the screen was showing when Print was pressed. */
+  body {
+    background: #fff;
+  }
+}
+
+/* ==========================================================================
+   Rich text — the sanitized output of the one safe renderer
+   ==========================================================================
+   Scoped under `.rich-text` so a teacher's prompt can never restyle the page
+   around it: the sanitizer already strips `style` and `class`, and this keeps
+   the blast radius of any future allowlist change inside the block.
+
+   Authored by a person, so it sits in the document register, on this system's
+   own tokens and radii. */
+
+.rich-text {
+  font-family: var(--serif);
+  overflow-wrap: anywhere;
+}
+.rich-text > :first-child {
+  margin-top: 0;
+}
+.rich-text > :last-child {
+  margin-bottom: 0;
+}
+.rich-text p,
+.rich-text ul,
+.rich-text ol,
+.rich-text blockquote,
+.rich-text pre,
+.rich-text table {
+  margin: 0 0 var(--s3);
+}
+.rich-text h3,
+.rich-text h4,
+.rich-text h5,
+.rich-text h6 {
+  margin: var(--s4) 0 var(--s2);
+  font-size: 16px;
+  line-height: 1.3;
+}
+.rich-text ul,
+.rich-text ol {
+  padding-left: 22px;
+}
+.rich-text li + li {
+  margin-top: var(--s1);
+}
+.rich-text a {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rich-text code {
+  padding: 1px 4px;
+  border-radius: var(--r-control);
+  background: var(--paper-quiet);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+.rich-text pre {
+  padding: var(--s3);
+  border: 1px solid var(--rule);
+  background: var(--paper-quiet);
+  /* Long code scrolls inside its own box; it never widens the page. */
+  overflow-x: auto;
+}
+.rich-text pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+}
+/* A quotation inside authored text: a 1px rule and an indent, per DESIGN.md §5. */
+.rich-text blockquote {
+  padding-left: var(--s4);
+  border-left: 1px solid var(--rule-strong);
+  color: var(--ink-soft);
+}
+.rich-text img {
+  max-width: 100%;
+  height: auto;
+}
+.rich-text table {
+  display: block;
+  width: 100%;
+  border-collapse: collapse;
+  overflow-x: auto;
+  font-family: var(--sans);
+  font-size: 13px;
+}
+.rich-text th,
+.rich-text td {
+  padding: var(--tight) var(--s2);
+  border: 1px solid var(--rule);
+  text-align: left;
+}
+.rich-text hr {
+  margin: var(--s4) 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+/* Display maths can be wider than the column; scroll it, not the page. */
+.rich-text .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+/* A prompt rendered inside a legend stays on one line's worth of blocks. */
+.rich-text--inline,
+.rich-text--inline p {
+  display: inline;
+  margin: 0;
+}
+
+/* ==========================================================================
+   Filter strip fieldset + plain lists
+   ========================================================================== */
+
+.toolbar__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.plain-list {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* ==========================================================================
+   Accessible chart — the SVG is decorative, the table carries the numbers
+   ========================================================================== */
+
+.chart {
+  margin: 0;
+}
+.chart > figcaption {
+  margin-bottom: var(--s2);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.chart__svg {
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+}
+/* Bars are data, not action, so they stay off the accent. */
+.chart__bar {
+  fill: var(--rule-ink);
+}
+.chart__table {
+  margin-top: var(--s2);
+  border: 1px solid var(--rule);
+}
+
+@media (max-width: 720px) {
+  .pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pagination__controls .button {
+    flex: 1;
+  }
+}
+
+/* The Q&A detail's provenance line sits just under the object title. */
+.qa-detail__meta {
+  margin-top: var(--s2);
+}
+
+/* ==========================================================================
+   Dialog — every deliberate action
+   ==========================================================================
+   Native <dialog>: the platform owns the focus trap, Escape and aria-modal. */
+
+/* The dialog's eighteen `.dlg*` rules lived here and are now utilities in
+   `src/components/ui/dialog.tsx` (§11.2a). It was the only component in the app
+   whose markup would have broken the moment this file was deleted, which is why
+   §11.7 put it first. The conversion was verified by rendering both versions
+   side by side and diffing computed styles: the only differences are the three
+   that were asked for — `display: grid` with the body as the one scrolling row,
+   the `calc(… - 150px)` body cap gone (§11.2d), and the description and footer
+   taking `--text-ui-sm`'s own leading instead of inheriting the body's. */
+
+/* ==========================================================================
+   Filter — one button, one popover
+   ========================================================================== */
+
+.filterbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  flex: 0 0 auto;
+  padding: var(--tight) var(--s3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+.filterbar__summary {
+  min-width: 0;
+  color: var(--ink-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filterbar__control {
+  position: relative;
+  flex: 0 0 auto;
+}
+.filterbar__count {
+  min-width: 16px;
+  padding: 0 var(--s1);
+  border-radius: var(--r-stamp);
+  color: var(--paper);
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.filterbar__menu {
+  position: absolute;
+  right: 0;
+  z-index: 30;
+  min-width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-top: var(--tight);
+  padding: var(--s2) 0;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  /* Floats clear of its trigger, so every corner is exposed and takes the
+     full panel step. Was square. */
+  border-radius: var(--r-panel);
+  box-shadow: var(--overlay-shadow);
+}
+.filterbar__group + .filterbar__group {
+  margin-top: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--rule);
+}
+.filterbar__group-name {
+  padding: 0 var(--s3) var(--s1);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.filterbar__option {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--tight) var(--s3);
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+.filterbar__option:hover {
+  background: var(--paper-quiet);
+}
+.filterbar__option--on {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+.filterbar__check {
+  flex: 0 0 14px;
+  color: var(--accent-deep);
+}
+
+/* The list pane's own title block: what this destination is, which section it
+   belongs to, and the way back. Replaces a top-bar string that tried to be a
+   breadcrumb, a page title and a section label at once. */
+.pane-head {
+  flex: 0 0 auto;
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--rule);
+}
+.pane-head__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pane-head__back:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.pane-head__title {
+  margin-top: 2px;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.pane-head__context {
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+
+/* ==========================================================================
+   Review detail — explicit sections instead of floating fragments
+   ========================================================================== */
+
+.review__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--rule);
+}
+.review__ident {
+  min-width: 0;
+}
+.review__ident .meta-list {
+  margin-top: var(--s1);
+}
+.review__head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+/* Identity details a reviewer rarely needs: present, not in the way. */
+.review__details {
+  margin-top: var(--s3);
+}
+.review__details > summary {
+  color: var(--ink-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.review__details-body {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-panel);
+  background: var(--paper-quiet);
+}
+
+.review__section {
+  margin-top: var(--s6);
+}
+.review__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+/* Sentence case, not a tracked-caps banner. */
+.review__section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.review__count {
+  color: var(--ink-muted);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An aligned prompt/answer column. Used for the submitted answers and for a
+   published question/answer pair, so both read the same way. */
+.qa-pairs {
+  display: grid;
+  gap: var(--s3);
+  margin: var(--s3) 0 0;
+}
+.qa-pairs__row {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+  gap: var(--s2) var(--s4);
+  align-items: baseline;
+}
+.qa-pairs dt {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+.qa-pairs dd {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .qa-pairs__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+/* The student's own words. The indent and the register say "quoted and
+   private"; the all-caps banner that used to say it is gone. */
+.review__original {
+  margin: var(--s3) 0 0;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--rule-strong);
+  font-family: var(--serif);
+  font-size: 17px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.review__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-top: var(--s4);
+}
+
+/* One response: its type, its audience and its time, grouped so the audience
+   can never be read as belonging to the wrong thing. */
+.responses {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--rule);
+}
+/* A 1px left rule plus an indent, per DESIGN.md §5 — not a 3px coloured bar.
+   The type label and its icon are what actually distinguish private from
+   public; the rule only reinforces it. */
+.response {
+  margin-top: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--rule);
+  border-left-width: 1px;
+  background: var(--paper);
+}
+.response--private {
+  border-left-color: var(--amber);
+}
+.response--public {
+  border-left-color: var(--accent);
+}
+.response__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2) var(--s4);
+  flex-wrap: wrap;
+}
+.response__type {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tight);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.response__audience {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.response__when {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.response__body {
+  margin-top: var(--s2);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 560px) {
+  .response__when {
+    margin-left: 0;
+  }
+}
+
+/* ==========================================================================
+   Account matches — a comparison, not a sentence to decode
+   ========================================================================== */
+
+.match-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.match,
+.roster-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--rule);
+}
+.match-list > :last-child {
+  border-bottom: 0;
+}
+
+/* Two labelled sides. The teacher's whole task here is comparing two names, so
+   the layout puts them beside each other and labels which is which. */
+.match__sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s4);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.match__side {
+  min-width: 0;
+}
+.match__label {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.match__name {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.match__actions,
+.roster-row__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.roster-row__main {
+  min-width: 0;
+}
+
+/* A labelled count. Never colour alone: the number and its noun are the signal,
+   and the attention tone only adds to them. */
+.tally {
+  /* A phrase, not a paragraph: it sits in a panel head beside a heading, so it
+     carries no block margin of its own. */
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 13px;
+}
+.tally strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.tally--attention strong {
+  color: var(--amber-deep);
+}
+
+.roster-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-quiet);
+}
+/* Moved onto the controls as utilities (§3.2). */
+
+@media (max-width: 720px) {
+  .match,
+  .roster-row {
+    flex-direction: column;
+    padding: var(--s4);
+  }
+  .roster-search {
+    padding: var(--s3) var(--s4);
+  }
+}
+
+/* The participation matrix: an identity column on the left, week cells centred
+   so a column of "Yes" reads as a column, and the total set apart by a rule. */
+.data-table th.num,
+.data-table td.num {
+  text-align: center;
+}
+.data-table .matrix__total {
+  border-left: 1px solid var(--rule-strong);
+}
+
+/* The participation matrix: identity on the left, week cells centred so a column
+   of "Yes" reads as a column, and the total set apart by a rule. */
+.data-table th.num,
+.data-table td.num {
+  text-align: center;
+}
+.data-table .matrix__total {
+  border-left: 1px solid var(--rule-strong);
+}
+
+/* Participation answered plainly.
+   A Stamp is a box, and a column of boxes reads as a column of buttons —
+   fourteen of them down a class list is louder than the fact it carries. The
+   word alone, coloured, says the same thing: green Yes, red No. */
+.yesno {
+  font-weight: 600;
+}
+.yesno--yes {
+  /* The same green the green Stamp used, so the colour still means what it
+     meant — only the box is gone. */
+  color: var(--accent-deep);
+}
+.yesno--no {
+  color: var(--red-deep);
+}

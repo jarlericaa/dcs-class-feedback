@@ -17,7 +17,11 @@ type IconProps = Omit<SVGProps<SVGSVGElement>, "children"> & {
   size?: number;
 };
 
-function Icon({ size = 16, children, ...rest }: IconProps & { children: React.ReactNode }) {
+function Icon({
+  size = 16,
+  children,
+  ...rest
+}: IconProps & { children: React.ReactNode }) {
   return (
     <svg
       width={size}
@@ -165,6 +169,14 @@ export const IconMenu = (p: IconProps) => (
   </Icon>
 );
 
+export const IconMoreVertical = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="5" r="1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
 export const IconCheck = (p: IconProps) => (
   <Icon {...p}>
     <path d="m5 12.5 4.5 4.5L19 7" />
@@ -174,6 +186,18 @@ export const IconCheck = (p: IconProps) => (
 export const IconBack = (p: IconProps) => (
   <Icon {...p}>
     <path d="M19 12H5M11 6l-6 6 6 6" />
+  </Icon>
+);
+
+/**
+ * Sign out: a door with an arrow leaving it. Drawn because the collapsed rail
+ * has no room for the word (§10.4.2) and DESIGN.md forbids a Unicode glyph
+ * standing in for an icon.
+ */
+export const IconSignOut = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15 4H6a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h9" />
+    <path d="M13 12h8M18 8.5l3.5 3.5L18 15.5" />
   </Icon>
 );
 
@@ -194,6 +218,20 @@ export const IconChevron = (p: IconProps) => (
 export const IconPlus = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+
+/**
+ * Dismiss. The ONE icon in this file allowed to stand without a word beside it,
+ * and only in a dialog's corner — where the convention is universal and the
+ * `aria-label` carries the name for anyone who cannot see the glyph.
+ *
+ * Anywhere else, a control that closes something says so in words: a bare × in
+ * the middle of a page is a guess about what it dismisses.
+ */
+export const IconClose = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 6l12 12M18 6 6 18" />
   </Icon>
 );
 
@@ -252,6 +290,20 @@ export const IconNote = (p: IconProps) => (
   <Icon {...p}>
     <path d="M5 3h14v18H5z" />
     <path d="M8.5 8h7M8.5 12h7M8.5 16h4" />
+  </Icon>
+);
+
+/**
+ * A rating star, for the linear-scale control (`ScaleStars`).
+ *
+ * Outlined by default like every other icon in the family. Pass
+ * `fill="currentColor"` for a filled one — that lands on the `<svg>` through
+ * the shared `Icon`'s prop spread, so a filled star needs no second export and
+ * cannot drift from the outline's geometry.
+ */
+export const IconStar = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5l2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17.3l-5.38 2.85 1.03-6L3.3 9.9l6-.9z" />
   </Icon>
 );
 
