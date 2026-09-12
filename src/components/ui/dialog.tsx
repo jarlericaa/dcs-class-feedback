@@ -39,6 +39,7 @@ export function Dialog({
   variant,
   size,
   className,
+  triggerRole,
 }: {
   /** the trigger's text, and its accessible name */
   label: ReactNode;
@@ -62,6 +63,8 @@ export function Dialog({
   /** The trigger IS a button, so it sizes like one instead of via className. */
   size?: "default" | "small";
   className?: string;
+  /** Optional semantic role for a trigger used inside an ARIA menu. */
+  triggerRole?: React.ComponentProps<"button">["role"];
 }) {
   const [open, setOpen] = useState(false);
   /**
@@ -170,6 +173,7 @@ export function Dialog({
           className,
         })}
         type="button"
+        role={triggerRole}
         onClick={() => setOpen(true)}
       >
         {label}

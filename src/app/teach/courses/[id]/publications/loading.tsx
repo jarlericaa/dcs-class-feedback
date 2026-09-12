@@ -21,18 +21,20 @@ export default function Loading() {
             <Skeleton height="h-6" width="w-20" />
           </div>
           <Skeleton height="h-7" width="w-8/12" />
-          <div className="flex flex-wrap gap-4">
-            <Skeleton height="h-3" width="w-32" />
-            <Skeleton height="h-3" width="w-24" />
-            <Skeleton height="h-3" width="w-28" />
+          <div className="grid gap-3">
+            <div className="grid gap-2 rounded-control border border-rule bg-paper-quiet p-4">
+              <Skeleton height="h-4" width="w-32" />
+              <SkeletonText lines={2} />
+            </div>
+            <div className="grid gap-2 rounded-control border border-rule bg-paper p-4">
+              <Skeleton height="h-4" width="w-28" />
+              <SkeletonText lines={2} />
+            </div>
+            <div className="grid gap-2 rounded-control border border-accent-edge bg-accent-wash p-4">
+              <Skeleton height="h-4" width="w-24" />
+              <SkeletonText lines={3} />
+            </div>
           </div>
-          <div className="grid gap-3 border-t border-rule pt-5">
-            <Skeleton height="h-4" width="w-28" />
-            <SkeletonText lines={2} />
-            <Skeleton height="h-4" width="w-24" />
-            <SkeletonText lines={3} />
-          </div>
-          <Skeleton height="h-10" width="w-full" />
           <div className="flex flex-wrap justify-between gap-3">
             <div className="flex gap-2">
               <Skeleton height="h-control" width="w-28" />
@@ -54,11 +56,6 @@ export default function Loading() {
               <Skeleton height="h-6" width="w-20" />
             </div>
             <Skeleton height="h-5" width="w-7/12" />
-            <div className="flex flex-wrap gap-4">
-              <Skeleton height="h-3" width="w-28" />
-              <Skeleton height="h-3" width="w-24" />
-              <Skeleton height="h-3" width="w-24" />
-            </div>
           </div>
         ))}
       </div>

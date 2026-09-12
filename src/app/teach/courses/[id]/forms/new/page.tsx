@@ -159,8 +159,6 @@ export default async function NewFormPage({
         deadlineTime: String(formData.get("deadlineTime") ?? ""),
         startDate: String(formData.get("startDate") ?? ""),
         endDate: String(formData.get("endDate") ?? ""),
-        occurrenceCount:
-          String(formData.get("occurrenceCount") ?? "") || undefined,
         intervalWeeks: String(formData.get("intervalWeeks") ?? "") || undefined,
         openDate: String(formData.get("openDate") ?? ""),
         openAtTime: String(formData.get("openAtTime") ?? ""),
@@ -323,7 +321,6 @@ export default async function NewFormPage({
                   title: s.title,
                   term: s.term,
                 }))}
-                courseCode={course.code}
                 firstStep={2}
               />
             )}

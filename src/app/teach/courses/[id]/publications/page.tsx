@@ -9,7 +9,6 @@ import { SafeRichText } from "@/components/rich-text";
 import { AppShell } from "@/components/layout/app-shell";
 import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import { formatDateTime } from "@/lib/datetime";
-import { shortAgo } from "@/lib/threads";
 import { requireUser, toShellUser } from "@/lib/session";
 import { FilterMenu, type FilterGroup } from "@/components/ui/filter-menu";
 import { Button, buttonClass } from "@/components/ui/button";
@@ -25,14 +24,7 @@ import {
   EmptyState,
   Stamp,
 } from "@/components/ui";
-import {
-  IconChevron,
-  IconHistory,
-  IconNote,
-  IconRoster,
-  IconSearch,
-  IconWeek,
-} from "@/components/ui/icons";
+import { IconChevron, IconSearch } from "@/components/ui/icons";
 import {
   AnonymityCheckRequired,
   cancelScheduledPublication,
@@ -486,28 +478,6 @@ export default async function PublicationsPage({
           </div>
         )}
 
-        {queue.published.length > 0 && status === "all" && !hasFilters && (
-          <section className="publication-recent">
-            <div className="publication-recent__head">
-              <h2>Recently published</h2>
-              <Link className="link" href={`/courses/${courseId}/qa`}>
-                View Class Q&amp;A
-              </Link>
-            </div>
-            {queue.published.slice(0, 4).map(({ answer, sourceCount }) => (
-              <Link
-                className="publication-recent__row"
-                href={`/courses/${courseId}/qa?selected=${answer.id}`}
-                key={answer.id}
-              >
-                <span>{answer.publicQuestionText}</span>
-                <small>
-                  Published {formatDateTime(answer.publishedAt, timezone)} · {sourceCount} linked source{sourceCount === 1 ? "" : "s"}
-                </small>
-              </Link>
-            ))}
-          </section>
-        )}
       </div>
     </AppShell>
   );
@@ -578,7 +548,6 @@ function PublicationCard({
         <h2 id={`publication-title-${answer.id}`}>
           {answer.publicQuestionText}
         </h2>
-        <QueueMeta item={item} timezone={timezone} expanded />
       </header>
 
       {answer.publishFailed && answer.publishFailureReason && (
@@ -587,75 +556,66 @@ function PublicationCard({
         </Alert>
       )}
 
-      <div className="publication-card__divider" />
+      <div className="publication-card__content">
+        <section className="publication-editorial-region publication-editorial-region--original">
+          <h3>Original question</h3>
+          {detail.sources[0] ? (
+            <p className="publication-authored-text publication-original-text">
+              {detail.sources[0].originalText}
+            </p>
+          ) : (
+            <p className="publication-card__missing">
+              Original wording is not available in this view.
+            </p>
+          )}
+        </section>
 
-      {inEditMode ? (
-        <PublicationQueueEditor
-          action={saveDraft}
-          answerId={answer.id}
-          mode={edit!}
-          question={answer.publicQuestionText}
-          answer={answer.answerBody ?? ""}
-          cancelHref={queueHref(courseId, { selected: answer.id })}
-        />
-      ) : (
-        <div className="publication-card__content">
-          <section>
-            <h3>Public question</h3>
-            <SafeRichText
-              source={answer.publicQuestionText}
-              className="publication-authored-text publication-authored-text--question"
+        <section className="publication-editorial-region publication-editorial-region--public">
+          {edit === "question" && canEditQuestion ? (
+            <PublicationQueueEditor
+              action={saveDraft}
+              answerId={answer.id}
+              mode="question"
+              question={answer.publicQuestionText}
+              answer={answer.answerBody ?? ""}
+              cancelHref={queueHref(courseId, { selected: answer.id })}
             />
-          </section>
-          <section>
-            <h3>Draft answer</h3>
-            {answer.answerBody ? (
+          ) : (
+            <>
+              <h3>Public question</h3>
               <SafeRichText
-                source={answer.answerBody}
-                className="publication-authored-text"
+                source={answer.publicQuestionText}
+                className="publication-authored-text publication-authored-text--question"
               />
-            ) : (
-              <p className="publication-card__missing">No answer drafted yet.</p>
-            )}
-          </section>
-        </div>
-      )}
+            </>
+          )}
+        </section>
 
-      <Disclose
-        inset
-        label={linkedSourceLabel(item.sourceCount, item.linkedSubmissionCount)}
-      >
-        <div className="publication-sources">
-          <p className="publication-sources__heading">
-            Linked {linkedSourceNoun(item.sourceCount, item.linkedSubmissionCount)} ({item.sourceCount})
-          </p>
-          {detail.sources.length > 0 && (
-            <ol>
-              {detail.sources.map((source) => (
-                <li key={source.id}>“{source.originalText}”</li>
-              ))}
-            </ol>
+        <section className="publication-editorial-region publication-editorial-region--answer">
+          {edit === "answer" && canEditAnswer ? (
+            <PublicationQueueEditor
+              action={saveDraft}
+              answerId={answer.id}
+              mode="answer"
+              question={answer.publicQuestionText}
+              answer={answer.answerBody ?? ""}
+              cancelHref={queueHref(courseId, { selected: answer.id })}
+            />
+          ) : (
+            <>
+              <h3>Draft answer</h3>
+              {answer.answerBody ? (
+                <SafeRichText
+                  source={answer.answerBody}
+                  className="publication-authored-text"
+                />
+              ) : (
+                <p className="publication-card__missing">No answer drafted yet.</p>
+              )}
+            </>
           )}
-          {detail.backlogSourceCount > 0 && (
-            <p>
-              {detail.backlogSourceCount} linked source
-              {detail.backlogSourceCount === 1 ? "" : "s"} came from the
-              course question backlog.
-            </p>
-          )}
-          {detail.hiddenSourceCount > 0 && (
-            <p className="publication-sources__note">
-              Some source wording is hidden because this account cannot review
-              that source section.
-            </p>
-          )}
-          {detail.sources.length === 0 && detail.backlogSourceCount === 0 && (
-            <p className="publication-sources__note">
-              Source wording is not available in this view.
-            </p>
-          )}
-        </div>
-      </Disclose>
+        </section>
+      </div>
 
       {!inEditMode && (
         <footer className="publication-card__footer">
@@ -710,6 +670,34 @@ function PublicationCard({
           </div>
         </footer>
       )}
+
+      <Disclose inset label="View source context">
+        <div className="publication-sources">
+          {detail.sources.length > 0 && (
+            <ol>
+              {detail.sources.map((source) => (
+                <li key={source.id}>{source.originalText}</li>
+              ))}
+            </ol>
+          )}
+          {detail.backlogSourceCount > 0 && (
+            <p>
+              This answer also includes a course backlog source.
+            </p>
+          )}
+          {detail.hiddenSourceCount > 0 && (
+            <p className="publication-sources__note">
+              Some source wording is hidden because this account cannot review
+              that source section.
+            </p>
+          )}
+          {detail.sources.length === 0 && detail.backlogSourceCount === 0 && (
+            <p className="publication-sources__note">
+              Source wording is not available in this view.
+            </p>
+          )}
+        </div>
+      </Disclose>
     </article>
   );
 }
@@ -733,65 +721,15 @@ function PublicationRow({
       <strong className="publication-row__title">
         {item.answer.publicQuestionText}
       </strong>
-      <QueueMeta item={item} timezone={timezone} />
+      {item.answer.state === "scheduled" && item.answer.scheduledAt && (
+        <span className="publication-row__schedule">
+          Scheduled {formatDateTime(item.answer.scheduledAt, timezone)}
+        </span>
+      )}
       <span className="publication-row__chevron" aria-hidden="true">
         <IconChevron size={16} />
       </span>
     </Link>
-  );
-}
-
-function QueueMeta({
-  item,
-  timezone,
-  expanded = false,
-}: {
-  item: QueueItem;
-  timezone: string;
-  expanded?: boolean;
-}) {
-  const answer = item.answer;
-  const sourceLabel = linkedSourceLabel(
-    item.sourceCount,
-    item.linkedSubmissionCount,
-  );
-  const timingLabel =
-    answer.state === "scheduled" && answer.scheduledAt
-      ? `Scheduled ${formatDateTime(answer.scheduledAt, timezone)}`
-      : answer.publishFailed
-        ? `Failed ${shortAgo(answer.updatedAt) || "recently"} ago`
-        : item.latestApproval?.decision === "rejected" &&
-            answer.state === "draft"
-          ? `Rejected ${shortAgo(item.latestApproval.createdAt) || "recently"} ago`
-          : answer.state === "awaiting_approval" &&
-              answer.submittedForApprovalAt
-            ? `Submitted for approval ${shortAgo(answer.submittedForApprovalAt) || "recently"} ago`
-            : `Edited ${shortAgo(answer.updatedAt) || "recently"} ago`;
-  return (
-    <div
-      className={`publication-meta${expanded ? " publication-meta--expanded" : ""}`}
-    >
-      <span>
-        <IconNote size={15} />
-        {sourceLabel}
-      </span>
-      {item.creatorName && (
-        <span>
-          <IconRoster size={15} />
-          {item.creatorName}
-        </span>
-      )}
-      <span>
-        <IconHistory size={15} />
-        {timingLabel}
-      </span>
-      {item.sourceOccurrence && (
-        <span>
-          <IconWeek size={15} />
-          From {item.sourceOccurrence}
-        </span>
-      )}
-    </div>
   );
 }
 
@@ -929,16 +867,6 @@ function matchesSearch(item: QueueItem, search: string) {
     .join(" ")
     .toLocaleLowerCase();
   return haystack.includes(search.toLocaleLowerCase());
-}
-
-function linkedSourceLabel(total: number, linkedSubmissionCount: number) {
-  const kind =
-    linkedSubmissionCount === total ? "submission" : "source";
-  return `${total} linked ${kind}${total === 1 ? "" : "s"}`;
-}
-
-function linkedSourceNoun(total: number, linkedSubmissionCount: number) {
-  return linkedSubmissionCount === total ? "submissions" : "sources";
 }
 
 function parseStatus(value: string | undefined): StatusFilter {

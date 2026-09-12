@@ -1,7 +1,7 @@
 "use client";
 
 import { RequiredMark } from "@/components/ui/required-mark";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DAY_NAMES } from "@/lib/days";
 import { cn } from "@/lib/cn";
 import {
@@ -28,26 +28,22 @@ import {
 export type DeliveryMode =
   "one_time" | "weekly" | "custom_recurring" | "manual";
 
-const MODES: { key: DeliveryMode; label: string; hint: string }[] = [
+const MODES: { key: DeliveryMode; label: string }[] = [
   {
     key: "one_time",
     label: "One time",
-    hint: "Opens once, closes once. For a long-exam or end-of-term form.",
   },
   {
     key: "weekly",
     label: "Every week",
-    hint: "A new form every week, opened and closed for you.",
   },
   {
     key: "custom_recurring",
-    label: "Custom schedule",
-    hint: "A new form every few weeks, on the same day and time.",
+    label: "Custom interval",
   },
   {
     key: "manual",
     label: "Open manually",
-    hint: "Nothing opens until you open it yourself.",
   },
 ];
 
@@ -59,7 +55,6 @@ export interface SectionOption {
 
 export function DeliveryFields({
   sections,
-  courseCode,
   defaultMode = "weekly",
   defaultAudienceMode = "all_sections",
   firstStep,
@@ -70,7 +65,6 @@ export function DeliveryFields({
   defaultDeadlineTime = "23:59",
   defaultStartDate = "",
   defaultEndDate = "",
-  defaultOccurrenceCount = "",
   defaultIntervalWeeks = 2,
   defaultOpenDate = "",
   defaultOpenAtTime = "08:00",
@@ -78,7 +72,6 @@ export function DeliveryFields({
   defaultDeadlineAtTime = "23:59",
 }: {
   sections: SectionOption[];
-  courseCode: string;
   defaultMode?: DeliveryMode;
   defaultAudienceMode?: "all_sections" | "selected_sections";
   /**
@@ -100,7 +93,6 @@ export function DeliveryFields({
   defaultDeadlineTime?: string;
   defaultStartDate?: string;
   defaultEndDate?: string;
-  defaultOccurrenceCount?: string;
   defaultIntervalWeeks?: number;
   defaultOpenDate?: string;
   defaultOpenAtTime?: string;
@@ -110,6 +102,28 @@ export function DeliveryFields({
   const [mode, setMode] = useState<DeliveryMode>(defaultMode);
   const [audienceMode, setAudienceMode] = useState(defaultAudienceMode);
   const [chosen, setChosen] = useState<string[]>(defaultSectionIds);
+  const [hasEndDate, setHasEndDate] = useState(Boolean(defaultEndDate));
+  const rootRef = useRef<HTMLDivElement>(null);
+  const initialValues = useRef({
+    mode: defaultMode,
+    audienceMode: defaultAudienceMode,
+    sectionIds: defaultSectionIds,
+    hasEndDate: Boolean(defaultEndDate),
+  });
+
+  useEffect(() => {
+    const form = rootRef.current?.closest("form");
+    if (!form) return;
+    const reset = () => {
+      const initial = initialValues.current;
+      setMode(initial.mode);
+      setAudienceMode(initial.audienceMode);
+      setChosen(initial.sectionIds);
+      setHasEndDate(initial.hasEndDate);
+    };
+    form.addEventListener("reset", reset);
+    return () => form.removeEventListener("reset", reset);
+  }, []);
 
   const recurring = mode === "weekly" || mode === "custom_recurring";
   const toggle = (id: string) =>
@@ -117,23 +131,10 @@ export function DeliveryFields({
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
 
-  /** What the teacher is about to commit to, in one sentence. */
-  const audienceSummary =
-    audienceMode === "all_sections"
-      ? sections.length === 0
-        ? `Every section of ${courseCode} — there are none yet.`
-        : `Every section of ${courseCode}: ${sections.map((s) => s.title).join(", ")}. A section added later is included automatically.`
-      : chosen.length === 0
-        ? "Nobody yet — choose at least one section."
-        : `Students in ${sections
-            .filter((s) => chosen.includes(s.id))
-            .map((s) => s.title)
-            .join(", ")} can open this form.`;
-
   return (
-    <>
+    <div ref={rootRef} className="contents">
       <Group step={firstStep} title="Audience">
-        <div className="stack-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Choice
             type="radio"
             name="audienceMode"
@@ -141,7 +142,7 @@ export function DeliveryFields({
             checked={audienceMode === "all_sections"}
             onChange={() => setAudienceMode("all_sections")}
           >
-            All sections in {courseCode}
+            All sections
           </Choice>
           <Choice
             type="radio"
@@ -150,11 +151,11 @@ export function DeliveryFields({
             checked={audienceMode === "selected_sections"}
             onChange={() => setAudienceMode("selected_sections")}
           >
-            Only the sections I choose
+            Selected sections
           </Choice>
 
           {audienceMode === "selected_sections" && (
-            <div className="form-grid mt-2">
+            <div className="form-grid sm:col-span-2">
               {sections.length === 0 ? (
                 <p className="helper-text">
                   This course has no sections yet, so there is nobody to send a
@@ -176,12 +177,6 @@ export function DeliveryFields({
               )}
             </div>
           )}
-
-          {/* One sentence, and it says what actually happens: these students can
-              open it. Everyone else cannot. */}
-          <p className="helper-text" role="status">
-            {audienceSummary}
-          </p>
         </div>
       </Group>
 
@@ -189,7 +184,7 @@ export function DeliveryFields({
         step={firstStep === undefined ? undefined : firstStep + 1}
         title="Schedule"
       >
-        <div className="stack-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {MODES.map((option) => (
             <Choice
               key={option.key}
@@ -199,113 +194,127 @@ export function DeliveryFields({
               checked={mode === option.key}
               onChange={() => setMode(option.key)}
             >
-              <span>
-                {option.label}
-                <span className="helper-text block">{option.hint}</span>
-              </span>
+              {option.label}
             </Choice>
           ))}
         </div>
 
         {recurring && (
-          <>
-            <div className="form-grid">
-              <FieldRow label="First one opens" htmlFor="startDate">
-                <Field
-                  id="startDate"
-                  type="date"
-                  name="startDate"
-                  defaultValue={defaultStartDate}
-                  required
-                />
+          <div className="grid gap-4 rounded-control bg-paper-quiet p-4 sm:p-5">
+            <FieldRow
+              className="max-w-sm"
+              label="First opens on"
+              htmlFor="startDate"
+            >
+              <Field
+                id="startDate"
+                type="date"
+                name="startDate"
+                defaultValue={defaultStartDate}
+                required
+              />
+            </FieldRow>
+            {mode === "custom_recurring" && (
+              <FieldRow label="Repeat every" htmlFor="intervalWeeks">
+                <Select
+                  id="intervalWeeks"
+                  name="intervalWeeks"
+                  defaultValue={String(defaultIntervalWeeks)}
+                >
+                  {[2, 3, 4, 6, 8, 12].map((n) => (
+                    <option key={n} value={n}>
+                      {n} weeks
+                    </option>
+                  ))}
+                </Select>
               </FieldRow>
-              {mode === "custom_recurring" && (
-                <FieldRow label="Repeat every" htmlFor="intervalWeeks">
+            )}
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-4 lg:border-r lg:border-rule lg:pr-5 sm:grid-cols-2">
+                <FieldRow label="Opens on" htmlFor="openDayOfWeek">
                   <Select
-                    id="intervalWeeks"
-                    name="intervalWeeks"
-                    defaultValue={String(defaultIntervalWeeks)}
+                    id="openDayOfWeek"
+                    name="openDayOfWeek"
+                    defaultValue={String(defaultOpenDayOfWeek)}
                   >
-                    {[2, 3, 4, 6, 8, 12].map((n) => (
-                      <option key={n} value={n}>
-                        {n} weeks
+                    {DAY_NAMES.map((day, index) => (
+                      <option key={day} value={index}>
+                        {day}
                       </option>
                     ))}
                   </Select>
                 </FieldRow>
-              )}
+                <FieldRow label="Opens at" htmlFor="openTime">
+                  <Field
+                    id="openTime"
+                    type="time"
+                    name="openTime"
+                    defaultValue={defaultOpenTime}
+                  />
+                </FieldRow>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:pl-5">
+                <FieldRow label="Closes on" htmlFor="deadlineDayOfWeek">
+                  <Select
+                    id="deadlineDayOfWeek"
+                    name="deadlineDayOfWeek"
+                    defaultValue={String(defaultDeadlineDayOfWeek)}
+                  >
+                    {DAY_NAMES.map((day, index) => (
+                      <option key={day} value={index}>
+                        {day}
+                      </option>
+                    ))}
+                  </Select>
+                </FieldRow>
+                <FieldRow label="Closes at" htmlFor="deadlineTime">
+                  <Field
+                    id="deadlineTime"
+                    type="time"
+                    name="deadlineTime"
+                    defaultValue={defaultDeadlineTime}
+                  />
+                </FieldRow>
+              </div>
             </div>
-            <div className="form-grid">
-              <FieldRow label="Opens on" htmlFor="openDayOfWeek">
-                <Select
-                  id="openDayOfWeek"
-                  name="openDayOfWeek"
-                  defaultValue={String(defaultOpenDayOfWeek)}
+            <fieldset className="grid gap-2 border-0 border-t border-rule pt-4 m-0 p-0">
+              <FieldLabel>Ends</FieldLabel>
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:items-center">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+                  <Choice
+                    className="shrink-0 border-0 bg-transparent px-0 py-0 hover:bg-transparent has-[input:checked]:border-0 has-[input:checked]:bg-transparent"
+                    type="radio"
+                    name="endCondition"
+                    value="date"
+                    checked={hasEndDate}
+                    onChange={() => setHasEndDate(true)}
+                  >
+                    On date
+                  </Choice>
+                  <Field
+                    id="endDate"
+                    type="date"
+                    name="endDate"
+                    aria-label="End date"
+                    className="min-w-0"
+                    defaultValue={defaultEndDate}
+                    disabled={!hasEndDate}
+                    required={hasEndDate}
+                  />
+                </div>
+                <Choice
+                  className="border-0 bg-transparent px-0 py-0 hover:bg-transparent has-[input:checked]:border-0 has-[input:checked]:bg-transparent"
+                  type="radio"
+                  name="endCondition"
+                  value="none"
+                  checked={!hasEndDate}
+                  onChange={() => setHasEndDate(false)}
                 >
-                  {DAY_NAMES.map((day, index) => (
-                    <option key={day} value={index}>
-                      {day}
-                    </option>
-                  ))}
-                </Select>
-              </FieldRow>
-              <FieldRow label="Opens at" htmlFor="openTime">
-                <Field
-                  id="openTime"
-                  type="time"
-                  name="openTime"
-                  defaultValue={defaultOpenTime}
-                />
-              </FieldRow>
-              <FieldRow label="Closes on" htmlFor="deadlineDayOfWeek">
-                <Select
-                  id="deadlineDayOfWeek"
-                  name="deadlineDayOfWeek"
-                  defaultValue={String(defaultDeadlineDayOfWeek)}
-                >
-                  {DAY_NAMES.map((day, index) => (
-                    <option key={day} value={index}>
-                      {day}
-                    </option>
-                  ))}
-                </Select>
-              </FieldRow>
-              <FieldRow label="Closes at" htmlFor="deadlineTime">
-                <Field
-                  id="deadlineTime"
-                  type="time"
-                  name="deadlineTime"
-                  defaultValue={defaultDeadlineTime}
-                />
-              </FieldRow>
-            </div>
-            <div className="form-grid">
-              <FieldRow label="How many" htmlFor="occurrenceCount">
-                <Field
-                  id="occurrenceCount"
-                  type="number"
-                  min={1}
-                  max={60}
-                  name="occurrenceCount"
-                  defaultValue={defaultOccurrenceCount}
-                />
-                <span className="helper-text">
-                  Leave blank to use an end date instead.
-                </span>
-              </FieldRow>
-              <FieldRow label="Or run until" htmlFor="endDate">
-                <Field
-                  id="endDate"
-                  type="date"
-                  name="endDate"
-                  defaultValue={defaultEndDate}
-                />
-                <span className="helper-text">
-                  Set one of these two, not both.
-                </span>
-              </FieldRow>
-            </div>
-          </>
+                  No end date
+                </Choice>
+              </div>
+            </fieldset>
+          </div>
         )}
 
         {mode === "one_time" && (
@@ -361,15 +370,8 @@ export function DeliveryFields({
           </div>
         )}
 
-        {mode === "manual" && (
-          <p className="helper-text">
-            You will create each one from the form&rsquo;s page and press Open
-            when it should go out. The deadline is still a hard deadline once it
-            is open.
-          </p>
-        )}
       </Group>
-    </>
+    </div>
   );
 }
 
