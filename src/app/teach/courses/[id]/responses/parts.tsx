@@ -8,6 +8,9 @@ import { PreRenderedRichText } from "@/components/rich-text-client";
 import { LongText } from "@/components/ui/long-text";
 import { categoryShortLabel } from "@/lib/threads";
 import { initials } from "@/lib/datetime";
+import { CategoryFlair } from "@/components/ui/category-flair";
+
+export { CategoryFlair } from "@/components/ui/category-flair";
 
 /**
  * The Responses tab's two axes through one week of submissions, and the
@@ -923,157 +926,74 @@ function NoAnswersYet() {
 export function ItemStamp({
   published,
   declined,
-  isComment,
   settled,
 }: {
   published: boolean;
   declined: boolean;
-  isComment: boolean;
   settled: boolean;
 }) {
   if (published) return <Stamp tone="green">Published</Stamp>;
   if (declined) return <Stamp tone="neutral">Not being answered</Stamp>;
-  if (isComment) return <Stamp tone="neutral">No reply needed</Stamp>;
   if (settled) return <Stamp tone="green">Answered</Stamp>;
   return <Stamp tone="amber">Needs reply</Stamp>;
 }
 
 /**
- * A question's category, as restrained flair.
+ * One student-originated item in the aggregate list.
  *
- * **Coloured, by owner decision on 2026-09-12**, and this is the one place in
- * the app where a category is. `Category` in `status.tsx` — the word plus a
- * drawn silhouette — is untouched and still governs everywhere else; DESIGN.md
- * §3 records the exception rather than being quietly contradicted by it.
- *
- * What the colour is allowed to be is fenced. Four washed families assigned by
- * MEANING (`--color-cat-*`, declared once in `globals.css`), each with its own
- * deep ink at 7:1 or better, so the WORD still carries the meaning and the hue
- * only makes it findable in a column — it survives grayscale exactly as the
- * neutral chip it replaced did. Not eight hues, not one per value as they
- * arrive, and no literal in this file.
- *
- * A category is still not a status: it says what the question is ABOUT, while
- * the stamp beside it says what the question still NEEDS. They keep different
- * shapes (`--radius-stamp` with no mark here, a marked `Stamp` there) and
- * different vocabularies for that reason.
- *
- * It hugs its own content by default. A LIST passes `w-full` so that every
- * flair fills the same fixed column and CONTENT and LOGISTICS put the question
- * text at exactly the same x — the width belongs to the row's grid, not to the
- * flair, or the flair stretches to whatever container it lands in next.
- */
-/**
- * The four category families, by MEANING.
- *
- * A map rather than a cycle: `content` is always the blue one, whatever order
- * the questions arrive in, so the colour is a fact about the category and not
- * about its position in a list. An unknown slug falls to the neutral family
- * rather than inventing a hue — a category nobody has named should not arrive
- * wearing a colour nobody chose.
- */
-const CATEGORY_TONE: Record<string, string> = {
-  content: "border-cat-content-edge bg-cat-content-wash text-cat-content",
-  logistics: "border-amber-edge bg-amber-wash text-amber-deep",
-  assessment:
-    "border-cat-assessment-edge bg-cat-assessment-wash text-cat-assessment",
-  misc: "border-cat-other-edge bg-cat-other-wash text-cat-other",
-};
-const CATEGORY_FALLBACK =
-  "border-cat-other-edge bg-cat-other-wash text-cat-other";
-
-export function CategoryFlair({
-  value,
-  className,
-}: {
-  value: string | null | undefined;
-  className?: string;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center justify-center px-2",
-        "rounded-stamp border",
-        "font-sans text-strip uppercase",
-        CATEGORY_TONE[value ?? ""] ?? CATEGORY_FALLBACK,
-        className,
-      )}
-    >
-      {categoryShortLabel(value)}
-    </span>
-  );
-}
-
-/**
- * One student-originated question, as a row of the list at the foot of the
- * by-question view.
- *
- * The whole row is the link, and the grid is why the rows stay in rhythm: the
- * flair sits in a fixed column, the stamp is aligned on its trailing edge
- * against the fixed chevron, and one padding value governs every row. A longer
- * category or a longer state cannot move anything in the row above or below it.
+ * Actions are siblings of the navigation link. Keeping the trailing chevron as
+ * the explicit detail link avoids invalid button-inside-link markup while still
+ * giving the row the same clear open affordance as the rest of this screen.
  */
 export function StudentQuestionRow({
   href,
   category,
   text,
-  meta,
   stamp,
+  actions,
 }: {
   href: string;
   category: string | null;
   text: string;
-  /** already-formatted quiet facts, at most two */
-  meta: (string | null)[];
   stamp: ReactNode;
+  actions?: ReactNode;
 }) {
-  const line = meta.filter(Boolean).join(" · ");
   return (
     <li className="border-t border-rule first:border-t-0">
-      <Link
+      <div
         className={cn(
-          "grid items-center gap-x-4 gap-y-2 px-5 py-3",
-          "grid-cols-[6.5rem_minmax(0,1fr)_auto_auto]",
-          "text-left no-underline",
+          "grid items-center gap-x-4 gap-y-3 px-5 py-4",
+          "grid-cols-[auto_minmax(0,1fr)_auto] sm:grid-cols-[6.5rem_minmax(0,1fr)_auto_auto]",
           "transition-colors duration-120 hover:bg-paper-quiet",
-          "active:not-disabled:duration-0",
         )}
-        href={href}
       >
-        <span className="col-start-1 row-start-1 grid">
+        <span className="col-start-1 row-start-1 grid sm:w-full">
           <CategoryFlair className="w-full" value={category} />
         </span>
-        <span className="col-span-2 row-start-2 grid min-w-0 gap-0.5 sm:col-span-1 sm:col-start-2 sm:row-start-1">
-          {/* The student's own words, in the document register, dense — this is
-              a list row, not the reading surface. The reading surface is the
-              submission this links to. */}
-          <span className="truncate font-document text-doc-dense text-ink">
+        <span className="col-start-2 row-start-1 grid min-w-0 gap-1 text-left sm:col-start-2 sm:row-start-1">
+          <span className="break-words font-document text-doc-dense font-bold text-ink">
             {text}
           </span>
-          {line && (
-            <span className="truncate font-sans text-meta tabular-nums text-ink-muted">
-              {line}
-            </span>
+          <span>{stamp}</span>
+        </span>
+        {actions && (
+          <span className="col-start-2 row-start-2 flex flex-wrap items-center gap-2 sm:col-start-3 sm:row-start-1 sm:justify-self-end">
+            {actions}
+          </span>
+        )}
+        <Link
+          aria-label={`Open ${categoryShortLabel(category)} item`}
+          className={cn(
+            "col-start-3 row-start-1 grid size-8 shrink-0 place-items-center",
+            "rounded-control text-ink-muted no-underline",
+            "transition-colors duration-120 hover:bg-board-deep hover:text-ink",
+            "focus-visible:outline-offset-2 sm:col-start-4 sm:row-start-1",
           )}
-        </span>
-        {/*
-          Right-aligned, and that is what makes a column of these line up.
-          Every row is its own grid — they have to be, because the row is a
-          link and `display: contents` on a link destroys its hit area and its
-          focus ring — so an `auto` column sizes to ITS OWN row's content and
-          two rows' stamps started 45px apart. The chevron beside it is a fixed
-          16px, so aligning the stamp's trailing edge is stable however long
-          the label is.
-        */}
-        <span className="col-start-2 row-start-1 justify-self-end sm:col-start-3">
-          {stamp}
-        </span>
-        <IconChevron
-          aria-hidden="true"
-          className="col-start-3 row-start-1 shrink-0 justify-self-end text-ink-faint sm:col-start-4"
-          size={16}
-        />
-      </Link>
+          href={href}
+        >
+          <IconChevron aria-hidden="true" size={16} />
+        </Link>
+      </div>
     </li>
   );
 }
@@ -1275,7 +1195,7 @@ function SubmittedAnswer({ question }: { question: AnswerRow }) {
        carries, no radius and no control border. `LongText` still clamps an
        essay so one answer cannot bury the two below it. */
     return (
-      <div className="max-w-measure rounded-control border border-rule bg-paper-quiet px-3 py-2">
+      <div className="w-full rounded-control border border-rule bg-paper-quiet px-3 py-2">
         <LongText surface="quiet" text={question.freeText ?? ""} />
       </div>
     );

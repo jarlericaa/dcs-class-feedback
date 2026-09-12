@@ -1,13 +1,13 @@
 import { RequiredMark } from "@/components/ui/required-mark";
 import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courseSubtitle } from "@/components/staff/course-heading";
-import { classSections, courses } from "@/db/schema";
+import { classSections, courses, lessonsTopics } from "@/db/schema";
 import {
   formatDate,
   formatDateTime,
@@ -25,13 +25,7 @@ import {
   readReviewedThisSession,
   unmarkReviewedThisSession,
 } from "@/lib/reviewed-session";
-import {
-  AccessDenied,
-  Alert,
-  EmptyState,
-  Stamp,
-  StripLabel,
-} from "@/components/ui";
+import { AccessDenied, Alert, EmptyState, Stamp } from "@/components/ui";
 import { buttonClass } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AutoSubmitSelect } from "@/components/ui/auto-submit";
@@ -41,10 +35,11 @@ import { ScrollToPost } from "@/components/ui/scroll-to";
 import { Thread, ThreadMessage } from "@/components/ui/thread";
 import {
   IconBack,
+  IconBacklog,
   IconForward,
+  IconInfo,
   IconNoReply,
   IconPrivate,
-  IconPublic,
   IconSearch,
 } from "@/components/ui/icons";
 import { renderRichText } from "@/modules/richtext/render";
@@ -76,6 +71,10 @@ import {
   draftPublicAnswer,
   publishNow,
 } from "@/modules/publishing";
+import {
+  copyOrMoveToBacklog,
+  listBacklogSourceItemIds,
+} from "@/modules/backlog";
 import { Field, FieldRow, Select, Textarea } from "@/components/ui/form";
 import {
   aggregateQuestion,
@@ -140,7 +139,7 @@ const FILTERS: { key: ReviewFilter; label: string }[] = [
 ];
 
 /**
- * The Student questions & feedback list's own narrowing, which is a different
+ * The Student questions list's own narrowing, which is a different
  * question from the one above: that filter is about SUBMISSIONS, this one is
  * about the questions inside them.
  *
@@ -156,6 +155,12 @@ const SQ_FILTERS = [
   { key: "answered", label: "Answered" },
 ] as const;
 type SqFilter = (typeof SQ_FILTERS)[number]["key"];
+
+const SF_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "answered", label: "Answered" },
+] as const;
+type SfFilter = (typeof SF_FILTERS)[number]["key"];
 
 /**
  * Newest first by default — the approved design's call, reversing what this
@@ -281,7 +286,10 @@ function FeedbackThread({
             <p className="mt-2">
               {answer.state === "published" ? (
                 <Link
-                  className={buttonClass({ variant: "secondary", size: "small" })}
+                  className={buttonClass({
+                    variant: "secondary",
+                    size: "small",
+                  })}
                   href={`/courses/${courseId}/qa?selected=${answer.id}`}
                 >
                   See in Class Q&amp;A
@@ -289,7 +297,10 @@ function FeedbackThread({
                 </Link>
               ) : canDraftPublicAnswers ? (
                 <Link
-                  className={buttonClass({ variant: "secondary", size: "small" })}
+                  className={buttonClass({
+                    variant: "secondary",
+                    size: "small",
+                  })}
                   href={`/teach/courses/${courseId}/publications`}
                 >
                   Finish it in the publication queue
@@ -301,6 +312,167 @@ function FeedbackThread({
         );
       })}
     </Thread>
+  );
+}
+
+/**
+ * One reply surface with two explicit visibility modes.
+ *
+ * The radios are native controls styled as a segmented switch. That keeps the
+ * selected mode keyboard-readable without creating a second client-side dialog
+ * state, while each mode still owns its own server form and cannot submit the
+ * other mode's action.
+ */
+function ReplyDialog({
+  item,
+  responseId,
+  who,
+  isComment,
+  published,
+  canSendPrivate,
+  canDraftPublicAnswers,
+  canPublishPublicAnswers,
+  onPrivate,
+  onPublic,
+  triggerClassName,
+  variant = "secondary",
+}: {
+  item: QueueItemQuestion;
+  responseId: string;
+  who: string;
+  isComment: boolean;
+  published: boolean;
+  canSendPrivate: boolean;
+  canDraftPublicAnswers: boolean;
+  canPublishPublicAnswers: boolean;
+  onPrivate: FormAction;
+  onPublic: FormAction;
+  triggerClassName?: string;
+  variant?: "quiet" | "secondary";
+}) {
+  const canPublic = !isComment && !published && canDraftPublicAnswers;
+  const privateId = `reply-private-${item.id}`;
+  const publicId = `reply-public-${item.id}`;
+  return (
+    <Dialog
+      cancelLabel="Cancel"
+      className={triggerClassName}
+      label={
+        <>
+          <IconPrivate size={15} />
+          Reply
+        </>
+      }
+      size="small"
+      title="Reply"
+      variant={variant}
+    >
+      <div className="reply-dialog">
+        <fieldset className="reply-dialog__modes">
+          <legend className="visually-hidden">Reply visibility</legend>
+          <input
+            className="reply-dialog__choice"
+            defaultChecked={canSendPrivate || !canPublic}
+            disabled={!canSendPrivate}
+            id={privateId}
+            name={`reply-mode-${item.id}`}
+            type="radio"
+          />
+          <label className="reply-dialog__tab" htmlFor={privateId}>
+            Privately
+          </label>
+          <input
+            className="reply-dialog__choice"
+            defaultChecked={!canSendPrivate && canPublic}
+            id={publicId}
+            name={`reply-mode-${item.id}`}
+            type="radio"
+          />
+          <label className="reply-dialog__tab" htmlFor={publicId}>
+            Publicly
+          </label>
+        </fieldset>
+
+        <section
+          aria-label="Private reply"
+          className="reply-dialog__panel reply-dialog__panel--private"
+        >
+          {canSendPrivate ? (
+            <>
+              <p className="reply-dialog__notice reply-dialog__notice--private">
+                <IconInfo size={16} />
+                <span>This reply will only be visible to the student.</span>
+              </p>
+              <form action={onPrivate} className="grid gap-4">
+                <input name="itemId" type="hidden" value={item.id} />
+                <input name="responseId" type="hidden" value={responseId} />
+                <FieldRow htmlFor={`private-to-${item.id}`} label="To">
+                  <Field id={`private-to-${item.id}`} readOnly value={who} />
+                </FieldRow>
+                <FieldRow
+                  htmlFor={`private-${item.id}`}
+                  label={
+                    <>
+                      Your reply <RequiredMark />
+                    </>
+                  }
+                >
+                  <Textarea
+                    data-autofocus
+                    id={`private-${item.id}`}
+                    name="body"
+                    placeholder="Write your private reply to the student here…"
+                    required
+                    rows={5}
+                  />
+                </FieldRow>
+                <div className="row justify-end">
+                  <SubmitButton pendingLabel="Sending…" variant="primary">
+                    Send reply
+                  </SubmitButton>
+                </div>
+              </form>
+            </>
+          ) : (
+            <p className="reply-dialog__unavailable">
+              Private replies are not enabled for your role on this section.
+            </p>
+          )}
+        </section>
+
+        <section
+          aria-label="Public reply"
+          className="reply-dialog__panel reply-dialog__panel--public"
+        >
+          {canPublic ? (
+            <>
+              <p className="reply-dialog__notice reply-dialog__notice--public">
+                <IconInfo size={16} />
+                <span>
+                  This reply will be published to the course&rsquo;s Class
+                  Q&amp;A and visible to everyone in the course.
+                </span>
+              </p>
+              <PublicAnswerComposer
+                action={onPublic}
+                canPublish={canPublishPublicAnswers}
+                itemId={item.id}
+                originalQuestion={item.originalText}
+                selectedResponseId={responseId}
+              />
+            </>
+          ) : (
+            <p className="reply-dialog__unavailable">
+              {isComment
+                ? "Feedback can be answered privately here. Add it to the backlog before turning it into a course Q&A item."
+                : published
+                  ? "This question already has a public answer. Use the private tab to follow up with the student."
+                  : "Public replies are not enabled for your role on this section."}
+            </p>
+          )}
+        </section>
+      </div>
+    </Dialog>
   );
 }
 
@@ -334,72 +506,25 @@ function FeedbackActions({
   onPublic: FormAction;
   onDecline: FormAction;
 }) {
+  const canPublic = !isComment && !published && canDraftPublicAnswers;
   return (
     <div className="post__actions">
-      {canSendPrivate && (
-        <Dialog
-          className="post__action"
-          description={`Only ${who} can see this.`}
-          label={
-            <>
-              <IconPrivate size={15} />
-              Reply privately
-            </>
-          }
-          title="Reply privately"
+      {(canSendPrivate || canPublic) && (
+        <ReplyDialog
+          canDraftPublicAnswers={canDraftPublicAnswers}
+          canPublishPublicAnswers={canPublishPublicAnswers}
+          canSendPrivate={canSendPrivate}
+          isComment={isComment}
+          item={item}
+          onPrivate={onPrivate}
+          onPublic={onPublic}
+          published={published}
+          responseId={responseId}
+          triggerClassName="post__action"
           variant="quiet"
-        >
-          <form action={onPrivate}>
-            <input name="itemId" type="hidden" value={item.id} />
-            <input name="responseId" type="hidden" value={responseId} />
-            <FieldRow
-              htmlFor={`private-${item.id}`}
-              label={
-                <>
-                  Your reply <RequiredMark />
-                </>
-              }
-            >
-              <Textarea
-                id={`private-${item.id}`}
-                name="body"
-                required
-                rows={6}
-              />
-            </FieldRow>
-            <div className="row">
-              <SubmitButton pendingLabel="Sending…" variant="primary">
-                Send private reply
-              </SubmitButton>
-            </div>
-          </form>
-        </Dialog>
+          who={who}
+        />
       )}
-
-      {!isComment &&
-        !published &&
-        canDraftPublicAnswers && (
-          <Dialog
-            className="post__action"
-            description="Everyone taking this course sees the wording you write here, in Class Q&A. The asker is not named."
-            label={
-              <>
-                <IconPublic size={15} />
-                Answer publicly
-              </>
-            }
-            title="Answer this student's section"
-            variant="quiet"
-          >
-            <PublicAnswerComposer
-              action={onPublic}
-              canPublish={canPublishPublicAnswers}
-              itemId={item.id}
-              originalQuestion={item.originalText}
-              selectedResponseId={responseId}
-            />
-          </Dialog>
-        )}
 
       {!isComment &&
         (item.disposition === "undecided" ||
@@ -408,9 +533,7 @@ function FeedbackActions({
           <form action={onDecline}>
             <input name="itemId" type="hidden" value={item.id} />
             <input name="responseId" type="hidden" value={responseId} />
-            {declined && (
-              <input name="undo" type="hidden" value="yes" />
-            )}
+            {declined && <input name="undo" type="hidden" value="yes" />}
             <SubmitButton className="post__action" variant="quiet">
               <IconNoReply size={15} />
               {declined ? "Put back in the queue" : "Will not answer"}
@@ -468,8 +591,12 @@ export default async function CourseResponsesPage({
     /** one submission, opened on its own — the detail screen */
     r?: string;
     filter?: string;
-    /** the Student questions & feedback list's own filter */
+    /** the Student questions list's own filter */
     sq?: string;
+    /** one topic filter shared by the two student-originated item lists */
+    topic?: string;
+    /** the Student feedback list's own filter */
+    sf?: string;
     /** the by-submission list's order */
     sort?: string;
     /**
@@ -503,6 +630,8 @@ export default async function CourseResponsesPage({
     "all") as ReviewFilter;
   const sqFilter = (SQ_FILTERS.find((f) => f.key === sp.sq)?.key ??
     "all") as SqFilter;
+  const sfFilter = (SF_FILTERS.find((f) => f.key === sp.sf)?.key ??
+    "all") as SfFilter;
   const sort = (SORTS.find((s) => s.key === sp.sort)?.key ??
     "newest") as SortKey;
 
@@ -538,6 +667,13 @@ export default async function CourseResponsesPage({
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
+  const topics = await db.query.lessonsTopics.findMany({
+    where: eq(lessonsTopics.courseId, courseId),
+    orderBy: asc(lessonsTopics.displayOrder),
+  });
+  const topicId = topics.some((topic) => topic.id === sp.topic)
+    ? sp.topic
+    : undefined;
 
   /* The same header this course shows on every other tab. One extra column
      read, so that navigating a tab does not change the heading — see
@@ -621,6 +757,8 @@ export default async function CourseResponsesPage({
         view,
         filter: sp.filter,
         sq: sp.sq,
+        sf: sp.sf,
+        topic: sp.topic,
         sort: sp.sort,
         form: currentFormId,
         cycle: currentCycleId,
@@ -795,24 +933,35 @@ export default async function CourseResponsesPage({
     .flatMap((row) => row.items.map((entry) => ({ row, entry })))
     .filter(
       ({ row, entry }) =>
-        !term ||
-        entry.item.originalText.toLowerCase().includes(term) ||
-        (row.student?.fullName.toLowerCase().includes(term) ?? false),
+        (!topicId || entry.item.topicId === topicId) &&
+        (!term ||
+          entry.item.originalText.toLowerCase().includes(term) ||
+          (row.student?.fullName.toLowerCase().includes(term) ?? false)),
     )
     .sort((a, b) => {
       const at = (row: QueueRow) =>
         (row.response.submittedAt ?? new Date(0)).getTime();
       return at(a.row) - at(b.row);
     });
-  const itemCounts = {
-    all: studentItems.length,
-    needs_reply: studentItems.filter(
+  const questionItems = studentItems.filter(
+    ({ entry }) => entry.item.kind !== "general_comment",
+  );
+  const feedbackItems = studentItems.filter(
+    ({ entry }) => entry.item.kind === "general_comment",
+  );
+  const questionCounts = {
+    all: questionItems.length,
+    needs_reply: questionItems.filter(
       ({ row, entry }) =>
         itemNeedsReply(row, entry) && !reviewedThisSession.has(row.response.id),
     ).length,
-    answered: studentItems.filter(({ entry }) => itemAnswered(entry)).length,
+    answered: questionItems.filter(({ entry }) => itemAnswered(entry)).length,
   };
-  const visibleItems = studentItems.filter(({ row, entry }) => {
+  const feedbackCounts = {
+    all: feedbackItems.length,
+    answered: feedbackItems.filter(({ entry }) => itemAnswered(entry)).length,
+  };
+  const visibleQuestionItems = questionItems.filter(({ row, entry }) => {
     switch (sqFilter) {
       case "needs_reply":
         /* An item answered in this sitting stays in place, so the list does
@@ -826,6 +975,19 @@ export default async function CourseResponsesPage({
         return true;
     }
   });
+  const visibleFeedbackItems = feedbackItems.filter(({ entry }) =>
+    sfFilter === "answered" ? itemAnswered(entry) : true,
+  );
+
+  const backlogItemIds = studentItems.some(({ row }) =>
+    canOn(row.response.sectionId, "manageBacklogImports"),
+  )
+    ? await listBacklogSourceItemIds(
+        user.id,
+        courseId,
+        studentItems.map(({ entry }) => entry.item.id),
+      )
+    : new Set<string>();
 
   /** The by-submission list: the same week, one row per student. */
   const submittedAt = (row: QueueRow) =>
@@ -920,6 +1082,8 @@ export default async function CourseResponsesPage({
       r: sp.r,
       filter: filter === "all" ? undefined : filter,
       sq: sqFilter === "all" ? undefined : sqFilter,
+      sf: sfFilter === "all" ? undefined : sfFilter,
+      topic: topicId,
       sort: sort === "newest" ? undefined : sort,
       form: currentFormId,
       cycle: currentCycleId,
@@ -1233,6 +1397,24 @@ export default async function CourseResponsesPage({
     redirect(`${path}?${done.toString()}`);
   }
 
+  /** Add a live student item to the course backlog without removing it here. */
+  async function addToBacklog(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+    const itemId = String(formData.get("itemId") ?? "");
+    const responseId = String(formData.get("responseId") ?? "");
+    await copyOrMoveToBacklog(uid, itemId, courseId, {
+      move: false,
+      preserveSource: true,
+    });
+    revalidatePath(path);
+    const done = new URLSearchParams(backQuery);
+    done.set("ok", "Added to the course question backlog.");
+    done.set("at", responseId);
+    redirect(`${path}?${done.toString()}`);
+  }
+
   // --- render --------------------------------------------------------------
 
   /**
@@ -1249,6 +1431,8 @@ export default async function CourseResponsesPage({
         r: sp.r,
         filter: filter === "all" ? undefined : filter,
         sq: sqFilter === "all" ? undefined : sqFilter,
+        sf: sfFilter === "all" ? undefined : sfFilter,
+        topic: topicId,
         sort: sort === "newest" ? undefined : sort,
         form: currentFormId,
         cycle: currentCycleId,
@@ -1268,10 +1452,99 @@ export default async function CourseResponsesPage({
   const searchHidden: [string, string][] = Object.entries({
     view,
     sq: sqFilter === "all" ? undefined : sqFilter,
+    sf: sfFilter === "all" ? undefined : sfFilter,
+    topic: topicId,
     form: currentFormId,
     cycle: currentCycleId,
     section: sp.section,
   }).filter((entry): entry is [string, string] => !!entry[1]);
+
+  /** The compact aggregate row used by both student-originated lists. */
+  const renderStudentItem = ({
+    row,
+    entry,
+  }: {
+    row: QueueRow;
+    entry: QueueItem;
+  }) => {
+    const { item, publicAnswers } = entry;
+    const sectionId = row.response.sectionId;
+    const isComment = item.kind === "general_comment";
+    const published = publicAnswers.some(
+      (answer) => answer.state === "published",
+    );
+    const canReplyPrivately = canOn(sectionId, "sendPrivateResponses");
+    const canDraftPublic = canOn(sectionId, "draftPublicAnswers");
+    const canManageBacklog = canOn(sectionId, "manageBacklogImports");
+    const backlogged = backlogItemIds.has(item.id);
+
+    return (
+      <StudentQuestionRow
+        actions={
+          <>
+            {(canReplyPrivately ||
+              (!isComment && !published && canDraftPublic)) && (
+              <ReplyDialog
+                canDraftPublicAnswers={canDraftPublic}
+                canPublishPublicAnswers={canOn(
+                  sectionId,
+                  "publishPublicAnswers",
+                )}
+                canSendPrivate={canReplyPrivately}
+                isComment={isComment}
+                item={item}
+                onPrivate={sendPrivate}
+                onPublic={draftOrPublish}
+                published={published}
+                responseId={row.response.id}
+                who={row.student?.fullName ?? "Identity hidden"}
+              />
+            )}
+            {canManageBacklog &&
+              (backlogged ? (
+                <span
+                  aria-label="Already added to the course question backlog"
+                  className={buttonClass({
+                    variant: "secondary",
+                    size: "small",
+                  })}
+                >
+                  <IconBacklog size={15} />
+                  Added to backlog
+                </span>
+              ) : (
+                <form action={addToBacklog}>
+                  <input name="itemId" type="hidden" value={item.id} />
+                  <input
+                    name="responseId"
+                    type="hidden"
+                    value={row.response.id}
+                  />
+                  <SubmitButton size="small" variant="secondary">
+                    <IconBacklog size={15} />
+                    Add to backlog
+                  </SubmitButton>
+                </form>
+              ))}
+          </>
+        }
+        category={item.category}
+        href={hrefWith({
+          r: row.response.id,
+          at: row.response.id,
+        })}
+        key={item.id}
+        stamp={
+          <ItemStamp
+            declined={item.disposition === "no_response"}
+            published={published}
+            settled={isComment ? itemAnswered(entry) : entry.settled}
+          />
+        }
+        text={item.originalText}
+      />
+    );
+  };
 
   return (
     <AppShell
@@ -1472,7 +1745,7 @@ export default async function CourseResponsesPage({
 
               {/* Each region of a submission is its own quiet sheet. The common
                   one-question case follows Panel 3 directly; multi-item posts
-                  stay compact inside one Questions & feedback sheet. */}
+                  keep student questions and feedback in separate sheets. */}
               <div className="grid gap-4">
                 <Sheet title="Form answers" tone="accent">
                   {row.answers.length === 0 ? (
@@ -1520,9 +1793,10 @@ export default async function CourseResponsesPage({
                           aside={
                             <ItemStamp
                               declined={declined}
-                              isComment={isComment}
                               published={published}
-                              settled={entry.settled}
+                              settled={
+                                isComment ? itemAnswered(entry) : entry.settled
+                              }
                             />
                           }
                           title="Student question"
@@ -1540,10 +1814,7 @@ export default async function CourseResponsesPage({
                               sectionId,
                               "publishPublicAnswers",
                             )}
-                            canReview={canOn(
-                              sectionId,
-                              "reviewResponses",
-                            )}
+                            canReview={canOn(sectionId, "reviewResponses")}
                             canSendPrivate={canOn(
                               sectionId,
                               "sendPrivateResponses",
@@ -1577,105 +1848,140 @@ export default async function CourseResponsesPage({
                     );
                   })()
                 ) : (
-                <Sheet title="Questions &amp; feedback" tone="accent">
-                  {row.items.length === 0 ? (
-                    /* They answered the form and asked nothing. There is no
-                       reply to write, and saying so plainly beats a row of
-                       buttons that would all be wrong. */
-                    <p className="max-w-measure font-sans text-ui-sm text-ink-muted">
-                      They answered the form and did not add a question or
-                      comment.
-                    </p>
-                  ) : (
-                    <ul className="m-0 grid list-none p-0">
-                      {row.items.map((entry) => {
-                        const { item, privateResponses, publicAnswers } = entry;
-                        const events = [
-                          ...privateResponses.map((response) => ({
-                            kind: "private" as const,
-                            at: response.createdAt,
-                            response,
-                          })),
-                          ...publicAnswers.map((answer) => ({
-                            kind: "public" as const,
-                            at: answer.publishedAt ?? answer.createdAt,
-                            answer,
-                          })),
-                        ].sort((a, b) => a.at.getTime() - b.at.getTime());
-                        const published = publicAnswers.some(
-                          (answer) => answer.state === "published",
-                        );
-                        const isComment = item.kind === "general_comment";
-                        const declined = item.disposition === "no_response";
+                  <>
+                    {row.items.length === 0 ? (
+                      /* They answered the form and asked nothing. There is no
+                         reply to write, and saying so plainly beats a row of
+                         buttons that would all be wrong. */
+                      <Sheet title="Student questions" tone="accent">
+                        <p className="max-w-measure font-sans text-ui-sm text-ink-muted">
+                          They answered the form and did not add a question or
+                          feedback.
+                        </p>
+                      </Sheet>
+                    ) : (
+                      [
+                        {
+                          entries: row.items.filter(
+                            (entry) => entry.item.kind !== "general_comment",
+                          ),
+                          title: "Student questions",
+                        },
+                        {
+                          entries: row.items.filter(
+                            (entry) => entry.item.kind === "general_comment",
+                          ),
+                          title: "Student feedback",
+                        },
+                      ].map(({ entries, title }) =>
+                        entries.length > 0 ? (
+                          <Sheet key={title} title={title} tone="accent">
+                            <ul className="m-0 grid list-none p-0">
+                              {entries.map((entry) => {
+                                const {
+                                  item,
+                                  privateResponses,
+                                  publicAnswers,
+                                } = entry;
+                                const events = [
+                                  ...privateResponses.map((response) => ({
+                                    kind: "private" as const,
+                                    at: response.createdAt,
+                                    response,
+                                  })),
+                                  ...publicAnswers.map((answer) => ({
+                                    kind: "public" as const,
+                                    at: answer.publishedAt ?? answer.createdAt,
+                                    answer,
+                                  })),
+                                ].sort(
+                                  (a, b) => a.at.getTime() - b.at.getTime(),
+                                );
+                                const published = publicAnswers.some(
+                                  (answer) => answer.state === "published",
+                                );
+                                const isComment =
+                                  item.kind === "general_comment";
+                                const declined =
+                                  item.disposition === "no_response";
 
-                        return (
-                          <li
-                            className="border-t border-rule py-5 first:border-t-0 first:pt-0 last:pb-0"
-                            key={item.id}
-                          >
-                            {/* What it is about, and what it still needs — the two
+                                return (
+                                  <li
+                                    className="border-t border-rule py-5 first:border-t-0 first:pt-0 last:pb-0"
+                                    key={item.id}
+                                  >
+                                    {/* What it is about, and what it still needs — the two
                             facts a reader triages on, on one line. */}
-                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                              <CategoryFlair value={item.category} />
-                              <ItemStamp
-                                declined={declined}
-                                isComment={isComment}
-                                published={published}
-                                settled={entry.settled}
-                              />
-                            </div>
-                            {/* The student's own words, in the document register,
+                                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                                      <CategoryFlair value={item.category} />
+                                      <ItemStamp
+                                        declined={declined}
+                                        published={published}
+                                        settled={
+                                          isComment
+                                            ? itemAnswered(entry)
+                                            : entry.settled
+                                        }
+                                      />
+                                    </div>
+                                    {/* The student's own words, in the document register,
                             and never overwritten by a reworded public
                             version. */}
-                            <blockquote className="post__words mt-3">
-                              {item.originalText}
-                            </blockquote>
+                                    <blockquote className="post__words mt-3">
+                                      {item.originalText}
+                                    </blockquote>
 
-                            {events.length > 0 && (
-                              <div className="mt-4">
-                                <FeedbackThread
-                                  canDraftPublicAnswers={canOn(
-                                    sectionId,
-                                    "draftPublicAnswers",
-                                  )}
-                                  courseId={courseId}
-                                  events={events}
-                                  originalQuestion={item.originalText}
-                                  timezone={timezone}
-                                />
-                              </div>
-                            )}
+                                    {events.length > 0 && (
+                                      <div className="mt-4">
+                                        <FeedbackThread
+                                          canDraftPublicAnswers={canOn(
+                                            sectionId,
+                                            "draftPublicAnswers",
+                                          )}
+                                          courseId={courseId}
+                                          events={events}
+                                          originalQuestion={item.originalText}
+                                          timezone={timezone}
+                                        />
+                                      </div>
+                                    )}
 
-                            <FeedbackActions
-                              canDraftPublicAnswers={canOn(
-                                sectionId,
-                                "draftPublicAnswers",
-                              )}
-                              canPublishPublicAnswers={canOn(
-                                sectionId,
-                                "publishPublicAnswers",
-                              )}
-                              canReview={canOn(sectionId, "reviewResponses")}
-                              canSendPrivate={canOn(
-                                sectionId,
-                                "sendPrivateResponses",
-                              )}
-                              declined={declined}
-                              isComment={isComment}
-                              item={item}
-                              onDecline={declineAnswer}
-                              onPrivate={sendPrivate}
-                              onPublic={draftOrPublish}
-                              published={published}
-                              responseId={row.response.id}
-                              who={who}
-                            />
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </Sheet>
+                                    <FeedbackActions
+                                      canDraftPublicAnswers={canOn(
+                                        sectionId,
+                                        "draftPublicAnswers",
+                                      )}
+                                      canPublishPublicAnswers={canOn(
+                                        sectionId,
+                                        "publishPublicAnswers",
+                                      )}
+                                      canReview={canOn(
+                                        sectionId,
+                                        "reviewResponses",
+                                      )}
+                                      canSendPrivate={canOn(
+                                        sectionId,
+                                        "sendPrivateResponses",
+                                      )}
+                                      declined={declined}
+                                      isComment={isComment}
+                                      item={item}
+                                      onDecline={declineAnswer}
+                                      onPrivate={sendPrivate}
+                                      onPublic={draftOrPublish}
+                                      published={published}
+                                      responseId={row.response.id}
+                                      who={who}
+                                    />
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </Sheet>
+                        ) : null,
+                      )
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1705,6 +2011,12 @@ export default async function CourseResponsesPage({
               )}
               {view === "question" && sqFilter !== "all" && (
                 <input name="sq" type="hidden" value={sqFilter} />
+              )}
+              {view === "question" && sfFilter !== "all" && (
+                <input name="sf" type="hidden" value={sfFilter} />
+              )}
+              {view === "question" && topicId && (
+                <input name="topic" type="hidden" value={topicId} />
               )}
               {/* By question has no page-wide search: the only thing worth
                   searching there is a written answer, and that control lives
@@ -1833,28 +2145,63 @@ export default async function CourseResponsesPage({
                   />
                 ))}
 
-                <div className="mt-2">
-                  {/* `itemCounts.all` counts student-originated ITEMS, not
-                      the submissions they arrived in — one submission can
-                      carry a question and a comment. Calling them submissions
-                      would have printed a number that disagrees with the
-                      by-submission list beside it.
-
-                      `.strip` uppercases its whole line, which is right for
-                      the batten's label and wrong for a count that reads as a
-                      sentence. `ml-auto` puts it at the far end of the batten,
-                      where the approved design has it. */}
-                  <StripLabel
-                    count={
-                      <span className="ml-auto normal-case">
-                        {itemCounts.all}{" "}
-                        {itemCounts.all === 1 ? "item" : "items"}
-                      </span>
+                <div className="mt-2 grid gap-4">
+                  <Sheet
+                    aside={
+                      <form
+                        action={path}
+                        className="flex items-center gap-2"
+                        method="get"
+                      >
+                        <input name="view" type="hidden" value={view} />
+                        {sqFilter !== "all" && (
+                          <input name="sq" type="hidden" value={sqFilter} />
+                        )}
+                        {sfFilter !== "all" && (
+                          <input name="sf" type="hidden" value={sfFilter} />
+                        )}
+                        {currentFormId && (
+                          <input
+                            name="form"
+                            type="hidden"
+                            value={currentFormId}
+                          />
+                        )}
+                        {currentCycleId && (
+                          <input
+                            name="cycle"
+                            type="hidden"
+                            value={currentCycleId}
+                          />
+                        )}
+                        {sp.section && (
+                          <input
+                            name="section"
+                            type="hidden"
+                            value={sp.section}
+                          />
+                        )}
+                        {sp.q && <input name="q" type="hidden" value={sp.q} />}
+                        <AutoSubmitSelect
+                          className="w-auto min-w-[10rem]"
+                          defaultValue={topicId ?? ""}
+                          id="student-question-topic"
+                          label="Filter student questions by topic"
+                          name="topic"
+                        >
+                          <option value="">All topics</option>
+                          {topics.map((topic) => (
+                            <option key={topic.id} value={topic.id}>
+                              {topic.title}
+                            </option>
+                          ))}
+                        </AutoSubmitSelect>
+                      </form>
                     }
+                    className="p-0"
+                    flush
+                    title="Student questions"
                   >
-                    Student questions &amp; feedback
-                  </StripLabel>
-                  <Sheet className="p-0">
                     <div className="border-b border-rule px-5 py-3">
                       <FilterChips
                         current={sqFilter}
@@ -1862,7 +2209,7 @@ export default async function CourseResponsesPage({
                         options={SQ_FILTERS.map((option) => ({
                           key: option.key,
                           label: option.label,
-                          count: itemCounts[option.key],
+                          count: questionCounts[option.key],
                           href: hrefWith({
                             sq: option.key === "all" ? undefined : option.key,
                             r: undefined,
@@ -1870,50 +2217,99 @@ export default async function CourseResponsesPage({
                         }))}
                       />
                     </div>
-                    {visibleItems.length === 0 ? (
+                    {visibleQuestionItems.length === 0 ? (
                       <p className="max-w-measure-empty p-4 font-sans text-ui-sm text-ink-muted">
-                        {itemCounts.all === 0
-                          ? "Nobody added a question or comment to this occurrence."
+                        {questionCounts.all === 0
+                          ? "Nobody added a question to this occurrence."
                           : "No question matches this filter."}
                       </p>
                     ) : (
                       <ul className="m-0 grid list-none divide-y divide-rule p-0">
-                        {visibleItems.map(({ row, entry }) => (
-                          <StudentQuestionRow
-                            category={entry.item.category}
-                            href={hrefWith({
-                              r: row.response.id,
-                              at: row.response.id,
-                            })}
-                            key={entry.item.id}
-                            meta={[
-                              sections.length > 1
-                                ? sectionTitleOf(row.response.sectionId)
-                                : null,
-                              row.response.submittedAt
-                                ? formatDateTime(
-                                    row.response.submittedAt,
-                                    timezoneOf(row.response.sectionId),
-                                  )
-                                : null,
-                            ]}
-                            stamp={
-                              <ItemStamp
-                                declined={
-                                  entry.item.disposition === "no_response"
-                                }
-                                isComment={
-                                  entry.item.kind === "general_comment"
-                                }
-                                published={entry.publicAnswers.some(
-                                  (answer) => answer.state === "published",
-                                )}
-                                settled={entry.settled}
-                              />
-                            }
-                            text={entry.item.originalText}
+                        {visibleQuestionItems.map(renderStudentItem)}
+                      </ul>
+                    )}
+                  </Sheet>
+
+                  <Sheet
+                    aside={
+                      <form
+                        action={path}
+                        className="flex items-center gap-2"
+                        method="get"
+                      >
+                        <input name="view" type="hidden" value={view} />
+                        {sqFilter !== "all" && (
+                          <input name="sq" type="hidden" value={sqFilter} />
+                        )}
+                        {sfFilter !== "all" && (
+                          <input name="sf" type="hidden" value={sfFilter} />
+                        )}
+                        {currentFormId && (
+                          <input
+                            name="form"
+                            type="hidden"
+                            value={currentFormId}
                           />
-                        ))}
+                        )}
+                        {currentCycleId && (
+                          <input
+                            name="cycle"
+                            type="hidden"
+                            value={currentCycleId}
+                          />
+                        )}
+                        {sp.section && (
+                          <input
+                            name="section"
+                            type="hidden"
+                            value={sp.section}
+                          />
+                        )}
+                        {sp.q && <input name="q" type="hidden" value={sp.q} />}
+                        <AutoSubmitSelect
+                          className="w-auto min-w-[10rem]"
+                          defaultValue={topicId ?? ""}
+                          id="student-feedback-topic"
+                          label="Filter student feedback by topic"
+                          name="topic"
+                        >
+                          <option value="">All topics</option>
+                          {topics.map((topic) => (
+                            <option key={topic.id} value={topic.id}>
+                              {topic.title}
+                            </option>
+                          ))}
+                        </AutoSubmitSelect>
+                      </form>
+                    }
+                    className="p-0"
+                    flush
+                    title="Student feedback"
+                  >
+                    <div className="border-b border-rule px-5 py-3">
+                      <FilterChips
+                        current={sfFilter}
+                        label="Filter student feedback"
+                        options={SF_FILTERS.map((option) => ({
+                          key: option.key,
+                          label: option.label,
+                          count: feedbackCounts[option.key],
+                          href: hrefWith({
+                            sf: option.key === "all" ? undefined : option.key,
+                            r: undefined,
+                          }),
+                        }))}
+                      />
+                    </div>
+                    {visibleFeedbackItems.length === 0 ? (
+                      <p className="max-w-measure-empty p-4 font-sans text-ui-sm text-ink-muted">
+                        {feedbackCounts.all === 0
+                          ? "Nobody added feedback to this occurrence."
+                          : "No feedback matches this filter."}
+                      </p>
+                    ) : (
+                      <ul className="m-0 grid list-none divide-y divide-rule p-0">
+                        {visibleFeedbackItems.map(renderStudentItem)}
                       </ul>
                     )}
                   </Sheet>

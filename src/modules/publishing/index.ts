@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   classSections,
@@ -7,6 +7,7 @@ import {
   formResponses,
   privateResponses,
   publicAnswers,
+  publicAnswerApprovals,
   questionAnswers,
   sourceLinks,
   studentSubmissionItems,
@@ -15,6 +16,7 @@ import {
 import { writeAudit } from "@/modules/audit";
 import {
   PUBLICATION_PERMISSIONS,
+  AuthzError,
   requireAnyCoursePermission,
   requireCourseQaAccess,
   requireCourseStaffOrSectionGrant,
@@ -488,7 +490,7 @@ export async function listCoursePublicationQueue(
     orderBy: desc(publicAnswers.updatedAt),
   });
   if (rows.length === 0) {
-    return { drafts: [], scheduled: [], failed: [], published: [] };
+    return { drafts: [], scheduled: [], failed: [], published: [], items: [] };
   }
   const links = await db.query.sourceLinks.findMany({
     where: inArray(
@@ -496,17 +498,89 @@ export async function listCoursePublicationQueue(
       rows.map((r) => r.id),
     ),
   });
+  const itemIds = links
+    .map((link) => link.itemId)
+    .filter((itemId): itemId is string => Boolean(itemId));
+  const items = itemIds.length
+    ? await db.query.studentSubmissionItems.findMany({
+        where: inArray(studentSubmissionItems.id, itemIds),
+      })
+    : [];
+  const responses = items.length
+    ? await db.query.formResponses.findMany({
+        where: inArray(
+          formResponses.id,
+          items.map((item) => item.responseId),
+        ),
+      })
+    : [];
+  const cycles = responses.length
+    ? await db.query.formInstances.findMany({
+        where: inArray(
+          formInstances.id,
+          responses.map((response) => response.cycleId),
+        ),
+      })
+    : [];
+  const creatorIds = [...new Set(rows.map((row) => row.createdByUserId))];
+  const creators = await db.query.users.findMany({
+    where: inArray(users.id, creatorIds),
+  });
+  const approvals = await db.query.publicAnswerApprovals.findMany({
+    where: inArray(
+      publicAnswerApprovals.publicAnswerId,
+      rows.map((row) => row.id),
+    ),
+    orderBy: desc(publicAnswerApprovals.createdAt),
+  });
   const sourceCount = new Map<string, number>();
+  const sourceSubmissionCount = new Map<string, number>();
+  const firstSourceCycle = new Map<string, (typeof formInstances.$inferSelect)>();
   for (const link of links) {
     sourceCount.set(
       link.publicAnswerId,
       (sourceCount.get(link.publicAnswerId) ?? 0) + 1,
     );
+    if (link.itemId) {
+      sourceSubmissionCount.set(
+        link.publicAnswerId,
+        (sourceSubmissionCount.get(link.publicAnswerId) ?? 0) + 1,
+      );
+      const item = items.find((candidate) => candidate.id === link.itemId);
+      const response = item
+        ? responses.find((candidate) => candidate.id === item.responseId)
+        : undefined;
+      const cycle = response
+        ? cycles.find((candidate) => candidate.id === response.cycleId)
+        : undefined;
+      if (cycle && !firstSourceCycle.has(link.publicAnswerId)) {
+        firstSourceCycle.set(link.publicAnswerId, cycle);
+      }
+    }
   }
+  const latestApproval = new Map<string, (typeof publicAnswerApprovals.$inferSelect)>();
+  for (const approval of approvals) {
+    if (!latestApproval.has(approval.publicAnswerId)) {
+      latestApproval.set(approval.publicAnswerId, approval);
+    }
+  }
+  const creatorById = new Map(creators.map((creator) => [creator.id, creator]));
   const decorated = rows.map((answer) => ({
     answer,
     sourceCount: sourceCount.get(answer.id) ?? 0,
+    linkedSubmissionCount: sourceSubmissionCount.get(answer.id) ?? 0,
+    creatorName: creatorById.get(answer.createdByUserId)?.displayName ?? null,
+    sourceOccurrence: (() => {
+      const cycle = firstSourceCycle.get(answer.id);
+      return cycle && hasSequence(cycle)
+        ? instanceLabel(cycle)
+        : null;
+    })(),
+    latestApproval: latestApproval.get(answer.id) ?? null,
   }));
+  const active = decorated.filter(
+    (item) => item.answer.state !== "published" && item.answer.state !== "unpublished",
+  );
   return {
     drafts: decorated.filter((d) => d.answer.state === "draft"),
     scheduled: decorated.filter(
@@ -516,6 +590,13 @@ export async function listCoursePublicationQueue(
     published: decorated
       .filter((d) => d.answer.state === "published")
       .slice(0, 20),
+    /**
+     * The editorial list keeps the persisted state intact. `latestApproval` is
+     * only a projection for the queue: an approval rejection returns the
+     * PublicAnswer to `draft`, but remains useful as a Rejected filter result
+     * until the next revision or approval decision.
+     */
+    items: active,
   };
 }
 
@@ -548,14 +629,41 @@ export async function getPublicAnswerForEditing(
         where: inArray(studentSubmissionItems.id, itemIds),
       })
     : [];
+  const visibleSources: {
+    id: string;
+    submissionType: (typeof studentSubmissionItems.$inferSelect)["submissionType"];
+    category: (typeof studentSubmissionItems.$inferSelect)["category"];
+    originalText: string;
+  }[] = [];
+  let hiddenSourceCount = 0;
+  for (const item of items) {
+    const { sectionId } = await getItemWithSection(item.id);
+    try {
+      await requireSectionStaff(
+        db,
+        actorUserId,
+        sectionId,
+        "reviewResponses",
+        { allowArchived: true },
+      );
+      visibleSources.push({
+        id: item.id,
+        submissionType: item.submissionType,
+        category: item.category,
+        originalText: item.originalText,
+      });
+    } catch (err) {
+      if (err instanceof AuthzError) {
+        hiddenSourceCount += 1;
+        continue;
+      }
+      throw err;
+    }
+  }
   return {
     answer,
-    sources: items.map((item) => ({
-      id: item.id,
-      submissionType: item.submissionType,
-      category: item.category,
-      originalText: item.originalText,
-    })),
+    sources: visibleSources,
+    hiddenSourceCount,
     backlogSourceCount: links.filter((l) => l.backlogQuestionId).length,
     warnings: anonymityWarnings(answer.publicQuestionText, links.length),
   };
@@ -577,7 +685,11 @@ export async function getPublicAnswerForEditing(
 export async function listCourseQa(
   actorUserId: string,
   courseId: string,
-  opts: { search?: string; category?: "content" | "logistics" | "misc" } = {},
+  opts: {
+    search?: string;
+    category?: "content" | "logistics" | "misc";
+    sort?: "newest" | "oldest";
+  } = {},
 ) {
   await requireCourseQaAccess(db, actorUserId, courseId, { allowArchived: true });
   const conditions = [
@@ -602,7 +714,10 @@ export async function listCourseQa(
   }
   const rows = await db.query.publicAnswers.findMany({
     where: and(...conditions),
-    orderBy: desc(publicAnswers.publishedAt),
+    orderBy:
+      opts.sort === "oldest"
+        ? asc(publicAnswers.publishedAt)
+        : desc(publicAnswers.publishedAt),
   });
 
   /**

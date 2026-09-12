@@ -13,6 +13,7 @@ import {
   makeUser,
 } from "./fixtures";
 import {
+  backlogQuestions,
   formResponses,
   studentRecords,
   studentSubmissionItems,
@@ -40,6 +41,7 @@ import {
 } from "@/modules/publishing";
 import { detailedResponseCsv } from "@/modules/participation";
 import {
+  copyOrMoveToBacklog,
   importLegacyEntries,
   listBacklogForCourse,
   setBacklogState,
@@ -145,9 +147,9 @@ describe("section staff standing without a named permission", () => {
 
     // Standing on ONE section of the course is enough to read the course's
     // shared archive — the archive is what the whole class already sees.
-    await expect(
-      requireCourseQaAccess(db, ta.id, course.id),
-    ).resolves.toEqual({ role: "staff" });
+    await expect(requireCourseQaAccess(db, ta.id, course.id)).resolves.toEqual({
+      role: "staff",
+    });
   });
 
   it("lets a TA read the teaching-team list on the setup page", async () => {
@@ -450,6 +452,27 @@ describe("section-scoped grants make advertised permissions usable", () => {
     ).resolves.not.toThrow();
   });
 
+  it("keeps a source-preserving current item idempotent in the backlog", async () => {
+    const { teacher, course, item } = await makeSectionWithSubmission();
+
+    const [first, second] = await Promise.all([
+      copyOrMoveToBacklog(teacher.id, item.id, course.id, {
+        move: false,
+        preserveSource: true,
+      }),
+      copyOrMoveToBacklog(teacher.id, item.id, course.id, {
+        move: false,
+        preserveSource: true,
+      }),
+    ]);
+    const rows = await db.query.backlogQuestions.findMany({
+      where: eq(backlogQuestions.sourceItemId, item.id),
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(rows).toHaveLength(1);
+  });
+
   it("still refuses a section TA without the flag", async () => {
     const { course, section } = await makeSectionWithSubmission();
     const ta = await makeUser();
@@ -494,7 +517,8 @@ describe("detailed CSV reports publication accurately", () => {
   });
 
   it("does not report a draft or a scheduled answer as published", async () => {
-    const { teacher, course, section, item } = await makeSectionWithSubmission();
+    const { teacher, course, section, item } =
+      await makeSectionWithSubmission();
     const answer = await draftPublicAnswer(teacher.id, {
       courseId: course.id,
       itemIds: [item.id],

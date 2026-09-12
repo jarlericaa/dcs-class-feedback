@@ -19,3 +19,4 @@ export * from "./status";
 export * from "./feedback";
 export * from "./surface";
 export * from "./data";
+export * from "./category-flair";

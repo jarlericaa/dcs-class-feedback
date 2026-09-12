@@ -35,6 +35,7 @@ export function Dialog({
   description,
   children,
   footer,
+  cancelLabel,
   variant,
   size,
   className,
@@ -54,6 +55,8 @@ export function Dialog({
    */
   children: ReactNode | ((close: () => void) => ReactNode);
   footer?: ReactNode;
+  /** Optional visible dismissal action in the dialog footer. */
+  cancelLabel?: string;
   /** how the TRIGGER looks; the dialog itself is always neutral */
   variant?: ButtonVariant;
   /** The trigger IS a button, so it sizes like one instead of via className. */
@@ -268,15 +271,27 @@ export function Dialog({
                 <div className="overflow-y-auto p-6 max-sm:p-4 [&>form]:grid [&>form]:gap-4">
                   {typeof children === "function" ? children(close) : children}
                 </div>
-                {footer && (
+                {(footer || cancelLabel) && (
                   <div
                     className={cn(
-                      "px-6 py-3 max-sm:px-4",
+                      "flex items-center justify-end gap-3 px-6 py-3 max-sm:px-4",
                       "border-t border-rule bg-paper-quiet",
                       "text-ink-muted text-ui-sm",
                     )}
                   >
                     {footer}
+                    {cancelLabel && (
+                      <button
+                        className={buttonClass({
+                          variant: "secondary",
+                          size: "small",
+                        })}
+                        type="button"
+                        onClick={close}
+                      >
+                        {cancelLabel}
+                      </button>
+                    )}
                   </div>
                 )}
               </>

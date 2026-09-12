@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   backlogQuestions,
@@ -95,6 +95,29 @@ export async function copyOrMoveToBacklog(
   }
 
   return db.transaction(async (tx) => {
+    /*
+     * A row action can be clicked more than once, and the page can be opened
+     * in two tabs. Source-preserving current items are the stable identity for
+     * this workflow, so an existing source link is a successful no-op rather
+     * than another backlog question. The database keeps a non-unique index for
+     * historical imports, so this guard belongs in the domain transaction.
+     */
+    if (opts.preserveSource) {
+      /* The schema deliberately retains a non-unique source index for legacy
+         rows. Serialize this source item while checking it so two quick clicks
+         (or two tabs) cannot both observe "not yet added" and insert a pair. */
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${item.id}, 0))`,
+      );
+      const existing = await tx.query.backlogQuestions.findFirst({
+        where: and(
+          eq(backlogQuestions.courseId, courseId),
+          eq(backlogQuestions.sourceItemId, item.id),
+        ),
+      });
+      if (existing) return existing;
+    }
+
     const [question] = await tx
       .insert(backlogQuestions)
       .values({
@@ -132,6 +155,36 @@ export async function copyOrMoveToBacklog(
     });
     return question!;
   });
+}
+
+/**
+ * Read the source-preserving backlog membership for an already-authorized
+ * course review list. This is intentionally a bounded lookup by the item ids
+ * currently on screen, not a second unbounded backlog feed.
+ */
+export async function listBacklogSourceItemIds(
+  actorUserId: string,
+  courseId: string,
+  itemIds: string[],
+) {
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "manageBacklogImports",
+    { allowArchived: true },
+  );
+  if (itemIds.length === 0) return new Set<string>();
+  const rows = await db.query.backlogQuestions.findMany({
+    where: and(
+      eq(backlogQuestions.courseId, courseId),
+      inArray(backlogQuestions.sourceItemId, itemIds),
+    ),
+    columns: { sourceItemId: true },
+  });
+  return new Set(
+    rows.flatMap((row) => (row.sourceItemId ? [row.sourceItemId] : [])),
+  );
 }
 
 export interface LegacyEntry {
@@ -317,7 +370,8 @@ export async function draftFromBacklog(
         state: "draft",
         category: question.category,
         topicId: question.topicId,
-        sourceOrigin: question.provenance === "legacy_import" ? "legacy" : "current",
+        sourceOrigin:
+          question.provenance === "legacy_import" ? "legacy" : "current",
         createdByUserId: actorUserId,
       })
       .returning();

@@ -2342,6 +2342,8 @@ kbd {
   justify-items: start;
 }
 .longtext--quiet .post__words {
+  width: 100%;
+  max-width: none;
   padding-left: 0;
   border-left: 0;
 }
@@ -2425,6 +2427,98 @@ kbd {
 }
 .post__action:focus-visible {
   outline-offset: 1px;
+}
+
+/* --- unified reply dialog ------------------------------------------------- */
+
+/*
+   The two visibility choices are one decision, not two actions. Native radios
+   keep that relationship available to keyboards and assistive technology;
+   the labels carry the segmented-control treatment from the existing system.
+*/
+.reply-dialog {
+  display: grid;
+  gap: var(--s4);
+}
+.reply-dialog__modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  background: var(--paper-quiet);
+}
+.reply-dialog__choice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.reply-dialog__tab {
+  display: grid;
+  min-height: var(--h-control);
+  place-items: center;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-control);
+  color: var(--ink-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.reply-dialog__choice:checked + .reply-dialog__tab {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.reply-dialog__choice:focus-visible + .reply-dialog__tab {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.reply-dialog__panel {
+  display: none;
+  gap: var(--s4);
+}
+.reply-dialog:has(.reply-dialog__choice[id^="reply-private-"]:checked)
+  .reply-dialog__panel--private,
+.reply-dialog:has(.reply-dialog__choice[id^="reply-public-"]:checked)
+  .reply-dialog__panel--public {
+  display: grid;
+}
+.reply-dialog__panel > form {
+  display: grid;
+  gap: var(--s4);
+}
+.reply-dialog__notice,
+.reply-dialog__unavailable {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s3);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--r-control);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.reply-dialog__notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.reply-dialog__notice--private {
+  background: var(--paper-quiet);
+  color: var(--ink-muted);
+}
+.reply-dialog__notice--public {
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+  color: var(--accent-deep);
+}
+.reply-dialog__unavailable {
+  color: var(--ink-muted);
+  background: var(--paper-quiet);
 }
 /* On a touch screen the finger, not the label, sets the size. */
 @media (pointer: coarse) {
