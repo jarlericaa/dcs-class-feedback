@@ -5,18 +5,18 @@ import { useActionState } from "react";
 import { buttonClass } from "@/components/ui/button";
 import { SubmitButton } from "@/components/ui/submit-button";
 
-export type PublicationEditState = { error?: string };
-export type PublicationEditAction = (
-  previousState: PublicationEditState,
+export type QuestionBacklogEditState = { error?: string };
+export type QuestionBacklogEditAction = (
+  previousState: QuestionBacklogEditState,
   formData: FormData,
-) => Promise<PublicationEditState>;
+) => Promise<QuestionBacklogEditState>;
 
 /**
- * The queue reads like an editorial surface first. This is the only part that
+ * The backlog reads like an editorial surface first. This is the only part that
  * becomes an editor, and it stays scoped to one field so a teacher can make a
  * small correction without opening two large textareas at once.
  */
-export function PublicationQueueEditor({
+export function QuestionBacklogEditor({
   action,
   answerId,
   mode,
@@ -24,7 +24,7 @@ export function PublicationQueueEditor({
   answer,
   cancelHref,
 }: {
-  action: PublicationEditAction;
+  action: QuestionBacklogEditAction;
   answerId: string;
   mode: "question" | "answer";
   question: string;
@@ -32,13 +32,13 @@ export function PublicationQueueEditor({
   cancelHref: string;
 }) {
   const [state, formAction] = useActionState(action, {});
-  const fieldId = `publication-${mode}-${answerId}`;
+  const fieldId = `backlog-${mode}-${answerId}`;
   const errorId = `${fieldId}-error`;
 
   return (
     <form
       action={formAction}
-      className="publication-inline-editor"
+      className="backlog-inline-editor"
     >
       <input type="hidden" name="answerId" value={answerId} />
       <input type="hidden" name="editMode" value={mode} />
@@ -75,7 +75,7 @@ export function PublicationQueueEditor({
           {state.error} Nothing was changed. Your text is still here.
         </p>
       )}
-      <div className="publication-inline-editor__actions">
+      <div className="backlog-inline-editor__actions">
         <SubmitButton variant="secondary" pendingLabel="Saving…">
           Save {mode === "question" ? "question" : "answer"}
         </SubmitButton>

@@ -65,8 +65,8 @@ services. Business rules should not be duplicated in React components.
 | `/sections/[id]/history` | Student submission history |
 | `/courses/[id]/qa` | **Course-scoped** Class Q&A archive — one per course, read by every section of it (ADR-0005) |
 | `/sections/[id]/qa` | Legacy — redirects to `/courses/[id]/qa`, preserving the selected entry and filters |
-| `/teach/courses/[id]/publications` | The course's one publication queue |
-| `/teach/courses/[id]/backlog` | The course's one question backlog |
+| `/teach/courses/[id]/backlog` | The course's single editorial workspace: backlog questions, answer drafts, scheduling and publication handoff |
+| `/teach/courses/[id]/publications` | Compatibility redirect to `/teach/courses/[id]/backlog`, preserving safe filters |
 | `/teach/sections/[id]/publications`, `/teach/sections/[id]/backlog` | Legacy — redirect to the course routes above |
 | `/teach/sections/[id]/review` | Staff review, validity, private/public response actions |
 | `/teach/sections/[id]/roster` | Staff class list: imported students and UP-email link status (no approve/reject) |

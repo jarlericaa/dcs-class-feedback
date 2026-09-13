@@ -291,7 +291,7 @@ async function makeSubmittedItem() {
   return { teacher, course, section, cycle, user, record, item: item! };
 }
 
-describe("publication queue", () => {
+describe("editorial publication workflow", () => {
   beforeEach(async () => {
     await truncateAll();
   });

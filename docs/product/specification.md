@@ -155,6 +155,7 @@ Each backlog item contains:
 - Date added
 - Optional target date
 - Linked duplicate questions and askers
+- Optional staff-only internal note
 - Draft answer and approval state
 
 Student Assistants may recommend backlog changes; an instructor confirms them.

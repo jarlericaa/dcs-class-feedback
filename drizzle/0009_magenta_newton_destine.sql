@@ -1,0 +1,1 @@
+ALTER TABLE "backlog_questions" ADD COLUMN "internal_note" text;

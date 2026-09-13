@@ -559,7 +559,7 @@ lowest-traffic first:
       most benefit from getting the document register exactly right. (Class Q&A
       moved to `/courses/[id]/qa` — ADR-0005.)
 - [ ] **4.3** `/teach/courses/**` — course setup, templates, forms, and the
-      course-owned publication queue and question backlog.
+      course-owned Question Backlog editorial workspace.
 - [ ] **4.4** `/teach/sections/**` — review, participation, roster, import.
       Densest tables; do them last, when the
       table vocabulary is settled.
@@ -2473,7 +2473,7 @@ Third revision, with an annotated reference. Most of the spec was already met by
 - [x] **12c.2 A `More ▾` menu for the secondary course sections (§6, §20.15).**
       | Visible as tabs | Folded into `More` |
       |---|---|
-      | Forms · Responses · Class Q&A · Participation | Publication queue · Question backlog · Audit history · Class lists · Teaching team |
+      | Forms · Responses · Class Q&A · Participation | Question Backlog · Audit history · Class lists · Teaching team |
       Exactly the spec's split, and a section route goes from **nine cramped
       tabs to four plus a menu**.
       *Where the split is declared matters.* It is `item.secondary` on the nav
@@ -2661,15 +2661,14 @@ change to the domain rather than to a table.
       | course · Class lists | My courses › CS 33 › Class lists | CS 33 |
       | course · Teaching team | My courses › CS 33 › Teaching team | CS 33 |
       | section · Participation | My courses › CS 33 › THX › Participation | CS 33 · THX |
-      | section · Publication queue | … › THX › Publication queue | CS 33 · THX |
+      | section · Question Backlog (formerly Publication queue) | … › THX › Question Backlog | CS 33 · THX |
       | section · Audit history | … › THX › Audit history | CS 33 · THX |
       | section · Class list | … › THX › Class lists | CS 33 · THX |
-      | section · Question backlog | … › THX › Question backlog | CS 33 · THX |
 
       > **Three of those rows moved to course scope, 2026-09-12**
       > ([ADR-0005](docs/decisions/ADR-0005-course-scoped-teaching-workflow.md)).
-      > Publication queue, Question backlog and Class Q&A are course-owned, so
-      > their trails are `My courses › CS 33 › Publication queue` with the
+      > The Question Backlog and Class Q&A are course-owned, so their trails are
+      > `My courses › CS 33 › Question Backlog` with the
       > heading `CS 33` — the same shape as Forms and Responses above, one row
       > up. The **rule** this table exists to state is unchanged and is what
       > made the move cheap: the crumb is how you got here, the heading is what

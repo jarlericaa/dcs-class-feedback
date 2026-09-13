@@ -66,18 +66,18 @@ Student Assistant permissions are **configurable per class section**, controlled
 | ~~`manage_course_materials`~~ | **Reserved, not implemented.** Course-material management is post-MVP, so this flag has **no column** on `section_staff` and is **not** one of the fourteen. It is listed here only because the owner named the capability; it becomes grantable by migration if and when the feature is approved. |
 
 - **[Confirmed]** This catalog exists only at **section** scope. There is no course-wide Student Assistant, and no flag on course-wide standing — see [§2.5](#25-where-staff-standing-comes-from-two-tiers).
-- **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), 2026-09-12]** **What a section flag means now that its object is course-owned.** The publication queue, the question backlog and the Class Q&A archive belong to the **course**, but five of these flags are granted per section. The resolved meaning, which the services enforce and the tests assert:
+- **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), 2026-09-12]** **What a section flag means now that its object is course-owned.** The Question Backlog and the Class Q&A archive belong to the **course**, but five of these flags are granted per section. The resolved meaning, which the services enforce and the tests assert:
 
 | Flag | Where it admits the holder | What it does **not** grant |
 |------|----------------------------|----------------------------|
-| `draft_public_answers` | the course's shared publication queue; drafting an answer from a source submission **in a section they hold it on** | drafting from another section's submission — including as a co-source in a merge |
-| `reword_public_questions` | editing the public wording of any draft in the course's queue | reading the source submissions behind an entry they are not authorized for |
-| `publish_public_answers` | publishing an entry in the course's queue — which reaches the **whole course** | any source-data access |
-| `schedule_publication` | scheduling/cancelling an entry in the course's queue | any source-data access |
+| `draft_public_answers` | drafting in the course's Question Backlog from a source submission **in a section they hold it on** | drafting from another section's submission — including as a co-source in a merge |
+| `reword_public_questions` | editing the public wording of any draft in the course's Question Backlog | reading the source submissions behind an entry they are not authorized for |
+| `publish_public_answers` | publishing an entry from the course's Question Backlog — which reaches the **whole course** | any source-data access |
+| `schedule_publication` | scheduling/cancelling an entry from the course's Question Backlog | any source-data access |
 | `manage_backlog_imports` | the course's one backlog and its legacy imports | reading current submissions; recommending is still subject to Instructor confirmation |
 | `moderate_discussion` | moderating comments on the course's archive | unmasking a commenter to classmates, or reading source identity |
 
-  The principle behind the table: **making the OUTPUTS course-wide did not make SOURCE DATA course-wide.** A collaborative artefact (a draft, a queue entry, a published answer, a backlog item) is reachable by anyone who works on publication anywhere in the course. Student submissions, private replies and identities stay section-scoped, checked per section, every time. A merge spanning two sections requires the permission on both, so it cannot become a bypass.
+  The principle behind the table: **making the OUTPUTS course-wide did not make SOURCE DATA course-wide.** A collaborative artefact (a draft, a backlog item, a published answer) is reachable by anyone who works on publication anywhere in the course. Student submissions, private replies and identities stay section-scoped, checked per section, every time. A merge spanning two sections requires the permission on both, so it cannot become a bypass.
 - **[Recommended]** Flags are independent; the class owner grants each explicitly. A TA without `view_student_identities` reviews content with identities masked — masked in the **data** the service returns, not merely hidden in the UI.
 - **[Recommended]** Some capabilities imply an identity exposure (e.g. `export_participation` produces identity-bearing files); granting them should surface that implication to the owner.
 

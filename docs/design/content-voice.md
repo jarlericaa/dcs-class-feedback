@@ -283,8 +283,7 @@ action when one exists.
 |---|---|---|---|
 | No open cycle | No form is open right now | The next form for this section opens {when}. | Class Q&A |
 | Student history | No submissions yet | Your submitted forms and any replies appear here. | Current week |
-| Publication queue | No answers waiting to publish | Drafts and scheduled answers appear here. | — |
-| Backlog | No questions in the backlog | Questions you move here can be published to any section later. | — |
+| Question Backlog | No questions waiting for an answer | Drafts and scheduled answers appear here. | — |
 | Audit | No audit records yet | Actions on this section are recorded here as they happen. | — |
 | Templates | No templates yet | A weekly schedule needs a template to copy into each form. | Create a template |
 | Courses | Create your first course | A course holds your sections, templates, and question backlog. | Create a course |

@@ -4,9 +4,8 @@ import { db } from "@/db";
 import { classSections } from "@/db/schema";
 
 /**
- * Forwarding for the section-scoped URLs that Public Q&A, the publication queue
- * and the question backlog used to live at (ADR-0005 moved all three to the
- * course).
+ * Forwarding for the section-scoped URLs that Public Q&A and editorial work
+ * used to live at (ADR-0005 moved them to the course).
  *
  * These routes forward rather than 404: links, bookmarks, sent email and a
  * term of muscle memory point at them. They resolve the section's COURSE and
@@ -27,9 +26,12 @@ import { classSections } from "@/db/schema";
 const CARRIED_PARAMS = [
   "selected",
   "q",
+  "search",
+  "status",
   "category",
-  "filter",
+  "sort",
   "state",
+  "filter",
   "import",
 ] as const;
 
@@ -40,10 +42,22 @@ export function carryQuery(
   for (const key of CARRIED_PARAMS) {
     const value = searchParams[key];
     const single = Array.isArray(value) ? value[0] : value;
-    if (single) next.set(key, single);
+    if (single) {
+      const targetKey =
+        key === "search" ? "q" : key === "state" ? "status" : key;
+      if (!next.has(targetKey)) next.set(targetKey, single);
+    }
   }
   const qs = next.toString();
   return qs ? `?${qs}` : "";
+}
+
+/** Canonical destination for every retired staff editorial URL. */
+export function courseBacklogHref(
+  courseId: string,
+  searchParams: Record<string, string | string[] | undefined> = {},
+): string {
+  return `/teach/courses/${courseId}/backlog${carryQuery(searchParams)}`;
 }
 
 /**

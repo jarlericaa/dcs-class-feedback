@@ -1,13 +1,13 @@
 import { RequiredMark } from "@/components/ui/required-mark";
 import Link from "next/link";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { toShellUser } from "@/lib/session";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courseSubtitle } from "@/components/staff/course-heading";
-import { classSections, courses, lessonsTopics } from "@/db/schema";
+import { classSections, courses } from "@/db/schema";
 import {
   formatDate,
   formatDateTime,
@@ -76,6 +76,7 @@ import {
   listBacklogSourceItemIds,
 } from "@/modules/backlog";
 import { Field, FieldRow, Select, Textarea } from "@/components/ui/form";
+import { QUESTION_CATEGORIES } from "@/lib/threads";
 import {
   aggregateQuestion,
   AnswerBlock,
@@ -301,9 +302,9 @@ function FeedbackThread({
                     variant: "secondary",
                     size: "small",
                   })}
-                  href={`/teach/courses/${courseId}/publications`}
+                  href={`/teach/courses/${courseId}/backlog`}
                 >
-                  Finish it in the publication queue
+                  Finish it in Question Backlog
                   <IconForward size={15} />
                 </Link>
               ) : null}
@@ -667,13 +668,15 @@ export default async function CourseResponsesPage({
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
-  const topics = await db.query.lessonsTopics.findMany({
-    where: eq(lessonsTopics.courseId, courseId),
-    orderBy: asc(lessonsTopics.displayOrder),
-  });
-  const topicId = topics.some((topic) => topic.id === sp.topic)
-    ? sp.topic
-    : undefined;
+  /**
+   * Keep the existing `topic` URL key, but use the category vocabulary this
+   * list actually renders. The item has both a broad category and an optional
+   * course lesson/topic; this control is the broad filter shown by the shared
+   * category flair, not a lesson/topic lookup.
+   */
+  const topicFilter = QUESTION_CATEGORIES.find(
+    (category) => category.slug === sp.topic,
+  )?.slug;
 
   /* The same header this course shows on every other tab. One extra column
      read, so that navigating a tab does not change the heading — see
@@ -933,7 +936,7 @@ export default async function CourseResponsesPage({
     .flatMap((row) => row.items.map((entry) => ({ row, entry })))
     .filter(
       ({ row, entry }) =>
-        (!topicId || entry.item.topicId === topicId) &&
+        (!topicFilter || entry.item.category === topicFilter) &&
         (!term ||
           entry.item.originalText.toLowerCase().includes(term) ||
           (row.student?.fullName.toLowerCase().includes(term) ?? false)),
@@ -1083,7 +1086,7 @@ export default async function CourseResponsesPage({
       filter: filter === "all" ? undefined : filter,
       sq: sqFilter === "all" ? undefined : sqFilter,
       sf: sfFilter === "all" ? undefined : sfFilter,
-      topic: topicId,
+      topic: topicFilter,
       sort: sort === "newest" ? undefined : sort,
       form: currentFormId,
       cycle: currentCycleId,
@@ -1372,7 +1375,7 @@ export default async function CourseResponsesPage({
           // The draft is already saved, so send the user to it rather than
           // leaving an invisible orphan behind.
           redirect(
-            `/teach/courses/${courseId}/publications?warn=${encodeURIComponent(
+            `/teach/courses/${courseId}/backlog?warn=${encodeURIComponent(
               err.warnings.join(" | "),
             )}`,
           );
@@ -1391,7 +1394,7 @@ export default async function CourseResponsesPage({
       "ok",
       intent === "publish"
         ? "Published to Class Q&A without the asker's name on it."
-        : "Saved as a draft. Finish it in the publication queue.",
+        : "Saved as a draft. Finish it in Question Backlog.",
     );
     done.set("at", responseId);
     redirect(`${path}?${done.toString()}`);
@@ -1432,7 +1435,7 @@ export default async function CourseResponsesPage({
         filter: filter === "all" ? undefined : filter,
         sq: sqFilter === "all" ? undefined : sqFilter,
         sf: sfFilter === "all" ? undefined : sfFilter,
-        topic: topicId,
+        topic: topicFilter,
         sort: sort === "newest" ? undefined : sort,
         form: currentFormId,
         cycle: currentCycleId,
@@ -1453,7 +1456,7 @@ export default async function CourseResponsesPage({
     view,
     sq: sqFilter === "all" ? undefined : sqFilter,
     sf: sfFilter === "all" ? undefined : sfFilter,
-    topic: topicId,
+    topic: topicFilter,
     form: currentFormId,
     cycle: currentCycleId,
     section: sp.section,
@@ -2015,8 +2018,8 @@ export default async function CourseResponsesPage({
               {view === "question" && sfFilter !== "all" && (
                 <input name="sf" type="hidden" value={sfFilter} />
               )}
-              {view === "question" && topicId && (
-                <input name="topic" type="hidden" value={topicId} />
+              {view === "question" && topicFilter && (
+                <input name="topic" type="hidden" value={topicFilter} />
               )}
               {/* By question has no page-wide search: the only thing worth
                   searching there is a written answer, and that control lives
@@ -2184,15 +2187,15 @@ export default async function CourseResponsesPage({
                         {sp.q && <input name="q" type="hidden" value={sp.q} />}
                         <AutoSubmitSelect
                           className="w-auto min-w-[10rem]"
-                          defaultValue={topicId ?? ""}
+                          defaultValue={topicFilter ?? ""}
                           id="student-question-topic"
                           label="Filter student questions by topic"
                           name="topic"
                         >
                           <option value="">All topics</option>
-                          {topics.map((topic) => (
-                            <option key={topic.id} value={topic.id}>
-                              {topic.title}
+                          {QUESTION_CATEGORIES.map((category) => (
+                            <option key={category.slug} value={category.slug}>
+                              {category.short}
                             </option>
                           ))}
                         </AutoSubmitSelect>
@@ -2268,15 +2271,15 @@ export default async function CourseResponsesPage({
                         {sp.q && <input name="q" type="hidden" value={sp.q} />}
                         <AutoSubmitSelect
                           className="w-auto min-w-[10rem]"
-                          defaultValue={topicId ?? ""}
+                          defaultValue={topicFilter ?? ""}
                           id="student-feedback-topic"
                           label="Filter student feedback by topic"
                           name="topic"
                         >
                           <option value="">All topics</option>
-                          {topics.map((topic) => (
-                            <option key={topic.id} value={topic.id}>
-                              {topic.title}
+                          {QUESTION_CATEGORIES.map((category) => (
+                            <option key={category.slug} value={category.slug}>
+                              {category.short}
                             </option>
                           ))}
                         </AutoSubmitSelect>

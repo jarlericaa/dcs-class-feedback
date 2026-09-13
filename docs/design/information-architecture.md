@@ -34,15 +34,14 @@ conventions, and the Q&A archive's browse/search strategy.
 >
 > **Extended 2026-09-12 — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md).**
 > The course is now the boundary for *collaborative teaching work*, not only for
-> forms. The publication queue, the question backlog and Class Q&A moved to
-> course scope with it, so the staff column reads:
+> forms. The Question Backlog and Class Q&A moved to course scope with it. The
+> backlog is the single editorial workspace, so the staff column reads:
 >
 > ```
 > Course workspace  (/teach/courses/[id])
 >       ├── Forms · Responses                    the work objects
->       ├── Publication queue  (/publications)   ONE queue per course
->       ├── Question backlog   (/backlog)        ONE backlog per course
->       └── Class Q&A          (/courses/[id]/qa) ONE archive, read by every section
+>       ├── Question Backlog (/backlog)           editorial triage → publication
+>       └── Class Q&A        (/courses/[id]/qa)    ONE archive, read by every section
 > ```
 >
 > This **resolves F1's third finding below** — "Question backlog sits in the
@@ -62,7 +61,7 @@ conventions, and the Q&A archive's browse/search strategy.
 > "hub-and-spoke makes cross-section work expensive" trade-off in §4 is no longer
 > accepted for the form workflow — a shared form has one inbox precisely so that
 > comparing sections costs nothing. Sections remain independent spokes for the
-> things that genuinely are per-section (rosters, matching, publication, audit).
+> things that genuinely are per-section (rosters, matching, participation, audit).
 
 > ## Superseded in part, 2026-08-07 — navigation split into two layers
 >
@@ -104,13 +103,13 @@ conventions, and the Q&A archive's browse/search strategy.
 >
 > ```
 > Course   Forms · Responses · Class lists
-> Section  [Review inbox] · Class list · Participation · Publication queue ·
->          Question backlog · Class Q&A · Section setup · Audit history
+> Section  [Review inbox] · Class list · Participation · Question Backlog ·
+>          Class Q&A · Section setup · Audit history
 > Class    This week's form · My submissions · Class Q&A
 > ```
 >
-> Review appears in the SECTION column only for a reader with no course standing
-> — the queue is course-scoped (one shared form, one queue), so course staff
+> Review appears in the SECTION column only for a reader with no course standing.
+> The Question Backlog is course-scoped, so course staff
 > reach it from the course column. That is a role difference, not a route difference:
 > neither reader ever sees it appear or disappear as they navigate.
 >
@@ -171,6 +170,10 @@ decision.
 ---
 
 ## 2. Findings
+
+> The findings below are retained as historical audit evidence. They describe
+> the pre-consolidation IA and are not current route or navigation guidance;
+> the current structure is the extended map above.
 
 ### F1 · P1 · Grouping encodes steady state, and one dependency is inverted
 
@@ -348,7 +351,7 @@ stuck.
 
 ---
 
-## 3. Proposed site map
+## 3. Historical proposed site map (retained for the audit trail)
 
 ```
 Overview  (/)                                    role-aware, the only true home

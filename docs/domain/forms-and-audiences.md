@@ -123,7 +123,7 @@ silently move an existing response between sections.
 | Response counts on the teacher's form list and the review inbox | Class-list import and email-based student access |
 | The review inbox itself (one inbox per form, filterable by section) | — |
 | The public Q&A archive (`public_answers.course_id` — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)) | — |
-| The publication queue, and the backlog's publishing step | — |
+| The Question Backlog editorial workspace and its publishing step | — |
 | Bonus periods (already course-scoped, [D14](../decisions/open-decisions.md)) | Participation exports (per section) |
 | The question backlog and lessons/topics (already course-scoped) | Private replies (scoped by the asker's own response) |
 

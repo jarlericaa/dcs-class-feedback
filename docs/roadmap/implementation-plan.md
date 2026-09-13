@@ -1,10 +1,10 @@
 # Implementation Plan — open GitHub issues #4–#17
 
 > **Partly historical since 2026-09-12.** [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)
-> made the publication queue and Class Q&A **course**-owned, so the route and
+> made the editorial workflow and Class Q&A **course**-owned, so the route and
 > symbol names quoted below are stale: `/sections/[id]/qa` is now
-> `/courses/[id]/qa`, `/teach/sections/[id]/publications` is now
-> `/teach/courses/[id]/publications`, and `listSectionQa` is `listCourseQa`. The
+> `/courses/[id]/qa`, `/teach/sections/[id]/publications` now redirects to
+> `/teach/courses/[id]/backlog`, and `listSectionQa` is `listCourseQa`. The
 > issues' substance (copy, filters, linking a published question to its entry)
 > was delivered and is unaffected; the line references are kept as written
 > rather than rewritten, because they describe where the work was found at the

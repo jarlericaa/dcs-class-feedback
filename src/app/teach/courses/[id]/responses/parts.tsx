@@ -842,8 +842,8 @@ export function ProseAnswers({
   const shown = matching.slice(0, limit);
   const rest = matching.slice(limit);
   return (
-    <div className="grid gap-3">
-      <ul className="m-0 grid list-none gap-2 p-0">
+    <div className="grid w-full gap-3">
+      <ul className="m-0 grid w-full list-none gap-2 p-0">
         {shown.map((entry) => (
           <ProseAnswer entry={entry} key={entry.responseId} />
         ))}
@@ -900,7 +900,7 @@ function ProseAnswer({ entry }: { entry: QuestionEntry }) {
     <li>
       <blockquote
         className={cn(
-          "m-0 max-w-measure rounded-control border border-rule bg-paper-quiet",
+          "m-0 w-full max-w-measure rounded-control border border-rule bg-paper-quiet",
           "px-4 py-2.5 font-document text-doc-dense text-ink",
         )}
       >

@@ -7,7 +7,7 @@
 
 ## 1. Purpose **[Confirmed]**
 
-A separate **course-level** question backlog area for collecting questions that may be answered publicly later. It is **separate from the normal weekly response dashboard**.
+A single **course-level** Question Backlog workspace for collecting and answering questions publicly later. It is **separate from the normal weekly response dashboard**; it is not a second publication surface.
 
 - The backlog belongs to the **course**, not a single class section.
 - Teachers choose which backlog questions get answered publicly. What they do **not** choose is a target section: answering one produces **one course-wide** Class Q&A entry ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)).
@@ -50,6 +50,7 @@ has *confirmed* it intends to answer (`product/specification.md` §5.6).
 
 Original question and asker (when a source link is preserved) · source form or legacy source ·
 topic and free-form tags · priority · assigned staff member · date added · optional target date ·
+optional staff-only internal note ·
 linked duplicate questions and their askers · draft answer · recommendation state · approval state.
 
 Staff may **take ownership** of an item or reassign it to another staff member on the course.
@@ -78,13 +79,14 @@ review` until an Instructor has confirmed it belongs in the backlog.
 
 ## 5. Publishing from the backlog **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), 2026-09-12]**
 
-The flow is:
+The unified editorial flow is:
 
-`BacklogQuestion → draft / reword / answer → publication queue → one course Class Q&A entry`
+`Question Backlog → draft / reword / answer → one course Class Q&A entry`
 
 - Backlog questions do **not** automatically appear in the Class Q&A archive. Publishing stays an explicit, audited staff act.
 - Drafting an answer creates **one** course-owned `PublicAnswer`, linked back to the backlog question by `SourceLink`, and follows the rewording, anonymity, source-link and scheduling rules in [public-qa.md](public-qa.md).
 - **No target section is chosen, and none is recorded.** The published entry is read by every student of the course.
+- Staff work these questions from `/teach/courses/[id]/backlog`; there is no separate user-facing Publication Queue. `PublicAnswer` remains an internal publication record, not another navigation destination.
 
 > **Superseded.** This section previously read: *"Teachers must explicitly choose which backlog
 > questions to publish to a class section… publishing to a section records a

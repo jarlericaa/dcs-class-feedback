@@ -35,8 +35,7 @@ Course-owned, collaborative:
 
 - form definitions and form delivery/instances;
 - Responses, as a course-wide inbox and analysis surface;
-- the question backlog;
-- the publication queue;
+- the Question Backlog editorial workspace (including publication state);
 - public-answer drafting, rewording, scheduling and publishing;
 - Class Q&A;
 - the topics and categories those resources use.
@@ -145,8 +144,8 @@ do not carry the section forward in any form.
   `course_id`; scheduler, outbox links, cache invalidation and audit scope
   follow.
 - Staff no longer enter a section to manage course teaching content. Course
-  navigation carries Forms, Responses, Publication queue, Question backlog and
-  Class Q&A; section navigation keeps the roster, delegation and participation.
+  navigation carries Forms, Responses, Question Backlog and Class Q&A; section
+  navigation keeps the roster, delegation and participation.
 - The anonymity obligation is **stronger**, because a published entry now
   reaches a larger audience: the student-facing projection carries no source
   link, no identity, and no origin section.

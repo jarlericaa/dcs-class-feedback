@@ -89,12 +89,12 @@ export interface NavItem {
    *
    * Set HERE rather than matched by label in `SubNav`, because which sections
    * are frequent is domain knowledge — it belongs with the thing that knows
-   * what each destination is, and a view matching on `"Question backlog"`
-   * would break the moment someone renamed it.
+   * what each destination is, and a view matching on a label would break the
+   * moment someone renamed it.
    *
    * The split the owner specified: Forms, Responses, Class Q&A and
-   * Participation stay visible; Publication queue, Question backlog, Class
-   * lists and Teaching team fold away. (Audit history was in that second list
+   * Participation and Question Backlog stay visible; Class lists and Teaching
+   * team fold away. (Audit history was in that second list
    * until the route moved to the admin area.) A destination being secondary
    * says nothing about permission — it is still authorized the same way and
    * still reachable.
@@ -327,14 +327,14 @@ export function courseTabs(
 }
 
 /**
- * The course's PUBLISHING destinations: the queue, the backlog that feeds it,
- * and the archive it publishes into.
+ * The course's EDITORIAL destinations: one Question Backlog workspace and the
+ * Class Q&A archive it publishes into.
  *
- * All three are COURSE-owned (ADR-0005), so there is exactly one of each per
- * course and this builder is the only place they are named. It is called from
+ * Both are COURSE-owned (ADR-0005), so there is exactly one of each per course
+ * and this builder is the only place they are named. It is called from
  * the course's own column and from a section's column alike — a delegated
  * assistant working inside one class list still works on the course's single
- * queue, not a copy of their own.
+ * editorial workspace, not a copy of their own.
  *
  * Filtered by effective permissions. Class Q&A carries none: every member of
  * the course can read the archive, which is what makes it the archive.
@@ -354,19 +354,12 @@ export function coursePublishingTabs(
     perms.draftPublicAnswers ||
     perms.rewordPublicQuestions ||
     perms.publishPublicAnswers ||
-    perms.schedulePublication
+    perms.schedulePublication ||
+    perms.manageBacklogImports
   ) {
     items.push({
-      href: `/teach/courses/${courseId}/publications`,
-      label: "Publication queue",
-      secondary: true,
-    });
-  }
-  if (perms.manageBacklogImports) {
-    items.push({
       href: `/teach/courses/${courseId}/backlog`,
-      label: "Question backlog",
-      secondary: true,
+      label: "Question Backlog",
     });
   }
   items.push({ href: `/courses/${courseId}/qa`, label: "Class Q&A" });
@@ -444,7 +437,7 @@ export function staffSectionTabGroups(
      */
     courseStrip?: boolean;
     /**
-     * Whether to print the course's publishing group (queue, backlog, Class
+     * Whether to print the course's editorial group (Question Backlog, Class
      * Q&A). Separate from `courseStrip` because the two callers differ:
      * `courseTabGroups` prints this group itself and must not get it twice, but
      * `staffSectionTabs` — which suppresses the strip — still WANTS it, because
@@ -536,16 +529,17 @@ export function staffSectionTabGroups(
    * archive students actually read once they are out.
    *
    * These are the COURSE's destinations even while the reader is standing in a
-   * section (ADR-0005). There is one queue, one backlog and one archive per
+   * section (ADR-0005). There is one editorial workspace and one archive per
    * course, and a section is not a parallel copy of the course — so a section
-   * column that listed its own three was describing objects that do not exist.
+   * column that listed its own copies was describing objects that do not exist.
    *
    * Printed here even for a reader with course standing, who also sees the
    * course strip above: that strip carries Forms and Responses only, so these
    * three appear exactly once either way.
    *
-   * Any publication capability can READ the queue; each action inside is gated
-   * by its own flag, so a publish-only assistant still sees their work.
+   * Any publication capability can READ the Question Backlog; each action
+   * inside is gated by its own flag, so a publish-only assistant still sees
+   * their work.
    */
   if (opts.publishingGroup !== false) {
     const weeklyReview = coursePublishingTabs(access.section.courseId, perms);
@@ -716,7 +710,7 @@ export function firstStaffSectionHref(access: SectionAccess): string | null {
    *
    * `/teach/sections/[id]` is a section route, so landing its reader inside the
    * section is right whenever they have anything to do there — and the list
-   * above now mixes both scopes, because the queue, the backlog and the archive
+   * above now mixes both scopes, because the editorial workspace and archive
    * became course-owned (ADR-0005). A delegated assistant whose only permission
    * is a publishing one has NO section destination at all, and returning null
    * would read as "no access" on a section they genuinely hold. So the course's
@@ -743,7 +737,7 @@ export function firstStaffSectionHref(access: SectionAccess): string | null {
  * only one answer.
  *
  * A course with several sections keeps the plain strip and the click-through
- * instead: which section a destination like "Publication queue" means is then
+ * instead: which section a destination like "Question Backlog" means is then
  * a real, necessary choice, not friction. Inlining every section's groups
  * there would not remove a click, it would stack N full group sets permanently
  * into the sidebar — trading "hidden" for "overwhelming," the same defect from
@@ -767,7 +761,7 @@ export function courseTabGroups(
     { label: FORMS_GROUP, items: courseTabs(courseId, currentPath, opts) },
   ];
   /**
-   * The course's publication queue, backlog and Class Q&A — course-owned
+   * The course's Question Backlog and Class Q&A — course-owned
    * (ADR-0005), so they belong to this column whether the course has one
    * section or twelve.
    *

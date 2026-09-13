@@ -148,6 +148,8 @@ export const backlogQuestions = pgTable(
     assigneeUserId: uuid("assignee_user_id").references(() => users.id),
     targetDate: date("target_date"),
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    /** Staff-only context for triage; never included in student projections. */
+    internalNote: text("internal_note"),
     draftAnswerText: text("draft_answer_text"),
     draftUpdatedByUserId: uuid("draft_updated_by_user_id").references(
       () => users.id,

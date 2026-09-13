@@ -42,7 +42,9 @@ import {
 import { detailedResponseCsv } from "@/modules/participation";
 import {
   copyOrMoveToBacklog,
+  createManualBacklogQuestion,
   importLegacyEntries,
+  listQuestionBacklog,
   listBacklogForCourse,
   setBacklogState,
 } from "@/modules/backlog";
@@ -452,6 +454,25 @@ describe("section-scoped grants make advertised permissions usable", () => {
     ).resolves.not.toThrow();
   });
 
+  it("creates a manual question with its staff-only triage note", async () => {
+    const { teacher, course } = await makeSectionWithSubmission();
+    const question = await createManualBacklogQuestion(teacher.id, course.id, {
+      text: "Could we get another worked example?",
+      category: "content",
+      internalNote: "Mention the tree-rotation exercise from lecture 4.",
+    });
+
+    expect(question.state).toBe("needs_review");
+    expect(question.internalNote).toBe(
+      "Mention the tree-rotation exercise from lecture 4.",
+    );
+    const readModel = await listQuestionBacklog(teacher.id, course.id);
+    expect(readModel.items[0]).toMatchObject({
+      kind: "question",
+      status: "needs-review",
+    });
+  });
+
   it("keeps a source-preserving current item idempotent in the backlog", async () => {
     const { teacher, course, item } = await makeSectionWithSubmission();
 
@@ -490,7 +511,7 @@ describe("section-scoped grants make advertised permissions usable", () => {
     ).rejects.toBeInstanceOf(AuthzError);
   });
 
-  it("lets a publish-only TA read the course publication queue", async () => {
+  it("lets a publish-only TA read the course Question Backlog", async () => {
     const { course, section } = await makeSectionWithSubmission();
     const ta = await makeUser();
     await addSectionStaff(section.id, ta.id, "ta", {

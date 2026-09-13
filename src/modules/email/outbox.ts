@@ -488,7 +488,7 @@ export async function enqueueApprovalRequested(
         courseCode: scope.courseCode,
         sectionTitle: scope.sectionTitle,
         recipientName: person.displayName,
-        linkPath: `/teach/courses/${answer.courseId}/publications`,
+        linkPath: `/teach/courses/${answer.courseId}/backlog`,
       },
     });
   }
@@ -528,7 +528,7 @@ export async function enqueueApprovalDecided(
       sectionTitle: scope.sectionTitle,
       recipientName: recipient.displayName,
       decision,
-      linkPath: `/teach/courses/${answer.courseId}/publications`,
+      linkPath: `/teach/courses/${answer.courseId}/backlog`,
     },
   });
 }

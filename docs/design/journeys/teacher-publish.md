@@ -11,9 +11,10 @@ runs today, without it.)
 anonymous public answer — rewording, the anonymity check, acknowledgment,
 publish, and schedule.
 > **Route names superseded 2026-09-12 — [ADR-0005](../../decisions/ADR-0005-course-scoped-teaching-workflow.md).**
-> Publication is **course**-owned: the queue is `/teach/courses/[id]/publications`,
-> the archive is `/courses/[id]/qa`, and drafting happens in the course's
-> Responses workspace. The old section routes redirect. Every finding below is
+> Publication is **course**-owned: the single editorial workspace is
+> `/teach/courses/[id]/backlog`, the archive is `/courses/[id]/qa`, and drafting
+> starts from Responses or the backlog. There is no separate Publication Queue;
+> the old section routes redirect. Every finding below is
 > about the flow — rewording, the anonymity check, the acknowledgment, the
 > emphasis between draft and publish — and holds unchanged; what changed is the
 > **reach** of the act: publishing once now goes to the whole course, which makes

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   FORMS_GROUP,
   courseSetupTabs,
+  coursePublishingTabs,
   courseTabGroups,
   courseTabs,
   firstStaffSectionHref,
@@ -376,6 +377,19 @@ describe("courseTabs", () => {
     expect(hrefs).not.toContain("/teach/courses/c1/staff");
   });
 
+  it("names one Question Backlog editorial destination, never a queue", () => {
+    const labels = coursePublishingTabs("c1", {
+      draftPublicAnswers: true,
+      rewordPublicQuestions: true,
+      publishPublicAnswers: true,
+      schedulePublication: true,
+      manageBacklogImports: true,
+    }).map((item) => item.label);
+
+    expect(labels).toEqual(["Question Backlog", "Class Q&A"]);
+    expect(labels).not.toContain("Publication Queue");
+  });
+
   it("keeps who-can-reach and who-can-act as separate destinations", () => {
     const hrefs = courseSetupTabs("c1", "/x").map((t) => t.href);
     expect(hrefs).toEqual([
@@ -460,8 +474,7 @@ describe("staffSectionTabs — permission visibility", () => {
       "Review inbox",
       "Forms",
       // Weekly review leads: it is what a teacher opens a section to do.
-      "Publication queue",
-      "Question backlog",
+      "Question Backlog",
       "Class Q&A",
       "Participation",
       // Setup last, and the class list now sits inside it — configuration the
@@ -498,7 +511,7 @@ describe("staffSectionTabs — permission visibility", () => {
     ).not.toContain("Class list");
   });
 
-  it("opens the publication queue to any one publication capability", () => {
+  it("opens Question Backlog to any one publication capability", () => {
     for (const flag of [
       "draftPublicAnswers",
       "rewordPublicQuestions",
@@ -509,7 +522,7 @@ describe("staffSectionTabs — permission visibility", () => {
         access({ role: "ta", permissions: { [flag]: true } }),
         "/x",
       );
-      expect(tabs.map((t) => t.label), flag).toContain("Publication queue");
+      expect(tabs.map((t) => t.label), flag).toContain("Question Backlog");
     }
   });
 
@@ -616,7 +629,7 @@ describe("staffSectionTabGroups", () => {
     expect(labels(groups)).toEqual([
       ["Review", ["Review inbox"]],
       ["Forms", ["Forms"]],
-      ["Weekly review", ["Publication queue", "Question backlog", "Class Q&A"]],
+      ["Weekly review", ["Question Backlog", "Class Q&A"]],
       ["Reports", ["Participation"]],
       // The class list is configuration, so it sits in Setup — not in a
       // heading of its own between the week's work and the reports.
@@ -864,7 +877,7 @@ describe("firstStaffSectionHref", () => {
       firstStaffSectionHref(
         access({ role: "ta", permissions: { draftPublicAnswers: true } }),
       ),
-    ).toBe("/teach/courses/course-1/publications");
+    ).toBe("/teach/courses/course-1/backlog");
   });
 
   /**
@@ -902,7 +915,7 @@ describe("firstStaffSectionHref", () => {
    * (ADR-0005). Returning null for them would read as "no access" on a section
    * they genuinely hold, so the course's destinations are the fallback.
    */
-  it("falls back to the course's queue for a publish-only assistant", () => {
+  it("falls back to the course's Question Backlog for a publish-only assistant", () => {
     expect(
       firstStaffSectionHref(
         access({
@@ -911,7 +924,7 @@ describe("firstStaffSectionHref", () => {
           permissions: { publishPublicAnswers: true },
         }),
       ),
-    ).toBe("/teach/courses/course-1/publications");
+    ).toBe("/teach/courses/course-1/backlog");
   });
 
   it("is null without staff standing, so the caller must refuse", () => {

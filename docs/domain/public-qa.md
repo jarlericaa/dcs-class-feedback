@@ -152,8 +152,8 @@ D6 (unpublish — **approved**; not yet built, see [engineering/current-state.md
 **now within a course**, see §5), D16 (unpublish hides from the asker too) are **closed**. See
 [decisions/open-decisions.md](../decisions/open-decisions.md).
 
-[ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md) (2026-09-12) moved public Q&A,
-the publication queue and the backlog's publishing step from section scope to **course** scope, and
+[ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md) (2026-09-12) moved public Q&A
+and the editorial publishing workflow from section scope to **course** scope, and
 supersedes [ADR-0002](../decisions/ADR-0002-section-scoped-public-qa.md) on scope alone.
 
 ## 10. Related documents

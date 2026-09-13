@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  backlogQuestions,
   classSections,
   formInstances,
   formQuestions,
@@ -356,6 +357,13 @@ export async function publishNow(
     opts.anonymityAcknowledged ?? false,
   );
 
+  const linkedBacklogIds = (await db.query.sourceLinks.findMany({
+    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+    columns: { backlogQuestionId: true },
+  }))
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
+
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
@@ -368,6 +376,12 @@ export async function publishNow(
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (linkedBacklogIds.length > 0) {
+      await tx
+        .update(backlogQuestions)
+        .set({ state: "published", updatedAt: new Date() })
+        .where(inArray(backlogQuestions.id, linkedBacklogIds));
+    }
     await writeAudit(tx, {
       actorUserId,
       action: "public_answer.published",
@@ -406,6 +420,13 @@ export async function schedulePublication(
     opts.anonymityAcknowledged ?? false,
   );
 
+  const linkedBacklogIds = (await db.query.sourceLinks.findMany({
+    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+    columns: { backlogQuestionId: true },
+  }))
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
+
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
@@ -417,6 +438,12 @@ export async function schedulePublication(
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (linkedBacklogIds.length > 0) {
+      await tx
+        .update(backlogQuestions)
+        .set({ state: "scheduled", updatedAt: new Date() })
+        .where(inArray(backlogQuestions.id, linkedBacklogIds));
+    }
     await writeAudit(tx, {
       actorUserId,
       action: "public_answer.scheduled",
@@ -440,6 +467,12 @@ export async function cancelScheduledPublication(
   if (answer.state !== "scheduled") {
     throw new Error("Only a scheduled answer can be cancelled");
   }
+  const linkedBacklogIds = (await db.query.sourceLinks.findMany({
+    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+    columns: { backlogQuestionId: true },
+  }))
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
@@ -451,6 +484,12 @@ export async function cancelScheduledPublication(
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (linkedBacklogIds.length > 0) {
+      await tx
+        .update(backlogQuestions)
+        .set({ state: "drafting", updatedAt: new Date() })
+        .where(inArray(backlogQuestions.id, linkedBacklogIds));
+    }
     await writeAudit(tx, {
       actorUserId,
       action: "public_answer.schedule_cancelled",
@@ -463,12 +502,116 @@ export async function cancelScheduledPublication(
 }
 
 /**
- * Publication queue: drafts, scheduled answers, failed publications and the
- * most recent published entries for one COURSE (ADR-0005). Staff-only — it
- * carries the source-link counts and failure reasons that never reach students.
+ * Archive an editorial answer without deleting the answer, its sources, or its
+ * audit trail. PublicAnswer has no archive state of its own: the unified UI
+ * represents this decision on the course backlog, which is the durable work
+ * object that can later be restored. A scheduled answer is returned to draft in
+ * the same transaction so reconciliation cannot publish an archived item.
+ */
+export async function archivePublicAnswer(
+  actorUserId: string,
+  publicAnswerId: string,
+) {
+  const answer = await db.query.publicAnswers.findFirst({
+    where: eq(publicAnswers.id, publicAnswerId),
+  });
+  if (!answer) throw new Error("Public answer not found");
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    answer.courseId,
+    "manageBacklogImports",
+  );
+  if (answer.state === "published" || answer.state === "unpublished") {
+    throw new Error("Published answers are managed from Class Q&A");
+  }
+
+  const links = await db.query.sourceLinks.findMany({
+    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+  });
+  const existingBacklogId = links.find((link) => link.backlogQuestionId)
+    ?.backlogQuestionId;
+
+  return db.transaction(async (tx) => {
+    let backlogId = existingBacklogId;
+    if (backlogId) {
+      const existing = await tx.query.backlogQuestions.findFirst({
+        where: eq(backlogQuestions.id, backlogId),
+      });
+      if (!existing) throw new Error("Backlog source not found");
+      if (existing.state !== "archived") {
+        await tx
+          .update(backlogQuestions)
+          .set({ state: "archived", updatedAt: new Date() })
+          .where(eq(backlogQuestions.id, existing.id));
+      }
+    } else {
+      const [question] = await tx
+        .insert(backlogQuestions)
+        .values({
+          courseId: answer.courseId,
+          text: answer.publicQuestionText,
+          category: answer.category,
+          topicId: answer.topicId,
+          state: "archived",
+          provenance: "current_copied",
+          identityPreserved: false,
+          createdByUserId: actorUserId,
+        })
+        .returning({ id: backlogQuestions.id });
+      backlogId = question!.id;
+      const [link] = await tx
+        .insert(sourceLinks)
+        .values({
+          publicAnswerId,
+          backlogQuestionId: backlogId,
+          createdByUserId: actorUserId,
+        })
+        .returning({ id: sourceLinks.id });
+      await writeAudit(tx, {
+        actorUserId,
+        action: "source_link.created",
+        entityType: "source_link",
+        entityId: link!.id,
+        after: { publicAnswerId, backlogQuestionId: backlogId },
+        courseId: answer.courseId,
+      });
+    }
+
+    if (answer.state === "scheduled" || answer.state === "awaiting_approval") {
+      await tx
+        .update(publicAnswers)
+        .set({
+          state: "draft",
+          scheduledAt: null,
+          publishFailed: false,
+          publishFailureReason: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(publicAnswers.id, publicAnswerId));
+    }
+    await writeAudit(tx, {
+      actorUserId,
+      action: "backlog.state_changed",
+      entityType: "backlog_question",
+      entityId: backlogId!,
+      before: { publicAnswerId, answerState: answer.state },
+      after: { state: "archived", scheduleCancelled: answer.state === "scheduled" },
+      courseId: answer.courseId,
+    });
+    return backlogId!;
+  });
+}
+
+/**
+ * Internal publication read model: drafts, scheduled answers, failed
+ * publications and the most recent published entries for one COURSE
+ * (ADR-0005). Staff-only — it carries the source-link counts and failure
+ * reasons that never reach students. The user-facing destination is Question
+ * Backlog; this function name remains for service compatibility.
  *
- * One queue per course, not per section: the teaching team of CS 33 works one
- * pipeline, and an answer drafted from a Lab A question is the same object
+ * One editorial pipeline per course, not per section: the teaching team of CS 33
+ * works one pipeline, and an answer drafted from a Lab A question is the same object
  * every instructor on the course sees.
  *
  * `publishFailed` rows stay in `scheduled` state by design (see
@@ -506,6 +649,24 @@ export async function listCoursePublicationQueue(
         where: inArray(studentSubmissionItems.id, itemIds),
       })
     : [];
+  const backlogIds = links
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
+  const linkedBacklogQuestions = backlogIds.length
+    ? await db.query.backlogQuestions.findMany({
+        where: inArray(backlogQuestions.id, backlogIds),
+        columns: { id: true, state: true },
+      })
+    : [];
+  const backlogStateById = new Map(
+    linkedBacklogQuestions.map((question) => [question.id, question.state]),
+  );
+  const backlogIdByAnswer = new Map<string, string>();
+  for (const link of links) {
+    if (link.backlogQuestionId && !backlogIdByAnswer.has(link.publicAnswerId)) {
+      backlogIdByAnswer.set(link.publicAnswerId, link.backlogQuestionId);
+    }
+  }
   const responses = items.length
     ? await db.query.formResponses.findMany({
         where: inArray(
@@ -567,6 +728,7 @@ export async function listCoursePublicationQueue(
   const creatorById = new Map(creators.map((creator) => [creator.id, creator]));
   const decorated = rows.map((answer) => ({
     answer,
+    backlogQuestionId: backlogIdByAnswer.get(answer.id) ?? null,
     sourceCount: sourceCount.get(answer.id) ?? 0,
     linkedSubmissionCount: sourceSubmissionCount.get(answer.id) ?? 0,
     creatorName: creatorById.get(answer.createdByUserId)?.displayName ?? null,
@@ -579,7 +741,10 @@ export async function listCoursePublicationQueue(
     latestApproval: latestApproval.get(answer.id) ?? null,
   }));
   const active = decorated.filter(
-    (item) => item.answer.state !== "published" && item.answer.state !== "unpublished",
+    (item) =>
+      item.answer.state !== "published" &&
+      item.answer.state !== "unpublished" &&
+      backlogStateById.get(item.backlogQuestionId ?? "") !== "archived",
   );
   return {
     drafts: decorated.filter((d) => d.answer.state === "draft"),
@@ -592,7 +757,7 @@ export async function listCoursePublicationQueue(
       .slice(0, 20),
     /**
      * The editorial list keeps the persisted state intact. `latestApproval` is
-     * only a projection for the queue: an approval rejection returns the
+     * only a projection for this read model: an approval rejection returns the
      * PublicAnswer to `draft`, but remains useful as a Rejected filter result
      * until the next revision or approval decision.
      */

@@ -67,8 +67,7 @@ export function CreateCourseDialog({
       title="Create course"
       variant="primary"
     >
-      {(close) => (
-        <form action={action}>
+      <form action={action}>
           <FieldRow
             htmlFor="course-code"
             label={
@@ -173,7 +172,7 @@ export function CreateCourseDialog({
           <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
             <button
               className={buttonClass({ variant: "quiet" })}
-              onClick={close}
+              data-dialog-close
               type="button"
             >
               Cancel
@@ -183,7 +182,6 @@ export function CreateCourseDialog({
             </SubmitButton>
           </div>
         </form>
-      )}
     </Dialog>
   );
 }

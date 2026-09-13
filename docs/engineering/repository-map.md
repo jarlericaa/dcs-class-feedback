@@ -35,7 +35,7 @@ second architecture document; durable runtime decisions belong in
 | src/app/actions/ | Shared server actions (sign-out) |
 | src/app/sections/[id]/ | Student section home and history (`/qa` here is a redirect to the course archive) |
 | src/app/courses/[id]/qa/ | **Class Q&A — one archive per course** (ADR-0005) |
-| src/app/teach/courses/ | Course/section creation, template authoring, forms, responses, **publication queue** and **question backlog** |
+| src/app/teach/courses/ | Course/section creation, template authoring, forms, responses, the **Question Backlog** editorial workspace and Class Q&A handoff |
 | src/app/teach/sections/[id]/ | Staff section work: review, roster, import, participation (publications/backlog here are redirects to the course routes) |
 | src/app/api/auth/ | Auth.js callback route |
 | src/app/api/internal/scheduler/ | Secret-protected scheduler tick endpoint |

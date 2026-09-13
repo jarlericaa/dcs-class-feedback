@@ -27,8 +27,10 @@ import {
   schedulePublication,
 } from "@/modules/publishing";
 import {
+  copyOrMoveToBacklog,
   draftFromBacklog,
   importLegacyEntries,
+  listQuestionBacklog,
   setBacklogState,
 } from "@/modules/backlog";
 import { AuthzError } from "@/modules/authz";
@@ -213,7 +215,7 @@ describe("one course-wide Class Q&A", () => {
   });
 });
 
-describe("the publication queue is course-scoped", () => {
+describe("the editorial workflow is course-scoped", () => {
   beforeEach(async () => {
     await truncateAll();
   });
@@ -356,6 +358,13 @@ describe("the backlog publishes one course answer", () => {
     expect(moved!.state).toBe("drafting");
 
     await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
+    const publishedQuestion = await db.query.backlogQuestions.findFirst({
+      where: eq(backlogQuestions.id, question.id),
+    });
+    expect(publishedQuestion!.state).toBe("published");
+    expect(
+      (await listQuestionBacklog(teacher.id, course.id)).items,
+    ).toHaveLength(0);
     const rows = await db.query.publicAnswers.findMany({
       where: eq(publicAnswers.courseId, course.id),
     });
@@ -366,6 +375,27 @@ describe("the backlog publishes one course answer", () => {
       const student = await makeEnrolledStudent(lab.id);
       expect(await listCourseQa(student.user.id, course.id)).toHaveLength(1);
     }
+  });
+
+  it("keeps source-preserving backlog drafting section-scoped for TAs", async () => {
+    const { teacher, course, labs, instance } = await makeCs33();
+    const fromA = await askFrom(instance.id, labs[0]!.id);
+    const question = await copyOrMoveToBacklog(
+      teacher.id,
+      fromA.item.id,
+      course.id,
+      { preserveSource: true },
+    );
+    const ta = await makeUser();
+    await addSectionStaff(labs[1]!.id, ta.id, "ta", {
+      draftPublicAnswers: true,
+    });
+
+    await expect(
+      draftFromBacklog(ta.id, question.id, {
+        answerBody: "An answer from Lab B's assistant.",
+      }),
+    ).rejects.toBeInstanceOf(AuthzError);
   });
 });
 

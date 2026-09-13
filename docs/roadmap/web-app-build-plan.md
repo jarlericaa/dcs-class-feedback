@@ -4,10 +4,10 @@
 
 > **Partly superseded 2026-09-12.** The information architecture below predates
 > [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), which
-> moved the publication queue, the question backlog and Class Q&A to **course**
-> scope. `/sections/[id]/qa` is now `/courses/[id]/qa` and the section-scoped
-> staff routes redirect to their course equivalents. Retained as the record of
-> the plan the build followed; current routes are in
+> moved the Question Backlog editorial workspace and Class Q&A to **course**
+> scope. `/sections/[id]/qa` is now `/courses/[id]/qa`; the old publication and
+> backlog staff routes redirect to `/teach/courses/[id]/backlog`. Retained as
+> the record of the plan the build followed; current routes are in
 > [current-state.md](../engineering/current-state.md).
 
 The repository already has domain services and a functional foundation. Build

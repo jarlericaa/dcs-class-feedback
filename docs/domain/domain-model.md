@@ -52,7 +52,7 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 
 ### Backlog & import
 
-- **BacklogQuestion** — a course-level question awaiting possible public answering. Fields: → Course, text, → optional category/topic, state (§3.7), source provenance (current-copied / legacy-import), → optional source StudentSubmissionItem (only if intentionally linked), identity-preservation flag, → ImportBatch (if imported). Belongs to the **course**, not a section. See [domain/question-backlog.md](question-backlog.md).
+- **BacklogQuestion** — a course-level question awaiting possible public answering. Fields: → Course, text, → optional category/topic, staff-only internal note, state (§3.7), source provenance (current-copied / legacy-import), → optional source StudentSubmissionItem (only if intentionally linked), identity-preservation flag, → ImportBatch (if imported). Belongs to the **course**, not a section. See [domain/question-backlog.md](question-backlog.md).
 - **~~SectionBacklogVisibility~~** — **removed as a mechanism** by [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md). It recorded that a BacklogQuestion had been made publishable to a specific ClassSection, back when publishing from the backlog was a per-section act. Answering a backlog question now produces one course-wide PublicAnswer, so there is no section to expose it to. Its rows are retained as `backlog_section_exposure_history` — provenance, read by nothing.
 - **ImportBatch** — a roster or legacy import event. Fields: kind (roster/legacy), source description, → Course or → ClassSection, importer → User, row counts/summary, timestamp. See [domain/student-identity.md](student-identity.md) and [domain/legacy-question-import.md](legacy-question-import.md).
 

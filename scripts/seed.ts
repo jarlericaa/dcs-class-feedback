@@ -95,7 +95,7 @@ async function main() {
    *
    * The point of seeding three is to make the course-scoped model visible and
    * falsifiable in dev. The teaching team gets ONE form, ONE response
-   * workspace, ONE question backlog, ONE publication queue and ONE Class Q&A;
+   * workspace, ONE Question Backlog editorial workspace and ONE Class Q&A;
    * the three sections differ only in who is enrolled, who staffs them, and
    * which section a response is attributed to.
    */
@@ -153,7 +153,7 @@ async function main() {
    * The demo assistant is delegated to Lab A ALONE.
    *
    * That is what makes the authorization half of ADR-0005 checkable by hand:
-   * they can open the course's shared publication queue and Class Q&A, and they
+   * they can open the course's shared Question Backlog and Class Q&A, and they
    * still cannot read a Lab B or Lab C submission. Making outputs course-wide
    * did not make source data course-wide.
    */

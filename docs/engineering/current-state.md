@@ -1,6 +1,6 @@
 # Current State
 
-**Snapshot date:** 2026-09-07
+**Snapshot date:** 2026-09-13
 **Repository phase:** implementing the full [product/specification.md](../product/specification.md)
 scope. The setup, student and staff loops are pilot-usable; several Epic C–F and
 post-pilot surfaces are **not built yet** and are listed plainly below.
@@ -36,7 +36,7 @@ they specified the account-matching era's `/claim` and
 | C2 | Valid / Flagged / Invalid workflow, flag-vs-finalize split, student-visible reason | **complete** |
 | C3 | Course-scoped bonus periods and progress views | **schema only** |
 | D1 | Item-level Question Inbox with triage actions | **missing** |
-| D2 | Instructor-confirmed backlog (recommend → confirm), priority/assignee/target date | **schema only** — `copyOrMoveToBacklog` still has no UI |
+| D2 | Instructor-confirmed backlog (recommend → confirm), priority/assignee/target date | **partial** — the Question Backlog supports manual/imported/current promoted questions, triage, drafting, scheduling, publishing and archive/restore; Instructor confirmation and ownership fields remain schema-only |
 | D3 | Merge + unmerge | **schema only** — `draftPublicAnswer` merges N items (tested), no unmerge, no UI |
 | E1 | Private threads with student follow-ups | **partial** — staff→student replies work; follow-ups not built |
 | E2 | Public approval, revisions, unpublish/restore | **schema only** |
@@ -78,8 +78,8 @@ they specified the account-matching era's `/claim` and
 | `/teach/sections/[id]/import` | **Removed** — forwards to the class list, where the import now lives as a modal |
 | `/teach/sections/[id]/participation` | Built around **week and answer filters** (issue #15): one occurrence at a time, defaulting to the last one anybody answered, with a question/answer narrowing that reports what each student said, **paginated in the database**. `All weeks` gives the whole-term matrix. The section average and the participating-students figure are gone — neither named anybody to follow up |
 | `/teach/sections/[id]/participation/export` | Five reports, `no-store`, audited. The three pre-existing CSVs — whole-term matrix, detailed responses, participating-student list — keep honouring the `export_participation` TA flag (decision **D17**). The two added in 2026-09 — **this week under the active filter** and the **responder list for encoding** (issue #8, CSV or XLSX, optionally including non-responders) — are **Instructor-only**: a Student Assistant holding the flag reads the dashboard and gets the three older files, and is refused these two |
-| `/teach/courses/[id]/publications` | The course's **one** publication queue (ADR-0005): drafts, scheduled answers, failed publications, retry/reschedule/cancel. A recently published question links to its entry in Class Q&A (issue #13). No section target is asked for — publishing reaches the whole course |
-| `/teach/courses/[id]/backlog` | The course's **one** question backlog: triage, drafting (one course-wide answer per item), anonymous legacy paste-import |
+| `/teach/courses/[id]/backlog` | The course's **single editorial workspace**: compact triage, drafting, rewording, scheduling, publishing, archive/restore, and anonymous legacy paste-import. One published answer reaches the course's Class Q&A |
+| `/teach/courses/[id]/publications` | Compatibility redirect to the Question Backlog, preserving safe filters and selection |
 | `/teach/sections/[id]/publications`, `/teach/sections/[id]/backlog` | Legacy redirects to the course routes above, preserving meaningful filters |
 | `/teach/sections/[id]/audit` | Section-scoped, **paginated** append-only audit history, readable (issue #16): one sentence per entry naming actor, verb and object; a named-field before → after diff with the raw payload behind a disclosure; server-side filters for action (from the set the current scope can show, not the visible page), actor, and an inclusive date range in the section's timezone; the platform's own records withheld by default with an explicit "everything" scope. Scope includes the owning **course's** course-level records — where a section's forms, templates, schedules and backlog live, each writer recording `course_id` because those entities are reachable from no section — while a row naming a sibling section is excluded. A writer whose entity is deleted in the same transaction (`staff.removed`) records `section_id` for the same reason. No student is named as object, as actor, or in the actor filter's options — which offers staff, the scheduler, and "Students" as a group |
 | `/api/internal/scheduler/tick` | Secret-protected sweep: cycles, response locking, reminders, publication, **email delivery** |
@@ -93,8 +93,9 @@ skip link, breadcrumbs and a privacy note in the rail footer.
 Present:
 
 - responsive layout verified at 320, 390, 768, 1024 and 1440: a persistent rail
-  at desktop, a keyboard-accessible `<details>` drawer below 860px, and a
-  URL-driven list/detail stack for the Q&A archive and the review inbox;
+  at desktop, a keyboard-accessible `<details>` drawer below 860px, and
+  URL-driven list/detail stacks for the Question Backlog, Q&A archive and review
+  inbox;
 - one token set, a strict 4px spacing scale, 0/2/3px radii, hairline borders and
   no resting shadows;
 - two type registers — self-hosted Charter for text a human wrote, the platform

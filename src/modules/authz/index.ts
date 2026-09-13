@@ -627,8 +627,9 @@ export async function requireCourseStaffOrSectionGrant(
 }
 
 /**
- * Any capability that lets a staff member work with the publication queue.
- * Reading the queue must not require `draft_public_answers` specifically, or a
+ * Any capability that lets a staff member work with the course's Question
+ * Backlog editorial workspace. Reading it must not require
+ * `draft_public_answers` specifically, or a
  * publish-only or schedule-only assistant cannot see what they are meant to
  * act on. Individual actions remain gated by their own flag.
  */

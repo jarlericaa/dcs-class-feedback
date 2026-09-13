@@ -47,14 +47,12 @@ export function Dialog({
   /** one line, next to the action it governs — never a paragraph */
   description?: ReactNode;
   /**
-   * The dialog's body. Pass a function to get a `close` handle — which a
-   * Cancel button inside the form needs, since it dismisses rather than
-   * submits and the × in the corner is not where a reader looks for it.
-   *
-   * A render prop rather than a context: one consumer, no provider to forget,
-   * and the existing seven call sites pass a node and are untouched.
+   * The dialog's body. It must be a node rather than a render prop: most
+   * callers are server components and Next cannot serialize an arbitrary
+   * function across the server/client boundary. A dismissal button inside the
+   * body can carry `data-dialog-close`; the client primitive handles it.
    */
-  children: ReactNode | ((close: () => void) => ReactNode);
+  children: ReactNode;
   footer?: ReactNode;
   /** Optional visible dismissal action in the dialog footer. */
   cancelLabel?: string;
@@ -272,8 +270,18 @@ export function Dialog({
                 {/* The caller passes a bare `<form>` more often than not, so the
                     grid that spaces its fields is applied from here rather than
                     asked for at every call site. */}
-                <div className="overflow-y-auto p-6 max-sm:p-4 [&>form]:grid [&>form]:gap-4">
-                  {typeof children === "function" ? children(close) : children}
+                <div
+                  className="overflow-y-auto p-6 max-sm:p-4 [&>form]:grid [&>form]:gap-4"
+                  onClick={(event) => {
+                    if (
+                      event.target instanceof Element &&
+                      event.target.closest("[data-dialog-close]")
+                    ) {
+                      close();
+                    }
+                  }}
+                >
+                  {children}
                 </div>
                 {(footer || cancelLabel) && (
                   <div
