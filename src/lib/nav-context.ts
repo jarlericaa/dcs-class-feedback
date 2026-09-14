@@ -1,10 +1,14 @@
 import { cache } from "react";
 import { eq } from "drizzle-orm";
 
-import { courseTabGroups, primaryNav, type NavGroup } from "@/components/layout/nav";
+import {
+  courseTabGroups,
+  primaryNav,
+  type NavGroup,
+} from "@/components/layout/nav";
 import { db } from "@/db";
 import { classSections } from "@/db/schema";
-import { getSectionAccess } from "@/modules/authz";
+import { getCourseCapabilities, getSectionAccess } from "@/modules/authz";
 import type { SessionUser } from "@/lib/session";
 import { sectionLabel } from "@/lib/staff-section";
 import { listCoursesForUser, listSectionsForUser } from "@/modules/catalog";
@@ -120,5 +124,12 @@ export async function courseTabGroupsFor(
     sections.length === 1
       ? await getSectionAccess(db, userId, sections[0]!.id)
       : null;
-  return courseTabGroups(courseId, currentPath, opts, singleSectionAccess);
+  const courseAccess = await getCourseCapabilities(db, userId, courseId);
+  return courseTabGroups(
+    courseId,
+    currentPath,
+    opts,
+    singleSectionAccess,
+    courseAccess,
+  );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
@@ -10,7 +10,17 @@ import { cn } from "@/lib/cn";
  * answer remains available on the detail route, while this scan surface keeps
  * clamping and expansion reliable at every viewport.
  */
-export function QaAnswerPreview({ answer }: { answer: string }) {
+export function QaAnswerPreview({
+  answer,
+  editedAt,
+  editedLabel,
+  editControl,
+}: {
+  answer: string;
+  editedAt?: string | null;
+  editedLabel?: string | null;
+  editControl?: ReactNode;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
   const bodyRef = useRef<HTMLParagraphElement>(null);
@@ -37,7 +47,18 @@ export function QaAnswerPreview({ answer }: { answer: string }) {
 
   return (
     <div className="qa-answer-preview">
-      <h4 className="qa-answer-preview__label">Answer</h4>
+      <div className="qa-answer-preview__header">
+        <h4 className="qa-answer-preview__label">
+          Answer
+          {editedAt && editedLabel && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <time dateTime={editedAt}>Edited {editedLabel}</time>
+            </>
+          )}
+        </h4>
+        {editControl}
+      </div>
       <p
         className={cn(
           "qa-answer-preview__body",

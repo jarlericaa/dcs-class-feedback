@@ -221,6 +221,13 @@ export const IconPlus = (p: IconProps) => (
   </Icon>
 );
 
+export const IconEdit = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m4.5 19.5 1.1-4.1L16.7 4.3a2 2 0 0 1 2.8 2.8L8.4 18.2z" />
+    <path d="m14.8 6.2 3 3" />
+  </Icon>
+);
+
 /**
  * Dismiss. The ONE icon in this file allowed to stand without a word beside it,
  * and only in a dialog's corner — where the convention is universal and the

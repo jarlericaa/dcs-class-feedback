@@ -1,4 +1,4 @@
-import type { SectionAccess } from "@/modules/authz";
+import type { EffectivePermissions, SectionAccess } from "@/modules/authz";
 import {
   IconAdmin,
   IconArchive,
@@ -217,14 +217,18 @@ export function primaryNav(
     fallbackHref?: string;
   } = {},
 ): NavGroup[] {
-  const workspace: NavItem[] = [
-    { href: "/", label: "Overview", icon: "overview" },
-  ];
+  const hasStaffDestinations =
+    input.isTeacher || input.courses.length > 0 || input.assistedSections.length > 0;
+  const workspace: NavItem[] = hasStaffDestinations
+    ? []
+    : [{ href: "/", label: "Overview", icon: "overview" }];
   if (input.isPlatformAdmin) {
     workspace.push({ href: "/admin", label: "Platform admin", icon: "admin" });
   }
 
-  const groups: NavGroup[] = [{ label: "Workspace", items: workspace }];
+  const groups: NavGroup[] = workspace.length
+    ? [{ label: "Workspace", items: workspace }]
+    : [];
 
   /**
    * The teacher's courses, by name, in the rail.
@@ -364,6 +368,16 @@ export function coursePublishingTabs(
   }
   items.push({ href: `/courses/${courseId}/qa`, label: "Class Q&A" });
   return items;
+}
+
+/** Participation is a course-level destination. The aggregate view still
+ * respects each class list's roster and access boundary underneath. */
+function courseParticipationTab(courseId: string): NavItem {
+  return {
+    href: `/teach/courses/${courseId}/participation`,
+    label: "Participation",
+    secondary: true,
+  };
 }
 
 /** Every publishing destination — the course's own column, where the reader is
@@ -551,18 +565,7 @@ export function staffSectionTabGroups(
   // Read-only history: how the section is doing, and what changed.
   const reports: NavItem[] = [];
   if (perms.exportParticipation) {
-    reports.push({
-      href: `/teach/sections/${id}/participation`,
-      label: "Participation",
-      /**
-       * Folded into `More`, and the two publication destinations came out of
-       * it in the same move (owner, 2026-09-11). The visible five are now the
-       * weekly loop itself — author, read, answer, publish, triage — and
-       * Participation is the report you open at the end of a term, not
-       * something you pass through on the way to answering a question.
-       */
-      secondary: true,
-    });
+    reports.push(courseParticipationTab(access.section.courseId));
   }
   /**
    * No "Audit history" row. The section-scoped audit browser is gone (owner,
@@ -643,11 +646,17 @@ export function staffSectionTabGroups(
   const rosterHref = `/teach/sections/${id}/roster`;
   const onRoster =
     currentPath === rosterHref || currentPath.startsWith(`${rosterHref}/`);
+  const sectionParticipationHref = `/teach/sections/${id}/participation`;
+  const onParticipation =
+    currentPath === sectionParticipationHref ||
+    currentPath.startsWith(`${sectionParticipationHref}/`);
   const activeHref =
     opts.activeHref ??
     (showCourseDestinations && onRoster
       ? `/teach/courses/${access.section.courseId}/sections`
-      : undefined);
+      : onParticipation
+        ? `/teach/courses/${access.section.courseId}/participation`
+        : undefined);
 
   // Marked across every group at once, so the longest-match rule (and an
   // activeHref override) stays global rather than resetting per group.
@@ -659,7 +668,10 @@ export function staffSectionTabGroups(
   const activeByHref = new Map(flatActive.map((i) => [i.href, i.active]));
   return groups.map((g) => ({
     ...g,
-    items: g.items.map((i) => ({ ...i, active: activeByHref.get(i.href) ?? false })),
+    items: g.items.map((i) => ({
+      ...i,
+      active: activeByHref.get(i.href) ?? false,
+    })),
   }));
 }
 
@@ -667,9 +679,9 @@ export function staffSectionTabGroups(
  *  still want one plain list (a page whose own layout has no room for group
  *  headings). Prefer the grouped form wherever the reader can see it.
  *
- *  SECTION views only: the course strip is excluded, because a flat list of
- *  "this section's peer views" that opened with the course's own destinations
- *  would make `firstStaffSectionHref` resolve a section to the course. */
+ *  Section-context views: the course strip is excluded, but course-owned
+ *  destinations such as Participation and Class Q&A remain available when the
+ *  reader has the relevant capability. */
 export function staffSectionTabs(
   access: SectionAccess,
   currentPath: string,
@@ -705,18 +717,10 @@ export function firstStaffSectionHref(access: SectionAccess): string | null {
    */
   const poorLanding = new Set([`/courses/${access.section.courseId}/qa`]);
 
-  /**
-   * SECTION destinations lead; the course's are the fallback.
-   *
-   * `/teach/sections/[id]` is a section route, so landing its reader inside the
-   * section is right whenever they have anything to do there — and the list
-   * above now mixes both scopes, because the editorial workspace and archive
-   * became course-owned (ADR-0005). A delegated assistant whose only permission
-   * is a publishing one has NO section destination at all, and returning null
-   * would read as "no access" on a section they genuinely hold. So the course's
-   * destinations catch them, rather than outranking a section page for someone
-   * who has one.
-   */
+  /** Section destinations lead; course-owned destinations are the fallback.
+   * Participation deliberately belongs to the fallback tier now, so a reader
+   * opening a section root with only that capability lands on the course-level
+   * Participation chooser. */
   const isSectionScoped = (href: string) =>
     href.startsWith(`/teach/sections/`) || href.startsWith(`/sections/`);
   const tiers = [
@@ -752,14 +756,40 @@ export function courseTabGroups(
   currentPath: string,
   opts: { needsReview?: number; activeHref?: string } = {},
   singleSectionAccess?: SectionAccess | null,
+  courseAccess?: {
+    permissions: EffectivePermissions;
+    hasCourseStanding: boolean;
+  } | null,
 ): NavGroup[] {
   // Reuses courseTabs rather than repeating its items, so the two can never
   // list the course's own destinations two different ways. Its active flags
   // are provisional — overwritten below once the section's groups (if any) are
   // marked alongside them.
-  const groups: NavGroup[] = [
-    { label: FORMS_GROUP, items: courseTabs(courseId, currentPath, opts) },
-  ];
+  const effectivePermissions =
+    courseAccess?.permissions ?? singleSectionAccess?.staff?.permissions;
+  const publishingPermissions = effectivePermissions ?? ALL_PUBLISHING_PERMS;
+  const hasCourseStanding =
+    courseAccess?.hasCourseStanding ??
+    singleSectionAccess?.staff?.hasCourseStanding ??
+    true;
+  const courseWorkItems = hasCourseStanding
+    ? courseTabs(courseId, currentPath, opts)
+    : !singleSectionAccess && (effectivePermissions?.reviewResponses ?? true)
+      ? mark(
+          [
+            {
+              href: `/teach/courses/${courseId}/responses`,
+              label: "Responses",
+              count: opts.needsReview || undefined,
+            },
+          ],
+          currentPath,
+          opts.activeHref,
+        )
+      : [];
+  const groups: NavGroup[] = courseWorkItems.length
+    ? [{ label: FORMS_GROUP, items: courseWorkItems }]
+    : [];
   /**
    * The course's Question Backlog and Class Q&A — course-owned
    * (ADR-0005), so they belong to this column whether the course has one
@@ -772,11 +802,20 @@ export function courseTabGroups(
    */
   groups.push({
     label: "Weekly review",
-    items: coursePublishingTabs(
-      courseId,
-      singleSectionAccess?.staff?.permissions ?? ALL_PUBLISHING_PERMS,
-    ),
+    items: coursePublishingTabs(courseId, publishingPermissions),
   });
+  /**
+   * Participation is course-scoped. On a multi-section course there is no
+   * folded section group to supply this row, so add the single course-level
+   * destination here. The destination itself narrows the reader to class
+   * lists they may export from.
+   */
+  if (effectivePermissions?.exportParticipation && !singleSectionAccess) {
+    groups.push({
+      label: "Reports",
+      items: [courseParticipationTab(courseId)],
+    });
+  }
   if (singleSectionAccess) {
     // `courseStrip: false`: this function already opened with the course's own
     // destinations, and staffSectionTabGroups would otherwise add them again.
@@ -798,12 +837,14 @@ export function courseTabGroups(
    * Course scope leads, section scope follows — widest frame first, matching
    * the order the column already reads in.
    */
-  const courseSetup = courseSetupTabs(courseId, currentPath, opts);
-  const existingSetup = groups.find((group) => group.label === "Setup");
-  if (existingSetup) {
-    existingSetup.items = [...courseSetup, ...existingSetup.items];
-  } else {
-    groups.push({ label: "Setup", items: courseSetup });
+  if (hasCourseStanding) {
+    const courseSetup = courseSetupTabs(courseId, currentPath, opts);
+    const existingSetup = groups.find((group) => group.label === "Setup");
+    if (existingSetup) {
+      existingSetup.items = [...courseSetup, ...existingSetup.items];
+    } else {
+      groups.push({ label: "Setup", items: courseSetup });
+    }
   }
 
   // Marked across every group at once — see staffSectionTabGroups for why.
@@ -815,7 +856,10 @@ export function courseTabGroups(
   const activeByHref = new Map(flatActive.map((i) => [i.href, i.active]));
   return groups.map((g) => ({
     ...g,
-    items: g.items.map((i) => ({ ...i, active: activeByHref.get(i.href) ?? false })),
+    items: g.items.map((i) => ({
+      ...i,
+      active: activeByHref.get(i.href) ?? false,
+    })),
   }));
 }
 

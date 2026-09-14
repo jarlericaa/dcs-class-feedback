@@ -54,7 +54,7 @@ export async function WorkspaceShell({
   user: ShellUser;
   /** e.g. "DCS-101 Section A — Review" */
   contextTitle: string;
-  /** "Student workspace", "Staff workspace" — stated, never inferred */
+  /** Optional audience label shown in the expanded account block. */
   workspaceLabel?: string;
   navGroups?: NavGroup[];
   /** peer views of the resource this page belongs to; never global destinations.

@@ -85,6 +85,28 @@ export function timeRemaining(deadline: Date, now: Date = new Date()): string {
   return `${days} day${days === 1 ? "" : "s"} left`;
 }
 
+/** Compact relative phrasing for quiet last-edited markers. */
+export function formatRelativeTime(
+  value: Date | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (!value) return "";
+  const elapsedMinutes = Math.floor(
+    Math.max(0, now.getTime() - value.getTime()) / 60_000,
+  );
+  if (elapsedMinutes < 1) return "just now";
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h ago`;
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 7) return `${elapsedDays}d ago`;
+
+  const elapsedWeeks = Math.floor(elapsedDays / 7);
+  return `${elapsedWeeks}w ago`;
+}
+
 /** Initials for the account avatar. */
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

@@ -18,8 +18,8 @@ import type { NavGroup, NavItem } from "./nav";
 export type Workspace = "student" | "staff" | "home" | "admin";
 export type { ShellUser };
 
-const WORKSPACE_LABEL: Record<Workspace, string> = {
-  staff: "Staff workspace",
+const WORKSPACE_LABEL: Record<Workspace, string | undefined> = {
+  staff: undefined,
   student: "Student workspace",
   admin: "Platform admin",
   home: "Your workspace",
@@ -126,7 +126,7 @@ export function AppShell({
   return (
     <WorkspaceShell
       user={user}
-      contextTitle={contextLabel ?? workspaceLabel}
+      contextTitle={contextLabel ?? workspaceLabel ?? ""}
       workspaceLabel={workspaceLabel}
       navGroups={navGroups}
       /*
@@ -166,13 +166,13 @@ export function AppShell({
       {!nested && tabGroups && tabGroups.length > 0 && (
         <SubNav
           groups={tabGroups}
-          label={tabsLabel ?? contextLabel ?? workspaceLabel}
+          label={tabsLabel ?? contextLabel ?? workspaceLabel ?? ""}
         />
       )}
       {!nested && !tabGroups && tabs && tabs.length > 0 && (
         <SubNav
           items={tabs}
-          label={tabsLabel ?? contextLabel ?? workspaceLabel}
+          label={tabsLabel ?? contextLabel ?? workspaceLabel ?? ""}
           mode={tabsMode}
         />
       )}

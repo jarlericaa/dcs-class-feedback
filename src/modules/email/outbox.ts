@@ -132,6 +132,7 @@ async function courseScope(dbx: DbOrTx, courseId: string) {
     courseId,
     courseCode: course.code,
     sectionTitle: course.title,
+    ownerUserId: course.ownerUserId,
   };
 }
 
@@ -203,7 +204,12 @@ export async function enqueueCycleOpened(
       const inserted = await enqueueEmail(dbx, {
         availableAt: at,
         eventType: "form_opened",
-        idempotencyKey: key(["form_opened", "cycle", cycleId, recipient.userId]),
+        idempotencyKey: key([
+          "form_opened",
+          "cycle",
+          cycleId,
+          recipient.userId,
+        ]),
         recipientUserId: recipient.userId,
         sectionId: scope.sectionId,
         courseId: scope.courseId,
@@ -399,7 +405,10 @@ export async function enqueueValidityChanged(
   // about their submission alone.
   const scope = await sectionScope(dbx, response.sectionId);
   if (!scope) return;
-  const recipient = await accountForStudentRecord(dbx, response.studentRecordId);
+  const recipient = await accountForStudentRecord(
+    dbx,
+    response.studentRecordId,
+  );
   if (!recipient) return;
   const eventType: EmailEvent =
     validity === "invalid" ? "submission_invalidated" : "submission_restored";
@@ -467,12 +476,26 @@ export async function enqueueApprovalRequested(
     .select({ userId: courseStaff.userId, displayName: users.displayName })
     .from(courseStaff)
     .innerJoin(users, eq(users.id, courseStaff.userId))
-    .where(and(eq(courseStaff.courseId, answer.courseId), eq(users.active, true)));
+    .where(
+      and(eq(courseStaff.courseId, answer.courseId), eq(users.active, true)),
+    );
+  const owner = await dbx.query.users.findFirst({
+    where: and(eq(users.id, scope.ownerUserId), eq(users.active, true)),
+    columns: { id: true, displayName: true },
+  });
   // One mail per person: an instructor holding both a course row and a section
   // row is one approver, not two.
-  const staff = [...new Map(
-    [...courseRows, ...sectionRows].map((row) => [row.userId, row]),
-  ).values()];
+  const staff = [
+    ...new Map(
+      [
+        ...courseRows,
+        ...sectionRows,
+        ...(owner
+          ? [{ userId: owner.id, displayName: owner.displayName }]
+          : []),
+      ].map((row) => [row.userId, row]),
+    ).values(),
+  ];
   for (const person of staff) {
     await enqueueEmail(dbx, {
       eventType: "approval_requested",
@@ -641,7 +664,10 @@ export async function processEmailOutbox(
           entityType: "email_outbox",
           entityId: row.id,
           // Recipient by id, event type only. Never the body or the address.
-          metadata: { eventType: row.eventType, recipientUserId: row.recipientUserId },
+          metadata: {
+            eventType: row.eventType,
+            recipientUserId: row.recipientUserId,
+          },
           sectionId: row.sectionId,
           courseId: row.courseId,
         });
@@ -654,9 +680,7 @@ export async function processEmailOutbox(
         .update(emailOutbox)
         .set({
           state: exhausted ? "failed" : "pending",
-          availableAt: new Date(
-            Date.now() + backoffSeconds(attempts) * 1000,
-          ),
+          availableAt: new Date(Date.now() + backoffSeconds(attempts) * 1000),
           lastError: err instanceof Error ? err.message : String(err),
           leaseOwner: null,
           leaseExpiresAt: null,

@@ -73,7 +73,7 @@ import {
 } from "@/modules/publishing";
 import {
   copyOrMoveToBacklog,
-  listBacklogSourceItemIds,
+  listSourceEditorialStates,
 } from "@/modules/backlog";
 import { Field, FieldRow, Select, Textarea } from "@/components/ui/form";
 import { QUESTION_CATEGORIES } from "@/lib/threads";
@@ -982,15 +982,14 @@ export default async function CourseResponsesPage({
     sfFilter === "answered" ? itemAnswered(entry) : true,
   );
 
-  const backlogItemIds = studentItems.some(({ row }) =>
-    canOn(row.response.sectionId, "manageBacklogImports"),
-  )
-    ? await listBacklogSourceItemIds(
-        user.id,
-        courseId,
-        studentItems.map(({ entry }) => entry.item.id),
-      )
-    : new Set<string>();
+  const editorialStates =
+    studentItems.length > 0
+      ? await listSourceEditorialStates(
+          user.id,
+          courseId,
+          studentItems.map(({ entry }) => entry.item.id),
+        )
+      : new Map();
 
   /** The by-submission list: the same week, one row per student. */
   const submittedAt = (row: QueueRow) =>
@@ -1473,13 +1472,42 @@ export default async function CourseResponsesPage({
     const { item, publicAnswers } = entry;
     const sectionId = row.response.sectionId;
     const isComment = item.kind === "general_comment";
-    const published = publicAnswers.some(
-      (answer) => answer.state === "published",
-    );
     const canReplyPrivately = canOn(sectionId, "sendPrivateResponses");
     const canDraftPublic = canOn(sectionId, "draftPublicAnswers");
     const canManageBacklog = canOn(sectionId, "manageBacklogImports");
-    const backlogged = backlogItemIds.has(item.id);
+    const editorial = editorialStates.get(item.id);
+    const publishedAnswerId =
+      publicAnswers.find((answer) => answer.state === "published")?.id ??
+      editorial?.publishedAnswerId ??
+      null;
+    const published = Boolean(publishedAnswerId);
+    const activeEditorialId =
+      publicAnswers.find((answer) =>
+        ["draft", "awaiting_approval", "scheduled"].includes(answer.state),
+      )?.id ??
+      editorial?.activeAnswerId ??
+      null;
+    const backlogQuestionId = editorial?.backlogQuestionId ?? null;
+    const canOpenEditorial = [
+      "manageBacklogImports",
+      "draftPublicAnswers",
+      "rewordPublicQuestions",
+      "publishPublicAnswers",
+      "schedulePublication",
+    ].some((permission) => canOn(sectionId, permission as SectionPermission));
+    const editorialAction = publishedAnswerId
+      ? {
+          href: `/courses/${courseId}/qa?selected=${publishedAnswerId}`,
+          label: "View in Class Q&A",
+          kind: "qa" as const,
+        }
+      : canOpenEditorial && (activeEditorialId || backlogQuestionId)
+        ? {
+            href: `/teach/courses/${courseId}/backlog?selected=${activeEditorialId ?? backlogQuestionId}`,
+            label: "Open in backlog",
+            kind: "backlog" as const,
+          }
+        : null;
 
     return (
       <StudentQuestionRow
@@ -1504,17 +1532,21 @@ export default async function CourseResponsesPage({
               />
             )}
             {canManageBacklog &&
-              (backlogged ? (
-                <span
-                  aria-label="Already added to the course question backlog"
+              (editorialAction ? (
+                <Link
                   className={buttonClass({
                     variant: "secondary",
                     size: "small",
+                    className: "w-[11rem] whitespace-nowrap",
                   })}
+                  href={editorialAction.href}
                 >
-                  <IconBacklog size={15} />
-                  Added to backlog
-                </span>
+                  {editorialAction.kind === "backlog" && (
+                    <IconBacklog size={15} />
+                  )}
+                  {editorialAction.label}
+                  <IconForward size={15} />
+                </Link>
               ) : (
                 <form action={addToBacklog}>
                   <input name="itemId" type="hidden" value={item.id} />
@@ -1529,6 +1561,19 @@ export default async function CourseResponsesPage({
                   </SubmitButton>
                 </form>
               ))}
+            {!canManageBacklog && editorialAction && (
+              <Link
+                className={buttonClass({
+                  variant: "secondary",
+                  size: "small",
+                  className: "w-[11rem] whitespace-nowrap",
+                })}
+                href={editorialAction.href}
+              >
+                {editorialAction.label}
+                <IconForward size={15} />
+              </Link>
+            )}
           </>
         }
         category={item.category}

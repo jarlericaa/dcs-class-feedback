@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
@@ -103,6 +104,7 @@ export default async function HomePage() {
   // Staff work per COURSE. A section is who can reach a form, so it is not what
   // the board is made of.
   const teaching = await listCoursesForUser(user.id);
+  if (user.isTeacher) redirect("/teach/courses");
   const staffCards = await Promise.all(
     teaching.map(async (entry) => {
       const forms = await listCourseForms(user.id, entry.course.id).catch(

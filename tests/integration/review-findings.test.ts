@@ -15,6 +15,7 @@ import {
 import {
   backlogQuestions,
   formResponses,
+  publicAnswers,
   studentRecords,
   studentSubmissionItems,
 } from "@/db/schema";
@@ -46,6 +47,7 @@ import {
   importLegacyEntries,
   listQuestionBacklog,
   listBacklogForCourse,
+  setBacklogCategory,
   setBacklogState,
 } from "@/modules/backlog";
 import { listCoursePublicationQueue } from "@/modules/publishing";
@@ -449,6 +451,9 @@ describe("section-scoped grants make advertised permissions usable", () => {
       "previous semester",
     );
     expect(imported.created).toHaveLength(1);
+    await expect(listQuestionBacklog(ta.id, course.id)).resolves.toMatchObject({
+      counts: { all: 1, imported: 1, drafting: 0, scheduled: 0 },
+    });
     await expect(
       setBacklogState(ta.id, imported.created[0]!.id, "needs_review"),
     ).resolves.not.toThrow();
@@ -469,7 +474,50 @@ describe("section-scoped grants make advertised permissions usable", () => {
     const readModel = await listQuestionBacklog(teacher.id, course.id);
     expect(readModel.items[0]).toMatchObject({
       kind: "question",
-      status: "needs-review",
+      status: "drafting",
+    });
+  });
+
+  it("recategorizes backlog work without changing its workflow or wording", async () => {
+    const { teacher, course, item } = await makeSectionWithSubmission();
+    const question = await createManualBacklogQuestion(teacher.id, course.id, {
+      text: "Could we get another worked example?",
+    });
+    await setBacklogCategory(
+      teacher.id,
+      { kind: "question", id: question.id },
+      "content",
+    );
+
+    const recategorizedQuestion = await db.query.backlogQuestions.findFirst({
+      where: eq(backlogQuestions.id, question.id),
+    });
+    expect(recategorizedQuestion).toMatchObject({
+      category: "content",
+      state: "needs_review",
+      text: "Could we get another worked example?",
+    });
+
+    const answer = await draftPublicAnswer(teacher.id, {
+      courseId: course.id,
+      itemIds: [item.id],
+      publicQuestionText: "Will the slides be posted?",
+      answerBody: "Yes, after the lecture.",
+    });
+    await setBacklogCategory(
+      teacher.id,
+      { kind: "answer", id: answer.id },
+      "logistics",
+    );
+
+    const recategorizedAnswer = await db.query.publicAnswers.findFirst({
+      where: eq(publicAnswers.id, answer.id),
+    });
+    expect(recategorizedAnswer).toMatchObject({
+      category: "logistics",
+      state: "draft",
+      publicQuestionText: "Will the slides be posted?",
+      answerBody: "Yes, after the lecture.",
     });
   });
 
@@ -495,12 +543,34 @@ describe("section-scoped grants make advertised permissions usable", () => {
   });
 
   it("still refuses a section TA without the flag", async () => {
-    const { course, section } = await makeSectionWithSubmission();
+    const {
+      teacher,
+      course,
+      section,
+      user: student,
+    } = await makeSectionWithSubmission();
     const ta = await makeUser();
     await addSectionStaff(section.id, ta.id, "ta", { reviewResponses: true });
     await expect(listBacklogForCourse(ta.id, course.id)).rejects.toBeInstanceOf(
       AuthzError,
     );
+    const question = await createManualBacklogQuestion(teacher.id, course.id, {
+      text: "Can we review this topic again?",
+    });
+    await expect(
+      setBacklogCategory(
+        ta.id,
+        { kind: "question", id: question.id },
+        "content",
+      ),
+    ).rejects.toBeInstanceOf(AuthzError);
+    await expect(
+      setBacklogCategory(
+        student.id,
+        { kind: "question", id: question.id },
+        "content",
+      ),
+    ).rejects.toBeInstanceOf(AuthzError);
   });
 
   it("still refuses staff of an unrelated course", async () => {

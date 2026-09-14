@@ -9,6 +9,7 @@ import {
   privateResponses,
   publicAnswers,
   publicAnswerApprovals,
+  publicAnswerRevisions,
   questionAnswers,
   sourceLinks,
   studentSubmissionItems,
@@ -18,12 +19,18 @@ import { writeAudit } from "@/modules/audit";
 import {
   PUBLICATION_PERMISSIONS,
   AuthzError,
+  getCourseCapabilities,
   requireAnyCoursePermission,
+  requireCourseInstructor,
   requireCourseQaAccess,
   requireCourseStaffOrSectionGrant,
   requireEnrolledStudent,
   requireSectionStaff,
 } from "@/modules/authz";
+import {
+  enqueueApprovalDecided,
+  enqueueApprovalRequested,
+} from "@/modules/email/outbox";
 import { hasSequence, instanceLabel } from "@/modules/forms/instances";
 import { getItemWithSection } from "@/modules/review";
 import { normalizePublicQuestionText } from "./dedupe";
@@ -96,7 +103,11 @@ export async function draftPublicAnswer(
   if (!input.publicQuestionText.trim()) {
     throw new Error("Public question text is required");
   }
-  await requireAnswerCapability(input.courseId, actorUserId, "draftPublicAnswers");
+  await requireAnswerCapability(
+    input.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
 
   /**
    * Merge scope: every source item must belong to THIS course, and the actor
@@ -117,9 +128,7 @@ export async function draftPublicAnswer(
       where: eq(classSections.id, sectionId),
     });
     if (section?.courseId !== input.courseId) {
-      throw new Error(
-        "All merged items must belong to the same course",
-      );
+      throw new Error("All merged items must belong to the same course");
     }
     await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
     sourceSectionIds.add(sectionId);
@@ -209,7 +218,11 @@ export async function rewordPublicQuestion(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireAnswerCapability(answer.courseId, actorUserId, "rewordPublicQuestions");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "rewordPublicQuestions",
+  );
   // A scheduled answer already carries an acknowledged anonymity check for its
   // current wording. Allowing an edit here would let different text go out
   // under that acknowledgment, so the schedule must be cancelled first.
@@ -222,7 +235,12 @@ export async function rewordPublicQuestion(
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
-      .set({ publicQuestionText: newText, updatedAt: new Date() })
+      .set({
+        publicQuestionText: newText,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(publicAnswers.id, publicAnswerId));
     await writeAudit(tx, {
       actorUserId,
@@ -245,7 +263,11 @@ export async function updateAnswerBody(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireAnswerCapability(answer.courseId, actorUserId, "draftPublicAnswers");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
   if (answer.state !== "draft") {
     throw new Error(
       `Cannot edit an answer in state ${answer.state}. Cancel the schedule first.`,
@@ -254,7 +276,12 @@ export async function updateAnswerBody(
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
-      .set({ answerBody, updatedAt: new Date() })
+      .set({
+        answerBody,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(publicAnswers.id, publicAnswerId));
     await writeAudit(tx, {
       actorUserId,
@@ -264,6 +291,91 @@ export async function updateAnswerBody(
       before: { answerBody: answer.answerBody },
       after: { answerBody },
       courseId: answer.courseId,
+    });
+  });
+}
+
+/**
+ * Edit the live body of a published answer without creating another Q&A entry.
+ *
+ * Published edits are a separate operation from draft editing: the answer
+ * remains published, while the previous public text is retained in the
+ * revision table and the student-visible edit timestamp moves forward.
+ */
+export async function updatePublishedAnswer(
+  actorUserId: string,
+  publicAnswerId: string,
+  answerBody: string,
+) {
+  const nextAnswerBody = answerBody.trim();
+  if (!nextAnswerBody) throw new Error("Answer body is required");
+
+  const answer = await db.query.publicAnswers.findFirst({
+    where: eq(publicAnswers.id, publicAnswerId),
+  });
+  if (!answer) throw new Error("Public answer not found");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
+  if (answer.state !== "published") {
+    throw new Error("Only a published answer can be edited here");
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await tx.query.publicAnswers.findFirst({
+      where: eq(publicAnswers.id, publicAnswerId),
+    });
+    if (!current) throw new Error("Public answer not found");
+    if (current.state !== "published") {
+      throw new Error("Only a published answer can be edited here");
+    }
+    if (current.answerBody === nextAnswerBody) return;
+
+    const editedAt = new Date();
+    const revisionNumber = current.revisionCount + 1;
+    await tx.insert(publicAnswerRevisions).values({
+      publicAnswerId,
+      revisionNumber,
+      priorQuestionText: current.publicQuestionText,
+      priorAnswerText: current.answerBody,
+      editorUserId: actorUserId,
+      createdAt: editedAt,
+    });
+    const changed = await tx
+      .update(publicAnswers)
+      .set({
+        answerBody: nextAnswerBody,
+        lastEditedAt: editedAt,
+        revisionCount: revisionNumber,
+        updatedAt: editedAt,
+      })
+      .where(
+        and(
+          eq(publicAnswers.id, publicAnswerId),
+          eq(publicAnswers.state, "published"),
+          eq(publicAnswers.revisionCount, current.revisionCount),
+        ),
+      )
+      .returning({ id: publicAnswers.id });
+    if (changed.length === 0) {
+      throw new Error("This answer changed before it could be saved");
+    }
+    await writeAudit(tx, {
+      actorUserId,
+      action: "public_answer.revised",
+      entityType: "public_answer",
+      entityId: publicAnswerId,
+      before: {
+        answerBody: current.answerBody,
+        revisionCount: current.revisionCount,
+      },
+      after: {
+        answerBody: nextAnswerBody,
+        revisionCount: revisionNumber,
+      },
+      courseId: current.courseId,
     });
   });
 }
@@ -335,6 +447,97 @@ async function requireAnonymityAcknowledged(
   }
 }
 
+/**
+ * The non-delegable approval rule follows the person who created the public
+ * draft, not whoever happens to be looking at it now. There is no role snapshot
+ * on PublicAnswer, so a missing/inactive creator is treated conservatively as
+ * requiring approval.
+ */
+async function answerNeedsInstructorApproval(
+  answer: Pick<
+    typeof publicAnswers.$inferSelect,
+    "courseId" | "createdByUserId" | "approvedAt" | "state"
+  >,
+) {
+  if (answer.approvedAt) return false;
+  if (answer.state === "awaiting_approval") return true;
+  const creator = await getCourseCapabilities(
+    db,
+    answer.createdByUserId,
+    answer.courseId,
+  );
+  return !creator?.isInstructor;
+}
+
+/** Move an assistant-authored draft into the existing persisted approval flow. */
+export async function submitPublicAnswerForApproval(
+  actorUserId: string,
+  publicAnswerId: string,
+) {
+  const answer = await db.query.publicAnswers.findFirst({
+    where: eq(publicAnswers.id, publicAnswerId),
+  });
+  if (!answer) throw new Error("Public answer not found");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
+  const actor = await getCourseCapabilities(db, actorUserId, answer.courseId);
+  if (actor?.isInstructor) {
+    throw new Error(
+      "Instructors approve an answer by publishing or scheduling it",
+    );
+  }
+  if (!(await answerNeedsInstructorApproval(answer))) {
+    throw new Error("This answer does not require Instructor approval");
+  }
+  if (answer.state !== "draft") {
+    throw new Error(`Cannot submit an answer in state ${answer.state}`);
+  }
+  if (!answer.answerBody?.trim()) {
+    throw new Error("Cannot submit for approval without an answer body");
+  }
+
+  await db.transaction(async (tx) => {
+    const changed = await tx
+      .update(publicAnswers)
+      .set({
+        state: "awaiting_approval",
+        submittedForApprovalAt: new Date(),
+        submittedByUserId: actorUserId,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(publicAnswers.id, publicAnswerId),
+          eq(publicAnswers.state, "draft"),
+        ),
+      )
+      .returning({ id: publicAnswers.id });
+    if (changed.length === 0) {
+      throw new Error("This answer is no longer a draft");
+    }
+    await tx.insert(publicAnswerApprovals).values({
+      publicAnswerId,
+      decision: "requested",
+      actorUserId,
+    });
+    await writeAudit(tx, {
+      actorUserId,
+      action: "public_answer.submitted_for_approval",
+      entityType: "public_answer",
+      entityId: publicAnswerId,
+      before: { state: "draft" },
+      after: { state: "awaiting_approval" },
+      courseId: answer.courseId,
+    });
+    await enqueueApprovalRequested(tx, publicAnswerId);
+  });
+}
+
 export async function publishNow(
   actorUserId: string,
   publicAnswerId: string,
@@ -344,12 +547,24 @@ export async function publishNow(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireAnswerCapability(answer.courseId, actorUserId, "publishPublicAnswers");
-  if (answer.state !== "draft" && answer.state !== "scheduled") {
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "publishPublicAnswers",
+  );
+  if (
+    answer.state !== "draft" &&
+    answer.state !== "awaiting_approval" &&
+    answer.state !== "scheduled"
+  ) {
     throw new Error(`Cannot publish an answer in state ${answer.state}`);
   }
   if (!answer.answerBody?.trim()) {
     throw new Error("Cannot publish without an answer body");
+  }
+  const needsApproval = await answerNeedsInstructorApproval(answer);
+  if (needsApproval) {
+    await requireCourseInstructor(db, actorUserId, answer.courseId);
   }
   await requireAnonymityAcknowledged(
     publicAnswerId,
@@ -357,10 +572,12 @@ export async function publishNow(
     opts.anonymityAcknowledged ?? false,
   );
 
-  const linkedBacklogIds = (await db.query.sourceLinks.findMany({
-    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
-    columns: { backlogQuestionId: true },
-  }))
+  const linkedBacklogIds = (
+    await db.query.sourceLinks.findMany({
+      where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+      columns: { backlogQuestionId: true },
+    })
+  )
     .map((link) => link.backlogQuestionId)
     .filter((id): id is string => Boolean(id));
 
@@ -373,9 +590,29 @@ export async function publishNow(
         scheduledAt: null,
         publishFailed: false,
         publishFailureReason: null,
+        ...(needsApproval
+          ? { approvedByUserId: actorUserId, approvedAt: new Date() }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (needsApproval) {
+      await tx.insert(publicAnswerApprovals).values({
+        publicAnswerId,
+        decision: "approved",
+        actorUserId,
+      });
+      await writeAudit(tx, {
+        actorUserId,
+        action: "public_answer.approved",
+        entityType: "public_answer",
+        entityId: publicAnswerId,
+        before: { state: answer.state },
+        after: { state: "published" },
+        courseId: answer.courseId,
+      });
+      await enqueueApprovalDecided(tx, publicAnswerId, "approved");
+    }
     if (linkedBacklogIds.length > 0) {
       await tx
         .update(backlogQuestions)
@@ -404,12 +641,24 @@ export async function schedulePublication(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireAnswerCapability(answer.courseId, actorUserId, "schedulePublication");
-  if (answer.state !== "draft" && answer.state !== "scheduled") {
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "schedulePublication",
+  );
+  if (
+    answer.state !== "draft" &&
+    answer.state !== "awaiting_approval" &&
+    answer.state !== "scheduled"
+  ) {
     throw new Error(`Cannot schedule an answer in state ${answer.state}`);
   }
   if (!answer.answerBody?.trim()) {
     throw new Error("Cannot schedule without an answer body");
+  }
+  const needsApproval = await answerNeedsInstructorApproval(answer);
+  if (needsApproval) {
+    await requireCourseInstructor(db, actorUserId, answer.courseId);
   }
   // Scheduling is the last human moment before the answer goes out: the
   // background executor publishes without asking anyone. The check therefore
@@ -420,10 +669,12 @@ export async function schedulePublication(
     opts.anonymityAcknowledged ?? false,
   );
 
-  const linkedBacklogIds = (await db.query.sourceLinks.findMany({
-    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
-    columns: { backlogQuestionId: true },
-  }))
+  const linkedBacklogIds = (
+    await db.query.sourceLinks.findMany({
+      where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+      columns: { backlogQuestionId: true },
+    })
+  )
     .map((link) => link.backlogQuestionId)
     .filter((id): id is string => Boolean(id));
 
@@ -435,9 +686,29 @@ export async function schedulePublication(
         scheduledAt,
         publishFailed: false,
         publishFailureReason: null,
+        ...(needsApproval
+          ? { approvedByUserId: actorUserId, approvedAt: new Date() }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (needsApproval) {
+      await tx.insert(publicAnswerApprovals).values({
+        publicAnswerId,
+        decision: "approved",
+        actorUserId,
+      });
+      await writeAudit(tx, {
+        actorUserId,
+        action: "public_answer.approved",
+        entityType: "public_answer",
+        entityId: publicAnswerId,
+        before: { state: answer.state },
+        after: { state: "scheduled" },
+        courseId: answer.courseId,
+      });
+      await enqueueApprovalDecided(tx, publicAnswerId, "approved");
+    }
     if (linkedBacklogIds.length > 0) {
       await tx
         .update(backlogQuestions)
@@ -463,14 +734,20 @@ export async function cancelScheduledPublication(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireAnswerCapability(answer.courseId, actorUserId, "schedulePublication");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "schedulePublication",
+  );
   if (answer.state !== "scheduled") {
     throw new Error("Only a scheduled answer can be cancelled");
   }
-  const linkedBacklogIds = (await db.query.sourceLinks.findMany({
-    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
-    columns: { backlogQuestionId: true },
-  }))
+  const linkedBacklogIds = (
+    await db.query.sourceLinks.findMany({
+      where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+      columns: { backlogQuestionId: true },
+    })
+  )
     .map((link) => link.backlogQuestionId)
     .filter((id): id is string => Boolean(id));
   await db.transaction(async (tx) => {
@@ -529,8 +806,9 @@ export async function archivePublicAnswer(
   const links = await db.query.sourceLinks.findMany({
     where: eq(sourceLinks.publicAnswerId, publicAnswerId),
   });
-  const existingBacklogId = links.find((link) => link.backlogQuestionId)
-    ?.backlogQuestionId;
+  const existingBacklogId = links.find(
+    (link) => link.backlogQuestionId,
+  )?.backlogQuestionId;
 
   return db.transaction(async (tx) => {
     let backlogId = existingBacklogId;
@@ -596,7 +874,10 @@ export async function archivePublicAnswer(
       entityType: "backlog_question",
       entityId: backlogId!,
       before: { publicAnswerId, answerState: answer.state },
-      after: { state: "archived", scheduleCancelled: answer.state === "scheduled" },
+      after: {
+        state: "archived",
+        scheduleCancelled: answer.state === "scheduled",
+      },
       courseId: answer.courseId,
     });
     return backlogId!;
@@ -606,9 +887,10 @@ export async function archivePublicAnswer(
 /**
  * Internal publication read model: drafts, scheduled answers, failed
  * publications and the most recent published entries for one COURSE
- * (ADR-0005). Staff-only — it carries the source-link counts and failure
- * reasons that never reach students. The user-facing destination is Question
- * Backlog; this function name remains for service compatibility.
+ * (ADR-0005). It deliberately carries no source occurrence or linked-response
+ * metadata: section assistants may collaborate on the course-wide OUTPUT
+ * without learning about source responses they cannot read. The user-facing
+ * destination is Question Backlog; this name remains for service compatibility.
  *
  * One editorial pipeline per course, not per section: the teaching team of CS 33
  * works one pipeline, and an answer drafted from a Lab A question is the same object
@@ -641,14 +923,6 @@ export async function listCoursePublicationQueue(
       rows.map((r) => r.id),
     ),
   });
-  const itemIds = links
-    .map((link) => link.itemId)
-    .filter((itemId): itemId is string => Boolean(itemId));
-  const items = itemIds.length
-    ? await db.query.studentSubmissionItems.findMany({
-        where: inArray(studentSubmissionItems.id, itemIds),
-      })
-    : [];
   const backlogIds = links
     .map((link) => link.backlogQuestionId)
     .filter((id): id is string => Boolean(id));
@@ -667,22 +941,6 @@ export async function listCoursePublicationQueue(
       backlogIdByAnswer.set(link.publicAnswerId, link.backlogQuestionId);
     }
   }
-  const responses = items.length
-    ? await db.query.formResponses.findMany({
-        where: inArray(
-          formResponses.id,
-          items.map((item) => item.responseId),
-        ),
-      })
-    : [];
-  const cycles = responses.length
-    ? await db.query.formInstances.findMany({
-        where: inArray(
-          formInstances.id,
-          responses.map((response) => response.cycleId),
-        ),
-      })
-    : [];
   const creatorIds = [...new Set(rows.map((row) => row.createdByUserId))];
   const creators = await db.query.users.findMany({
     where: inArray(users.id, creatorIds),
@@ -694,50 +952,36 @@ export async function listCoursePublicationQueue(
     ),
     orderBy: desc(publicAnswerApprovals.createdAt),
   });
-  const sourceCount = new Map<string, number>();
-  const sourceSubmissionCount = new Map<string, number>();
-  const firstSourceCycle = new Map<string, (typeof formInstances.$inferSelect)>();
-  for (const link of links) {
-    sourceCount.set(
-      link.publicAnswerId,
-      (sourceCount.get(link.publicAnswerId) ?? 0) + 1,
-    );
-    if (link.itemId) {
-      sourceSubmissionCount.set(
-        link.publicAnswerId,
-        (sourceSubmissionCount.get(link.publicAnswerId) ?? 0) + 1,
-      );
-      const item = items.find((candidate) => candidate.id === link.itemId);
-      const response = item
-        ? responses.find((candidate) => candidate.id === item.responseId)
-        : undefined;
-      const cycle = response
-        ? cycles.find((candidate) => candidate.id === response.cycleId)
-        : undefined;
-      if (cycle && !firstSourceCycle.has(link.publicAnswerId)) {
-        firstSourceCycle.set(link.publicAnswerId, cycle);
-      }
-    }
-  }
-  const latestApproval = new Map<string, (typeof publicAnswerApprovals.$inferSelect)>();
+  const latestApproval = new Map<
+    string,
+    typeof publicAnswerApprovals.$inferSelect
+  >();
   for (const approval of approvals) {
     if (!latestApproval.has(approval.publicAnswerId)) {
       latestApproval.set(approval.publicAnswerId, approval);
     }
   }
   const creatorById = new Map(creators.map((creator) => [creator.id, creator]));
+  const creatorInstructorById = new Map(
+    await Promise.all(
+      creatorIds.map(
+        async (creatorId) =>
+          [
+            creatorId,
+            Boolean(
+              (await getCourseCapabilities(db, creatorId, courseId))
+                ?.isInstructor,
+            ),
+          ] as const,
+      ),
+    ),
+  );
   const decorated = rows.map((answer) => ({
     answer,
     backlogQuestionId: backlogIdByAnswer.get(answer.id) ?? null,
-    sourceCount: sourceCount.get(answer.id) ?? 0,
-    linkedSubmissionCount: sourceSubmissionCount.get(answer.id) ?? 0,
     creatorName: creatorById.get(answer.createdByUserId)?.displayName ?? null,
-    sourceOccurrence: (() => {
-      const cycle = firstSourceCycle.get(answer.id);
-      return cycle && hasSequence(cycle)
-        ? instanceLabel(cycle)
-        : null;
-    })(),
+    creatorIsInstructor:
+      creatorInstructorById.get(answer.createdByUserId) ?? false,
     latestApproval: latestApproval.get(answer.id) ?? null,
   }));
   const active = decorated.filter(
@@ -804,13 +1048,9 @@ export async function getPublicAnswerForEditing(
   for (const item of items) {
     const { sectionId } = await getItemWithSection(item.id);
     try {
-      await requireSectionStaff(
-        db,
-        actorUserId,
-        sectionId,
-        "reviewResponses",
-        { allowArchived: true },
-      );
+      await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses", {
+        allowArchived: true,
+      });
       visibleSources.push({
         id: item.id,
         submissionType: item.submissionType,
@@ -856,7 +1096,9 @@ export async function listCourseQa(
     sort?: "newest" | "oldest";
   } = {},
 ) {
-  await requireCourseQaAccess(db, actorUserId, courseId, { allowArchived: true });
+  await requireCourseQaAccess(db, actorUserId, courseId, {
+    allowArchived: true,
+  });
   const conditions = [
     eq(publicAnswers.courseId, courseId),
     eq(publicAnswers.state, "published"),
@@ -864,7 +1106,10 @@ export async function listCourseQa(
   if (opts.category) {
     conditions.push(
       opts.category === "misc"
-        ? or(eq(publicAnswers.category, "misc"), isNull(publicAnswers.category))!
+        ? or(
+            eq(publicAnswers.category, "misc"),
+            isNull(publicAnswers.category),
+          )!
         : eq(publicAnswers.category, opts.category),
     );
   }
@@ -914,10 +1159,7 @@ export async function listCourseQa(
   // Anonymous projection for the asker — never include source information.
   // Group matching titles into one question thread while retaining every
   // published answer under it.
-  const grouped = new Map<
-    string,
-    (typeof rows)[number][]
-  >();
+  const grouped = new Map<string, (typeof rows)[number][]>();
   for (const row of rows) {
     const key = normalizePublicQuestionText(row.publicQuestionText);
     const group = grouped.get(key) ?? [];
@@ -933,6 +1175,7 @@ export async function listCourseQa(
         id: row.id,
         answer: row.answerBody,
         publishedAt: row.publishedAt,
+        lastEditedAt: row.lastEditedAt,
         /** the staff member who published it, or null when unattributed */
         answeredByName: row.createdByUserId
           ? (authorById.get(row.createdByUserId) ?? null)

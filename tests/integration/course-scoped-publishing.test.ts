@@ -31,6 +31,7 @@ import {
   draftFromBacklog,
   importLegacyEntries,
   listQuestionBacklog,
+  listSourceEditorialStates,
   setBacklogState,
 } from "@/modules/backlog";
 import { AuthzError } from "@/modules/authz";
@@ -157,7 +158,9 @@ describe("one course-wide Class Q&A", () => {
     });
     await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
 
-    const payload = JSON.stringify(await listCourseQa(inLabB.user.id, course.id));
+    const payload = JSON.stringify(
+      await listCourseQa(inLabB.user.id, course.id),
+    );
     expect(payload).not.toContain(labs[0]!.id);
     expect(payload).not.toContain("Lab A");
     expect(payload).not.toContain(asker.record.id);
@@ -283,6 +286,11 @@ describe("the editorial workflow is course-scoped", () => {
         publicQuestionText: "x",
       }),
     ).resolves.toBeTruthy();
+
+    const assistantQueue = await listCoursePublicationQueue(ta.id, course.id);
+    expect(JSON.stringify(assistantQueue)).not.toMatch(
+      /sourceCount|linkedSubmissionCount|sourceOccurrence|B question/,
+    );
   });
 
   /** Scheduling is course-owned and still publishes exactly once. */
@@ -396,6 +404,74 @@ describe("the backlog publishes one course answer", () => {
         answerBody: "An answer from Lab B's assistant.",
       }),
     ).rejects.toBeInstanceOf(AuthzError);
+  });
+
+  it("keeps a source-preserving backlog answer linked to the original item", async () => {
+    const { teacher, course, instance, labs } = await makeCs33();
+    const asker = await askFrom(instance.id, labs[0]!.id);
+    const question = await copyOrMoveToBacklog(
+      teacher.id,
+      asker.item.id,
+      course.id,
+      { preserveSource: true },
+    );
+    await setBacklogState(teacher.id, question.id, "answerable");
+
+    const answer = await draftFromBacklog(teacher.id, question.id, {
+      answerBody: "Here is another worked example.",
+    });
+    const links = await db.query.sourceLinks.findMany({
+      where: eq(sourceLinks.publicAnswerId, answer.id),
+    });
+    expect(links).toHaveLength(2);
+    expect(links.some((link) => link.backlogQuestionId === question.id)).toBe(
+      true,
+    );
+    expect(links.some((link) => link.itemId === asker.item.id)).toBe(true);
+
+    const states = await listSourceEditorialStates(teacher.id, course.id, [
+      asker.item.id,
+    ]);
+    expect(states.get(asker.item.id)).toMatchObject({
+      backlogQuestionId: question.id,
+      activeAnswerId: answer.id,
+      publishedAnswerId: null,
+    });
+
+    await publishNow(teacher.id, answer.id, {
+      anonymityAcknowledged: true,
+    });
+    expect(
+      (
+        await listSourceEditorialStates(teacher.id, course.id, [asker.item.id])
+      ).get(asker.item.id),
+    ).toMatchObject({
+      backlogQuestionId: question.id,
+      activeAnswerId: null,
+      publishedAnswerId: answer.id,
+    });
+  });
+
+  it("refuses to create backlog work around an existing public answer", async () => {
+    const { teacher, course, instance, labs } = await makeCs33();
+    const asker = await askFrom(instance.id, labs[0]!.id);
+    await draftPublicAnswer(teacher.id, {
+      courseId: course.id,
+      itemIds: [asker.item.id],
+      publicQuestionText: asker.item.originalText,
+      answerBody: "The answer is already being prepared.",
+    });
+
+    await expect(
+      copyOrMoveToBacklog(teacher.id, asker.item.id, course.id, {
+        preserveSource: true,
+      }),
+    ).rejects.toThrow("already has an active editorial item");
+    expect(
+      await db.query.backlogQuestions.findMany({
+        where: eq(backlogQuestions.sourceItemId, asker.item.id),
+      }),
+    ).toHaveLength(0);
   });
 });
 

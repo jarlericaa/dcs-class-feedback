@@ -2,6 +2,7 @@ import { and, eq, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { publicAnswers } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import { getCourseCapabilities } from "@/modules/authz";
 
 /**
  * Scheduled-publication executor (docs/domain/public-qa.md §7.1).
@@ -18,7 +19,9 @@ import { writeAudit } from "@/modules/audit";
 /** More than this past scheduledAt counts as a late (reconciled) publish. */
 const LATE_THRESHOLD_MS = 5 * 60 * 1000;
 
-export async function publishDueAnswers(now: Date = new Date()): Promise<number> {
+export async function publishDueAnswers(
+  now: Date = new Date(),
+): Promise<number> {
   const due = await db.query.publicAnswers.findMany({
     where: and(
       eq(publicAnswers.state, "scheduled"),
@@ -28,6 +31,16 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
   let published = 0;
   for (const answer of due) {
     try {
+      if (!answer.approvedAt) {
+        const creator = await getCourseCapabilities(
+          db,
+          answer.createdByUserId,
+          answer.courseId,
+        );
+        if (!creator?.isInstructor) {
+          throw new Error("Instructor approval is required before publication");
+        }
+      }
       await db.transaction(async (tx) => {
         const late =
           now.getTime() - (answer.scheduledAt?.getTime() ?? now.getTime()) >

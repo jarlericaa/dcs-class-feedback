@@ -172,9 +172,9 @@ describe("recurrence scheduling", () => {
       where: eq(auditEvents.action, "form.audience_set"),
     });
     expect(audience).toHaveLength(1);
-    expect(
-      (audience[0]!.after as { sectionIds: string[] }).sectionIds,
-    ).toEqual([section.id]);
+    expect((audience[0]!.after as { sectionIds: string[] }).sectionIds).toEqual(
+      [section.id],
+    );
   });
 
   it("retires the previous schedule instead of mutating it", async () => {
@@ -259,8 +259,7 @@ async function makeSubmittedItem() {
   const course = await makeCourse(teacher.id);
   const section = await makeSection(course.id);
   await addSectionStaff(section.id, teacher.id, "teacher");
-  const { studentSubmissionItems, formResponses } =
-    await import("@/db/schema");
+  const { studentSubmissionItems, formResponses } = await import("@/db/schema");
   const now = new Date();
   const cycle = await makeInstance({
     courseId: course.id,
@@ -315,7 +314,9 @@ describe("editorial publication workflow", () => {
   it("admits a section assistant holding a publication flag", async () => {
     const { course, section } = await makeSubmittedItem();
     const ta = await makeUser();
-    await addSectionStaff(section.id, ta.id, "ta", { draftPublicAnswers: true });
+    await addSectionStaff(section.id, ta.id, "ta", {
+      draftPublicAnswers: true,
+    });
     await expect(
       listCoursePublicationQueue(ta.id, course.id),
     ).resolves.toBeTruthy();
@@ -331,7 +332,9 @@ describe("editorial publication workflow", () => {
     });
     const queue1 = await listCoursePublicationQueue(teacher.id, course.id);
     expect(queue1.drafts).toHaveLength(1);
-    expect(queue1.drafts[0]!.sourceCount).toBe(1);
+    expect(queue1.drafts[0]).not.toHaveProperty("sourceCount");
+    expect(queue1.drafts[0]).not.toHaveProperty("linkedSubmissionCount");
+    expect(queue1.drafts[0]).not.toHaveProperty("sourceOccurrence");
 
     await schedulePublication(
       teacher.id,

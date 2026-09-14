@@ -1,20 +1,36 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 
+import { currentUserId } from "@/auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { QaAnswerPreview } from "@/components/qa-answer-preview";
 import { studentSectionTabs } from "@/components/layout/nav";
 import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import { requireUser, toShellUser } from "@/lib/session";
 import { courseTermParts } from "@/lib/term";
-import { formatDate, formatDateTime, initials } from "@/lib/datetime";
+import {
+  formatDate,
+  formatDateTime,
+  formatRelativeTime,
+  initials,
+} from "@/lib/datetime";
 import { richTextToPlain } from "@/modules/richtext/plain";
 import { SafeRichText } from "@/components/rich-text";
-import { AccessDenied, CategoryFlair, MetaList } from "@/components/ui";
+import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { FilterMenu } from "@/components/ui/filter-menu";
-import { IconBack, IconChevron, IconSearch } from "@/components/ui/icons";
-import { listCourseQa } from "@/modules/publishing";
+import { Textarea } from "@/components/ui/form";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { AccessDenied, Alert, CategoryFlair, MetaList } from "@/components/ui";
+import {
+  IconBack,
+  IconChevron,
+  IconEdit,
+  IconSearch,
+} from "@/components/ui/icons";
+import { listCourseQa, updatePublishedAnswer } from "@/modules/publishing";
 import { authz, AuthzError } from "@/modules/authz";
 import { resolveCourseTimezone } from "@/modules/catalog";
 import { db } from "@/db";
@@ -30,6 +46,8 @@ const TIME_FILTERS = [
 type TimeFilter = (typeof TIME_FILTERS)[number]["key"];
 type SortOrder = "newest" | "oldest";
 type QaEntry = Awaited<ReturnType<typeof listCourseQa>>[number];
+type QaAnswer = QaEntry["answers"][number];
+type EditPublishedAnswerAction = (formData: FormData) => Promise<void>;
 
 /**
  * Class Q&A is one published archive per course (ADR-0005).
@@ -50,6 +68,7 @@ export default async function QaArchivePage({
     filter?: string;
     sort?: string;
     selected?: string;
+    error?: string;
   }>;
 }) {
   const user = await requireUser();
@@ -108,11 +127,11 @@ export default async function QaArchivePage({
   }
 
   const timezone = await resolveCourseTimezone(courseId);
-  const now = Date.now();
+  const now = new Date();
   const withinFilter = (publishedAt: Date | null) => {
     const at = publishedAt?.getTime() ?? 0;
-    if (filter === "week") return now - at < 7 * 86_400_000;
-    if (filter === "month") return now - at < 30 * 86_400_000;
+    if (filter === "week") return now.getTime() - at < 7 * 86_400_000;
+    if (filter === "month") return now.getTime() - at < 30 * 86_400_000;
     return true;
   };
 
@@ -158,6 +177,41 @@ export default async function QaArchivePage({
     return query ? `${base}?${query}` : base;
   };
 
+  const returnTo = link({});
+
+  async function editPublishedAnswer(formData: FormData) {
+    "use server";
+    const uid = await currentUserId();
+    if (!uid) redirect("/signin");
+
+    const answerId = String(formData.get("answerId") ?? "");
+    const requestedReturnTo = String(formData.get("returnTo") ?? base);
+    const safeReturnTo =
+      requestedReturnTo === base || requestedReturnTo.startsWith(`${base}?`)
+        ? requestedReturnTo
+        : base;
+
+    try {
+      await updatePublishedAnswer(
+        uid,
+        answerId,
+        String(formData.get("answerBody") ?? ""),
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not save the answer.";
+      const separator = safeReturnTo.includes("?") ? "&" : "?";
+      redirect(
+        `${safeReturnTo}${separator}error=${encodeURIComponent(message)}`,
+      );
+    }
+
+    revalidatePath(base);
+    revalidatePath(`/teach/courses/${courseId}/backlog`);
+    revalidatePath(`/teach/courses/${courseId}/responses`);
+    redirect(safeReturnTo);
+  }
+
   /* A copied detail URL must never silently show the wrong result. */
   if (sp.selected && !selected) {
     redirect(link({ selected: undefined }));
@@ -172,6 +226,9 @@ export default async function QaArchivePage({
     sections.map((section) => section.term),
   );
   const capabilities = await authz.getCourseCapabilities(user.id, courseId);
+  const canEditPublishedAnswers = Boolean(
+    capabilities?.permissions.draftPublicAnswers && !capabilities.archived,
+  );
   const studentSections = capabilities
     ? []
     : await authz.activeStudentSectionsForCourse(user.id, courseId);
@@ -215,7 +272,7 @@ export default async function QaArchivePage({
       tabsMode={capabilities ? "menu" : undefined}
       tabsLabel={course.code}
       contextLabel={course.code}
-      title="Class Q&A"
+      title={course.code}
       description={
         termFacts.length > 0 ? <MetaList items={termFacts} /> : undefined
       }
@@ -223,10 +280,15 @@ export default async function QaArchivePage({
       nested={!!selected}
       roomy
     >
+      {sp.error && <Alert variant="error">{sp.error}</Alert>}
       {selected ? (
         <QaDetail
           backHref={link({ selected: undefined })}
+          canEdit={canEditPublishedAnswers}
+          editAction={editPublishedAnswer}
           entry={selected}
+          now={now}
+          returnTo={returnTo}
           timezone={timezone}
         />
       ) : (
@@ -349,7 +411,7 @@ export default async function QaArchivePage({
                   label: "This week",
                   rows: visible.filter(
                     (entry) =>
-                      now - (entry.publishedAt?.getTime() ?? 0) <
+                      now.getTime() - (entry.publishedAt?.getTime() ?? 0) <
                       7 * 86_400_000,
                   ),
                 },
@@ -357,7 +419,7 @@ export default async function QaArchivePage({
                   label: "Earlier",
                   rows: visible.filter(
                     (entry) =>
-                      now - (entry.publishedAt?.getTime() ?? 0) >=
+                      now.getTime() - (entry.publishedAt?.getTime() ?? 0) >=
                       7 * 86_400_000,
                   ),
                 },
@@ -369,8 +431,12 @@ export default async function QaArchivePage({
                     <div className="qa-card-list">
                       {group.rows.map((entry) => (
                         <QaCard
+                          canEdit={canEditPublishedAnswers}
+                          editAction={editPublishedAnswer}
                           entry={entry}
                           key={entry.id}
+                          now={now}
+                          returnTo={returnTo}
                           timezone={timezone}
                         />
                       ))}
@@ -419,14 +485,23 @@ function SortMenu({
 }
 
 function QaCard({
+  canEdit,
+  editAction,
   entry,
+  now,
+  returnTo,
   timezone,
 }: {
+  canEdit: boolean;
+  editAction: EditPublishedAnswerAction;
   entry: QaEntry;
+  now: Date;
+  returnTo: string;
   timezone: string;
 }) {
   const firstAnswer = entry.answers[0];
   const answer = richTextToPlain(firstAnswer?.answer);
+  const edited = firstAnswer ? editedMarker(firstAnswer, now) : null;
 
   return (
     <article className="qa-card">
@@ -438,17 +513,39 @@ function QaCard({
       </span>
       <h3 className="qa-card__question">{entry.question}</h3>
       <div aria-hidden="true" className="qa-card__divider" />
-      <QaAnswerPreview answer={answer} />
+      <QaAnswerPreview
+        answer={answer}
+        editedAt={edited?.dateTime}
+        editedLabel={edited?.label}
+        editControl={
+          canEdit && firstAnswer ? (
+            <QaAnswerEditDialog
+              action={editAction}
+              answerBody={firstAnswer.answer ?? ""}
+              answerId={firstAnswer.id}
+              returnTo={returnTo}
+            />
+          ) : undefined
+        }
+      />
     </article>
   );
 }
 
 function QaDetail({
+  canEdit,
+  editAction,
   entry,
+  now,
+  returnTo,
   timezone,
   backHref,
 }: {
+  canEdit: boolean;
+  editAction: EditPublishedAnswerAction;
   entry: QaEntry;
+  now: Date;
+  returnTo: string;
   timezone: string;
   backHref: string;
 }) {
@@ -477,8 +574,31 @@ function QaDetail({
         className="qa-detail__answers"
       >
         <h2 id="qa-answer-title">Instructor answer</h2>
-        {entry.answers.map((answer) => (
-          <div className="qa-answer" key={answer.id}>
+        {entry.answers.map((answer) => {
+          const edited = editedMarker(answer, now);
+          return (
+            <div className="qa-answer" key={answer.id}>
+              <div className="qa-answer__heading">
+                <h3 className="qa-answer__label">
+                  Answer
+                  {edited && (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      <time dateTime={edited.dateTime}>
+                        Edited {edited.label}
+                      </time>
+                    </>
+                  )}
+                </h3>
+                {canEdit && (
+                  <QaAnswerEditDialog
+                    action={editAction}
+                    answerBody={answer.answer ?? ""}
+                    answerId={answer.id}
+                    returnTo={returnTo}
+                  />
+                )}
+              </div>
             <div className="qa-answer__author">
               <span aria-hidden="true" className="qa-answer__mark">
                 {initials(answer.answeredByName ?? "Instructor")}
@@ -495,9 +615,74 @@ function QaDetail({
               fallback={<p>No answer text was recorded.</p>}
               source={answer.answer}
             />
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </section>
     </article>
+  );
+}
+
+function editedMarker(answer: QaAnswer, now: Date) {
+  if (
+    !answer.lastEditedAt ||
+    !answer.publishedAt ||
+    answer.lastEditedAt.getTime() <= answer.publishedAt.getTime()
+  ) {
+    return null;
+  }
+  return {
+    dateTime: answer.lastEditedAt.toISOString(),
+    label: formatRelativeTime(answer.lastEditedAt, now),
+  };
+}
+
+function QaAnswerEditDialog({
+  action,
+  answerBody,
+  answerId,
+  returnTo,
+}: {
+  action: EditPublishedAnswerAction;
+  answerBody: string;
+  answerId: string;
+  returnTo: string;
+}) {
+  const fieldId = `qa-answer-${answerId}`;
+  return (
+    <Dialog
+      label={
+        <>
+          <IconEdit aria-hidden="true" size={15} />
+          Edit
+        </>
+      }
+      title="Edit answer"
+      variant="secondary"
+    >
+      <form action={action}>
+        <input name="answerId" type="hidden" value={answerId} />
+        <input name="returnTo" type="hidden" value={returnTo} />
+        <label className="qa-answer-edit__label" htmlFor={fieldId}>
+          Answer
+        </label>
+        <Textarea
+          data-autofocus
+          defaultValue={answerBody}
+          id={fieldId}
+          name="answerBody"
+          required
+          rows={7}
+        />
+        <div className="qa-answer-edit__actions">
+          <Button data-dialog-close variant="secondary">
+            Cancel
+          </Button>
+          <SubmitButton pendingLabel="Saving…" variant="primary">
+            Save changes
+          </SubmitButton>
+        </div>
+      </form>
+    </Dialog>
   );
 }

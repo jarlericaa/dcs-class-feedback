@@ -900,7 +900,7 @@ function ProseAnswer({ entry }: { entry: QuestionEntry }) {
     <li>
       <blockquote
         className={cn(
-          "m-0 w-full max-w-measure rounded-control border border-rule bg-paper-quiet",
+          "m-0 w-full rounded-control border border-rule bg-paper-quiet",
           "px-4 py-2.5 font-document text-doc-dense text-ink",
         )}
       >
