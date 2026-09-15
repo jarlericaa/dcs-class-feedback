@@ -5,10 +5,10 @@ import { Stamp } from "@/components/ui/status";
 import { Tag, TagList } from "@/components/ui/tag";
 import { IconChevron, IconForward, IconSearch } from "@/components/ui/icons";
 import { PreRenderedRichText } from "@/components/rich-text-client";
-import { LongText } from "@/components/ui/long-text";
 import { categoryShortLabel } from "@/lib/threads";
 import { initials } from "@/lib/datetime";
 import { CategoryFlair } from "@/components/ui/category-flair";
+import { SubmissionAnswerBlock } from "@/components/submission-answer";
 
 export { CategoryFlair } from "@/components/ui/category-flair";
 
@@ -1147,165 +1147,12 @@ export function AnswerBlock({
   rendered: RenderedQuestions;
   index: number;
 }) {
-  const meta = rendered.get(question.questionId);
   return (
-    <li className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t border-rule py-3 first:border-t-0 first:pt-0">
-      <span
-        aria-hidden="true"
-        className="font-sans text-meta font-bold tabular-nums text-ink-faint"
-      >
-        {String(index + 1).padStart(2, "0")}
-      </span>
-      <div className="grid min-w-0 gap-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          {/* Level 3: the sheet's own `Form answers` title is an h2, so this is
-              the next level down. */}
-          <QuestionPrompt fallback={question.prompt} level={3} meta={meta} />
-          {!question.answered && <Stamp tone="neutral">Not answered</Stamp>}
-        </div>
-        {meta?.description && (
-          <div className="max-w-measure text-meta text-ink-muted">
-            <PreRenderedRichText html={meta.description} />
-          </div>
-        )}
-        <SubmittedAnswer question={question} />
-      </div>
-    </li>
-  );
-}
-
-function SubmittedAnswer({ question }: { question: AnswerRow }) {
-  if (!question.answered) {
-    return (
-      <p className="font-sans text-ui-sm italic text-ink-muted">
-        {question.required
-          ? "Left blank, though the form required it."
-          : "The student left this optional question blank."}
-      </p>
-    );
-  }
-
-  if (PROSE_TYPES.has(question.type)) {
-    /* Read-only, and it has to LOOK read-only.
-
-       This was a rounded, hairline-bordered box — which is the recipe for a
-       textarea in this system, so a teacher's eye read the student's answer as
-       a field they could type into. It is the authored-text treatment instead:
-       quiet paper, the 1px quote rule and indent `.post__words` already
-       carries, no radius and no control border. `LongText` still clamps an
-       essay so one answer cannot bury the two below it. */
-    return (
-      <div className="w-full rounded-control border border-rule bg-paper-quiet px-3 py-2">
-        <LongText surface="quiet" text={question.freeText ?? ""} />
-      </div>
-    );
-  }
-
-  const scale = question.type === "linear_scale" ? scaleOf(question) : null;
-  const value = (question.value ?? {}) as { scaleValue?: number };
-  if (scale && value.scaleValue !== undefined) {
-    return (
-      <ScaleAnswer max={scale.max} min={scale.min} value={value.scaleValue} />
-    );
-  }
-
-  const chosen = chosenValues(question);
-  if (chosen.length === 0) {
-    return <AnswerChip>Answered</AnswerChip>;
-  }
-  return (
-    <p className="flex max-w-measure flex-wrap gap-2">
-      {chosen.map((choice) => (
-        <AnswerChip key={choice.key}>{choice.label}</AnswerChip>
-      ))}
-    </p>
-  );
-}
-
-/**
- * The value the student gave, drawn as the field they gave it in.
- *
- * A quiet filled field rather than a stamp: this is an ANSWER, and a stamp
- * would read as a status about the submission. Nothing in this system carries
- * status without a tone and a shape, so nothing that is not a status may borrow
- * the shape (DESIGN.md §9).
- */
-function AnswerChip({ children }: { children: ReactNode }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex min-h-control items-center rounded-control px-3 py-1.5",
-        "border border-rule bg-paper-quiet",
-        "font-document text-doc-dense text-ink",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-/**
- * One student's rating, read-only.
- *
- * Every segment UP TO the value is filled, not just the segment at it. "4 out
- * of 5" is a quantity, and a single lit box four places along reads as "the
- * fourth option", which is a different claim — the same reason the compact
- * meter in the old feed filled a run rather than a cell.
- *
- * The segments are `aria-hidden` and the value is stated in words beside them:
- * a row of boxes is not something to read out.
- */
-export function ScaleAnswer({
-  min,
-  max,
-  value,
-}: {
-  min: number;
-  max: number;
-  value: number;
-}) {
-  const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
-  return (
-    <p className="flex flex-wrap items-end gap-x-3 gap-y-2">
-      <span
-        aria-hidden="true"
-        /* Capped rather than stretched to the measure: the number reads as the
-           segments' value, and a column of whitespace between the two made it
-           float free of the thing it describes. */
-        className="grid min-w-0 max-w-[22rem] flex-1 gap-1"
-      >
-        <span className="flex gap-1">
-          {steps.map((step) => (
-            <span
-              className={cn(
-                "h-5 min-w-0 flex-1 rounded-[2px] border",
-                /* Every segment UP TO the value, in the solid accent — the
-                   approved treatment. A single lit box four places along reads
-                   as "the fourth option"; a filled run reads as "four out of
-                   five", which is what the number actually means. */
-                step <= value
-                  ? "border-accent bg-accent"
-                  : "border-rule-strong bg-paper",
-              )}
-              key={step}
-            />
-          ))}
-        </span>
-        <span className="flex gap-1">
-          {steps.map((step) => (
-            <span
-              className="min-w-0 flex-1 text-center font-sans text-meta tabular-nums text-ink-muted"
-              key={step}
-            >
-              {step}
-            </span>
-          ))}
-        </span>
-      </span>
-      <span className="font-sans text-ui font-semibold tabular-nums text-ink">
-        {value} / {max}
-      </span>
-    </p>
+    <SubmissionAnswerBlock
+      index={index}
+      question={question}
+      rendered={rendered}
+    />
   );
 }
 

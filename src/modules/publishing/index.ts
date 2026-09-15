@@ -1,4 +1,14 @@
-import { and, asc, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  notInArray,
+  or,
+} from "drizzle-orm";
 import { db } from "@/db";
 import {
   backlogQuestions,
@@ -19,6 +29,7 @@ import { writeAudit } from "@/modules/audit";
 import {
   PUBLICATION_PERMISSIONS,
   AuthzError,
+  activeStudentSectionsForCourse,
   getCourseCapabilities,
   requireAnyCoursePermission,
   requireCourseInstructor,
@@ -1200,6 +1211,10 @@ export async function getStudentHistory(userId: string, sectionId: string) {
   const record = await requireEnrolledStudent(db, userId, sectionId, {
     allowArchived: true,
   });
+  const section = await db.query.classSections.findFirst({
+    where: eq(classSections.id, sectionId),
+    columns: { timezone: true },
+  });
   // Keyed on the response's own section, so a student in two sections of the
   // same course sees each submission once, under the section they answered
   // through — and never another section's history.
@@ -1207,6 +1222,7 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     where: and(
       eq(formResponses.sectionId, sectionId),
       eq(formResponses.studentRecordId, record.id),
+      notInArray(formResponses.lifecycle, ["draft"]),
     ),
   });
   if (responses.length === 0) return [];
@@ -1226,15 +1242,23 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     const questions = await db.query.formQuestions.findMany({
       where: eq(formQuestions.cycleId, response.cycleId),
     });
-    const questionById = new Map(questions.map((q) => [q.id, q]));
+    const answerByQuestionId = new Map(answers.map((answer) => [answer.questionId, answer]));
     const items = await db.query.studentSubmissionItems.findMany({
-      where: eq(studentSubmissionItems.responseId, response.id),
+      where: and(
+        eq(studentSubmissionItems.responseId, response.id),
+        isNull(studentSubmissionItems.withdrawnAt),
+      ),
+      orderBy: asc(studentSubmissionItems.ordinal),
     });
 
     const itemViews = [];
     for (const item of items) {
       const privates = await db.query.privateResponses.findMany({
-        where: eq(privateResponses.itemId, item.id),
+        where: and(
+          eq(privateResponses.itemId, item.id),
+          isNull(privateResponses.removedAt),
+        ),
+        orderBy: asc(privateResponses.createdAt),
       });
       const links = await db.query.sourceLinks.findMany({
         where: eq(sourceLinks.itemId, item.id),
@@ -1297,6 +1321,8 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     const instance = cycleById.get(response.cycleId) ?? null;
     history.push({
       responseId: response.id,
+      instanceId: response.cycleId,
+      timezone: section?.timezone ?? "Asia/Manila",
       cycleIndex: instance?.cycleIndex ?? null,
       /** what the student was told this form was called */
       formLabel: instance ? instanceLabel(instance) : null,
@@ -1305,11 +1331,41 @@ export async function getStudentHistory(userId: string, sectionId: string) {
       openAt: instance?.openAt ?? null,
       submittedAt: response.submittedAt,
       status: "submitted" as const, // neutral; review/validity never exposed
-      answers: answers.map((a) => ({
-        prompt: questionById.get(a.questionId)?.prompt ?? "",
-        value: a.value,
-        freeText: a.freeText,
-      })),
+      answers: [...questions]
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .map((question) => {
+          const answer = answerByQuestionId.get(question.id);
+          const value = (answer?.value ?? {}) as {
+            optionIds?: string[];
+            optionLabels?: string[];
+            scaleValue?: number;
+            boolValue?: boolean;
+            dateValue?: string;
+            timeValue?: string;
+          };
+          const answered = Boolean(
+            answer?.freeText?.trim() ||
+              value.optionIds?.length ||
+              value.optionLabels?.length ||
+              value.scaleValue !== undefined ||
+              value.boolValue !== undefined ||
+              value.dateValue ||
+              value.timeValue,
+          );
+          return {
+            questionId: question.id,
+            prompt: question.prompt,
+            description: question.description,
+            type: question.type,
+            required: question.required,
+            displayOrder: question.displayOrder,
+            options: question.options,
+            scale: question.scale,
+            answered,
+            value: answer?.value ?? null,
+            freeText: answer?.freeText ?? null,
+          };
+        }),
       items: itemViews,
     });
   }
@@ -1319,5 +1375,28 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     (a, b) =>
       (a.openAt?.getTime() ?? 0) - (b.openAt?.getTime() ?? 0) ||
       (a.cycleIndex ?? 0) - (b.cycleIndex ?? 0),
+  );
+}
+
+/**
+ * Course-scoped student history. Each response is returned once even when its
+ * form audience includes more than one section the student attends.
+ */
+export async function getStudentCourseHistory(userId: string, courseId: string) {
+  const sectionIds = await activeStudentSectionsForCourse(db, userId, courseId);
+  if (sectionIds.length === 0) {
+    throw new AuthzError("No access to this course");
+  }
+  const histories = await Promise.all(
+    sectionIds.map((sectionId) => getStudentHistory(userId, sectionId)),
+  );
+  const byResponseId = new Map<string, (typeof histories)[number][number]>();
+  for (const history of histories) {
+    for (const entry of history) byResponseId.set(entry.responseId, entry);
+  }
+  return [...byResponseId.values()].sort(
+    (a, b) =>
+      (b.openAt?.getTime() ?? 0) - (a.openAt?.getTime() ?? 0) ||
+      (b.cycleIndex ?? 0) - (a.cycleIndex ?? 0),
   );
 }

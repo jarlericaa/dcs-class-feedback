@@ -17,7 +17,13 @@ import {
   templateVersions,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
-import { requireEnrolledStudent, requireSectionStaff } from "@/modules/authz";
+import {
+  activeStudentSectionsForCourse,
+  AuthzError,
+  getStudentRecordForUser,
+  requireEnrolledStudent,
+  requireSectionStaff,
+} from "@/modules/authz";
 import { requireAudienceStudent } from "./audience";
 import { hasSequence, instanceLabel } from "./instances";
 import { DEFAULT_STUDENT_SECTION } from "./templates";
@@ -970,6 +976,123 @@ export async function listOpenInstancesForStudent(
       hasDraft: existing?.lifecycle === "draft",
     };
   });
+}
+
+/**
+ * The currently open, unsubmitted occurrences plus the next scheduled
+ * occurrence visible in a student's course Forms tab.
+ *
+ * The audience intersection is resolved before any instance is returned, and
+ * the response lookup is keyed by this student's roster record. This keeps a
+ * shared form to one row while ensuring the Forms tab never becomes a staff
+ * read model with a student-only filter applied afterward.
+ */
+export async function listStudentCourseForms(
+  userId: string,
+  courseId: string,
+  at: Date = new Date(),
+) {
+  const studentRecord = await getStudentRecordForUser(db, userId);
+  const sectionIds = await activeStudentSectionsForCourse(db, userId, courseId);
+  if (!studentRecord || sectionIds.length === 0) {
+    throw new AuthzError("No access to this course");
+  }
+
+  const audienceRows = await db.query.formInstanceSections.findMany({
+    where: inArray(formInstanceSections.sectionId, sectionIds),
+  });
+  const instanceIds = [...new Set(audienceRows.map((row) => row.instanceId))];
+  if (instanceIds.length === 0) return [];
+
+  const instances = await db.query.formInstances.findMany({
+    where: and(
+      inArray(formInstances.id, instanceIds),
+      inArray(formInstances.state, ["scheduled", "open"]),
+      eq(formInstances.courseId, courseId),
+    ),
+    orderBy: [asc(formInstances.openAt), asc(formInstances.deadlineAt)],
+  });
+  if (instances.length === 0) return [];
+
+  const ids = instances.map((instance) => instance.id);
+
+  const versionIds = [
+    ...new Set(
+      instances
+        .map((instance) => instance.templateVersionId)
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  const versions = versionIds.length
+    ? await db.query.templateVersions.findMany({
+        where: inArray(templateVersions.id, versionIds),
+      })
+    : [];
+  const versionById = new Map(versions.map((version) => [version.id, version]));
+  const templateIds = [...new Set(versions.map((version) => version.templateId))];
+  const templates = templateIds.length
+    ? await db.query.formTemplates.findMany({
+        where: inArray(formTemplates.id, templateIds),
+      })
+    : [];
+  const templateById = new Map(templates.map((template) => [template.id, template]));
+
+  const responses = await db.query.formResponses.findMany({
+    where: and(
+      inArray(formResponses.cycleId, ids),
+      eq(formResponses.studentRecordId, studentRecord.id),
+    ),
+    columns: {
+      cycleId: true,
+      lifecycle: true,
+      submittedAt: true,
+    },
+  });
+  const responseByInstance = new Map(
+    responses.map((response) => [response.cycleId, response]),
+  );
+  const rows = instances.map((instance) => {
+    const version = instance.templateVersionId
+      ? versionById.get(instance.templateVersionId)
+      : undefined;
+    const template = version ? templateById.get(version.templateId) : undefined;
+    const response = responseByInstance.get(instance.id) ?? null;
+    const submitted =
+      response?.lifecycle === "submitted" || response?.lifecycle === "locked";
+    return {
+      instanceId: instance.id,
+      courseId: instance.courseId,
+      formTitle:
+        instance.title ?? version?.title ?? template?.title ?? "Class feedback",
+      deliveryMode: instance.deliveryMode,
+      sequenceLabel: hasSequence(instance) ? instanceLabel(instance) : null,
+      focusLabel: instance.focusLabel,
+      openAt: instance.openAt,
+      deadlineAt: instance.deadlineAt,
+      state: instance.state,
+      response: response
+        ? {
+            lifecycle: response.lifecycle,
+            submittedAt: response.submittedAt,
+          }
+        : null,
+      submitted,
+    };
+  });
+  const nextScheduled = rows.find(
+    (form) =>
+      form.state === "scheduled" && form.openAt.getTime() >= at.getTime(),
+  );
+  const now = at.getTime();
+
+  return rows.filter(
+    (form) =>
+      !form.submitted &&
+      ((form.state === "open" &&
+        form.openAt.getTime() <= now &&
+        form.deadlineAt.getTime() > now) ||
+        form === nextScheduled),
+  );
 }
 
 /**

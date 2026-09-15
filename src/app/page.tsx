@@ -91,6 +91,10 @@ export default async function HomePage() {
 
   const user = await requireUser();
 
+  /* Students enter through the course index. The old open-form dashboard was
+     section-first and made the same account feel like a different product. */
+  if (!user.isTeacher) redirect("/courses");
+
   // Nothing to set up on first visit: a student's classes follow from their UP
   // email being on a class list, resolved live on every read.
   const { staffSections, studentSections, courseById } =

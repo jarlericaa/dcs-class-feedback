@@ -10,6 +10,7 @@ import {
   primaryNav,
   staffSectionTabGroups,
   staffSectionTabs,
+  studentCourseTabs,
   studentSectionTabs,
   type NavGroup,
 } from "@/components/layout/nav";
@@ -222,6 +223,21 @@ describe("primaryNav — stability", () => {
     // The section root, not one of its views: which view a reader lands on is
     // their permissions' business, resolved server-side.
     expect(assistant[0]!.items[0]!.href).toBe("/teach/sections/sec-9");
+  });
+
+  it("gives an enrolled student a course-first rail", () => {
+    const student = primaryNav("/courses/c1", {
+      isTeacher: false,
+      isPlatformAdmin: false,
+      courses: [],
+      studentSections: STUDENT,
+      studentCourses: COURSES,
+      assistedSections: [],
+    });
+    expect(labels(student)).toEqual([
+      ["My courses", ["All courses", "CS 33"]],
+    ]);
+    expect(activeHrefs(student)).toEqual(["/courses/c1"]);
   });
 
   it("omits a group only when the account has no rows for it", () => {
@@ -443,6 +459,20 @@ describe("courseTabs", () => {
       courseTabs("c1", "/x", { needsReview: 0 })[1]!.count,
     ).toBeUndefined();
     expect(courseTabs("c1", "/x")[1]!.count).toBeUndefined();
+  });
+});
+
+describe("studentCourseTabs", () => {
+  it("keeps the student course workspace to three peer views", () => {
+    const tabs = studentCourseTabs("c1", "/courses/c1/submissions");
+    expect(tabs.map((tab) => tab.label)).toEqual([
+      "Forms",
+      "My submissions",
+      "Class Q&A",
+    ]);
+    expect(tabs.find((tab) => tab.active)?.href).toBe(
+      "/courses/c1/submissions",
+    );
   });
 });
 

@@ -2,14 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courses } from "@/db/schema";
 
 import { formatDateTime, formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { studentSectionTabs } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
@@ -105,46 +103,34 @@ export default async function StudentFormPage({
     sequenceLabel,
     focusLabel,
     topicTitle,
-    attributedSectionId,
     showSectionLabel,
     sectionTitle,
     timezone,
   } = current;
-  // `current` resolves this from the authorized audience, but keep the
-  // navigation boundary defensive: a corrupt value must not turn into a set of
-  // links to an arbitrary section path.
-  const safeAttributedSectionId = z.string().uuid().safeParse(attributedSectionId)
-    .success
-    ? attributedSectionId
-    : null;
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, instance.courseId),
   }))!;
   const shell = {
     user: toShellUser(user),
     workspace: "student" as const,
-    /* A form instance is reached through the reader's class, but its URL says
-       nothing about which one, so the page tells the rail. */
+    /* A form instance is reached through the reader's course workspace, but
+       its URL says nothing about which course, so the page tells the rail. */
     navGroups: await primaryNavFor(user, `/forms/${instanceId}`, {
-      fallbackHref: safeAttributedSectionId
-        ? `/sections/${safeAttributedSectionId}`
-        : undefined,
+      fallbackHref: `/courses/${instance.courseId}`,
     }),
-    /* A form instance is what the section's Forms view leads to, not a peer of
-       it, so the strip marks that tab rather than showing nothing selected. */
-    tabs: safeAttributedSectionId
-      ? studentSectionTabs(
-          safeAttributedSectionId,
-          course.id,
-          `/forms/${instanceId}`,
-          { activeHref: `/sections/${safeAttributedSectionId}` },
-        )
-      : undefined,
+    /* A form instance is a child of the course's Forms tab, so the course tabs
+       stay out of the detail view and the breadcrumb carries the drill-down. */
     tabsLabel: course.code,
     /* The course code is the identity. The section is not in the label: the
        student's action and this form are identical in every section it went to,
        so naming one would imply a difference that does not exist. */
     contextLabel: course.code,
+    crumbs: [
+      { href: "/courses", label: "My courses" },
+      { href: `/courses/${course.id}`, label: course.code },
+      { label: "Forms" },
+    ],
+    nested: true,
     roomy: true,
   };
 
@@ -178,22 +164,18 @@ export default async function StudentFormPage({
               under your submissions — only you and the teaching team can see it.
             </p>
             <div className="row mt-6">
-              {safeAttributedSectionId && (
-                <>
-                  <Link
-                    className={buttonClass({ variant: "primary" })}
-                    href={`/sections/${safeAttributedSectionId}/history`}
-                  >
-                    See my submissions
-                  </Link>
-                  <Link
-                    className={buttonClass({ variant: "secondary" })}
-                    href={`/courses/${course.id}/qa`}
-                  >
-                    Class Q&amp;A
-                  </Link>
-                </>
-              )}
+              <Link
+                className={buttonClass({ variant: "primary" })}
+                href={`/courses/${course.id}/submissions`}
+              >
+                See my submissions
+              </Link>
+              <Link
+                className={buttonClass({ variant: "secondary" })}
+                href={`/courses/${course.id}/qa`}
+              >
+                Class Q&amp;A
+              </Link>
             </div>
           </Notice>
         </div>

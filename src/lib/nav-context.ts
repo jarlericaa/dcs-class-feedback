@@ -36,6 +36,20 @@ const loadNavSections = cache(async (userId: string) => {
     return code ? sectionLabel(code, section.title) : section.title;
   };
 
+  const studentCourseById = new Map(
+    studentSections
+      .map((section) => {
+        const course = courseById.get(section.courseId);
+        return course
+          ? [course.id, { id: course.id, label: course.code }] as const
+          : null;
+      })
+      .filter(
+        (entry): entry is readonly [string, { id: string; label: string }] =>
+          !!entry,
+      ),
+  );
+
   return {
     courses: courses.map((entry) => ({
       id: entry.course.id,
@@ -45,6 +59,9 @@ const loadNavSections = cache(async (userId: string) => {
       id: section.id,
       label: label(section),
     })),
+    studentCourses: [...studentCourseById.values()].sort((a, b) =>
+      a.label.localeCompare(b.label),
+    ),
     /**
      * Only sections whose course this account does NOT staff. Course staff
      * reach every section of their own courses through "My courses", so
@@ -69,9 +86,8 @@ export async function primaryNavFor(
     fallbackHref?: string;
   } = {},
 ): Promise<NavGroup[]> {
-  const { courses, studentSections, assistedSections } = await loadNavSections(
-    user.id,
-  );
+  const { courses, studentSections, studentCourses, assistedSections } =
+    await loadNavSections(user.id);
   return primaryNav(
     currentPath,
     {
@@ -79,6 +95,7 @@ export async function primaryNavFor(
       isPlatformAdmin: user.isPlatformAdmin,
       courses,
       studentSections,
+      studentCourses,
       assistedSections,
     },
     {

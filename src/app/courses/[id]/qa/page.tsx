@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { currentUserId } from "@/auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { QaAnswerPreview } from "@/components/qa-answer-preview";
-import { studentSectionTabs } from "@/components/layout/nav";
+import { studentCourseTabs } from "@/components/layout/nav";
 import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import { requireUser, toShellUser } from "@/lib/session";
 import { courseTermParts } from "@/lib/term";
@@ -229,25 +229,15 @@ export default async function QaArchivePage({
   const canEditPublishedAnswers = Boolean(
     capabilities?.permissions.draftPublicAnswers && !capabilities.archived,
   );
-  const studentSections = capabilities
-    ? []
-    : await authz.activeStudentSectionsForCourse(user.id, courseId);
-  const homeSectionId = studentSections[0] ?? null;
-
   const navGroups = await primaryNavFor(user, base, {
     fallbackHref: capabilities
       ? `/teach/courses/${courseId}`
-      : homeSectionId
-        ? `/sections/${homeSectionId}`
-        : undefined,
+      : undefined,
   });
   const tabGroups = capabilities
     ? await courseTabGroupsFor(user.id, courseId, base)
     : undefined;
-  const tabs =
-    !capabilities && homeSectionId
-      ? studentSectionTabs(homeSectionId, courseId, base)
-      : undefined;
+  const tabs = !capabilities ? studentCourseTabs(courseId, base) : undefined;
 
   const crumbs = capabilities
     ? [
@@ -255,8 +245,8 @@ export default async function QaArchivePage({
         { href: `/teach/courses/${courseId}`, label: course.code },
       ]
     : [
-        { href: "/", label: "Overview" },
-        { label: course.code },
+        { href: "/courses", label: "My courses" },
+        { href: `/courses/${courseId}`, label: course.code },
       ];
   const detailCrumbs = selected
     ? [...crumbs, { href: base, label: "Class Q&A" }]

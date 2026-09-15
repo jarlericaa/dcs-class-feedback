@@ -193,6 +193,8 @@ export interface PrimaryNavInput {
   courses: NavSection[];
   /** sections this account is enrolled in as a student */
   studentSections: NavSection[];
+  /** courses this account is enrolled in as a student */
+  studentCourses?: NavSection[];
   /**
    * Sections staffed WITHOUT course-level standing — a delegated assistant or a
    * section teacher on someone else's course. They have no course workspace to
@@ -219,9 +221,13 @@ export function primaryNav(
 ): NavGroup[] {
   const hasStaffDestinations =
     input.isTeacher || input.courses.length > 0 || input.assistedSections.length > 0;
+  const studentCourses = input.studentCourses ?? [];
+  const hasStudentCourses = studentCourses.length > 0;
   const workspace: NavItem[] = hasStaffDestinations
     ? []
-    : [{ href: "/", label: "Overview", icon: "overview" }];
+    : hasStudentCourses
+      ? []
+      : [{ href: "/", label: "Overview", icon: "overview" }];
   if (input.isPlatformAdmin) {
     workspace.push({ href: "/admin", label: "Platform admin", icon: "admin" });
   }
@@ -273,7 +279,22 @@ export function primaryNav(
     });
   }
 
-  if (input.studentSections.length > 0) {
+  if (!input.isTeacher && hasStudentCourses) {
+    groups.push({
+      label: "My courses",
+      collapsible: true,
+      items: [
+        { href: "/courses", label: "All courses", icon: "course" },
+        ...studentCourses.map((course) => ({
+          href: `/courses/${course.id}`,
+          label: course.label,
+          icon: "course" as const,
+        })),
+      ],
+    });
+  }
+
+  if (input.studentSections.length > 0 && !hasStudentCourses) {
     groups.push({
       label: "My classes",
       collapsible: true,
@@ -882,6 +903,23 @@ export function studentSectionTabs(
     [
       { href: `/sections/${sectionId}`, label: "This week's form" },
       { href: `/sections/${sectionId}/history`, label: "My submissions" },
+      { href: `/courses/${courseId}/qa`, label: "Class Q&A" },
+    ],
+    currentPath,
+    opts.activeHref,
+  );
+}
+
+/** The course-first peer views a student can use for every enrolled course. */
+export function studentCourseTabs(
+  courseId: string,
+  currentPath: string,
+  opts: { activeHref?: string } = {},
+): NavItem[] {
+  return mark(
+    [
+      { href: `/courses/${courseId}`, label: "Forms" },
+      { href: `/courses/${courseId}/submissions`, label: "My submissions" },
       { href: `/courses/${courseId}/qa`, label: "Class Q&A" },
     ],
     currentPath,

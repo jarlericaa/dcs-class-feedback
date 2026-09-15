@@ -20,7 +20,7 @@ export type { ShellUser };
 
 const WORKSPACE_LABEL: Record<Workspace, string | undefined> = {
   staff: undefined,
-  student: "Student workspace",
+  student: undefined,
   admin: "Platform admin",
   home: "Your workspace",
 };
