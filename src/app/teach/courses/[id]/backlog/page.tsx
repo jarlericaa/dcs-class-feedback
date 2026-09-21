@@ -1379,7 +1379,7 @@ function statusPresentation(status: ActiveStatus) {
 function BacklogStatusStamp({ status }: { status: ActiveStatus }) {
   const presentation = statusPresentation(status);
   return (
-    <Stamp tone={presentation.tone} mark={status !== "drafting"}>
+    <Stamp tone={presentation.tone}>
       {presentation.label}
     </Stamp>
   );

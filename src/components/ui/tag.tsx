@@ -4,11 +4,10 @@ import { cn } from "@/lib/cn";
 /**
  * A tag is a COUNT or a discrete fact. It is deliberately not a `Stamp`.
  *
- * `Stamp` means *status*: it carries a tone and a shape precisely so a state
- * reads without colour (DESIGN.md §9, "a word AND a shape AND a tone"). A tag
- * carries no state, so it gets neither — quiet paper fill, one hairline, ink at
- * the soft step. If tags borrowed the stamp's washes, status would stop being
- * legible AS status, which is the one thing the palette protects hardest.
+ * `Stamp` means *status*: it writes the state out and reinforces it with tone.
+ * A tag carries no state, so it gets no tone — quiet paper fill, one hairline,
+ * ink at the soft step. If tags borrowed the stamp's washes, status would stop
+ * being legible AS status, which is the one thing the palette protects hardest.
  *
  * It replaces the dot-separated `MetaList` sentence at the sites where every
  * item is a countable fact ("3 forms · 1 open now · 2 sections"). It does NOT

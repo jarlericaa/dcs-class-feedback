@@ -228,7 +228,7 @@ The board gives the interface five things it actually needs:
 |---|---|
 | A notice is a flat sheet squared to the board | Panels are hard-cornered white sheets on a matte ground. No rounded cards, no shadows, no floating. |
 | Every notice is dated and carries a takedown date | Time is the first line of every object: opened, closes, submitted, published. |
-| Status is a rubber stamp | Status is a bordered word — text **and** shape **and** colour, never colour alone. |
+| Status is a rubber stamp | Status is a bordered word, with tone as reinforcement and no decorative symbol. |
 | The board is divided by battens with printed strip labels | Grouping is a hairline rule with a small tracked-caps label, not another container. |
 | Notices are *typed*; the board's labels are *printed* | Two type registers: a real serif for text a human wrote, the platform sans for anything the system says. |
 
@@ -421,8 +421,8 @@ for "primary actions and active/high-priority accents".
 This is a real widening and is recorded rather than left implicit, because the
 reserved-signal rule below is what keeps "invalid" legible. What stops the two
 readings colliding is that **a problem is never *only* maroon**: every status in
-this app is a `Stamp` — a word AND a shape AND a tone (§9) — so a maroon tab
-label cannot be mistaken for an invalid stamp. The discipline never depended on
+this app is a `Stamp` with the state written out (§9), so a maroon tab label
+cannot be mistaken for an invalid stamp. The discipline never depended on
 maroon's exclusivity, only on status never being carried by colour alone.
 
 **A second job, added 2026-09-11:** the **product mark** — the `cf` square in
@@ -519,8 +519,8 @@ palette:
    `--accent-wash` is 1.05:1, `--focus` is a ring nobody can see.
 2. **The accent cannot appear on the rail.** It is a dark green on a dark
    green. So the active destination **inverts** instead: `--paper` fill with
-   `--accent-deep` text at weight 600 — lightness, hue and weight, which is the
-   same three-channel rule §9 applies to stamps, and it survives grayscale.
+   `--accent-deep` text at weight 600 — lightness, hue and weight, and it
+   survives grayscale.
    `.ws-rail__action`, if it is ever rendered, inverts the same way.
 3. **The wash-plus-ink rule does not survive the inversion.** Every amber wash
    lands within 1.2 of this ground, so the count badge is a bordered mark with
@@ -865,38 +865,34 @@ Every state below is designed, not incidental. Removing one is a regression.
 
 **Stamps** carry status. A stamp is a bordered rectangle at **5px** radius
 (`--radius-stamp`; this line said 3px until 2026-09-11 — another survivor of
-the pre-D-A numbers, like Buttons above) with a
-drawn 8px shape, a **sentence-case** word, and a tone. Three redundant channels,
-so it survives colourblindness, grayscale printing and low contrast.
+the pre-D-A numbers, like Buttons above) with a **sentence-case** word and a
+tone. The word carries the meaning; the fill, border and text tone reinforce
+priority without being required to understand the state.
 
 The word was tracked uppercase until the review pass. It changed because a screen
 carrying eight of them read as machine output rather than as a workspace — the
-single largest contributor to that impression — and none of the three channels
-depends on the casing. Table headers moved to sentence case for the same reason.
+single largest contributor to that impression. Table headers moved to sentence
+case for the same reason.
 All-caps in this system is now reserved for the strip label and the rail heading,
 which are printed *labels for a region* rather than words about content.
 
-| Tone | Shape | Means |
-|---|---|---|
-| accent | filled square | open, submitted, published, valid, confirmed, counted |
-| amber | filled triangle | needs review, scheduled, pending, draft, flagged, private reply |
-| red | filled diamond | invalid, failed, rejected, not counted, privacy risk |
-| neutral | hollow square | closed, archived, skipped, not started |
+| Tone | Means |
+|---|---|
+| accent | open, submitted, published, valid, confirmed, counted |
+| amber | needs review, scheduled, pending, draft, flagged, private reply |
+| red | invalid, failed, rejected, not counted, privacy risk |
+| neutral | closed, archived, skipped, not started |
 
 Cycle state always renders through `CycleStateBadge`, validity through
 `ValidityBadge`, and a student's own credit through `CreditBadge`, so no page
 invents its own wording.
 
-**One exception, and it is `CycleStateBadge`.** Since 2026-09-11 the cycle
-states — Draft · Scheduled · Open · Closed · Archived · Skipped — render the
-word and the tone with **no shape**, at the owner's request ("no need for
-symbols for scheduled open closed, just the word"). This is an amendment to the
-three-channel rule, not a hole in it: the channel that carries meaning without
-colour is the WORD, and it is still there, so the badge still survives
-grayscale and colourblindness. What it gives up is speed — in a column of a
-dozen occurrences the shape was read before the word was. Every other stamp
-keeps all three; the opt-out is the `mark` prop on `Stamp`, and it is
-deliberately a prop rather than a variant so the exception stays countable.
+**No status symbols. [Confirmed 2026-09-15]** All stamps — including Published,
+Scheduled, Needs reply, validity, priority and cycle states — render only their
+written label inside the bordered treatment. The earlier cycle-state exception
+is now the universal rule. `Stamp` has no symbol prop, and status-mark artwork
+does not remain hidden in the component. Question-category silhouettes are a
+separate metadata vocabulary and are not status symbols.
 
 **`ValidityBadge` is staff-only.** `flagged` is an internal state a student must
 never learn exists; the student-facing component is `CreditBadge`, which says

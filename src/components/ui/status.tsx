@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
-import { CategoryMark, StampMark } from "./icons";
+import { CategoryMark } from "./icons";
 import { categoryShape, categoryShortLabel } from "@/lib/threads";
 
 /**
- * Status vocabulary: a state is always a word AND a shape AND a tone, never a
- * tone alone (DESIGN.md §9). The shape is drawn, not a Unicode glyph.
+ * Status vocabulary: a state is always written out as a word and reinforced by
+ * a tone, never conveyed by colour alone (DESIGN.md §9). Status stamps are
+ * deliberately text-only: decorative state shapes were removed owner-wide on
+ * 2026-09-15.
  *
  * Every badge here delegates to `Stamp` rather than styling itself, which is
  * what keeps one state from drifting away from the others. A neutral COUNT is
@@ -29,11 +31,9 @@ import { categoryShape, categoryShortLabel } from "@/lib/threads";
  *     `tone="green"` means both "action" and "good state", since the accent
  *     carries both and there is no separate green.
  *
- * What is NOT affected, and is the rule that actually protects legibility:
- * `Stamp` renders a **word AND a shape AND a tone** (DESIGN.md §9), so no
- * status has ever depended on its colour being read correctly. That is why
- * this naming choice is a readability question for developers rather than an
- * accessibility one for students.
+ * The naming choice is a readability question for developers rather than an
+ * accessibility one for students: the visible word carries the meaning and
+ * the tone only reinforces it.
  *
  * Note `tone="neutral"` and `buttonClass({ variant: "quiet" })` are different
  * vocabularies on purpose — a stamp has no `quiet` and a button has no
@@ -41,41 +41,15 @@ import { categoryShape, categoryShortLabel } from "@/lib/threads";
  */
 export type Tone = "green" | "amber" | "red" | "neutral";
 
-const TONE_SHAPE = {
-  green: "square",
-  amber: "triangle",
-  red: "diamond",
-  neutral: "hollow",
-} as const;
-
-/** Status as a stamp: bordered, squared off, and readable in grayscale. */
+/** Status as a text-only stamp: bordered, compact, and readable in grayscale. */
 export function Stamp({
   tone = "neutral",
-  mark = true,
   children,
 }: {
   tone?: Tone;
-  /**
-   * Draw the tone's shape beside the word. Default on, and it should stay on
-   * almost everywhere — the shape is the third redundant channel that lets a
-   * status survive grayscale and colourblindness (DESIGN.md §9).
-   *
-   * Turned off only for the cycle states (owner, 2026-09-11: "no need for
-   * symbols for scheduled open closed, just the word"). That is safe for the
-   * reason the rule exists: the WORD is the channel that carries meaning
-   * without colour, and it is still there. What is lost is the at-a-glance
-   * distinction in a column of many badges, where the shape read faster than
-   * the word did.
-   */
-  mark?: boolean;
   children: ReactNode;
 }) {
-  return (
-    <span className={`stamp stamp--${tone}`}>
-      {mark && <StampMark shape={TONE_SHAPE[tone]} />}
-      {children}
-    </span>
-  );
+  return <span className={`stamp stamp--${tone}`}>{children}</span>;
 }
 
 /** A question category: a word and a drawn silhouette. Never a colour. */
@@ -129,7 +103,7 @@ export function PriorityBadge({ priority }: { priority: PriorityName }) {
 export type CycleStateName =
   "draft" | "scheduled" | "open" | "closed" | "archived" | "skipped";
 
-/** Cycle state as words + shape + tone. Text carries the meaning on its own. */
+/** Cycle state as a written label reinforced by tone. */
 export function CycleStateBadge({ state }: { state: CycleStateName }) {
   const map: Record<CycleStateName, { tone: Tone; label: string }> = {
     draft: { tone: "neutral", label: "Draft" },
@@ -152,11 +126,5 @@ export function CycleStateBadge({ state }: { state: CycleStateName }) {
     skipped: { tone: "neutral", label: "Skipped" },
   };
   const { tone, label } = map[state];
-  /* No shape: the word alone, per the owner 2026-09-11. See `Stamp`'s `mark`
-     for why this one badge may drop the third channel and the others may not. */
-  return (
-    <Stamp mark={false} tone={tone}>
-      {label}
-    </Stamp>
-  );
+  return <Stamp tone={tone}>{label}</Stamp>;
 }

@@ -182,60 +182,88 @@ async function main() {
   const { parseRosterCsv, commitRosterImport } = await import(
     "../src/modules/roster-import"
   );
-  const { enrollments } = await import("../src/db/schema");
   /**
-   * One class list per lab. The UP email is the access key: importing these
-   * lists IS the whole grant.
+   * One class list per lab — a realistic class, not three people.
    *
-   * student@up.edu.ph is deliberately Juan's address, so the dev-login student
-   * lands in Lab A with no claiming step. Maria sits in Lab B and Pedro in Lab
-   * C, which is what lets the seeded data demonstrate the acceptance case: a
+   * The UP email is the access key: importing these lists IS the whole grant.
+   * `student@up.edu.ph` is deliberately Juan's address so the dev-login student
+   * lands in Lab A with no claiming step; Maria sits in Lab B and Pedro in Lab
+   * C, which is what lets the seeded data demonstrate the acceptance case — a
    * question asked in one lab, answered once, read by all three.
+   *
+   * The rest exist so the demo has enough people to be worth looking at: a
+   * five-student lab produces a multiple-choice distribution, a rating spread
+   * and a participation matrix with gaps in it. Three students produced three
+   * bars of height one, which showed nothing about how the views behave.
    */
-  const ROSTERS: Record<string, string> = {
+  const CLASS_LIST: Record<string, { number: string; name: string; email: string }[]> = {
     [labA.id]: [
-      "student number,full name,up mail",
-      // Real UP shape — four-digit entry year, five-digit serial. The demo
-      // list used to carry four-digit serials, which made the class list read
-      // "Student number ending 0001" and hid what the format actually looks
-      // like (GitHub issue #12).
-      "2026-00001,Juan Dela Cruz,student@up.edu.ph",
-    ].join("\n"),
+      // Real UP shape — four-digit entry year, five-digit serial. The demo list
+      // used to carry four-digit serials, which made the class list read
+      // "Student number ending 0001" and hid the real format (issue #12).
+      { number: "2026-00001", name: "Juan Dela Cruz", email: "student@up.edu.ph" },
+      { number: "2026-00011", name: "Ana Reyes", email: "ana.reyes@up.edu.ph" },
+      { number: "2026-00012", name: "Miguel Torres", email: "miguel.torres@up.edu.ph" },
+      { number: "2026-00013", name: "Liza Bautista", email: "liza.bautista@up.edu.ph" },
+      { number: "2026-00014", name: "Noel Aquino", email: "noel.aquino@up.edu.ph" },
+    ],
     [labB.id]: [
-      "student number,full name,up mail",
-      "2026-00002,Maria Clara Santos,maria.santos@up.edu.ph",
-    ].join("\n"),
+      { number: "2026-00002", name: "Maria Clara Santos", email: "maria.santos@up.edu.ph" },
+      { number: "2026-00021", name: "Carlo Villanueva", email: "carlo.villanueva@up.edu.ph" },
+      { number: "2026-00022", name: "Bea Ocampo", email: "bea.ocampo@up.edu.ph" },
+      { number: "2026-00023", name: "Rafael Lim", email: "rafael.lim@up.edu.ph" },
+      { number: "2026-00024", name: "Divina Castro", email: "divina.castro@up.edu.ph" },
+    ],
     [labC.id]: [
-      "student number,full name,up mail",
-      "2026-00003,Pedro Penduko,pedro.penduko@up.edu.ph",
-    ].join("\n"),
+      { number: "2026-00003", name: "Pedro Penduko", email: "pedro.penduko@up.edu.ph" },
+      { number: "2026-00031", name: "Grace Mendoza", email: "grace.mendoza@up.edu.ph" },
+      { number: "2026-00032", name: "Ibarra Salazar", email: "ibarra.salazar@up.edu.ph" },
+      { number: "2026-00033", name: "Teresa Uy", email: "teresa.uy@up.edu.ph" },
+      { number: "2026-00034", name: "Andres Bonifacio", email: "andres.bonifacio@up.edu.ph" },
+    ],
   };
+
+  /**
+   * Re-imported on every run rather than skipped when the section already has
+   * enrolments.
+   *
+   * The import is idempotent by design ("safe re-import" —
+   * docs/domain/student-identity.md), so running it again updates and adds
+   * without duplicating. Skipping on the first existing enrolment is what made
+   * an enriched class list invisible to anyone whose database predated it:
+   * three students stayed three forever.
+   */
   for (const lab of labs) {
-    const hasRoster = await db.query.enrollments.findFirst({
-      where: eq(enrollments.sectionId, lab.id),
-    });
-    if (hasRoster) continue;
+    const rows = CLASS_LIST[lab.id]!;
     await commitRosterImport(
       teacher.id,
       lab.id,
-      parseRosterCsv(ROSTERS[lab.id]!),
+      parseRosterCsv(
+        [
+          "student number,full name,up mail",
+          ...rows.map((r) => `${r.number},${r.name},${r.email}`),
+        ].join("\n"),
+      ),
       `seed roster — ${lab.title}`,
     );
   }
-  // Demo student accounts. Nothing links either account to a roster record
-  // beyond the email being on the class list above — which is the point.
-  const student = await upsertUser({
-    email: "student@up.edu.ph",
-    displayName: "Juan Dela Cruz",
-  });
-  const maria = await upsertUser({
-    email: "maria.santos@up.edu.ph",
-    displayName: "Maria Clara Santos",
-  });
-  const pedro = await upsertUser({
-    email: "pedro.penduko@up.edu.ph",
-    displayName: "Pedro Penduko",
-  });
+
+  /**
+   * Demo student accounts — one per rostered student.
+   *
+   * Nothing links an account to a roster record beyond the email being on the
+   * class list above, which is the point: the account is created here only so
+   * the seed can submit a response AS that student through the real service.
+   */
+  const accounts = new Map<string, Awaited<ReturnType<typeof upsertUser>>>();
+  for (const rows of Object.values(CLASS_LIST)) {
+    for (const row of rows) {
+      accounts.set(
+        row.email,
+        await upsertUser({ email: row.email, displayName: row.name }),
+      );
+    }
+  }
 
   // --- weekly form template + recurrence schedule + cycles ---
   const { formTemplates, recurrenceSchedules } = await import(
@@ -351,13 +379,15 @@ async function main() {
     "../src/modules/publishing"
   );
 
-  const openInstance = await db.query.formInstances.findFirst({
+  /** Every occurrence that is open right now — normally the one weekly form. */
+  const openInstances = await db.query.formInstances.findMany({
     where: and(
       eq(formInstances.courseId, course!.id),
       eq(formInstances.state, "open"),
     ),
     orderBy: desc(formInstances.openAt),
   });
+  const openInstance = openInstances[0] ?? null;
   /**
    * Bring the open occurrence's audience up to date with the course's sections.
    *
@@ -372,42 +402,52 @@ async function main() {
    * Seed-only reconciliation, deliberately not a service call: nothing in the
    * app rewrites a generated audience, and nothing here should teach that it may.
    */
-  if (openInstance) {
+  for (const instance of openInstances) {
     const { formInstanceSections } = await import("../src/db/schema");
     const existing = await db.query.formInstanceSections.findMany({
-      where: eq(formInstanceSections.instanceId, openInstance.id),
+      where: eq(formInstanceSections.instanceId, instance.id),
     });
     const have = new Set(existing.map((row) => row.sectionId));
     const missing = labs.filter((lab) => !have.has(lab.id));
     if (missing.length > 0) {
       await db.insert(formInstanceSections).values(
         missing.map((lab) => ({
-          instanceId: openInstance.id,
+          instanceId: instance.id,
           sectionId: lab.id,
         })),
       );
     }
   }
 
-  const snapshotQuestions = openInstance
-    ? await db.query.formQuestions.findMany({
-        where: eq(formQuestions.cycleId, openInstance.id),
-        orderBy: (questions, { asc }) => [asc(questions.displayOrder)],
-      })
-    : [];
+  /** The shape of one snapshotted question, for `demoAnswer` to key off. */
+  type DemoQuestion = typeof formQuestions.$inferSelect;
 
-  type DemoQuestion = (typeof snapshotQuestions)[number];
   /**
    * One student's answer to one question, or `null` for a question they left
    * alone.
    *
-   * The second demo student skips every OPTIONAL question, so the seeded week
-   * contains the case the review view has to state rather than hide: a
-   * question the form asked and nobody answered. Required questions are never
-   * skipped — the server would refuse the submission.
+   * `variant` is the STUDENT; `index` is the question. Both are mixed into
+   * every choice, which is the whole point: a seed where each question got one
+   * canned answer produced a bar chart of identical bars and a rating
+   * distribution with a single spike, so none of the aggregate views could be
+   * judged from demo data. Spreading answers across the options and the scale
+   * makes "By question" show a real shape.
+   *
+   * Every student answers every question, optional ones included. An earlier
+   * version skipped optional questions on a rotation so the review view would
+   * have a "4 skipped" case to render; the owner did not want that noise in
+   * the demo data, so the seeded week is simply complete.
    */
-  function demoAnswer(question: DemoQuestion, index: number) {
-    if (!question.required && index % 2 === 1) return null;
+  function demoAnswer(question: DemoQuestion, index: number, variant = 0) {
+    /**
+     * 7 and 3, not 3 and 1.
+     *
+     * The multiplier has to be COPRIME with the option counts it will be taken
+     * modulo, or the spread collapses. `variant * 3` against a three-option
+     * question is always 0, which is how the first version of this seed gave
+     * fifteen students the identical answer and a bar chart with one bar.
+     */
+    const mix = variant * 7 + index * 3;
     switch (question.type) {
       case "multiple_choice":
       case "dropdown":
@@ -415,137 +455,246 @@ async function main() {
         const options = Array.isArray(question.options)
           ? (question.options as { stableId: string }[])
           : [];
-        const optionIds = options
-          .slice(0, question.type === "checkboxes" ? 2 : 1)
-          .map((option) => option.stableId);
-        if (optionIds.length === 0) {
+        if (options.length === 0) {
           throw new Error(`Seed form question ${question.id} has no options`);
         }
-        return { questionId: question.id, optionIds };
-      }
-      case "linear_scale": {
-        const scale = (question.scale ?? {}) as {
-          min?: number;
-          max?: number;
-        };
-        const min = scale.min ?? 1;
-        const max = scale.max ?? 5;
+        if (question.type === "checkboxes") {
+          // A varying NUMBER of boxes, not just varying boxes: one student
+          // ticking everything and another ticking one is the realistic range.
+          const count = 1 + (variant % Math.min(3, options.length));
+          const picked = Array.from({ length: count }, (_, k) =>
+            options[(variant + k) % options.length]!.stableId,
+          );
+          return { questionId: question.id, optionIds: [...new Set(picked)] };
+        }
         return {
           questionId: question.id,
-          scaleValue: Math.min(max, min + 2 + (index % 2)),
+          optionIds: [options[mix % options.length]!.stableId],
+        };
+      }
+      case "linear_scale": {
+        const scale = (question.scale ?? {}) as { min?: number; max?: number };
+        const min = scale.min ?? 1;
+        const max = scale.max ?? 5;
+        const span = Math.max(1, max - min + 1);
+        /* Weighted toward the middle-high end, the way real course ratings
+           sit, rather than uniformly across the scale. */
+        const offsets = [2, 3, 1, 4, 2, 3, 0, 3];
+        return {
+          questionId: question.id,
+          scaleValue: Math.min(max, min + (offsets[mix % offsets.length]! % span)),
         };
       }
       case "yes_no":
-        return { questionId: question.id, boolValue: index % 2 === 0 };
+        return { questionId: question.id, boolValue: mix % 3 !== 0 };
       case "date":
         return { questionId: question.id, dateValue: "2026-09-01" };
       case "time":
         return { questionId: question.id, timeValue: "10:00" };
       case "short_answer":
-      case "paragraph":
+      case "paragraph": {
+        /* One long answer on purpose: the review column collapses anything
+           past `LONG_TEXT_CHARS`, and a demo week with nothing long in it
+           cannot show that the control works. */
+        const LONG =
+          "The examples made this week's topic easier to follow, " +
+          "especially the second one where we walked through the " +
+          "recurrence step by step instead of jumping straight to the " +
+          "closed form. I had been treating the base case as a " +
+          "formality, and seeing it actually fail for n = 0 was what " +
+          "made the induction click. The part I am still unsure about " +
+          "is when to unroll a recurrence versus when to guess a bound " +
+          "and verify it — both were presented as options and I cannot " +
+          "yet tell which one a problem is asking for. If there is a " +
+          "rule of thumb for choosing between them, that would help " +
+          "more than another worked example of either one on its own.";
+        const SHORT = [
+          "More worked examples would help with the next problem set.",
+          "The pace was fine, but the notation moved faster than the ideas did.",
+          "Clear, especially once the diagram went up on the board.",
+          "I followed the lecture but could not start the exercise afterwards.",
+          "Second half was much easier to follow than the first.",
+          "Please post the board photos — I could not copy everything down.",
+        ];
         return {
           questionId: question.id,
-          text:
-            index % 2 === 0
-              ? /* Long on purpose: the review column collapses an answer past
-                   `LONG_TEXT_CHARS`, and a demo week with nothing long in it
-                   cannot show that the control works. */
-                "The examples made this week's topic easier to follow, " +
-                "especially the second one where we walked through the " +
-                "recurrence step by step instead of jumping straight to the " +
-                "closed form. I had been treating the base case as a " +
-                "formality, and seeing it actually fail for n = 0 was what " +
-                "made the induction click. The part I am still unsure about " +
-                "is when to unroll a recurrence versus when to guess a bound " +
-                "and verify it — both were presented as options and I cannot " +
-                "yet tell which one a problem is asking for. If there is a " +
-                "rule of thumb for choosing between them, that would help " +
-                "more than another worked example of either one on its own."
-              : "More worked examples would help with the next problem set.",
+          text: mix % 5 === 0 ? LONG : SHORT[mix % SHORT.length]!,
         };
+      }
     }
   }
 
   /**
-   * One response per lab, so the seeded week proves the acceptance case:
-   * Juan asks in Lab A, Maria in Lab B, Pedro comments from Lab C, and all
-   * three answer the SAME shared occurrence. Responses keep their attribution
-   * section; the answer the team publishes does not have one.
+   * The student-originated questions and comments, by author.
+   *
+   * Spread across all three labs and all three categories, because the review
+   * inbox, the category filters and the backlog all key off that split. Every
+   * one of these is a question a student in this course could plausibly ask;
+   * several are answered publicly further down, and the rest are left
+   * unanswered on purpose so the inbox has real work in it.
    */
-  const demoResponses = [
+  const STUDENT_ITEMS: Record<
+    string,
     {
-      user: student,
-      email: "student@up.edu.ph",
-      item: {
-        clientKey: "seed-juan-question",
-        kind: "question" as const,
-        submissionType: "question" as const,
-        category: "content" as const,
+      question?: { text: string; category: "content" | "logistics" | "misc" };
+      comment?: { text: string };
+    }
+  > = {
+    "student@up.edu.ph": {
+      question: {
         text: "Could we see one more worked example of tree rotations?",
+        category: "content",
       },
     },
-    {
-      user: maria,
-      email: "maria.santos@up.edu.ph",
-      item: {
-        clientKey: "seed-maria-question",
-        kind: "question" as const,
-        submissionType: "question" as const,
-        category: "logistics" as const,
+    "maria.santos@up.edu.ph": {
+      question: {
         text: "When will the practice set for this topic be available?",
+        category: "logistics",
       },
       comment: {
-        clientKey: "seed-maria-comment",
-        kind: "general_comment" as const,
-        submissionType: "feedback" as const,
-        category: "misc" as const,
         text: "The pacing felt better once we started working through examples.",
       },
     },
-    {
-      user: pedro,
-      email: "pedro.penduko@up.edu.ph",
-      item: {
-        clientKey: "seed-pedro-question",
-        kind: "question" as const,
-        submissionType: "question" as const,
-        category: "content" as const,
+    "pedro.penduko@up.edu.ph": {
+      question: {
         text: "Is the AVL balance factor checked before or after the rotation?",
+        category: "content",
       },
     },
-  ];
+    "ana.reyes@up.edu.ph": {
+      question: {
+        text: "Will the long exam cover the proofs, or only the implementations?",
+        category: "logistics",
+      },
+    },
+    "miguel.torres@up.edu.ph": {
+      question: {
+        text: "What is the difference between amortized and average-case cost?",
+        category: "content",
+      },
+      comment: { text: "The lab manual and the slides use different notation." },
+    },
+    "carlo.villanueva@up.edu.ph": {
+      question: {
+        text: "Can we use the STL priority queue in the machine problem, or do we implement our own heap?",
+        category: "logistics",
+      },
+    },
+    "bea.ocampo@up.edu.ph": {
+      question: {
+        text: "Why does a red-black tree allow two reds in a row on different branches but not on the same path?",
+        category: "content",
+      },
+    },
+    "grace.mendoza@up.edu.ph": {
+      question: {
+        text: "Could the consultation hours be moved later? They overlap with another class.",
+        category: "logistics",
+      },
+    },
+    "ibarra.salazar@up.edu.ph": {
+      comment: {
+        text: "The worked examples in lab helped more than the lecture slides did.",
+      },
+    },
+    "teresa.uy@up.edu.ph": {
+      question: {
+        text: "Is there a reading that explains why the height bound is logarithmic?",
+        category: "content",
+      },
+    },
+    "rafael.lim@up.edu.ph": {
+      comment: { text: "Please keep posting the board photos after each session." },
+    },
+  };
+
+  /**
+   * Students who deliberately do NOT submit, so participation has gaps.
+   *
+   * A matrix where every cell is a tick proves nothing about how the view
+   * renders a missing week, and a bonus-period count that always equals the
+   * roster size cannot show a shortfall.
+   */
+  const NON_SUBMITTERS = new Set([
+    "noel.aquino@up.edu.ph",
+    "divina.castro@up.edu.ph",
+    "andres.bonifacio@up.edu.ph",
+  ]);
+
+  /** Every rostered student, in a stable order, with their variant number. */
+  const rosterEntries = Object.values(CLASS_LIST).flat();
 
   let seededResponseCount = 0;
-  if (openInstance && snapshotQuestions.length > 0) {
-    for (const demo of demoResponses) {
+  const itemIdByEmail = new Map<string, string>();
+
+  for (const instance of openInstances) {
+    const questions = await db.query.formQuestions.findMany({
+      where: eq(formQuestions.cycleId, instance.id),
+      orderBy: (q, { asc }) => [asc(q.displayOrder)],
+    });
+    if (questions.length === 0) continue;
+    /* Student-originated items belong to ONE occurrence, not to every open
+       form: attaching the same question to both would read as the student
+       having asked it twice. The weekly form is where they go. */
+    const carriesItems = instance.id === openInstance?.id;
+
+    for (const [variant, row] of rosterEntries.entries()) {
+      if (NON_SUBMITTERS.has(row.email)) continue;
+      const account = accounts.get(row.email);
       const record = await db.query.studentRecords.findFirst({
-        where: eq(studentRecords.rosterEmail, demo.email),
+        where: eq(studentRecords.rosterEmail, row.email),
       });
-      if (!record) continue;
+      if (!account || !record) continue;
 
       let response = await db.query.formResponses.findFirst({
         where: and(
-          eq(formResponses.cycleId, openInstance.id),
+          eq(formResponses.cycleId, instance.id),
           eq(formResponses.studentRecordId, record.id),
         ),
       });
-      let itemId: string | null = null;
+
+      const spec = carriesItems ? STUDENT_ITEMS[row.email] : undefined;
       if (!response) {
-        const submitted = await submitResponse(demo.user.id, openInstance.id, {
-          answers: snapshotQuestions
-            .map(demoAnswer)
+        const items = [
+          ...(spec?.question
+            ? [
+                {
+                  clientKey: `seed-${row.email}-question`,
+                  kind: "question" as const,
+                  submissionType: "question" as const,
+                  category: spec.question.category,
+                  text: spec.question.text,
+                },
+              ]
+            : []),
+          ...(spec?.comment
+            ? [
+                {
+                  clientKey: `seed-${row.email}-comment`,
+                  kind: "general_comment" as const,
+                  submissionType: "feedback" as const,
+                  category: "misc" as const,
+                  text: spec.comment.text,
+                },
+              ]
+            : []),
+        ];
+        const submitted = await submitResponse(account.id, instance.id, {
+          answers: questions
+            .map((q, index) => demoAnswer(q, index, variant))
             .filter((a): a is NonNullable<typeof a> => a !== null),
-          items: [demo.item, ...(demo.comment ? [demo.comment] : [])],
+          items,
         });
         response = await db.query.formResponses.findFirst({
           where: eq(formResponses.id, submitted.responseId),
         });
-        itemId = submitted.studentItemId;
         seededResponseCount += 1;
+        if (submitted.studentItemId) {
+          itemIdByEmail.set(row.email, submitted.studentItemId);
+        }
       }
 
-      if (!response) continue;
-      if (!itemId) {
+      if (response && carriesItems && !itemIdByEmail.has(row.email)) {
         const liveItem = await db.query.studentSubmissionItems.findFirst({
           where: and(
             eq(studentSubmissionItems.responseId, response.id),
@@ -553,53 +702,251 @@ async function main() {
             isNull(studentSubmissionItems.withdrawnAt),
           ),
         });
-        itemId = liveItem?.id ?? null;
-      }
-      if (!itemId || demo.user.id !== maria.id) continue;
-
-      const privateReply = await db.query.privateResponses.findFirst({
-        where: eq(privateResponses.itemId, itemId),
-      });
-      if (!privateReply) {
-        await createPrivateResponse(
-          teacher.id,
-          itemId,
-          "I will add another worked example to the next review set.",
-        );
-      }
-
-      const source = await db.query.sourceLinks.findFirst({
-        where: eq(sourceLinks.itemId, itemId),
-      });
-      let publicAnswer = source
-        ? await db.query.publicAnswers.findFirst({
-            where: eq(publicAnswers.id, source.publicAnswerId),
-          })
-        : undefined;
-      if (!publicAnswer) {
-        /**
-         * ONE answer for the course — not one per lab.
-         *
-         * Maria asked it from Lab B; Juan in Lab A and Pedro in Lab C read the
-         * same published entry, and neither can tell which lab it came from.
-         * That single row is the whole of ADR-0005 in the seed data: a course
-         * with three sections ends up with one PublicAnswer, not three.
-         */
-        publicAnswer = await draftPublicAnswer(teacher.id, {
-          courseId: course!.id,
-          itemIds: [itemId],
-          publicQuestionText: "When will the practice set for this topic be available?",
-          answerBody: "The practice set will be available before the next class.",
-          category: "logistics",
-        });
-      }
-      if (publicAnswer.state === "draft" && publicAnswer.answerBody) {
-        await publishNow(teacher.id, publicAnswer.id, {
-          anonymityAcknowledged: true,
-        });
+        if (liveItem) itemIdByEmail.set(row.email, liveItem.id);
       }
     }
   }
+
+  /**
+   * A private reply — visible to its asker and to staff, and to nobody else.
+   * Seeded so the student history view has one to render.
+   */
+  const mariaItemId = itemIdByEmail.get("maria.santos@up.edu.ph");
+  if (mariaItemId) {
+    const existingReply = await db.query.privateResponses.findFirst({
+      where: eq(privateResponses.itemId, mariaItemId),
+    });
+    if (!existingReply) {
+      await createPrivateResponse(
+        teacher.id,
+        mariaItemId,
+        "I will add another worked example to the next review set.",
+      );
+    }
+  }
+
+  /**
+   * The Class Q&A archive — several published entries, not one.
+   *
+   * Each is ONE course-owned answer (ADR-0005): a course with three labs
+   * publishes once and all three read the same row. They are drawn from
+   * different labs on purpose, so the archive demonstrates the thing that
+   * makes it course-wide — a Lab C student reading an answer that originated
+   * in Lab A, with nothing on the page saying so.
+   */
+  const PUBLISH_FROM_RESPONSES: {
+    email: string;
+    publicQuestion: string;
+    answer: string;
+    category: "content" | "logistics" | "misc";
+  }[] = [
+    {
+      email: "student@up.edu.ph",
+      publicQuestion: "Could we see another worked example of tree rotations?",
+      answer:
+        "Yes. A full AVL walkthrough — single and double rotation, with the " +
+        "balance factors written at each step — is going up with this week's " +
+        "review set, and we will work through a second one at the start of " +
+        "the next session.",
+      category: "content",
+    },
+    {
+      email: "maria.santos@up.edu.ph",
+      publicQuestion: "When will the practice set be available?",
+      answer:
+        "The practice set is posted before the next class, and the solutions " +
+        "follow two days later so you have time to attempt it first.",
+      category: "logistics",
+    },
+    {
+      email: "pedro.penduko@up.edu.ph",
+      publicQuestion:
+        "Is the AVL balance factor checked before or after the rotation?",
+      answer:
+        "Both, and that is the point of the invariant. You read the balance " +
+        "factor to decide WHICH rotation to apply, then recompute it " +
+        "afterwards to confirm the subtree is balanced again.",
+      category: "content",
+    },
+    {
+      email: "carlo.villanueva@up.edu.ph",
+      publicQuestion:
+        "May we use the standard library's priority queue in the machine problem?",
+      answer:
+        "Not for the heap itself — implementing it is the exercise. You may " +
+        "use the standard library everywhere else in the program.",
+      category: "logistics",
+    },
+    {
+      email: "bea.ocampo@up.edu.ph",
+      publicQuestion:
+        "Why may a red-black tree have two red nodes on different branches but not on one path?",
+      answer:
+        "The rule constrains each root-to-leaf PATH, not the tree as a whole. " +
+        "Two reds on one path would let that path carry more nodes than " +
+        "another for the same black-height, which is exactly what the " +
+        "invariant exists to prevent.",
+      category: "content",
+    },
+  ];
+
+  let publishedCount = 0;
+  for (const spec of PUBLISH_FROM_RESPONSES) {
+    const itemId = itemIdByEmail.get(spec.email);
+    if (!itemId) continue;
+    const existingLink = await db.query.sourceLinks.findFirst({
+      where: eq(sourceLinks.itemId, itemId),
+    });
+    let answer = existingLink
+      ? await db.query.publicAnswers.findFirst({
+          where: eq(publicAnswers.id, existingLink.publicAnswerId),
+        })
+      : undefined;
+    if (!answer) {
+      answer = await draftPublicAnswer(teacher.id, {
+        courseId: course!.id,
+        itemIds: [itemId],
+        publicQuestionText: spec.publicQuestion,
+        answerBody: spec.answer,
+        category: spec.category,
+      });
+      publishedCount += 1;
+    }
+    /**
+     * Restores the seeded wording when the entry has been typed over by hand
+     * in the dev app — including after it was published.
+     *
+     * The seed OWNS these six entries, and a placeholder someone typed while
+     * clicking through the UI ("tite") otherwise sits in the demo archive
+     * permanently: re-running the seed would find the source link, decide the
+     * answer already existed, and leave it there. Published rows are repaired
+     * with a direct update rather than through the editing service on purpose
+     * — this is the seed restoring its own fixture in a development database,
+     * not a teacher revising a real answer, so it deliberately writes no
+     * revision history.
+     */
+    if (answer.answerBody !== spec.answer || answer.publicQuestionText !== spec.publicQuestion) {
+      await db
+        .update(publicAnswers)
+        .set({
+          publicQuestionText: spec.publicQuestion,
+          answerBody: spec.answer,
+          category: spec.category,
+          updatedAt: new Date(),
+        })
+        .where(eq(publicAnswers.id, answer.id));
+      answer = {
+        ...answer,
+        publicQuestionText: spec.publicQuestion,
+        answerBody: spec.answer,
+      };
+    }
+    if (answer.state === "draft" && answer.answerBody) {
+      await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
+    }
+  }
+
+  /**
+   * The question backlog, in several states at once.
+   *
+   * The editorial workspace is a triage board, so a backlog holding one item
+   * in one state showed none of the work it exists to organise. These sit
+   * across `imported`, `needs_review` and `answerable`, from both provenances
+   * — a legacy paste-import and manual entry — and one of them is published
+   * below, which is what puts a legacy-origin entry in the archive.
+   */
+  const {
+    createManualBacklogQuestion,
+    draftFromBacklog,
+    importLegacyEntries,
+    setBacklogState,
+  } = await import("../src/modules/backlog");
+  const { backlogQuestions } = await import("../src/db/schema");
+
+  const LEGACY_QUESTIONS = [
+    "Why do we normalise database tables before indexing them?",
+    "What is the difference between a stable and an unstable sort?",
+    "Does the heap property say anything about siblings?",
+    "Why is quicksort's worst case quadratic if its average is linearithmic?",
+  ];
+  /**
+   * Checked question by question, not "is the backlog empty".
+   *
+   * A database seeded by an earlier version of this script already has SOME
+   * backlog rows, so an emptiness test skipped the import entirely and left
+   * the enriched set unseeded — the same defect the roster had. Asking after
+   * each question individually means a partly-seeded course fills in the gaps.
+   */
+  const existingLegacy = await db.query.backlogQuestions.findMany({
+    where: eq(backlogQuestions.courseId, course!.id),
+  });
+  const haveText = new Set(existingLegacy.map((q) => q.text));
+  const missingLegacy = LEGACY_QUESTIONS.filter((t) => !haveText.has(t));
+  if (missingLegacy.length > 0) {
+    await importLegacyEntries(
+      teacher.id,
+      course!.id,
+      missingLegacy.map((text) => ({ text })),
+      "AY2025-2 Q&A document",
+    );
+  }
+  for (const text of [
+    "Will there be a review session before the finals?",
+    "Can we get the slides in PDF as well as the web version?",
+  ]) {
+    if (haveText.has(text)) continue;
+    await createManualBacklogQuestion(teacher.id, course!.id, {
+      text,
+      category: "logistics",
+    });
+  }
+
+  /**
+   * One legacy question carried all the way through to the archive, so the
+   * Class Q&A contains an entry marked as coming from an earlier semester —
+   * anonymous, with a backlog source link and no student identity anywhere.
+   */
+  const backlogNow = await db.query.backlogQuestions.findMany({
+    where: eq(backlogQuestions.courseId, course!.id),
+  });
+  const toPublish = backlogNow.find(
+    (q) => q.text === LEGACY_QUESTIONS[0] && q.state !== "published",
+  );
+  if (toPublish) {
+    if (toPublish.state === "imported") {
+      await setBacklogState(teacher.id, toPublish.id, "needs_review");
+    }
+    const answer = await draftFromBacklog(teacher.id, toPublish.id, {
+      answerBody:
+        "Normalisation removes the redundancy that would otherwise let two " +
+        "rows disagree with each other. Indexing is a performance decision " +
+        "made afterwards, on a schema whose correctness you already trust — " +
+        "indexing a denormalised table just makes the wrong answer arrive " +
+        "faster.",
+    });
+    if (answer.state === "draft" && answer.answerBody) {
+      await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
+      publishedCount += 1;
+    }
+    /* The remaining legacy rows are left mid-triage on purpose: a board where
+       everything is already published has nothing to triage. */
+    const stillImported = backlogNow.filter(
+      (q) => q.id !== toPublish.id && q.state === "imported",
+    );
+    for (const q of stillImported.slice(0, 2)) {
+      await setBacklogState(teacher.id, q.id, "needs_review");
+    }
+    if (stillImported[0]) {
+      await setBacklogState(teacher.id, stillImported[0].id, "answerable");
+    }
+  }
+
+  const publishedTotal = await db.query.publicAnswers.findMany({
+    where: and(
+      eq(publicAnswers.courseId, course!.id),
+      eq(publicAnswers.state, "published"),
+    ),
+  });
 
   console.log("Seed complete:", {
     admin: admin.email,
@@ -611,9 +958,12 @@ async function main() {
     /* The assistant is delegated to Lab A only — the fixture for "course-wide
        outputs did not make source data course-wide". */
     assistantScope: `${ta.email} reviews ${labA.title} only`,
-    responses: openInstance
+    students: rosterEntries.length,
+    openForms: openInstances.length,
+    responses: openInstances.length
       ? `${seededResponseCount} new response${seededResponseCount === 1 ? "" : "s"} seeded`
       : "No open form instance",
+    classQa: `${publishedTotal.length} published entr${publishedTotal.length === 1 ? "y" : "ies"} (${publishedCount} new this run)`,
     scheduler: result,
   });
   process.exit(0);

@@ -11,6 +11,11 @@ deep blue-green accent spent only on action, status as a stamp, borders carrying
 structure, nothing with a resting shadow. **No item below changes that theme.**
 Every item either finishes applying it or fixes somewhere it is not applied.
 
+**Status-symbol amendment [Confirmed 2026-09-15]:** S-1 removed the square,
+triangle, diamond and hollow-square marks from every status stamp. Historical
+notes below that describe `word + shape + tone` record the former system and do
+not override the current text-only `Stamp` rule in [DESIGN.md](DESIGN.md) §9.
+
 **Label discipline** (per [AGENTS.md](AGENTS.md)): **[Confirmed]** owner-stated ·
 **[Recommended]** proposed, not approved · **[Assumption]** inferred ·
 **[Open]** unresolved, needs the owner. Nothing here is approved scope until the
@@ -878,10 +883,9 @@ mode forces.
 - [ ] **6A.3** Re-check the three `--accent` fills (`legacy.css:688`, `:1773`,
       `:4363`) and the `has-[input:checked]` choice state, which is the fourth
       place the accent becomes a ground.
-- [ ] **6A.4** Verify the **stamp** shapes still carry status without colour on
-      the dark ground. The word-plus-shape-plus-tone rule (DESIGN.md §9) is what
-      makes this safe, and it is also what makes dark mode cheap here — a theme
-      that signalled by colour alone would need re-testing per state.
+- [ ] **6A.4** Verify the **stamp** labels and tone pairings remain legible on
+      the dark ground. The written label carries the state without colour; the
+      palette still needs re-testing because tone reinforces priority.
 - [ ] **6A.5** Check KaTeX and the sanitized rich-text output. Both render
       staff-authored HTML that inherits `color`, but KaTeX ships its own
       stylesheet; confirm no rule in `katex.min.css` pins a light-ground colour.
@@ -2957,7 +2961,7 @@ importer is a component that has not landed yet, whatever its own file says.
 |---|---|---|---|
 | **Button** | `ui/button.tsx` (`buttonClass`) | 36 | **done** (§3.1). 5 raw `<button>`s left, all deliberate. 38px since 12h.2c |
 | **Fields · choices · questions · sections** | `ui/form.tsx` — `Field` `Select` `Textarea` `FieldRow` `FieldLabel` `Choice` `ChoiceList` `ScaleList` `Question` `OwnItem` `FormSection` `Label` | 29 | **done** (§3.2). `.field`/`.choice`/`.textarea-field` at zero |
-| **Stamps and badges** | `ui/status.tsx` — `Stamp` + `ValidityBadge` `CreditBadge` `PriorityBadge` `CycleStateBadge` `Category` | 8 | **done** (§3.3). Word + shape + tone; `Tone` is `green\|amber\|red\|neutral` (D-C) |
+| **Stamps and badges** | `ui/status.tsx` — `Stamp` + `ValidityBadge` `CreditBadge` `PriorityBadge` `CycleStateBadge` `Category` | 8 | **done** (§3.3, S-1). Written label + tone, no status symbol; `Tone` is `green\|amber\|red\|neutral` (D-C) |
 | **Dialog** | `ui/dialog.tsx` | 10 | **done**. Native `<dialog>`, portalled, focus returns, ×, Escape, click-outside (12h.1d) |
 | **Icons** | `ui/icons.tsx` | 26 | **done**. 35 glyphs; only `IconClose` may stand without a word |
 | **Breadcrumbs** | `ui/surface.tsx` + `layout/app-shell.tsx` | every staff route | **done** (12e.1, 12f.2). Last crumb derived from the active tab |

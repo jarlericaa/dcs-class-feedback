@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Stamp } from "@/components/ui/status";
 import { Tag, TagList } from "@/components/ui/tag";
-import { IconChevron, IconForward, IconSearch } from "@/components/ui/icons";
+import { IconChevron, IconSearch } from "@/components/ui/icons";
 import { PreRenderedRichText } from "@/components/rich-text-client";
 import { categoryShortLabel } from "@/lib/threads";
 import { initials } from "@/lib/datetime";
@@ -850,13 +850,14 @@ export function ProseAnswers({
       </ul>
       {rest.length > 0 && (
         /* A native disclosure, so the rest of a thirty-answer question is one
-           click away and works before hydration — but drawn as the quiet
-           onward control the approved design shows, not as a bordered box
-           inside a box. */
-        <details className="group">
+           click away and works before hydration. The summary stays first in
+           the DOM for disclosure semantics, then moves below the expanded
+           answers visually so the list ends with its collapse action. */
+        <details className="group flex flex-col">
           <summary
             className={cn(
-              "inline-flex cursor-pointer list-none items-center gap-2",
+              "order-2 mt-0 inline-flex cursor-pointer list-none items-center",
+              "group-open:mt-2",
               "font-sans text-ui-sm font-semibold text-accent-deep",
               "[&::-webkit-details-marker]:hidden",
               "hover:underline hover:underline-offset-4",
@@ -866,15 +867,10 @@ export function ProseAnswers({
               View all {matching.length} responses
             </span>
             <span className="hidden group-open:inline">
-              Show only the first {limit}
+              Show less
             </span>
-            <IconForward
-              aria-hidden="true"
-              className="shrink-0 transition-transform duration-120 group-open:-rotate-90"
-              size={15}
-            />
           </summary>
-          <ul className="m-0 mt-2 grid list-none gap-2 p-0">
+          <ul className="order-1 m-0 mt-2 grid list-none gap-2 p-0">
             {rest.map((entry) => (
               <ProseAnswer entry={entry} key={entry.responseId} />
             ))}
@@ -1175,9 +1171,9 @@ export function AnswerBody({ children }: { children: ReactNode }) {
 /**
  * Who this submission is from, when it arrived, and the one exceptional action.
  *
- * The identity and submitted time share the first two columns; the action stays
- * in the third, so the common narrow Panel 3 case keeps its header on one
- * compact sheet instead of pushing the action below the metadata.
+ * Identity, submitted time and tags form one metadata stack; the action stays
+ * in the third column, so the date reads as part of the submission rather than
+ * as a loose control-adjacent label.
  */
 export function SubmissionHeader({
   who,
@@ -1203,22 +1199,20 @@ export function SubmissionHeader({
         >
           {initials(who)}
         </span>
-        <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
+        <div className="grid min-w-0 flex-1 gap-1">
           <h2 className="min-w-0 truncate font-document text-panel-title font-bold text-ink">
             {who}
           </h2>
-          <p className="col-start-2 row-start-1 font-sans text-meta tabular-nums text-ink-muted">
-            <span className="block text-ink-soft">Submitted</span>
-            <span className="block whitespace-nowrap">{submitted}</span>
+          <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 font-sans text-meta tabular-nums text-ink-muted">
+            <span className="font-medium text-ink-soft">Submitted</span>
+            <span>{submitted}</span>
           </p>
-          <TagList className="col-span-2" items={tags} />
+          <TagList className="mt-1" items={tags} />
         </div>
       </div>
       {action && (
-        /* Wraps, and does not `shrink-0`. Two controls side by side — `Mark as
-           unread` beside `Invalidate submission` — are wider than a 320px
-           phone's content column, and an unshrinkable row of them pushed the
-           page into horizontal scroll. */
+        /* Wraps, and does not `shrink-0`, so the validity control can settle
+           below the metadata on a narrow phone without horizontal scrolling. */
         <div className="col-start-3 row-span-2 flex flex-wrap items-center justify-end gap-2">
           {action}
         </div>

@@ -105,8 +105,8 @@ Present:
   with copy naming what to do next;
 - a visible global focus ring on every control including date and time inputs,
   `aria-invalid` + `aria-describedby` on failing fields **and grouped choices**,
-  and status conveyed as a word plus a drawn shape plus a tone — never colour
-  alone;
+  and status conveyed as a written label reinforced by tone, with no decorative
+  status symbols and never by colour alone;
 - an accessible publication acknowledgment guard that preserves the teacher's
   public-question and answer fields while the service remains the security
   backstop;

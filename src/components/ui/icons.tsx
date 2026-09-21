@@ -322,61 +322,6 @@ export const IconDownload = (p: IconProps) => (
   </Icon>
 );
 
-/* --- stamp marks ----------------------------------------------------------
-   Solid shapes, not strokes: they read at 8px and they survive grayscale, so
-   status never depends on tone alone. */
-
-export function StampMark({
-  shape,
-  size = 8,
-}: {
-  shape: "square" | "triangle" | "diamond" | "hollow";
-  size?: number;
-}) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: "0 0 10 10",
-    "aria-hidden": true as const,
-    focusable: "false" as const,
-    className: "stamp__mark",
-  };
-  switch (shape) {
-    case "square":
-      return (
-        <svg {...common}>
-          <rect x="0.5" y="0.5" width="9" height="9" fill="currentColor" />
-        </svg>
-      );
-    case "triangle":
-      return (
-        <svg {...common}>
-          <path d="M5 0.5 9.7 9.5H0.3z" fill="currentColor" />
-        </svg>
-      );
-    case "diamond":
-      return (
-        <svg {...common}>
-          <path d="M5 0.2 9.8 5 5 9.8 0.2 5z" fill="currentColor" />
-        </svg>
-      );
-    case "hollow":
-      return (
-        <svg {...common}>
-          <rect
-            x="1"
-            y="1"
-            width="8"
-            height="8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          />
-        </svg>
-      );
-  }
-}
-
 /** Category marks: a distinct silhouette per category, never a colour. */
 export function CategoryMark({
   shape,

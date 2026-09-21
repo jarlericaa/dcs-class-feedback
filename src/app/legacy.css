@@ -665,19 +665,16 @@ kbd {
 }
 
 /* ==========================================================================
-   Stamps — status as word + shape + tone
+   Stamps — status as word + tone
    ========================================================================== */
 
 /* Sentence case, not tracked caps.
-   The stamp still carries three redundant channels — a word, a drawn shape and
-   a tone — so it survives grayscale and colourblindness exactly as before. What
-   changed is that a screen full of them no longer SHOUTS: all-caps status was
-   the single largest contributor to the interface reading as machine-generated.
-   Recorded in DESIGN.md §9. */
+   The written label carries the meaning while tone reinforces it. Decorative
+   status shapes were removed owner-wide on 2026-09-15. Sentence case keeps a
+   screen full of labels from SHOUTING. Recorded in DESIGN.md §9. */
 .stamp {
   display: inline-flex;
   align-items: center;
-  gap: var(--tight);
   padding: 3px var(--s2);
   border: 1px solid;
   border-radius: var(--r-stamp);
@@ -700,9 +697,6 @@ kbd {
   font-weight: 600;
   white-space: nowrap;
   vertical-align: middle;
-}
-.stamp__mark {
-  flex: 0 0 auto;
 }
 .stamp--green {
   color: var(--accent-deep);
@@ -3860,9 +3854,9 @@ kbd {
  * contradict this rule.
  *
  * What keeps the two readings apart is that a problem is never *only* maroon:
- * every status in this app is a `Stamp` — a word AND a shape AND a tone (§9) —
- * so a maroon tab label cannot be mistaken for an invalid stamp. The signal
- * discipline survives because it never depended on maroon's exclusivity.
+ * every status in this app is a `Stamp` with its state written out (§9), so a
+ * maroon tab label cannot be mistaken for an invalid stamp. The signal discipline
+ * survives because it never depended on maroon's exclusivity.
  */
 .ws-subnav__item--active {
   color: var(--red-deep);

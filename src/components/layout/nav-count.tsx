@@ -24,7 +24,7 @@ import { cn } from "@/lib/cn";
  * **Why it is not `Tag`.** A tag "carries no state — quiet paper fill, one
  * hairline" (`ui/tag.tsx`), and this is the opposite: a number here means
  * *attention*, which is what the amber family is for. **Why it is not `Stamp`**:
- * a stamp is a word AND a shape AND a tone, and this is a bare figure. It is
+ * a stamp is a written state reinforced by tone, and this is a bare figure. It is
  * its own thing, which is why it is a third small component rather than a
  * borrowed one.
  *

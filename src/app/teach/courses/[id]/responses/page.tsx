@@ -15,11 +15,8 @@ import {
   initials,
 } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import {
-  courseTabGroups,
-  staffSectionTabGroups,
-} from "@/components/layout/nav";
-import { primaryNavFor } from "@/lib/nav-context";
+import { staffSectionTabGroups } from "@/components/layout/nav";
+import { courseTabGroupsFor, primaryNavFor } from "@/lib/nav-context";
 import {
   markReviewedThisSession,
   readReviewedThisSession,
@@ -40,6 +37,7 @@ import {
   IconInfo,
   IconNoReply,
   IconPrivate,
+  IconPlus,
   IconSearch,
 } from "@/components/ui/icons";
 import { renderRichText } from "@/modules/richtext/render";
@@ -54,7 +52,6 @@ import {
   invalidateSubmission,
   listReadResponseIds,
   markResponseRead,
-  markResponseUnread,
   rejectFlag,
   restoreSubmission,
   type ReviewFilter,
@@ -156,6 +153,9 @@ const SQ_FILTERS = [
   { key: "answered", label: "Answered" },
 ] as const;
 type SqFilter = (typeof SQ_FILTERS)[number]["key"];
+
+/** Shared footprint for the two editorial actions in a student-question row. */
+const EDITORIAL_ACTION_CLASS = "w-[11rem] whitespace-nowrap";
 
 const SF_FILTERS = [
   { key: "all", label: "All" },
@@ -830,8 +830,8 @@ export default async function CourseResponsesPage({
    * changed is that it no longer runs the page. There is no "Read and unread"
    * selector any more, because opening a submission is what marks it read and a
    * control for something the page can see for itself was costing a filter slot
-   * for nothing. What survives is the quiet marker on a submission row and the
-   * deliberate reversal on the submission itself.
+   * for nothing. What survives is the quiet marker on a submission row; the
+   * detail view has no separate read-state control.
    */
   const readIds = await listReadResponseIds(
     user.id,
@@ -1050,13 +1050,11 @@ export default async function CourseResponsesPage({
     : null;
   const showsCourseTabs = railAccess?.staff?.hasCourseStanding ?? true;
   const tabGroups = showsCourseTabs
-    ? courseTabGroups(
+    ? await courseTabGroupsFor(
+        user.id,
         courseId,
         path,
         { needsReview: counts.needsReview },
-        sections.length === 1
-          ? (accessBySection.get(sections[0]!.id) ?? null)
-          : null,
       )
     : staffSectionTabGroups(railAccess!, path, {
         needsReview: counts.needsReview,
@@ -1287,20 +1285,6 @@ export default async function CourseResponsesPage({
     const uid = await currentUserId();
     if (!uid) return;
     await markResponseRead(uid, responseId, "viewed");
-  }
-
-  async function markUnread(formData: FormData) {
-    "use server";
-    const uid = await currentUserId();
-    if (!uid) redirect("/signin");
-    const responseId = String(formData.get("responseId"));
-    await markResponseUnread(uid, responseId);
-    revalidatePath(path);
-    {
-      const back = new URLSearchParams(backQuery);
-      back.set("at", responseId);
-      redirect(`${path}?${back.toString()}`);
-    }
   }
 
   async function draftOrPublish(formData: FormData) {
@@ -1537,7 +1521,7 @@ export default async function CourseResponsesPage({
                   className={buttonClass({
                     variant: "secondary",
                     size: "small",
-                    className: "w-[11rem] whitespace-nowrap",
+                    className: EDITORIAL_ACTION_CLASS,
                   })}
                   href={editorialAction.href}
                 >
@@ -1555,9 +1539,13 @@ export default async function CourseResponsesPage({
                     type="hidden"
                     value={row.response.id}
                   />
-                  <SubmitButton size="small" variant="secondary">
-                    <IconBacklog size={15} />
+                  <SubmitButton
+                    className={EDITORIAL_ACTION_CLASS}
+                    size="small"
+                    variant="secondary"
+                  >
                     Add to backlog
+                    <IconPlus size={15} />
                   </SubmitButton>
                 </form>
               ))}
@@ -1566,7 +1554,7 @@ export default async function CourseResponsesPage({
                 className={buttonClass({
                   variant: "secondary",
                   size: "small",
-                  className: "w-[11rem] whitespace-nowrap",
+                  className: EDITORIAL_ACTION_CLASS,
                 })}
                 href={editorialAction.href}
               >
@@ -1702,50 +1690,30 @@ export default async function CourseResponsesPage({
                   )}
                   <SubmissionHeader
                     action={
-                      <>
-                        {/* This reader's own place, beside the object it is
-                            about. Reading marks a submission read on its own,
-                            so only the REVERSAL is a real intention — a quiet
-                            secondary control in the header, never a primary
-                            one, and never stranded under the student's words
-                            as a lone line of page furniture. */}
-                        {!unread && (
-                          <form action={markUnread}>
-                            <input
-                              name="responseId"
-                              type="hidden"
-                              value={row.response.id}
-                            />
-                            <SubmitButton size="small" variant="quiet">
-                              Mark as unread
-                            </SubmitButton>
-                          </form>
-                        )}
-                        <ValidityAction
-                          canFlag={canOn(sectionId, "flagValidity")}
-                          canMark={canOn(sectionId, "markValidity")}
-                          flagLine={
-                            lastFlag
-                              ? `${lastFlag.actorName}: ${(
-                                  lastFlag.reason ?? "no reason given"
-                                ).replace(/_/g, " ")}${
-                                  lastFlag.staffNote
-                                    ? ` — ${lastFlag.staffNote}`
-                                    : ""
-                                }`
-                              : undefined
-                          }
-                          isInstructor={isInstructorOn(sectionId)}
-                          onConfirm={confirmFlagged}
-                          onDismiss={dismissFlag}
-                          onFlag={flag}
-                          onInvalidate={invalidate}
-                          onRestore={restoreValid}
-                          responseId={row.response.id}
-                          studentNumber={row.student?.studentNumber}
-                          validity={validity}
-                        />
-                      </>
+                      <ValidityAction
+                        canFlag={canOn(sectionId, "flagValidity")}
+                        canMark={canOn(sectionId, "markValidity")}
+                        flagLine={
+                          lastFlag
+                            ? `${lastFlag.actorName}: ${(
+                                lastFlag.reason ?? "no reason given"
+                              ).replace(/_/g, " ")}${
+                                lastFlag.staffNote
+                                  ? ` — ${lastFlag.staffNote}`
+                                  : ""
+                              }`
+                            : undefined
+                        }
+                        isInstructor={isInstructorOn(sectionId)}
+                        onConfirm={confirmFlagged}
+                        onDismiss={dismissFlag}
+                        onFlag={flag}
+                        onInvalidate={invalidate}
+                        onRestore={restoreValid}
+                        responseId={row.response.id}
+                        studentNumber={row.student?.studentNumber}
+                        validity={validity}
+                      />
                     }
                     submitted={
                       row.response.submittedAt
@@ -2821,7 +2789,7 @@ function ValidityAction({
  * What was decided about this submission, near the top of it.
  *
  * Not a full-page banner and not only a colour: the heading names the state in
- * words, the stamp carries the word plus its shape plus its tone, and the two
+ * words, the stamp carries the written state plus its tone, and the two
  * reasons are labelled separately because they are two different texts with two
  * different audiences — the internal reason is staff vocabulary a student must
  * never read (DESIGN.md §11.15a), and the student-visible sentence is the only
