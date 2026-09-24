@@ -317,6 +317,155 @@ function FeedbackThread({
 }
 
 /**
+ * The detail view keeps the two response channels legible instead of making a
+ * public answer and a private exchange compete in one undifferentiated feed.
+ * The underlying events stay chronological within each channel and retain the
+ * same links, publication states and identity masking as the queue view.
+ */
+function DetailResponseBlocks({
+  events,
+  originalQuestion,
+  timezone,
+  courseId,
+  canDraftPublicAnswers,
+}: {
+  events: FeedbackEvent[];
+  originalQuestion: string;
+  timezone: string;
+  courseId: string;
+  canDraftPublicAnswers: boolean;
+}) {
+  const publicEvents = events.filter((event) => event.kind === "public");
+  const privateEvents = events.filter((event) => event.kind === "private");
+  const privateLabel =
+    privateEvents.length > 1 ? "Private thread" : "Private reply";
+
+  return (
+    <div className="grid gap-5">
+      {publicEvents.length > 0 && (
+        <section className="grid gap-3" aria-labelledby="public-answer-label">
+          <h3
+            className="font-sans text-strip font-bold uppercase tracking-wide text-accent-deep"
+            id="public-answer-label"
+          >
+            Public answer
+          </h3>
+          <Thread>
+            {publicEvents.map((event) => {
+              if (event.kind !== "public") return null;
+              const { answer } = event;
+              return (
+                <ThreadMessage
+                  at={event.at}
+                  author={answer.authorName ?? "A teaching team member"}
+                  from="public"
+                  key={`detail-public-${answer.id}`}
+                  mark={answer.authorName ? initials(answer.authorName) : null}
+                  timezone={timezone}
+                >
+                  {answer.publishFailed && (
+                    <p className="mt-1">
+                      <Stamp tone="red">Publication failed</Stamp>
+                    </p>
+                  )}
+                  {answer.state !== "published" && (
+                    <p className="mt-1 font-sans text-meta text-ink-muted">
+                      {answer.state === "scheduled"
+                        ? "Scheduled for publication"
+                        : "Draft answer"}
+                    </p>
+                  )}
+                  {isReworded(originalQuestion, answer.publicQuestionText) && (
+                    <>
+                      <p className="mt-1 font-sans text-strip uppercase text-ink-muted">
+                        Published as
+                      </p>
+                      <p className="thread__body">
+                        {answer.publicQuestionText}
+                      </p>
+                    </>
+                  )}
+                  {answer.answerBody && (
+                    <AnswerBody>{answer.answerBody}</AnswerBody>
+                  )}
+                  <p className="mt-2">
+                    {answer.state === "published" ? (
+                      <Link
+                        className={buttonClass({
+                          variant: "secondary",
+                          size: "small",
+                        })}
+                        href={`/courses/${courseId}/qa?selected=${answer.id}`}
+                      >
+                        See in Class Q&amp;A
+                        <IconForward size={15} />
+                      </Link>
+                    ) : canDraftPublicAnswers ? (
+                      <Link
+                        className={buttonClass({
+                          variant: "secondary",
+                          size: "small",
+                        })}
+                        href={`/teach/courses/${courseId}/backlog`}
+                      >
+                        Finish it in Question Backlog
+                        <IconForward size={15} />
+                      </Link>
+                    ) : null}
+                  </p>
+                </ThreadMessage>
+              );
+            })}
+          </Thread>
+        </section>
+      )}
+
+      {privateEvents.length > 0 && (
+        <section
+          aria-labelledby="private-reply-label"
+          className={
+            publicEvents.length > 0
+              ? "grid gap-3 border-t border-rule pt-4"
+              : "grid gap-3"
+          }
+        >
+          <h3
+            className="font-sans text-strip font-bold uppercase tracking-wide text-ink-soft"
+            id="private-reply-label"
+          >
+            {privateLabel}
+          </h3>
+          <Thread>
+            {privateEvents.map((event) => {
+              if (event.kind !== "private") return null;
+              const message = event.response;
+              const fromStudent = message.authorRole === "student";
+              return (
+                <ThreadMessage
+                  at={message.createdAt}
+                  author={
+                    message.authorName ??
+                    (fromStudent ? "Identity hidden" : "A teaching team member")
+                  }
+                  from={fromStudent ? "student" : "staff"}
+                  key={`detail-private-${message.id}`}
+                  mark={
+                    message.authorName ? initials(message.authorName) : null
+                  }
+                  timezone={timezone}
+                >
+                  <p className="thread__body">{message.body}</p>
+                </ThreadMessage>
+              );
+            })}
+          </Thread>
+        </section>
+      )}
+    </div>
+  );
+}
+
+/**
  * One reply surface with two explicit visibility modes.
  *
  * The radios are native controls styled as a segmented switch. That keeps the
@@ -335,6 +484,7 @@ function ReplyDialog({
   canPublishPublicAnswers,
   onPrivate,
   onPublic,
+  replyLabel,
   triggerClassName,
   variant = "secondary",
 }: {
@@ -348,6 +498,7 @@ function ReplyDialog({
   canPublishPublicAnswers: boolean;
   onPrivate: FormAction;
   onPublic: FormAction;
+  replyLabel?: string;
   triggerClassName?: string;
   variant?: "quiet" | "secondary";
 }) {
@@ -359,10 +510,11 @@ function ReplyDialog({
       cancelLabel="Cancel"
       className={triggerClassName}
       label={
-        <>
-          <IconPrivate size={15} />
-          Reply
-        </>
+        replyLabel ?? (
+          <>
+            <IconPrivate size={15} /> Reply
+          </>
+        )
       }
       size="small"
       title="Reply"
@@ -492,6 +644,8 @@ function FeedbackActions({
   onPrivate,
   onPublic,
   onDecline,
+  replyLabel,
+  replyVariant = "quiet",
 }: {
   item: QueueItemQuestion;
   responseId: string;
@@ -506,6 +660,8 @@ function FeedbackActions({
   onPrivate: FormAction;
   onPublic: FormAction;
   onDecline: FormAction;
+  replyLabel?: string;
+  replyVariant?: "quiet" | "secondary";
 }) {
   const canPublic = !isComment && !published && canDraftPublicAnswers;
   return (
@@ -520,9 +676,12 @@ function FeedbackActions({
           onPrivate={onPrivate}
           onPublic={onPublic}
           published={published}
+          replyLabel={replyLabel}
           responseId={responseId}
-          triggerClassName="post__action"
-          variant="quiet"
+          triggerClassName={
+            replyVariant === "quiet" ? "post__action" : undefined
+          }
+          variant={replyVariant}
           who={who}
         />
       )}
@@ -1776,6 +1935,7 @@ export default async function CourseResponsesPage({
                           key={answer.questionId}
                           question={answer}
                           rendered={questionHtml}
+                          presentation="stars"
                         />
                       ))}
                     </ul>
@@ -1805,18 +1965,7 @@ export default async function CourseResponsesPage({
                     const declined = item.disposition === "no_response";
                     return (
                       <>
-                        <Sheet
-                          aside={
-                            <ItemStamp
-                              declined={declined}
-                              published={published}
-                              settled={
-                                isComment ? itemAnswered(entry) : entry.settled
-                              }
-                            />
-                          }
-                          title="Student question"
-                        >
+                        <Sheet title="Student question">
                           <CategoryFlair value={item.category} />
                           <p className="mt-3 max-w-measure font-document text-doc-dense text-ink whitespace-pre-wrap">
                             {item.originalText}
@@ -1842,13 +1991,19 @@ export default async function CourseResponsesPage({
                             onPrivate={sendPrivate}
                             onPublic={draftOrPublish}
                             published={published}
+                            replyLabel={
+                              canOn(sectionId, "sendPrivateResponses")
+                                ? "Reply privately"
+                                : undefined
+                            }
+                            replyVariant="secondary"
                             responseId={row.response.id}
                             who={who}
                           />
                         </Sheet>
                         {events.length > 0 && (
-                          <Sheet title="Instructor response">
-                            <FeedbackThread
+                          <Sheet title="Instructor responses">
+                            <DetailResponseBlocks
                               canDraftPublicAnswers={canOn(
                                 sectionId,
                                 "draftPublicAnswers",

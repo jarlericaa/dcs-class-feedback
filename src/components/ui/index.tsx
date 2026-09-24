@@ -20,3 +20,4 @@ export * from "./feedback";
 export * from "./surface";
 export * from "./data";
 export * from "./category-flair";
+export * from "./response-type-tag";

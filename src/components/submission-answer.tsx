@@ -4,6 +4,9 @@ import { cn } from "@/lib/cn";
 import { LongText } from "@/components/ui/long-text";
 import { Stamp } from "@/components/ui/status";
 import { PreRenderedRichText } from "@/components/rich-text-client";
+import { IconStar } from "@/components/ui/icons";
+
+type ScalePresentation = "bars" | "stars";
 
 /** The student-facing subset of a snapshotted question and its answer. */
 export interface SubmissionAnswer {
@@ -74,8 +77,10 @@ function chosenValues(
  */
 export function SubmittedAnswer({
   question,
+  presentation = "bars",
 }: {
   question: SubmissionAnswer & { options?: unknown; scale?: unknown };
+  presentation?: ScalePresentation;
 }) {
   if (!question.answered) {
     return (
@@ -98,7 +103,11 @@ export function SubmittedAnswer({
   const value = (question.value ?? {}) as { scaleValue?: number };
   if (question.type === "linear_scale" && value.scaleValue !== undefined) {
     const scale = scaleOf(question);
-    return <ScaleAnswer max={scale.max} min={scale.min} value={value.scaleValue} />;
+    return presentation === "stars" ? (
+      <ScaleStars max={scale.max} min={scale.min} value={value.scaleValue} />
+    ) : (
+      <ScaleAnswer max={scale.max} min={scale.min} value={value.scaleValue} />
+    );
   }
 
   const chosen = chosenValues(question);
@@ -117,10 +126,12 @@ export function SubmissionAnswerBlock({
   question,
   rendered,
   index,
+  presentation = "bars",
 }: {
   question: SubmissionAnswerQuestion;
   rendered: RenderedSubmissionQuestions;
   index: number;
+  presentation?: ScalePresentation;
 }) {
   const meta = rendered.get(question.questionId);
   return (
@@ -139,7 +150,10 @@ export function SubmissionAnswerBlock({
             role="heading"
           >
             {meta?.prompt ? (
-              <PreRenderedRichText className="rich-text--inline" html={meta.prompt} />
+              <PreRenderedRichText
+                className="rich-text--inline"
+                html={meta.prompt}
+              />
             ) : (
               question.prompt
             )}
@@ -151,7 +165,7 @@ export function SubmissionAnswerBlock({
             <PreRenderedRichText html={meta.description} />
           </div>
         )}
-        <SubmittedAnswer question={question} />
+        <SubmittedAnswer presentation={presentation} question={question} />
       </div>
     </li>
   );
@@ -215,5 +229,39 @@ export function ScaleAnswer({
         {value} / {max}
       </span>
     </p>
+  );
+}
+
+/**
+ * Compact read-only rating for the instructor submission detail. The value is
+ * carried by the accessible name, while the stars keep the response quick to
+ * scan without repeating the number in a second visual treatment.
+ */
+function ScaleStars({
+  min,
+  max,
+  value,
+}: {
+  min: number;
+  max: number;
+  value: number;
+}) {
+  const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
+  return (
+    <div
+      aria-label={`${value} out of ${max}`}
+      className="flex flex-wrap items-center gap-1"
+      role="img"
+    >
+      {steps.map((step) => (
+        <IconStar
+          aria-hidden="true"
+          className={step <= value ? "text-accent" : "text-rule-ink"}
+          fill={step <= value ? "currentColor" : "none"}
+          key={step}
+          size={24}
+        />
+      ))}
+    </div>
   );
 }

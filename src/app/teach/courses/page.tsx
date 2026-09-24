@@ -15,7 +15,6 @@ import {
 import { TagList } from "@/components/ui/tag";
 import { IconForward } from "@/components/ui/icons";
 import {
-  academicYearOptions,
   courseTermParts,
   currentTerm,
   encodeTerm,
@@ -103,7 +102,8 @@ export default async function CoursesPage({
     try {
       await createCourse(uid, {
         code: String(formData.get("code") ?? ""),
-        // Optional, per `modal.md`: an empty title still creates the course.
+        // The course-title field is deprecated; retain an empty value for the
+        // existing database contract.
         title: String(formData.get("title") ?? ""),
         term,
       });
@@ -125,7 +125,6 @@ export default async function CoursesPage({
           action={addCourse}
           defaultSemester={openingTerm.semester}
           defaultStartYear={openingTerm.startYear}
-          yearOptions={academicYearOptions()}
         />
       }
     >

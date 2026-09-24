@@ -14,17 +14,140 @@ import { buttonClass } from "@/components/ui/button";
 import {
   AccessDenied,
   MetaList,
-  Quote,
+  ResponseTypeTag,
   Stamp,
 } from "@/components/ui";
-import { IconRoster } from "@/components/ui/icons";
-import {
-  Thread,
-  ThreadAudience,
-  ThreadMessage,
-} from "@/components/ui/thread";
+import { CategoryFlair } from "@/components/ui/category-flair";
+import { IconBack, IconForward, IconRoster } from "@/components/ui/icons";
+import { Thread, ThreadMessage } from "@/components/ui/thread";
 import { getStudentCourseHistory } from "@/modules/publishing";
 import { activeStudentSectionsForCourse, AuthzError } from "@/modules/authz";
+
+type StudentHistoryEntry = Awaited<
+  ReturnType<typeof getStudentCourseHistory>
+>[number];
+type StudentHistoryItem = StudentHistoryEntry["items"][number];
+
+function normalizedQuestion(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function publicQuestionDiffers(original: string, published: string) {
+  return normalizedQuestion(original) !== normalizedQuestion(published);
+}
+
+/** The student-facing response channels for one original question. */
+function StudentResponseBlocks({
+  item,
+  timezone,
+  studentName,
+}: {
+  item: StudentHistoryItem;
+  timezone: string;
+  studentName: string;
+}) {
+  const publicAnswer = item.publicAnswer;
+  const privateResponses = item.privateResponses;
+  const hasResponse = privateResponses.length > 0 || publicAnswer !== null;
+  if (!hasResponse) {
+    return (
+      <p className="font-sans text-ui-sm text-ink-muted">No response yet.</p>
+    );
+  }
+
+  return (
+    <div className="grid gap-5">
+      {publicAnswer && (
+        <section className="grid" aria-labelledby={`public-${item.id}`}>
+          <h3
+            className="m-0 justify-self-start"
+            id={`public-${item.id}`}
+          >
+            <ResponseTypeTag type="public" />
+          </h3>
+          <Thread>
+            <ThreadMessage
+              at={publicAnswer.publishedAt}
+              author="Your teaching team"
+              from="public"
+              mark={<IconRoster size={14} />}
+              timezone={timezone}
+            >
+              <div className="grid gap-2 rounded-control border border-rule bg-paper-quiet px-4 py-3">
+                {publicQuestionDiffers(
+                  item.originalText,
+                  publicAnswer.rewordedQuestion,
+                ) && (
+                  <p className="font-document text-doc-dense font-semibold text-ink">
+                    {publicAnswer.rewordedQuestion}
+                  </p>
+                )}
+                {publicAnswer.answer && (
+                  <p className="font-document text-doc-dense text-ink">
+                    {publicAnswer.answer}
+                  </p>
+                )}
+              </div>
+              <p className="mt-2">
+                <Link
+                  className={buttonClass({
+                    variant: "secondary",
+                    size: "small",
+                  })}
+                  href={`/courses/${publicAnswer.courseId}/qa?selected=${publicAnswer.id}`}
+                >
+                  See in Class Q&amp;A
+                  <IconForward size={15} />
+                </Link>
+              </p>
+            </ThreadMessage>
+          </Thread>
+        </section>
+      )}
+
+      {privateResponses.length > 0 && (
+        <section
+          aria-labelledby={`private-${item.id}`}
+          className={
+            publicAnswer ? "grid border-t border-rule pt-4" : "grid"
+          }
+        >
+          <h3 className="m-0 justify-self-start" id={`private-${item.id}`}>
+            <ResponseTypeTag
+              label={
+                privateResponses.length > 1
+                  ? "Private thread"
+                  : "Private reply"
+              }
+              type="private"
+            />
+          </h3>
+          <Thread>
+            {privateResponses.map((reply, index) => {
+              const mine = reply.authorRole === "student";
+              return (
+                <ThreadMessage
+                  at={reply.createdAt}
+                  author={mine ? "You" : "Your teaching team"}
+                  from={mine ? "student" : "staff"}
+                  key={`${reply.createdAt.toISOString()}-${index}`}
+                  mark={mine ? initials(studentName) : <IconRoster size={14} />}
+                  timezone={timezone}
+                >
+                  <div className="rounded-control border border-rule bg-paper-quiet px-4 py-3">
+                    <p className="font-document text-doc-dense text-ink">
+                      {reply.body}
+                    </p>
+                  </div>
+                </ThreadMessage>
+              );
+            })}
+          </Thread>
+        </section>
+      )}
+    </div>
+  );
+}
 
 /** Read-only student view of one submitted occurrence. */
 export default async function StudentSubmissionDetailPage({
@@ -105,7 +228,6 @@ export default async function StudentSubmissionDetailPage({
       description={
         <MetaList
           items={[
-            entry.sequenceLabel,
             ...termFacts,
             entry.submittedAt
               ? `Submitted ${formatDateTime(entry.submittedAt, entry.timezone)}`
@@ -119,20 +241,24 @@ export default async function StudentSubmissionDetailPage({
         { href: `/courses/${courseId}/submissions`, label: "My submissions" },
       ]}
       nested
-      roomy
     >
       <div className="stack-4">
         <Link
-          className={buttonClass({ variant: "secondary", size: "small" })}
+          className={buttonClass({
+            variant: "quiet",
+            size: "small",
+            className: "-ml-2.5 justify-self-start",
+          })}
           href={`/courses/${courseId}/submissions`}
         >
+          <IconBack size={15} />
           Back to my submissions
         </Link>
 
-        <section className="relative rounded-panel border border-rule bg-paper before:absolute before:inset-y-0 before:left-0 before:w-px before:rounded-l-panel before:bg-accent before:content-['']">
+        <section className="rounded-panel border border-rule bg-paper">
           <div className="border-b border-rule px-4 py-3">
             <h2 className="font-document text-panel-title font-bold text-ink">
-              Form answers
+              Your form answers
             </h2>
           </div>
           <div className="p-4">
@@ -148,6 +274,7 @@ export default async function StudentSubmissionDetailPage({
                     key={answer.questionId}
                     question={answer}
                     rendered={rendered}
+                    presentation="stars"
                   />
                 ))}
               </ul>
@@ -156,80 +283,47 @@ export default async function StudentSubmissionDetailPage({
         </section>
 
         {entry.items.length > 0 && (
-          <section className="relative rounded-panel border border-rule bg-paper before:absolute before:inset-y-0 before:left-0 before:w-px before:rounded-l-panel before:bg-accent before:content-['']">
+          <section className="rounded-panel border border-rule bg-paper">
             <div className="border-b border-rule px-4 py-3">
               <h2 className="font-document text-panel-title font-bold text-ink">
-                Your questions and feedback
+                Your question and feedback
               </h2>
             </div>
-            <div className="grid gap-6 p-4">
-              {entry.items.map((item) => {
-                const hasReply =
-                  item.privateResponses.length > 0 || !!item.publicAnswer;
-                return (
-                  <div className="grid gap-4" key={item.id}>
-                    <Quote label={`Your ${item.submissionType}`}>
-                      {item.originalText}
-                    </Quote>
-                    {hasReply ? (
-                      <Thread
-                        audience={
-                          item.publicAnswer ? (
-                            <ThreadAudience scope="public">
-                              A published answer is visible to your class
-                              without your name.
-                            </ThreadAudience>
-                          ) : (
-                            <ThreadAudience scope="private">
-                              Only you and your teaching team can read this.
-                            </ThreadAudience>
-                          )
-                        }
-                      >
-                        {item.privateResponses.map((reply, index) => {
-                          const mine = reply.authorRole === "student";
-                          return (
-                            <ThreadMessage
-                              key={index}
-                              from={mine ? "student" : "staff"}
-                              author={mine ? "You" : "Your teaching team"}
-                              mark={
-                                mine ? initials(user.displayName) : <IconRoster size={14} />
-                              }
-                              action={mine ? "followed up" : "replied"}
-                              at={reply.createdAt}
-                              timezone={entry.timezone}
-                            >
-                              <p className="thread__body">{reply.body}</p>
-                            </ThreadMessage>
-                          );
-                        })}
-                        {item.publicAnswer && (
-                          <ThreadMessage
-                            from="public"
-                            author="Your teaching team"
-                            mark={<IconRoster size={14} />}
-                            action="answered the class"
-                            at={item.publicAnswer.publishedAt}
-                            timezone={entry.timezone}
-                          >
-                            <p className="thread__body">
-                              <strong>{item.publicAnswer.rewordedQuestion}</strong>
-                            </p>
-                            {item.publicAnswer.answer && (
-                              <p className="thread__body">{item.publicAnswer.answer}</p>
-                            )}
-                          </ThreadMessage>
-                        )}
-                      </Thread>
-                    ) : (
-                      <p className="meta">
-                        <Stamp tone="neutral">No reply yet</Stamp>
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="grid gap-5 p-4">
+              {entry.items.map((item) => (
+                <div className="grid gap-3" key={item.id}>
+                  <CategoryFlair value={item.category} />
+                  <p className="max-w-measure rounded-control border border-rule bg-paper-quiet px-4 py-3 font-document text-doc-dense text-ink whitespace-pre-wrap">
+                    {item.originalText}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {entry.items.length > 0 && (
+          <section className="rounded-panel border border-rule bg-paper">
+            <div className="border-b border-rule px-4 py-3">
+              <h2 className="font-document text-panel-title font-bold text-ink">
+                Teaching team responses
+              </h2>
+            </div>
+            <div className="grid gap-5 p-4">
+              {entry.items.map((item, index) => (
+                <div
+                  className={
+                    index > 0 ? "border-t border-rule pt-5" : undefined
+                  }
+                  key={item.id}
+                >
+                  <StudentResponseBlocks
+                    item={item}
+                    studentName={user.displayName}
+                    timezone={entry.timezone}
+                  />
+                </div>
+              ))}
             </div>
           </section>
         )}

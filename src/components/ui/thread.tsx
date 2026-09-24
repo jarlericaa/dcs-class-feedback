@@ -92,8 +92,8 @@ export function ThreadMessage({
    * group.
    */
   mark?: ReactNode;
-  /** what they did, as a verb: "replied privately", "followed up" */
-  action: string;
+  /** what they did, as a verb, when this message needs an action label */
+  action?: string;
   at: Date | null;
   timezone: string;
   from?: "staff" | "student" | "public";
@@ -107,7 +107,7 @@ export function ThreadMessage({
       <div className="thread__main">
         <p className="thread__head">
           <span className="thread__author">{author}</span>
-          <span className="thread__action">{action}</span>
+          {action && <span className="thread__action">{action}</span>}
           <ThreadWhen at={at} timezone={timezone} />
         </p>
         {children}

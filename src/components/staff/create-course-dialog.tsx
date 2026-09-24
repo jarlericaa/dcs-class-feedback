@@ -1,12 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { buttonClass } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, FieldRow, Select } from "@/components/ui/form";
 import { IconPlus } from "@/components/ui/icons";
 import { RequiredMark } from "@/components/ui/required-mark";
-import { SEMESTER_OPTIONS, type Semester } from "@/lib/term";
+import {
+  derivedAcademicYear,
+  MAX_START_YEAR,
+  MIN_START_YEAR,
+  SEMESTER_OPTIONS,
+  type Semester,
+} from "@/lib/term";
 
 /**
  * Creating a course: a modal, not a form wedged into the top of the list.
@@ -24,36 +31,24 @@ import { SEMESTER_OPTIONS, type Semester } from "@/lib/term";
  * corner × all come from there, so this file contains no geometry at all — only
  * which fields, in which order.
  *
- * Three things the spec settled that are worth keeping visible here:
+ * Two things the spec settled that are worth keeping visible here:
  *
- * - **The title is OPTIONAL and carries no asterisk.** The reference image
- *   shows `Course title *`; the spec's own field list overrides it three times
- *   over ("Empty title must still allow the course to be created", "do not
- *   display an asterisk"). The text wins over the picture, and it agrees with
- *   the rest of the app: the CODE is the course's identity — every heading and
- *   breadcrumb leads with `CS 33` — so a title is a gloss, not a second name.
- *   This also answers §10.3b, which had been open on exactly this question.
  * - **The term is asked once, here.** It used to be a property of each class
  *   list, so a teacher retyped the same academic year per section and a course
  *   with no sections had no term to show. `courses.term` now holds it
  *   (migration `0007_course_term`), and new class lists inherit it.
- * - **Both term selects open on the current term**, per the spec's "if the
- *   current academic year and semester are already known, preselect them".
- *   `currentTerm()` knows, so the common case is three fields already filled
- *   and one word to type.
+ * - **The start year derives the ending year immediately**, so the teacher
+ *   enters one year and can see the complete academic year before submitting.
  */
 export function CreateCourseDialog({
   action,
   defaultStartYear,
   defaultSemester,
-  yearOptions,
 }: {
   /** The server action that creates the course. Redirects on both outcomes. */
   action: (formData: FormData) => void | Promise<void>;
   defaultStartYear: number;
   defaultSemester: Semester;
-  /** Computed on the server so the list cannot differ between the two. */
-  yearOptions: { value: number; label: string }[];
 }) {
   return (
     <Dialog
@@ -92,19 +87,11 @@ export function CreateCourseDialog({
             />
           </FieldRow>
 
-          <FieldRow htmlFor="course-title" label="Course title" optional>
-            <Field
-              id="course-title"
-              name="title"
-              placeholder="e.g. Introduction to Computing"
-            />
-          </FieldRow>
-
           {/*
             One question — which offering is this? — answered by two controls,
             so they are one `<fieldset>` with one required mark rather than two
             fields that happen to sit side by side. The `<legend>` is what makes
-            "Semester" the accessible group name for both selects.
+            "Semester" the accessible group name for both controls.
           */}
           {/*
             `gap-2` rather than the `gap-tight` a `FieldRow` uses, because this
@@ -119,26 +106,7 @@ export function CreateCourseDialog({
               <RequiredMark />
             </legend>
             <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
-              <div className="grid gap-tight">
-                <label
-                  className="text-meta text-ink-muted"
-                  htmlFor="course-year"
-                >
-                  Academic year
-                </label>
-                <Select
-                  defaultValue={String(defaultStartYear)}
-                  id="course-year"
-                  name="startYear"
-                  required
-                >
-                  {yearOptions.map((year) => (
-                    <option key={year.value} value={year.value}>
-                      {year.label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+              <AcademicYearField defaultStartYear={defaultStartYear} />
               <div className="grid gap-tight">
                 <label
                   className="text-meta text-ink-muted"
@@ -171,7 +139,7 @@ export function CreateCourseDialog({
           */}
           <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
             <button
-              className={buttonClass({ variant: "quiet" })}
+              className={buttonClass({ variant: "danger" })}
               data-dialog-close
               type="button"
             >
@@ -183,5 +151,42 @@ export function CreateCourseDialog({
           </div>
         </form>
     </Dialog>
+  );
+}
+
+function AcademicYearField({ defaultStartYear }: { defaultStartYear: number }) {
+  const [startYear, setStartYear] = useState(String(defaultStartYear));
+  const academicYear = derivedAcademicYear(startYear);
+
+  return (
+    <div className="grid gap-tight">
+      <label className="text-meta text-ink-muted" htmlFor="course-year">
+        Start year
+      </label>
+      <Field
+        aria-describedby="course-year-preview"
+        className="tabular-nums"
+        id="course-year"
+        name="startYear"
+        required
+        type="number"
+        inputMode="numeric"
+        min={MIN_START_YEAR}
+        max={MAX_START_YEAR}
+        step={1}
+        value={startYear}
+        onChange={(event) => setStartYear(event.target.value)}
+        placeholder="2026"
+      />
+      <p className="term-fields__derived" id="course-year-preview" role="status">
+        {academicYear ? (
+          <>
+            Academic year <strong>{academicYear}</strong>
+          </>
+        ) : (
+          <>Enter the year this academic year starts in.</>
+        )}
+      </p>
+    </div>
   );
 }

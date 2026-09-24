@@ -29,7 +29,7 @@ export function CategoryFlair({
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center justify-center px-2",
+        "inline-flex h-5 items-center justify-center justify-self-start px-2",
         "rounded-stamp border",
         "font-sans text-strip uppercase",
         CATEGORY_TONE[value ?? ""] ?? CATEGORY_FALLBACK,

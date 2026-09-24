@@ -964,7 +964,7 @@ export function StudentQuestionRow({
         )}
       >
         <span className="col-start-1 row-start-1 grid sm:w-full">
-          <CategoryFlair className="w-full" value={category} />
+          <CategoryFlair value={category} />
         </span>
         <span className="col-start-2 row-start-1 grid min-w-0 gap-1 text-left sm:col-start-2 sm:row-start-1">
           <span className="break-words font-document text-doc-dense font-bold text-ink">
@@ -1138,14 +1138,17 @@ export function AnswerBlock({
   question,
   rendered,
   index,
+  presentation = "bars",
 }: {
   question: AnswerRow;
   rendered: RenderedQuestions;
   index: number;
+  presentation?: "bars" | "stars";
 }) {
   return (
     <SubmissionAnswerBlock
       index={index}
+      presentation={presentation}
       question={question}
       rendered={rendered}
     />
