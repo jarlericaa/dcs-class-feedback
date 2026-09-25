@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
+  classSections,
   enrollments,
   formInstances,
   formQuestions,
@@ -14,7 +15,13 @@ import {
   studentSubmissionItems,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
-import { requireInstructor, requireSectionStaff } from "@/modules/authz";
+import {
+  AuthzError,
+  getCourseCapabilities,
+  getSectionAccess,
+  requireInstructor,
+  requireSectionStaff,
+} from "@/modules/authz";
 import { instanceIdsForSection } from "@/modules/forms/audience";
 import { instanceLabel } from "@/modules/forms/instances";
 import { toCsv, toXlsxBuffer, type Cell } from "@/modules/exports/tabular";
@@ -27,13 +34,13 @@ import { formatStudentNumber } from "@/lib/student-number";
  * participation table. A student participated in an occurrence iff a FormResponse
  * exists for (instance, student) with validity Valid.
  *
- * Per-section, and stays per-section under a shared form: the occurrences counted
+ * `deriveParticipation` is the per-section primitive: the occurrences counted
  * are those whose AUDIENCE includes this section, and the responses counted are
- * those attributed to it. A course-wide form therefore contributes one column to
- * each of its sections' matrices, carrying only that section's own answers. (All review states count —
- * review progress is independent of participation.) Marking a response
- * invalid removes the credit with no separate bookkeeping. Legacy/backlog
- * items never create responses, so they can never count.
+ * those attributed to it. `getCourseParticipationOverview` combines those
+ * section results into one course-wide form matrix while preserving that source
+ * attribution. (All review states count — review progress is independent of
+ * participation.) Marking a response invalid removes the credit with no separate
+ * bookkeeping. Legacy/backlog items never create responses, so they can never count.
  *
  * Every export here is identity-bearing, and every access is audited (Risk R4).
  * They do NOT all share one gate, and the split is deliberate
@@ -83,6 +90,8 @@ export interface ParticipationMatrix {
     fullName: string;
     /** cycles that earned credit (valid OR flagged — decision D15) */
     participatedCycleIds: Set<string>;
+    /** occurrences this student was eligible to receive */
+    eligibleCycleIds: Set<string>;
     /** flagged but still credited; STAFF-ONLY, never in a student payload */
     flaggedCycleIds: Set<string>;
     invalidCycleIds: Set<string>;
@@ -187,12 +196,82 @@ export async function deriveParticipation(
       return {
         ...s,
         participatedCycleIds: participated,
+        eligibleCycleIds: new Set(cycles.map((cycle) => cycle.id)),
         flaggedCycleIds: flagged.get(s.studentRecordId) ?? new Set<string>(),
         invalidCycleIds: invalid.get(s.studentRecordId) ?? new Set<string>(),
         invalidReasons: reasons.get(s.studentRecordId) ?? new Map(),
         totalWeeks: participated.size,
       };
     }),
+  };
+}
+
+/**
+ * Course-wide form participation, merged across the accessible class lists.
+ *
+ * A student appears once even when they are enrolled in more than one section,
+ * and a shared form occurrence appears once even when it was delivered to many
+ * sections. The source response still keeps its section attribution; this read
+ * model only combines the resulting participation credit for the course view.
+ */
+export async function deriveCourseParticipation(
+  sectionIds: readonly string[],
+): Promise<ParticipationMatrix> {
+  const matrices = await Promise.all(
+    sectionIds.map((sectionId) => deriveParticipation(sectionId)),
+  );
+  const cycles = new Map<
+    string,
+    ParticipationMatrix["cycles"][number]
+  >();
+  const students = new Map<
+    string,
+    ParticipationMatrix["students"][number]
+  >();
+
+  for (const matrix of matrices) {
+    for (const cycle of matrix.cycles) cycles.set(cycle.id, cycle);
+    for (const student of matrix.students) {
+      const existing = students.get(student.studentRecordId);
+      if (!existing) {
+        students.set(student.studentRecordId, {
+          ...student,
+          participatedCycleIds: new Set(student.participatedCycleIds),
+          eligibleCycleIds: new Set(student.eligibleCycleIds),
+          flaggedCycleIds: new Set(student.flaggedCycleIds),
+          invalidCycleIds: new Set(student.invalidCycleIds),
+          invalidReasons: new Map(student.invalidReasons),
+        });
+        continue;
+      }
+      for (const cycleId of student.participatedCycleIds) {
+        existing.participatedCycleIds.add(cycleId);
+      }
+      for (const cycleId of student.eligibleCycleIds) {
+        existing.eligibleCycleIds.add(cycleId);
+      }
+      for (const cycleId of student.flaggedCycleIds) {
+        existing.flaggedCycleIds.add(cycleId);
+      }
+      for (const cycleId of student.invalidCycleIds) {
+        existing.invalidCycleIds.add(cycleId);
+      }
+      for (const [cycleId, reason] of student.invalidReasons) {
+        existing.invalidReasons.set(cycleId, reason);
+      }
+      existing.totalWeeks = existing.participatedCycleIds.size;
+    }
+  }
+
+  return {
+    cycles: [...cycles.values()].sort(
+      (a, b) =>
+        a.openAt.getTime() - b.openAt.getTime() ||
+        a.cycleIndex - b.cycleIndex,
+    ),
+    students: [...students.values()].sort((a, b) =>
+      a.fullName.localeCompare(b.fullName),
+    ),
   };
 }
 
@@ -218,7 +297,10 @@ export async function getParticipationOverview(
   const students = matrix.students.map((s) => ({
     ...s,
     active: activeIds.has(s.studentRecordId),
-    rate: cycleCount === 0 ? 0 : s.totalWeeks / cycleCount,
+    rate:
+      s.eligibleCycleIds.size === 0
+        ? 0
+        : s.totalWeeks / s.eligibleCycleIds.size,
   }));
   const activeStudents = students.filter((s) => s.active);
   return {
@@ -238,6 +320,122 @@ export async function getParticipationOverview(
       neverParticipated: activeStudents.filter((s) => s.totalWeeks === 0).length,
     },
   };
+}
+
+/**
+ * Course-wide participation read model. Course staff see every class list;
+ * section assistants see only the class lists where they hold the existing
+ * `exportParticipation` capability. No question-answer filter is involved in
+ * this primary form-participation view.
+ */
+export async function getCourseParticipationOverview(
+  actorUserId: string,
+  courseId: string,
+) {
+  const courseAccess = await getCourseCapabilities(db, actorUserId, courseId);
+  if (!courseAccess?.permissions.exportParticipation) {
+    throw new AuthzError("No access to this course's participation records");
+  }
+
+  const sections = await db.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+    orderBy: [asc(classSections.title), asc(classSections.id)],
+    columns: { id: true, title: true, term: true },
+  });
+  const visibleSections = courseAccess.hasCourseStanding
+    ? sections
+    : (
+        await Promise.all(
+          sections.map(async (section) => {
+            const access = await getSectionAccess(db, actorUserId, section.id);
+            return access?.staff?.permissions.exportParticipation ? section : null;
+          }),
+        )
+      ).filter((section): section is (typeof sections)[number] => section !== null);
+  const sectionIds = visibleSections.map((section) => section.id);
+  const matrix = await deriveCourseParticipation(sectionIds);
+  const activeEnrollments = sectionIds.length
+    ? await db.query.enrollments.findMany({
+        where: and(
+          inArray(enrollments.sectionId, sectionIds),
+          eq(enrollments.status, "active"),
+        ),
+        columns: { studentRecordId: true },
+      })
+    : [];
+  const activeIds = new Set(activeEnrollments.map((row) => row.studentRecordId));
+  const students = matrix.students.map((student) => ({
+    ...student,
+    active: activeIds.has(student.studentRecordId),
+    rate:
+      student.eligibleCycleIds.size === 0
+        ? 0
+        : student.totalWeeks / student.eligibleCycleIds.size,
+  }));
+  const activeStudents = students.filter((student) => student.active);
+
+  return {
+    sections: visibleSections,
+    cycles: matrix.cycles,
+    students,
+    archived: courseAccess.archived,
+    summary: {
+      cycleCount: matrix.cycles.length,
+      activeStudentCount: activeStudents.length,
+      deactivatedStudentCount: students.length - activeStudents.length,
+      neverParticipated: activeStudents.filter(
+        (student) => student.totalWeeks === 0,
+      ).length,
+    },
+  };
+}
+
+/**
+ * Course-wide form participation matrix export. The rows and columns follow
+ * the same aggregate read model as the course Participation page; cells for a
+ * form that was not assigned to a student are blank rather than a false
+ * negative.
+ */
+export async function courseWeeklyMatrixCsv(
+  actorUserId: string,
+  courseId: string,
+): Promise<string> {
+  const overview = await getCourseParticipationOverview(actorUserId, courseId);
+  const header = [
+    "Student number",
+    "Student name",
+    ...overview.cycles.map(
+      (cycle) => `${cycle.label} (${cycle.openAt.toISOString().slice(0, 10)})`,
+    ),
+    "Total forms",
+    "Flagged forms (still credited)",
+    "Invalid forms",
+  ];
+  const rows = overview.students.map((student) => [
+    studentNumberOf(student),
+    student.fullName,
+    ...overview.cycles.map((cycle) => {
+      if (!student.eligibleCycleIds.has(cycle.id)) return "";
+      return student.participatedCycleIds.has(cycle.id) ? "1" : "0";
+    }),
+    student.totalWeeks,
+    student.flaggedCycleIds.size,
+    student.invalidCycleIds.size,
+  ]);
+  await writeAudit(db, {
+    actorUserId,
+    action: "participation.exported",
+    entityType: "course",
+    entityId: courseId,
+    courseId,
+    metadata: {
+      report: "course_weekly_matrix",
+      sectionCount: overview.sections.length,
+      cycleCount: overview.cycles.length,
+      studentCount: overview.students.length,
+    },
+  });
+  return toCsv([header, ...rows]);
 }
 
 /**

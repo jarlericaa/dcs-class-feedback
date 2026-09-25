@@ -4,6 +4,7 @@ import { db, type DbOrTx } from "@/db";
 import {
   classSections,
   courses,
+  courseStaff,
   emailOutbox,
   enrollments,
   formResponses,
@@ -24,6 +25,7 @@ import { formatDeadline } from "@/lib/datetime";
 import { getInstanceAudience } from "@/modules/forms/audience";
 import { buildEmail, type EmailEvent, type TemplateContext } from "./templates";
 import { getEmailProvider } from "./index";
+import { assertMutationAllowed } from "@/lib/impersonation";
 
 /**
  * Idempotent email outbox (docs/product/specification.md §12: "safe retry behavior that does
@@ -72,6 +74,7 @@ export async function enqueueEmail(
   dbx: DbOrTx,
   input: EnqueueInput,
 ): Promise<boolean> {
+  await assertMutationAllowed();
   const built = buildEmail(input.eventType, input.context);
   const inserted = await dbx
     .insert(emailOutbox)
@@ -111,6 +114,27 @@ async function sectionScope(dbx: DbOrTx, sectionId: string) {
     courseCode: course?.code ?? "Course",
     sectionTitle: section.title,
     timezone: section.timezone,
+  };
+}
+
+/**
+ * Course labels, for mail about a COURSE-owned object (ADR-0005).
+ *
+ * `sectionTitle` is still required by the template, so it carries the course
+ * title — the honest answer for a publication that belongs to the whole course
+ * rather than to one class list. Nothing here names a section, because naming
+ * one would be inventing a scope the object does not have.
+ */
+async function courseScope(dbx: DbOrTx, courseId: string) {
+  const course = await dbx.query.courses.findFirst({
+    where: eq(courses.id, courseId),
+  });
+  if (!course) return null;
+  return {
+    courseId,
+    courseCode: course.code,
+    sectionTitle: course.title,
+    ownerUserId: course.ownerUserId,
   };
 }
 
@@ -182,7 +206,12 @@ export async function enqueueCycleOpened(
       const inserted = await enqueueEmail(dbx, {
         availableAt: at,
         eventType: "form_opened",
-        idempotencyKey: key(["form_opened", "cycle", cycleId, recipient.userId]),
+        idempotencyKey: key([
+          "form_opened",
+          "cycle",
+          cycleId,
+          recipient.userId,
+        ]),
         recipientUserId: recipient.userId,
         sectionId: scope.sectionId,
         courseId: scope.courseId,
@@ -309,7 +338,7 @@ export async function enqueuePublicAnswerLinked(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) return 0;
-  const scope = await sectionScope(dbx, answer.sectionId);
+  const scope = await courseScope(dbx, answer.courseId);
   if (!scope) return 0;
   const links = await dbx.query.sourceLinks.findMany({
     where: eq(sourceLinks.publicAnswerId, publicAnswerId),
@@ -322,6 +351,10 @@ export async function enqueuePublicAnswerLinked(
     .select({
       itemId: studentSubmissionItems.id,
       studentRecordId: formResponses.studentRecordId,
+      /* The asker's OWN section — where their history lives. The answer is
+         course-owned and has no section, but a student reads their submissions
+         through the class list they answered through. */
+      sectionId: formResponses.sectionId,
     })
     .from(studentSubmissionItems)
     .innerJoin(
@@ -342,13 +375,13 @@ export async function enqueuePublicAnswerLinked(
         recipient.id,
       ]),
       recipientUserId: recipient.id,
-      sectionId: scope.sectionId,
+      sectionId: asker.sectionId,
       courseId: scope.courseId,
       context: {
         courseCode: scope.courseCode,
         sectionTitle: scope.sectionTitle,
         recipientName: recipient.displayName,
-        linkPath: `/sections/${answer.sectionId}/history`,
+        linkPath: `/sections/${asker.sectionId}/history`,
       },
     });
     queued += 1;
@@ -374,7 +407,10 @@ export async function enqueueValidityChanged(
   // about their submission alone.
   const scope = await sectionScope(dbx, response.sectionId);
   if (!scope) return;
-  const recipient = await accountForStudentRecord(dbx, response.studentRecordId);
+  const recipient = await accountForStudentRecord(
+    dbx,
+    response.studentRecordId,
+  );
   if (!recipient) return;
   const eventType: EmailEvent =
     validity === "invalid" ? "submission_invalidated" : "submission_restored";
@@ -402,7 +438,13 @@ export async function enqueueValidityChanged(
   });
 }
 
-/** Instructors on the section are told a TA draft needs approval. */
+/**
+ * Instructors on the COURSE are told a TA draft needs approval.
+ *
+ * Course-wide since ADR-0005, and deliberately so: the draft will publish to
+ * the whole course, so the whole course's instructors are the right approvers —
+ * not only those who happen to staff the section the question came from.
+ */
 export async function enqueueApprovalRequested(
   dbx: DbOrTx,
   publicAnswerId: string,
@@ -411,19 +453,51 @@ export async function enqueueApprovalRequested(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) return 0;
-  const scope = await sectionScope(dbx, answer.sectionId);
+  const scope = await courseScope(dbx, answer.courseId);
   if (!scope) return 0;
-  const staff = await dbx
-    .select({ userId: sectionStaff.userId, displayName: users.displayName })
-    .from(sectionStaff)
-    .innerJoin(users, eq(users.id, sectionStaff.userId))
+  const sections = await dbx.query.classSections.findMany({
+    where: eq(classSections.courseId, answer.courseId),
+  });
+  const sectionRows = sections.length
+    ? await dbx
+        .select({ userId: sectionStaff.userId, displayName: users.displayName })
+        .from(sectionStaff)
+        .innerJoin(users, eq(users.id, sectionStaff.userId))
+        .where(
+          and(
+            inArray(
+              sectionStaff.sectionId,
+              sections.map((section) => section.id),
+            ),
+            inArray(sectionStaff.role, ["teacher", "co_teacher"]),
+            eq(users.active, true),
+          ),
+        )
+    : [];
+  const courseRows = await dbx
+    .select({ userId: courseStaff.userId, displayName: users.displayName })
+    .from(courseStaff)
+    .innerJoin(users, eq(users.id, courseStaff.userId))
     .where(
-      and(
-        eq(sectionStaff.sectionId, answer.sectionId),
-        inArray(sectionStaff.role, ["teacher", "co_teacher"]),
-        eq(users.active, true),
-      ),
+      and(eq(courseStaff.courseId, answer.courseId), eq(users.active, true)),
     );
+  const owner = await dbx.query.users.findFirst({
+    where: and(eq(users.id, scope.ownerUserId), eq(users.active, true)),
+    columns: { id: true, displayName: true },
+  });
+  // One mail per person: an instructor holding both a course row and a section
+  // row is one approver, not two.
+  const staff = [
+    ...new Map(
+      [
+        ...courseRows,
+        ...sectionRows,
+        ...(owner
+          ? [{ userId: owner.id, displayName: owner.displayName }]
+          : []),
+      ].map((row) => [row.userId, row]),
+    ).values(),
+  ];
   for (const person of staff) {
     await enqueueEmail(dbx, {
       eventType: "approval_requested",
@@ -434,13 +508,12 @@ export async function enqueueApprovalRequested(
         person.userId,
       ]),
       recipientUserId: person.userId,
-      sectionId: scope.sectionId,
       courseId: scope.courseId,
       context: {
         courseCode: scope.courseCode,
         sectionTitle: scope.sectionTitle,
         recipientName: person.displayName,
-        linkPath: `/teach/sections/${answer.sectionId}/approvals`,
+        linkPath: `/teach/courses/${answer.courseId}/backlog`,
       },
     });
   }
@@ -458,7 +531,7 @@ export async function enqueueApprovalDecided(
   });
   if (!answer) return;
   const target = answer.submittedByUserId ?? answer.createdByUserId;
-  const scope = await sectionScope(dbx, answer.sectionId);
+  const scope = await courseScope(dbx, answer.courseId);
   if (!scope) return;
   const recipient = await dbx.query.users.findFirst({
     where: eq(users.id, target),
@@ -474,14 +547,13 @@ export async function enqueueApprovalDecided(
       target,
     ]),
     recipientUserId: target,
-    sectionId: scope.sectionId,
     courseId: scope.courseId,
     context: {
       courseCode: scope.courseCode,
       sectionTitle: scope.sectionTitle,
       recipientName: recipient.displayName,
       decision,
-      linkPath: `/teach/sections/${answer.sectionId}/publications`,
+      linkPath: `/teach/courses/${answer.courseId}/backlog`,
     },
   });
 }
@@ -594,7 +666,10 @@ export async function processEmailOutbox(
           entityType: "email_outbox",
           entityId: row.id,
           // Recipient by id, event type only. Never the body or the address.
-          metadata: { eventType: row.eventType, recipientUserId: row.recipientUserId },
+          metadata: {
+            eventType: row.eventType,
+            recipientUserId: row.recipientUserId,
+          },
           sectionId: row.sectionId,
           courseId: row.courseId,
         });
@@ -607,9 +682,7 @@ export async function processEmailOutbox(
         .update(emailOutbox)
         .set({
           state: exhausted ? "failed" : "pending",
-          availableAt: new Date(
-            Date.now() + backoffSeconds(attempts) * 1000,
-          ),
+          availableAt: new Date(Date.now() + backoffSeconds(attempts) * 1000),
           lastError: err instanceof Error ? err.message : String(err),
           leaseOwner: null,
           leaseExpiresAt: null,

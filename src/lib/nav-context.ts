@@ -1,10 +1,14 @@
 import { cache } from "react";
 import { eq } from "drizzle-orm";
 
-import { courseTabGroups, primaryNav, type NavGroup } from "@/components/layout/nav";
+import {
+  courseTabGroups,
+  primaryNav,
+  type NavGroup,
+} from "@/components/layout/nav";
 import { db } from "@/db";
 import { classSections } from "@/db/schema";
-import { getSectionAccess } from "@/modules/authz";
+import { getCourseCapabilities, getSectionAccess } from "@/modules/authz";
 import type { SessionUser } from "@/lib/session";
 import { sectionLabel } from "@/lib/staff-section";
 import { listCoursesForUser, listSectionsForUser } from "@/modules/catalog";
@@ -32,6 +36,20 @@ const loadNavSections = cache(async (userId: string) => {
     return code ? sectionLabel(code, section.title) : section.title;
   };
 
+  const studentCourseById = new Map(
+    studentSections
+      .map((section) => {
+        const course = courseById.get(section.courseId);
+        return course
+          ? [course.id, { id: course.id, label: course.code }] as const
+          : null;
+      })
+      .filter(
+        (entry): entry is readonly [string, { id: string; label: string }] =>
+          !!entry,
+      ),
+  );
+
   return {
     courses: courses.map((entry) => ({
       id: entry.course.id,
@@ -41,6 +59,9 @@ const loadNavSections = cache(async (userId: string) => {
       id: section.id,
       label: label(section),
     })),
+    studentCourses: [...studentCourseById.values()].sort((a, b) =>
+      a.label.localeCompare(b.label),
+    ),
     /**
      * Only sections whose course this account does NOT staff. Course staff
      * reach every section of their own courses through "My courses", so
@@ -54,7 +75,7 @@ const loadNavSections = cache(async (userId: string) => {
 });
 
 export async function primaryNavFor(
-  user: Pick<SessionUser, "id" | "isTeacher" | "isPlatformAdmin">,
+  user: Pick<SessionUser, "id" | "isTeacher">,
   currentPath: string,
   opts: {
     /**
@@ -65,16 +86,18 @@ export async function primaryNavFor(
     fallbackHref?: string;
   } = {},
 ): Promise<NavGroup[]> {
-  const { courses, studentSections, assistedSections } = await loadNavSections(
-    user.id,
-  );
+  const { courses, studentSections, studentCourses, assistedSections } =
+    await loadNavSections(user.id);
   return primaryNav(
     currentPath,
     {
       isTeacher: user.isTeacher,
-      isPlatformAdmin: user.isPlatformAdmin,
+      // Platform Admins have a separate principal and never reach this
+      // normal-user navigation builder. The legacy users flag is inert.
+      isPlatformAdmin: false,
       courses,
       studentSections,
+      studentCourses,
       assistedSections,
     },
     {
@@ -120,5 +143,12 @@ export async function courseTabGroupsFor(
     sections.length === 1
       ? await getSectionAccess(db, userId, sections[0]!.id)
       : null;
-  return courseTabGroups(courseId, currentPath, opts, singleSectionAccess);
+  const courseAccess = await getCourseCapabilities(db, userId, courseId);
+  return courseTabGroups(
+    courseId,
+    currentPath,
+    opts,
+    singleSectionAccess,
+    courseAccess,
+  );
 }

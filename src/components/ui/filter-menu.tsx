@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { IconCheck, IconFilter } from "@/components/ui/icons";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * One filter control per list. One popover. One way to close it.
@@ -76,7 +77,7 @@ export function FilterMenu({ groups }: { groups: FilterGroup[] }) {
       <div className="filterbar__control" ref={wrapRef}>
         <button
           ref={buttonRef}
-          className="button button--secondary button--small"
+          className={buttonClass({ variant: "secondary", size: "small" })}
           type="button"
           aria-expanded={open}
           aria-controls={menuId}

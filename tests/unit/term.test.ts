@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   academicYearLabel,
+  academicYearOptions,
+  courseTermParts,
+  currentTerm,
   derivedAcademicYear,
   encodeTerm,
+  fallbackTerm,
   formatTerm,
   parseTerm,
   semesterLabel,
@@ -87,5 +91,110 @@ describe("academic term adapter", () => {
     expect(derivedAcademicYear("20")).toBe("");
     expect(derivedAcademicYear("")).toBe("");
     expect(derivedAcademicYear("abcd")).toBe("");
+  });
+});
+
+/**
+ * The course's own term, and what reads it.
+ *
+ * These three functions exist because of migration `0007_course_term`: the term
+ * moved from being a property of each class list to a property of the course
+ * offering. Every one of them has to keep a course that PREDATES that column
+ * rendering exactly as it did, which is the only way the migration could stay
+ * additive — so each test below pairs the new path with the old one.
+ */
+describe("a course's own term", () => {
+  describe("fallbackTerm", () => {
+    it("prefers the course's own term over its sections'", () => {
+      expect(fallbackTerm("AY2026-1", ["AY2024-2", "AY2025-1"])).toBe(
+        "AY2026-1",
+      );
+    });
+
+    it("falls back to a section's term for a course that predates the column", () => {
+      expect(fallbackTerm(null, ["AY2024-2"])).toBe("AY2024-2");
+      expect(fallbackTerm(undefined, ["AY2024-2"])).toBe("AY2024-2");
+    });
+
+    it("skips section terms it cannot parse rather than inheriting a typo", () => {
+      expect(fallbackTerm(null, ["First sem", "AY2025-M"])).toBe("AY2025-M");
+    });
+
+    it("ignores a course term it cannot parse", () => {
+      // Same rule as the sections: an unparseable value is not inherited.
+      expect(fallbackTerm("whenever", ["AY2025-1"])).toBe("AY2025-1");
+    });
+
+    it("lands on the current term only when nothing else is known", () => {
+      expect(fallbackTerm(null, [])).toBe(currentTerm());
+      expect(fallbackTerm(null)).toBe(currentTerm());
+    });
+
+    it("trims the course term, as the section path already did", () => {
+      expect(fallbackTerm("  AY2026-1  ", [])).toBe("AY2026-1");
+    });
+  });
+
+  describe("courseTermParts", () => {
+    it("reads the course's term when it has one", () => {
+      expect(courseTermParts("AY2026-1", [])).toEqual([
+        "2026-2027",
+        "1st semester",
+      ]);
+    });
+
+    it("shows a term for a course with no class lists yet", () => {
+      // The state a course spends its first five minutes in. Before the column
+      // this rendered nothing at all.
+      expect(courseTermParts("AY2026-2", [])).toEqual([
+        "2026-2027",
+        "2nd semester",
+      ]);
+    });
+
+    it("keeps the old reading for a course that predates the column", () => {
+      expect(courseTermParts(null, ["AY2026-1"])).toEqual([
+        "2026-2027",
+        "1st semester",
+      ]);
+      expect(courseTermParts(null, ["AY2026-1", "AY2026-1"])).toEqual([
+        "2026-2027",
+        "1st semester",
+      ]);
+      expect(courseTermParts(null, ["AY2026-1", "AY2025-2"])).toEqual([
+        "2 terms",
+      ]);
+      expect(courseTermParts(null, [])).toEqual([]);
+    });
+
+    it("does not say '2 terms' when the course itself answers the question", () => {
+      // The course's term settles it; disagreeing sections are not a summary.
+      expect(courseTermParts("AY2026-1", ["AY2025-1", "AY2024-2"])).toEqual([
+        "2026-2027",
+        "1st semester",
+      ]);
+    });
+  });
+
+  describe("academicYearOptions", () => {
+    it("offers a short window centred on the current academic year", () => {
+      const options = academicYearOptions(new Date("2026-09-01T00:00:00Z"));
+      expect(options.map((o) => o.value)).toEqual([2027, 2026, 2025, 2024, 2023]);
+      expect(options[1]).toEqual({ value: 2026, label: "2026 - 2027" });
+    });
+
+    it("includes the term the dialog opens on, so the default is selectable", () => {
+      for (const iso of [
+        "2026-01-15T00:00:00Z",
+        "2026-06-15T00:00:00Z",
+        "2026-09-01T00:00:00Z",
+      ]) {
+        const now = new Date(iso);
+        const opening = parseTerm(currentTerm(now))!;
+        expect(
+          academicYearOptions(now).map((o) => o.value),
+        ).toContain(opening.startYear);
+      }
+    });
   });
 });

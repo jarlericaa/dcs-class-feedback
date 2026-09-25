@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { buttonClass } from "@/components/ui/button";
+import { Select } from "@/components/ui/form";
 
 /**
  * A filter that applies when you choose it.
@@ -18,6 +20,7 @@ export function AutoSubmitSelect({
   name,
   defaultValue,
   label,
+  className,
   children,
 }: {
   id: string;
@@ -25,6 +28,17 @@ export function AutoSubmitSelect({
   defaultValue: string;
   /** the accessible name; visually hidden, because the value reads as the label */
   label: string;
+  /**
+   * Container-specific sizing.
+   *
+   * This control appears in several places that each want a different width,
+   * and the stylesheet used to say so by descendant selector — the responses
+   * bar capped it at 22ch while `.ws-list__primary .select-field` let it fill.
+   * Once the select renders utilities rather than `.select-field` those rules
+   * match nothing, so the override travels with the call (§3.2). Passing
+   * nothing keeps the component's own full-width default.
+   */
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -32,17 +46,17 @@ export function AutoSubmitSelect({
       <label className="visually-hidden" htmlFor={id}>
         {label}
       </label>
-      <select
+      <Select
+        className={className}
         id={id}
-        className="select-field"
         name={name}
         defaultValue={defaultValue}
         onChange={(event) => event.currentTarget.form?.requestSubmit()}
       >
         {children}
-      </select>
+      </Select>
       <noscript>
-        <button className="button button--secondary" type="submit">
+        <button className={buttonClass({ variant: "secondary" })} type="submit">
           Apply
         </button>
       </noscript>

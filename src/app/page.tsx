@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
@@ -15,7 +16,8 @@ import { listCoursesForUser, listSectionsForUser } from "@/modules/catalog";
 import { listOpenInstancesForStudent } from "@/modules/forms/submission";
 import { listCourseForms } from "@/modules/forms/instances";
 import { requireUser, toShellUser } from "@/lib/session";
-import { currentUserId } from "@/auth";
+import { currentPrincipal, currentUserId } from "@/auth";
+import { env } from "@/env";
 import { EntryScreen } from "@/components/marketing/entry-screen";
 
 /**
@@ -86,9 +88,22 @@ async function studentFormCards(
 export default async function HomePage() {
   // Signed out: render the entry screen here instead of bouncing to /signin,
   // so the root is a finished screen rather than a redirect.
-  if (!(await currentUserId())) return <EntryScreen />;
+  const principal = await currentPrincipal();
+  if (principal?.type === "platform-admin") redirect("/admin");
+  if (!(await currentUserId())) {
+    return (
+      <EntryScreen
+        googleConfigured={!!(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET)}
+        devAuthEnabled={env.devAuthEnabled}
+      />
+    );
+  }
 
   const user = await requireUser();
+
+  /* Students enter through the course index. The old open-form dashboard was
+     section-first and made the same account feel like a different product. */
+  if (!user.isTeacher) redirect("/courses");
 
   // Nothing to set up on first visit: a student's classes follow from their UP
   // email being on a class list, resolved live on every read.
@@ -103,6 +118,7 @@ export default async function HomePage() {
   // Staff work per COURSE. A section is who can reach a form, so it is not what
   // the board is made of.
   const teaching = await listCoursesForUser(user.id);
+  if (user.isTeacher) redirect("/teach/courses");
   const staffCards = await Promise.all(
     teaching.map(async (entry) => {
       const forms = await listCourseForms(user.id, entry.course.id).catch(
@@ -182,13 +198,13 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="min-w-0">
                         {/* The course code is the identity, and the form is what
                             this card is about. The section is absent: the action
                             and the form are the same in every section it went
                             to, so naming one would imply a choice to make. */}
                         <MetaList items={[card.courseCode]} />
-                        <h2 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title mt-1">
                           {card.formTitle}
                         </h2>
                       </div>
@@ -240,11 +256,13 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
-                        {/* The code IS the heading. The title reads underneath
-                            it as what the code stands for. */}
+                      <div className="min-w-0">
+                        {/* The code IS the heading, and now the whole of it:
+                            the descriptive title that used to read underneath
+                            it was dropped as unnecessary (owner, 2026-09-11).
+                            A student recognises CS 33, not its catalogue
+                            sentence. */}
                         <h2 className="panel-title">{card.course.code}</h2>
-                        <MetaList items={[card.course.title]} />
                       </div>
                       {card.course.archivedAt && (
                         <Stamp tone="neutral">Archived</Stamp>
@@ -290,11 +308,11 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="min-w-0">
                         <MetaList
                           items={[courseById.get(section.courseId)?.code]}
                         />
-                        <h2 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title mt-1">
                           {section.title}
                         </h2>
                       </div>
@@ -332,11 +350,11 @@ export default async function HomePage() {
                 >
                   <div className="notice__body">
                     <div className="spread">
-                      <div style={{ minWidth: 0 }}>
+                      <div className="min-w-0">
                         <MetaList
                           items={[courseById.get(section.courseId)?.code]}
                         />
-                        <h2 className="panel-title" style={{ marginTop: 4 }}>
+                        <h2 className="panel-title mt-1">
                           {courseById.get(section.courseId)?.title ??
                             section.title}
                         </h2>
@@ -372,7 +390,15 @@ export default async function HomePage() {
           (user.isTeacher ? (
             <EmptyState
               title="No courses yet"
-              action={{ href: "/teach/courses?new=1", label: "New course" }}
+              /*
+                Points at the LIST, not at a form. Creating a course is a dialog
+                now (`modal.md`), and a dialog has no URL — so `?new=1` no
+                longer opens anything, and a button labelled "New course" that
+                lands you on a list would be lying about where it goes. The
+                courses page's own empty state names the header button from
+                there.
+              */
+              action={{ href: "/teach/courses", label: "My courses" }}
               primary
             >
               A course owns its forms. A form goes to one class list, several, or

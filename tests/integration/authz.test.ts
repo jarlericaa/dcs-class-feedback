@@ -17,7 +17,7 @@ import {
   requireEnrolledStudent,
   requireInstructor,
   requirePlatformAdmin,
-  requireSectionQaAccess,
+  requireCourseQaAccess,
   requireSectionStaff,
 } from "@/modules/authz";
 import { assignCourseStaff, removeCourseStaff } from "@/modules/catalog";
@@ -264,7 +264,13 @@ describe("authorization (deny-by-default, resource-scoped)", () => {
     ).rejects.toBeInstanceOf(AuthzError);
   });
 
-  it("section Q&A archive is class-only: staff and enrolled students, nobody else", async () => {
+  /**
+   * Class Q&A is one archive per COURSE (ADR-0005), so access is a question
+   * about the course: staff of it, or a student enrolled in ANY of its
+   * sections. Enrolment in the SOURCE section is not required, and never was
+   * the point — that is the whole reason the archive moved.
+   */
+  it("Class Q&A is course-only: staff and enrolled students, nobody else", async () => {
     const owner = await makeUser({ isTeacher: true });
     const course = await makeCourse(owner.id);
     const section = await makeSection(course.id);
@@ -272,13 +278,43 @@ describe("authorization (deny-by-default, resource-scoped)", () => {
     const outsider = await makeUser();
 
     await expect(
-      requireSectionQaAccess(db, owner.id, section.id),
+      requireCourseQaAccess(db, owner.id, course.id),
     ).resolves.toEqual({ role: "staff" });
     await expect(
-      requireSectionQaAccess(db, student.id, section.id),
+      requireCourseQaAccess(db, student.id, course.id),
     ).resolves.toEqual({ role: "student" });
     await expect(
-      requireSectionQaAccess(db, outsider.id, section.id),
+      requireCourseQaAccess(db, outsider.id, course.id),
     ).rejects.toBeInstanceOf(AuthzError);
+  });
+
+  /** A student of ANOTHER course reaches nothing here. */
+  it("refuses a student enrolled only in a different course", async () => {
+    const owner = await makeUser({ isTeacher: true });
+    const mine = await makeCourse(owner.id);
+    const theirs = await makeCourse(owner.id);
+    const theirSection = await makeSection(theirs.id);
+    const { user: elsewhere } = await makeEnrolledStudent(theirSection.id);
+
+    await expect(
+      requireCourseQaAccess(db, elsewhere.id, mine.id),
+    ).rejects.toBeInstanceOf(AuthzError);
+  });
+
+  /**
+   * A student enrolled in Lab B reads the course archive even though the
+   * question originated in Lab A — the acceptance case for ADR-0005, asserted
+   * at the authorization boundary where it is decided.
+   */
+  it("admits a student through any one section of the course", async () => {
+    const owner = await makeUser({ isTeacher: true });
+    const course = await makeCourse(owner.id);
+    await makeSection(course.id); // Lab A — the source section
+    const labB = await makeSection(course.id);
+    const { user: inLabB } = await makeEnrolledStudent(labB.id);
+
+    await expect(
+      requireCourseQaAccess(db, inLabB.id, course.id),
+    ).resolves.toEqual({ role: "student" });
   });
 });

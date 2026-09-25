@@ -30,6 +30,76 @@ export const users = pgTable("users", {
 });
 
 /**
+ * Credential-backed Platform Admin identity. This is deliberately separate
+ * from `users`: admins do not have an email address, a Google subject, or a
+ * normal user row. The legacy `users.is_platform_admin` flag is retained only
+ * for historical data and is not an authentication grant.
+ */
+export const platformAdminAccounts = pgTable(
+  "platform_admin_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    username: text("username").notNull(),
+    displayName: text("display_name").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    active: boolean("active").notNull().default(true),
+    failedLoginAttempts: smallint("failed_login_attempts").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("platform_admin_accounts_username_unique").on(t.username),
+    check(
+      "platform_admin_accounts_username_normalized",
+      sql`${t.username} = lower(btrim(${t.username})) AND ${t.username} ~ '^[a-z0-9][a-z0-9._-]{2,63}$'`,
+    ),
+    check("platform_admin_accounts_failed_attempts_nonnegative", sql`${t.failedLoginAttempts} >= 0`),
+  ],
+);
+
+/**
+ * Email-first teacher capability grants. A row may exist before the person has
+ * signed in; the Google provisioning transaction applies the active grant to
+ * `users.is_teacher` on first sign-in. Revocation is retained for auditability
+ * and never deletes a user or their course history.
+ */
+export const teacherAccessGrants = pgTable(
+  "teacher_access_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    /** Historical normal-user actor; new grants use the admin actor below. */
+    grantedByUserId: uuid("granted_by_user_id").references(() => users.id),
+    grantedByPlatformAdminId: uuid("granted_by_platform_admin_id").references(
+      () => platformAdminAccounts.id,
+    ),
+    grantedAt: timestamp("granted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("teacher_access_grants_email_unique").on(t.email),
+    index("teacher_access_grants_active_idx")
+      .on(t.email)
+      .where(sql`${t.revokedAt} IS NULL`),
+    check("teacher_access_grants_email_normalized", sql`${t.email} = lower(btrim(${t.email}))`),
+  ],
+);
+
+/**
  * One roster person, keyed by student number — the permanent internal identity
  * (Assumption A2) — and reached by the teacher-supplied UP email.
  *

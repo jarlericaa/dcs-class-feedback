@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, truncateAll } from "./helpers";
 import {
   addSectionStaff,
@@ -23,7 +23,7 @@ import { configureDelivery } from "@/modules/forms/schedules";
 import { generateInstancesForSchedule, openDueCycles } from "@/modules/forms/cycles";
 import { submitResponse } from "@/modules/forms/submission";
 import { getCourseReviewQueue, getReviewQueue } from "@/modules/review";
-import { draftPublicAnswer, listSectionQa, publishNow } from "@/modules/publishing";
+import { draftPublicAnswer, listCourseQa, publishNow } from "@/modules/publishing";
 import { listCourseForms } from "@/modules/forms/instances";
 import { AuthzError } from "@/modules/authz";
 import { deriveParticipation } from "@/modules/participation";
@@ -36,7 +36,7 @@ import { deriveParticipation } from "@/modules/participation";
  * - students in different targeted sections answer the SAME instance;
  * - a student in two targeted sections cannot produce two responses;
  * - staff see only their own sections' responses, even on a shared form;
- * - a publication never crosses a section boundary.
+ * - a publication belongs to the COURSE and reaches every section (ADR-0005).
  */
 
 const START = "2026-01-05"; // a Monday
@@ -337,7 +337,16 @@ describe("form audiences", () => {
     ).toBe(0);
   });
 
-  it("keeps a published answer inside the asker's own section", async () => {
+  /**
+   * ONE publication, read by every section (ADR-0005).
+   *
+   * This test asserted the opposite until the owner corrected the model: a
+   * published answer used to be section-owned, so the same useful answer had to
+   * go out once per lab and a Lab B student could not read a Lab A answer.
+   * Sections remain the attribution and access context for the SOURCE response;
+   * they are not an audience boundary for the answer.
+   */
+  it("publishes one course-wide answer that every section's students read", async () => {
     const { teacher, course, sections } = await makeCourseWithSections(2);
     const template = await makeForm(teacher.id, course.id);
     const { instance, question } = await openWeeklyForm(
@@ -363,39 +372,48 @@ describe("form audiences", () => {
     );
 
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: sections[0]!.id,
+      courseId: course.id,
       itemIds: [asked.studentItemId!],
       publicQuestionText: "Could we revisit normalization?",
       answerBody: "Yes — Thursday's session covers it again.",
     });
-    expect(answer.sectionId).toBe(sections[0]!.id);
+    expect(answer.courseId).toBe(course.id);
+    // Provenance is not recorded on the answer: the section a question came
+    // from is reachable internally through its source link, and nothing on the
+    // published row names it.
+    expect(answer.originSectionId).toBeNull();
 
-    // Publishing the SAME item into the other section is refused, even though
-    // the form instance was shared with it.
+    /**
+     * An item of ANOTHER course is refused — the course is the boundary now.
+     *
+     * The second course is owned by the SAME teacher on purpose. Authorization
+     * runs first, so a course they do not hold would be refused as "no access"
+     * and this assertion would pass without ever reaching the rule it names.
+     */
+    const elsewhere = await makeCourse(teacher.id);
     await expect(
       draftPublicAnswer(teacher.id, {
-        sectionId: sections[1]!.id,
+        courseId: elsewhere.id,
         itemIds: [asked.studentItemId!],
         publicQuestionText: "Could we revisit normalization?",
       }),
-    ).rejects.toThrow(/same class section/);
+    ).rejects.toThrow(/same course/);
 
+    // Exactly ONE row for a course with two sections — not one per section.
     const rows = await db.query.publicAnswers.findMany({
-      where: inArray(publicAnswers.sectionId, [
-        sections[0]!.id,
-        sections[1]!.id,
-      ]),
+      where: eq(publicAnswers.courseId, course.id),
     });
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.sectionId).toBe(sections[0]!.id);
 
-    // Published for real, then checked from both sides of the boundary.
+    // Published once, then read from both sides of the old boundary.
     await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
-    const archiveA = await listSectionQa(a.user.id, sections[0]!.id);
-    const archiveB = await listSectionQa(b.user.id, sections[1]!.id);
+    const archiveA = await listCourseQa(a.user.id, course.id);
+    const archiveB = await listCourseQa(b.user.id, course.id);
     expect(archiveA).toHaveLength(1);
-    // The other section's student sees nothing of it, even though they answered
-    // the same form.
-    expect(archiveB).toHaveLength(0);
+    // The other section's student reads the SAME entry, and cannot tell which
+    // section it came from.
+    expect(archiveB).toHaveLength(1);
+    expect(archiveB[0]!.id).toBe(archiveA[0]!.id);
+    expect(JSON.stringify(archiveB)).not.toContain(sections[0]!.id);
   });
 });

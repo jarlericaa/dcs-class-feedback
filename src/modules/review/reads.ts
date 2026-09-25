@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { formResponses, responseReads } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import { assertMutationAllowed } from "@/lib/impersonation";
 import { AuthzError, requireSectionStaff } from "@/modules/authz";
 
 /**
@@ -167,6 +168,7 @@ export async function markResponseRead(
   responseId: string,
   source: ReadSource = "explicit",
 ): Promise<void> {
+  await assertMutationAllowed();
   const response = await authorizedResponse(actorUserId, responseId);
   await db.transaction(async (tx) => {
     const inserted = await tx
@@ -201,6 +203,7 @@ export async function markResponseUnread(
   actorUserId: string,
   responseId: string,
 ): Promise<void> {
+  await assertMutationAllowed();
   const response = await authorizedResponse(actorUserId, responseId);
   await db.transaction(async (tx) => {
     const removed = await tx
@@ -248,6 +251,7 @@ export async function markResponsesRead(
   actorUserId: string,
   responseIds: string[],
 ): Promise<number> {
+  await assertMutationAllowed();
   const unique = [...new Set(responseIds)];
   if (unique.length === 0) return 0;
   if (unique.length > MAX_MARK_READ_IDS) {

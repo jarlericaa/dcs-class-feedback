@@ -25,8 +25,7 @@ import { useEffect, useRef } from "react";
  *    is correct on the next load, which is when it matters.
  *
  * With JavaScript off nothing fires and nothing breaks: the response simply
- * stays unread, and "Mark as unread"/read state remains reachable through the
- * post's own controls.
+ * stays unread until another review action records its state.
  */
 
 /** How long a response must hold the viewport before it counts as read. */

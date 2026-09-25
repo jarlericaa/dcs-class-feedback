@@ -1,11 +1,25 @@
-import { and, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  notInArray,
+  or,
+} from "drizzle-orm";
 import { db } from "@/db";
 import {
+  backlogQuestions,
+  classSections,
   formInstances,
   formQuestions,
   formResponses,
   privateResponses,
   publicAnswers,
+  publicAnswerApprovals,
+  publicAnswerRevisions,
   questionAnswers,
   sourceLinks,
   studentSubmissionItems,
@@ -14,11 +28,20 @@ import {
 import { writeAudit } from "@/modules/audit";
 import {
   PUBLICATION_PERMISSIONS,
-  requireAnySectionPermission,
+  AuthzError,
+  activeStudentSectionsForCourse,
+  getCourseCapabilities,
+  requireAnyCoursePermission,
+  requireCourseInstructor,
+  requireCourseQaAccess,
+  requireCourseStaffOrSectionGrant,
   requireEnrolledStudent,
-  requireSectionQaAccess,
   requireSectionStaff,
 } from "@/modules/authz";
+import {
+  enqueueApprovalDecided,
+  enqueueApprovalRequested,
+} from "@/modules/email/outbox";
 import { hasSequence, instanceLabel } from "@/modules/forms/instances";
 import { getItemWithSection } from "@/modules/review";
 import { normalizePublicQuestionText } from "./dedupe";
@@ -33,17 +56,51 @@ export { publishDueAnswers } from "./publish";
  * - every source stays linked (merge = many SourceLinks → one answer);
  * - SourceLink is internal-only: no student-visible public read model ever
  *   includes source/identity data;
- * - "public" = visible to that section's class only (authz-gated).
+ * - "public" = visible to the COURSE's class only (authz-gated, ADR-0005):
+ *   one publication, one entry, read by every eligible student of the course.
+ *
+ * The section a question came from survives as internal provenance through
+ * SourceLink → StudentSubmissionItem → FormResponse.sectionId. It is never an
+ * audience boundary and never reaches a student-visible payload.
  */
 
 /**
- * Draft a public answer from one or more student submission items (merge =
- * multiple items; D8 provisional: same section, cross-cycle allowed).
+ * Authorize a WRITE to one course-owned public answer.
+ *
+ * Course staff qualify; so does a section assistant holding the named flag on
+ * any section of the course, because that is the scope the flag advertises now
+ * that the queue is course-wide. This governs the ENTRY only — reading the
+ * SOURCE submissions behind it stays section-scoped and is checked separately,
+ * per source, on the drafting path.
+ */
+async function requireAnswerCapability(
+  courseId: string,
+  actorUserId: string,
+  permission:
+    | "draftPublicAnswers"
+    | "rewordPublicQuestions"
+    | "publishPublicAnswers"
+    | "schedulePublication",
+) {
+  return requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    permission,
+  );
+}
+
+/**
+ * Draft a public answer from one or more student submission items.
+ *
+ * Merge = multiple items. They may now span sections of the same course (one
+ * course, one answer), but the actor must hold the permission on each source
+ * section — see the check below.
  */
 export async function draftPublicAnswer(
   actorUserId: string,
   input: {
-    sectionId: string;
+    courseId: string;
     itemIds: string[];
     publicQuestionText: string;
     answerBody?: string;
@@ -57,26 +114,35 @@ export async function draftPublicAnswer(
   if (!input.publicQuestionText.trim()) {
     throw new Error("Public question text is required");
   }
-  await requireSectionStaff(db, actorUserId, input.sectionId, "draftPublicAnswers");
+  await requireAnswerCapability(
+    input.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
 
   /**
-   * Merge scope: every source item must belong to THIS section — where "belong"
-   * means the ASKER answered through it (`formResponses.sectionId`), not that the
-   * form instance happened to be shared with it.
+   * Merge scope: every source item must belong to THIS course, and the actor
+   * must hold `draft_public_answers` on EVERY source section individually.
    *
-   * This is what keeps a shared form from widening a publication. Sharing one
-   * questionnaire across CS 33's sections must not make Section A's published
-   * answer visible to Section B; cross-section reuse still goes through the
-   * course backlog (D8, ADR-0002).
+   * That second condition is what stops a merge becoming a permission bypass.
+   * A course-wide answer may now legitimately draw on Lab A and Lab B at once —
+   * it is one course, one answer — but an assistant authorized on Lab A only
+   * still cannot reach into Lab B's submissions by naming them as co-sources.
+   * The section a source came from is read from `formResponses.sectionId` (the
+   * section the ASKER answered through), never from the instance audience.
    */
   const items: (typeof studentSubmissionItems.$inferSelect)[] = [];
+  const sourceSectionIds = new Set<string>();
   for (const itemId of input.itemIds) {
     const { item, sectionId } = await getItemWithSection(itemId);
-    if (sectionId !== input.sectionId) {
-      throw new Error(
-        "All merged items must belong to the same class section (cross-section publishing goes through the course backlog)",
-      );
+    const section = await db.query.classSections.findFirst({
+      where: eq(classSections.id, sectionId),
+    });
+    if (section?.courseId !== input.courseId) {
+      throw new Error("All merged items must belong to the same course");
     }
+    await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
+    sourceSectionIds.add(sectionId);
     items.push(item);
   }
 
@@ -84,7 +150,7 @@ export async function draftPublicAnswer(
     const [answer] = await tx
       .insert(publicAnswers)
       .values({
-        sectionId: input.sectionId,
+        courseId: input.courseId,
         publicQuestionText: input.publicQuestionText,
         answerBody: input.answerBody,
         state: "draft",
@@ -110,7 +176,7 @@ export async function draftPublicAnswer(
         entityType: "source_link",
         entityId: link!.id,
         after: { publicAnswerId: answer!.id, itemId: item.id },
-        sectionId: input.sectionId,
+        courseId: input.courseId,
       });
 
       const merged = items.length > 1;
@@ -138,11 +204,14 @@ export async function draftPublicAnswer(
       action: "public_answer.drafted",
       entityType: "public_answer",
       entityId: answer!.id,
-      sectionId: input.sectionId,
+      courseId: input.courseId,
       after: {
-        sectionId: input.sectionId,
+        courseId: input.courseId,
         sourceCount: items.length,
         merged: items.length > 1,
+        /* Internal provenance for the audit trail only — which class lists the
+           sources came through. Never part of a student-visible payload. */
+        sourceSectionIds: [...sourceSectionIds],
       },
     });
     return answer!;
@@ -160,7 +229,11 @@ export async function rewordPublicQuestion(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "rewordPublicQuestions");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "rewordPublicQuestions",
+  );
   // A scheduled answer already carries an acknowledged anonymity check for its
   // current wording. Allowing an edit here would let different text go out
   // under that acknowledgment, so the schedule must be cancelled first.
@@ -173,7 +246,12 @@ export async function rewordPublicQuestion(
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
-      .set({ publicQuestionText: newText, updatedAt: new Date() })
+      .set({
+        publicQuestionText: newText,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(publicAnswers.id, publicAnswerId));
     await writeAudit(tx, {
       actorUserId,
@@ -182,7 +260,7 @@ export async function rewordPublicQuestion(
       entityId: publicAnswerId,
       before: { publicQuestionText: answer.publicQuestionText },
       after: { publicQuestionText: newText },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
@@ -196,7 +274,11 @@ export async function updateAnswerBody(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "draftPublicAnswers");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
   if (answer.state !== "draft") {
     throw new Error(
       `Cannot edit an answer in state ${answer.state}. Cancel the schedule first.`,
@@ -205,7 +287,12 @@ export async function updateAnswerBody(
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
-      .set({ answerBody, updatedAt: new Date() })
+      .set({
+        answerBody,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(publicAnswers.id, publicAnswerId));
     await writeAudit(tx, {
       actorUserId,
@@ -214,7 +301,92 @@ export async function updateAnswerBody(
       entityId: publicAnswerId,
       before: { answerBody: answer.answerBody },
       after: { answerBody },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
+    });
+  });
+}
+
+/**
+ * Edit the live body of a published answer without creating another Q&A entry.
+ *
+ * Published edits are a separate operation from draft editing: the answer
+ * remains published, while the previous public text is retained in the
+ * revision table and the student-visible edit timestamp moves forward.
+ */
+export async function updatePublishedAnswer(
+  actorUserId: string,
+  publicAnswerId: string,
+  answerBody: string,
+) {
+  const nextAnswerBody = answerBody.trim();
+  if (!nextAnswerBody) throw new Error("Answer body is required");
+
+  const answer = await db.query.publicAnswers.findFirst({
+    where: eq(publicAnswers.id, publicAnswerId),
+  });
+  if (!answer) throw new Error("Public answer not found");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
+  if (answer.state !== "published") {
+    throw new Error("Only a published answer can be edited here");
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await tx.query.publicAnswers.findFirst({
+      where: eq(publicAnswers.id, publicAnswerId),
+    });
+    if (!current) throw new Error("Public answer not found");
+    if (current.state !== "published") {
+      throw new Error("Only a published answer can be edited here");
+    }
+    if (current.answerBody === nextAnswerBody) return;
+
+    const editedAt = new Date();
+    const revisionNumber = current.revisionCount + 1;
+    await tx.insert(publicAnswerRevisions).values({
+      publicAnswerId,
+      revisionNumber,
+      priorQuestionText: current.publicQuestionText,
+      priorAnswerText: current.answerBody,
+      editorUserId: actorUserId,
+      createdAt: editedAt,
+    });
+    const changed = await tx
+      .update(publicAnswers)
+      .set({
+        answerBody: nextAnswerBody,
+        lastEditedAt: editedAt,
+        revisionCount: revisionNumber,
+        updatedAt: editedAt,
+      })
+      .where(
+        and(
+          eq(publicAnswers.id, publicAnswerId),
+          eq(publicAnswers.state, "published"),
+          eq(publicAnswers.revisionCount, current.revisionCount),
+        ),
+      )
+      .returning({ id: publicAnswers.id });
+    if (changed.length === 0) {
+      throw new Error("This answer changed before it could be saved");
+    }
+    await writeAudit(tx, {
+      actorUserId,
+      action: "public_answer.revised",
+      entityType: "public_answer",
+      entityId: publicAnswerId,
+      before: {
+        answerBody: current.answerBody,
+        revisionCount: current.revisionCount,
+      },
+      after: {
+        answerBody: nextAnswerBody,
+        revisionCount: revisionNumber,
+      },
+      courseId: current.courseId,
     });
   });
 }
@@ -286,6 +458,97 @@ async function requireAnonymityAcknowledged(
   }
 }
 
+/**
+ * The non-delegable approval rule follows the person who created the public
+ * draft, not whoever happens to be looking at it now. There is no role snapshot
+ * on PublicAnswer, so a missing/inactive creator is treated conservatively as
+ * requiring approval.
+ */
+async function answerNeedsInstructorApproval(
+  answer: Pick<
+    typeof publicAnswers.$inferSelect,
+    "courseId" | "createdByUserId" | "approvedAt" | "state"
+  >,
+) {
+  if (answer.approvedAt) return false;
+  if (answer.state === "awaiting_approval") return true;
+  const creator = await getCourseCapabilities(
+    db,
+    answer.createdByUserId,
+    answer.courseId,
+  );
+  return !creator?.isInstructor;
+}
+
+/** Move an assistant-authored draft into the existing persisted approval flow. */
+export async function submitPublicAnswerForApproval(
+  actorUserId: string,
+  publicAnswerId: string,
+) {
+  const answer = await db.query.publicAnswers.findFirst({
+    where: eq(publicAnswers.id, publicAnswerId),
+  });
+  if (!answer) throw new Error("Public answer not found");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "draftPublicAnswers",
+  );
+  const actor = await getCourseCapabilities(db, actorUserId, answer.courseId);
+  if (actor?.isInstructor) {
+    throw new Error(
+      "Instructors approve an answer by publishing or scheduling it",
+    );
+  }
+  if (!(await answerNeedsInstructorApproval(answer))) {
+    throw new Error("This answer does not require Instructor approval");
+  }
+  if (answer.state !== "draft") {
+    throw new Error(`Cannot submit an answer in state ${answer.state}`);
+  }
+  if (!answer.answerBody?.trim()) {
+    throw new Error("Cannot submit for approval without an answer body");
+  }
+
+  await db.transaction(async (tx) => {
+    const changed = await tx
+      .update(publicAnswers)
+      .set({
+        state: "awaiting_approval",
+        submittedForApprovalAt: new Date(),
+        submittedByUserId: actorUserId,
+        approvedByUserId: null,
+        approvedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(publicAnswers.id, publicAnswerId),
+          eq(publicAnswers.state, "draft"),
+        ),
+      )
+      .returning({ id: publicAnswers.id });
+    if (changed.length === 0) {
+      throw new Error("This answer is no longer a draft");
+    }
+    await tx.insert(publicAnswerApprovals).values({
+      publicAnswerId,
+      decision: "requested",
+      actorUserId,
+    });
+    await writeAudit(tx, {
+      actorUserId,
+      action: "public_answer.submitted_for_approval",
+      entityType: "public_answer",
+      entityId: publicAnswerId,
+      before: { state: "draft" },
+      after: { state: "awaiting_approval" },
+      courseId: answer.courseId,
+    });
+    await enqueueApprovalRequested(tx, publicAnswerId);
+  });
+}
+
 export async function publishNow(
   actorUserId: string,
   publicAnswerId: string,
@@ -295,18 +558,39 @@ export async function publishNow(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "publishPublicAnswers");
-  if (answer.state !== "draft" && answer.state !== "scheduled") {
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "publishPublicAnswers",
+  );
+  if (
+    answer.state !== "draft" &&
+    answer.state !== "awaiting_approval" &&
+    answer.state !== "scheduled"
+  ) {
     throw new Error(`Cannot publish an answer in state ${answer.state}`);
   }
   if (!answer.answerBody?.trim()) {
     throw new Error("Cannot publish without an answer body");
+  }
+  const needsApproval = await answerNeedsInstructorApproval(answer);
+  if (needsApproval) {
+    await requireCourseInstructor(db, actorUserId, answer.courseId);
   }
   await requireAnonymityAcknowledged(
     publicAnswerId,
     answer.publicQuestionText,
     opts.anonymityAcknowledged ?? false,
   );
+
+  const linkedBacklogIds = (
+    await db.query.sourceLinks.findMany({
+      where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+      columns: { backlogQuestionId: true },
+    })
+  )
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
 
   await db.transaction(async (tx) => {
     await tx
@@ -317,9 +601,35 @@ export async function publishNow(
         scheduledAt: null,
         publishFailed: false,
         publishFailureReason: null,
+        ...(needsApproval
+          ? { approvedByUserId: actorUserId, approvedAt: new Date() }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (needsApproval) {
+      await tx.insert(publicAnswerApprovals).values({
+        publicAnswerId,
+        decision: "approved",
+        actorUserId,
+      });
+      await writeAudit(tx, {
+        actorUserId,
+        action: "public_answer.approved",
+        entityType: "public_answer",
+        entityId: publicAnswerId,
+        before: { state: answer.state },
+        after: { state: "published" },
+        courseId: answer.courseId,
+      });
+      await enqueueApprovalDecided(tx, publicAnswerId, "approved");
+    }
+    if (linkedBacklogIds.length > 0) {
+      await tx
+        .update(backlogQuestions)
+        .set({ state: "published", updatedAt: new Date() })
+        .where(inArray(backlogQuestions.id, linkedBacklogIds));
+    }
     await writeAudit(tx, {
       actorUserId,
       action: "public_answer.published",
@@ -327,7 +637,7 @@ export async function publishNow(
       entityId: publicAnswerId,
       before: { state: answer.state },
       after: { state: "published" },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
@@ -342,12 +652,24 @@ export async function schedulePublication(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "schedulePublication");
-  if (answer.state !== "draft" && answer.state !== "scheduled") {
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "schedulePublication",
+  );
+  if (
+    answer.state !== "draft" &&
+    answer.state !== "awaiting_approval" &&
+    answer.state !== "scheduled"
+  ) {
     throw new Error(`Cannot schedule an answer in state ${answer.state}`);
   }
   if (!answer.answerBody?.trim()) {
     throw new Error("Cannot schedule without an answer body");
+  }
+  const needsApproval = await answerNeedsInstructorApproval(answer);
+  if (needsApproval) {
+    await requireCourseInstructor(db, actorUserId, answer.courseId);
   }
   // Scheduling is the last human moment before the answer goes out: the
   // background executor publishes without asking anyone. The check therefore
@@ -358,6 +680,15 @@ export async function schedulePublication(
     opts.anonymityAcknowledged ?? false,
   );
 
+  const linkedBacklogIds = (
+    await db.query.sourceLinks.findMany({
+      where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+      columns: { backlogQuestionId: true },
+    })
+  )
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
+
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
@@ -366,16 +697,42 @@ export async function schedulePublication(
         scheduledAt,
         publishFailed: false,
         publishFailureReason: null,
+        ...(needsApproval
+          ? { approvedByUserId: actorUserId, approvedAt: new Date() }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (needsApproval) {
+      await tx.insert(publicAnswerApprovals).values({
+        publicAnswerId,
+        decision: "approved",
+        actorUserId,
+      });
+      await writeAudit(tx, {
+        actorUserId,
+        action: "public_answer.approved",
+        entityType: "public_answer",
+        entityId: publicAnswerId,
+        before: { state: answer.state },
+        after: { state: "scheduled" },
+        courseId: answer.courseId,
+      });
+      await enqueueApprovalDecided(tx, publicAnswerId, "approved");
+    }
+    if (linkedBacklogIds.length > 0) {
+      await tx
+        .update(backlogQuestions)
+        .set({ state: "scheduled", updatedAt: new Date() })
+        .where(inArray(backlogQuestions.id, linkedBacklogIds));
+    }
     await writeAudit(tx, {
       actorUserId,
       action: "public_answer.scheduled",
       entityType: "public_answer",
       entityId: publicAnswerId,
       after: { scheduledAt: scheduledAt.toISOString() },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
@@ -388,10 +745,22 @@ export async function cancelScheduledPublication(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireSectionStaff(db, actorUserId, answer.sectionId, "schedulePublication");
+  await requireAnswerCapability(
+    answer.courseId,
+    actorUserId,
+    "schedulePublication",
+  );
   if (answer.state !== "scheduled") {
     throw new Error("Only a scheduled answer can be cancelled");
   }
+  const linkedBacklogIds = (
+    await db.query.sourceLinks.findMany({
+      where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+      columns: { backlogQuestionId: true },
+    })
+  )
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
   await db.transaction(async (tx) => {
     await tx
       .update(publicAnswers)
@@ -403,42 +772,161 @@ export async function cancelScheduledPublication(
         updatedAt: new Date(),
       })
       .where(eq(publicAnswers.id, publicAnswerId));
+    if (linkedBacklogIds.length > 0) {
+      await tx
+        .update(backlogQuestions)
+        .set({ state: "drafting", updatedAt: new Date() })
+        .where(inArray(backlogQuestions.id, linkedBacklogIds));
+    }
     await writeAudit(tx, {
       actorUserId,
       action: "public_answer.schedule_cancelled",
       entityType: "public_answer",
       entityId: publicAnswerId,
       before: { scheduledAt: answer.scheduledAt?.toISOString() },
-      sectionId: answer.sectionId,
+      courseId: answer.courseId,
     });
   });
 }
 
 /**
- * Publication queue: drafts, scheduled answers, failed publications and the
- * most recent published entries for one section. Staff-only — it carries the
- * source-link counts and failure reasons that never reach students.
+ * Archive an editorial answer without deleting the answer, its sources, or its
+ * audit trail. PublicAnswer has no archive state of its own: the unified UI
+ * represents this decision on the course backlog, which is the durable work
+ * object that can later be restored. A scheduled answer is returned to draft in
+ * the same transaction so reconciliation cannot publish an archived item.
+ */
+export async function archivePublicAnswer(
+  actorUserId: string,
+  publicAnswerId: string,
+) {
+  const answer = await db.query.publicAnswers.findFirst({
+    where: eq(publicAnswers.id, publicAnswerId),
+  });
+  if (!answer) throw new Error("Public answer not found");
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    answer.courseId,
+    "manageBacklogImports",
+  );
+  if (answer.state === "published" || answer.state === "unpublished") {
+    throw new Error("Published answers are managed from Class Q&A");
+  }
+
+  const links = await db.query.sourceLinks.findMany({
+    where: eq(sourceLinks.publicAnswerId, publicAnswerId),
+  });
+  const existingBacklogId = links.find(
+    (link) => link.backlogQuestionId,
+  )?.backlogQuestionId;
+
+  return db.transaction(async (tx) => {
+    let backlogId = existingBacklogId;
+    if (backlogId) {
+      const existing = await tx.query.backlogQuestions.findFirst({
+        where: eq(backlogQuestions.id, backlogId),
+      });
+      if (!existing) throw new Error("Backlog source not found");
+      if (existing.state !== "archived") {
+        await tx
+          .update(backlogQuestions)
+          .set({ state: "archived", updatedAt: new Date() })
+          .where(eq(backlogQuestions.id, existing.id));
+      }
+    } else {
+      const [question] = await tx
+        .insert(backlogQuestions)
+        .values({
+          courseId: answer.courseId,
+          text: answer.publicQuestionText,
+          category: answer.category,
+          topicId: answer.topicId,
+          state: "archived",
+          provenance: "current_copied",
+          identityPreserved: false,
+          createdByUserId: actorUserId,
+        })
+        .returning({ id: backlogQuestions.id });
+      backlogId = question!.id;
+      const [link] = await tx
+        .insert(sourceLinks)
+        .values({
+          publicAnswerId,
+          backlogQuestionId: backlogId,
+          createdByUserId: actorUserId,
+        })
+        .returning({ id: sourceLinks.id });
+      await writeAudit(tx, {
+        actorUserId,
+        action: "source_link.created",
+        entityType: "source_link",
+        entityId: link!.id,
+        after: { publicAnswerId, backlogQuestionId: backlogId },
+        courseId: answer.courseId,
+      });
+    }
+
+    if (answer.state === "scheduled" || answer.state === "awaiting_approval") {
+      await tx
+        .update(publicAnswers)
+        .set({
+          state: "draft",
+          scheduledAt: null,
+          publishFailed: false,
+          publishFailureReason: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(publicAnswers.id, publicAnswerId));
+    }
+    await writeAudit(tx, {
+      actorUserId,
+      action: "backlog.state_changed",
+      entityType: "backlog_question",
+      entityId: backlogId!,
+      before: { publicAnswerId, answerState: answer.state },
+      after: {
+        state: "archived",
+        scheduleCancelled: answer.state === "scheduled",
+      },
+      courseId: answer.courseId,
+    });
+    return backlogId!;
+  });
+}
+
+/**
+ * Internal publication read model: drafts, scheduled answers, failed
+ * publications and the most recent published entries for one COURSE
+ * (ADR-0005). It deliberately carries no source occurrence or linked-response
+ * metadata: section assistants may collaborate on the course-wide OUTPUT
+ * without learning about source responses they cannot read. The user-facing
+ * destination is Question Backlog; this name remains for service compatibility.
+ *
+ * One editorial pipeline per course, not per section: the teaching team of CS 33
+ * works one pipeline, and an answer drafted from a Lab A question is the same object
+ * every instructor on the course sees.
  *
  * `publishFailed` rows stay in `scheduled` state by design (see
  * publishing/publish.ts), so staff can retry with publishNow or reschedule.
  */
-export async function listPublicationQueue(
+export async function listCoursePublicationQueue(
   actorUserId: string,
-  sectionId: string,
+  courseId: string,
 ) {
-  await requireAnySectionPermission(
+  await requireAnyCoursePermission(
     db,
     actorUserId,
-    sectionId,
+    courseId,
     PUBLICATION_PERMISSIONS,
     { allowArchived: true },
   );
   const rows = await db.query.publicAnswers.findMany({
-    where: eq(publicAnswers.sectionId, sectionId),
+    where: eq(publicAnswers.courseId, courseId),
     orderBy: desc(publicAnswers.updatedAt),
   });
   if (rows.length === 0) {
-    return { drafts: [], scheduled: [], failed: [], published: [] };
+    return { drafts: [], scheduled: [], failed: [], published: [], items: [] };
   }
   const links = await db.query.sourceLinks.findMany({
     where: inArray(
@@ -446,17 +934,73 @@ export async function listPublicationQueue(
       rows.map((r) => r.id),
     ),
   });
-  const sourceCount = new Map<string, number>();
+  const backlogIds = links
+    .map((link) => link.backlogQuestionId)
+    .filter((id): id is string => Boolean(id));
+  const linkedBacklogQuestions = backlogIds.length
+    ? await db.query.backlogQuestions.findMany({
+        where: inArray(backlogQuestions.id, backlogIds),
+        columns: { id: true, state: true },
+      })
+    : [];
+  const backlogStateById = new Map(
+    linkedBacklogQuestions.map((question) => [question.id, question.state]),
+  );
+  const backlogIdByAnswer = new Map<string, string>();
   for (const link of links) {
-    sourceCount.set(
-      link.publicAnswerId,
-      (sourceCount.get(link.publicAnswerId) ?? 0) + 1,
-    );
+    if (link.backlogQuestionId && !backlogIdByAnswer.has(link.publicAnswerId)) {
+      backlogIdByAnswer.set(link.publicAnswerId, link.backlogQuestionId);
+    }
   }
+  const creatorIds = [...new Set(rows.map((row) => row.createdByUserId))];
+  const creators = await db.query.users.findMany({
+    where: inArray(users.id, creatorIds),
+  });
+  const approvals = await db.query.publicAnswerApprovals.findMany({
+    where: inArray(
+      publicAnswerApprovals.publicAnswerId,
+      rows.map((row) => row.id),
+    ),
+    orderBy: desc(publicAnswerApprovals.createdAt),
+  });
+  const latestApproval = new Map<
+    string,
+    typeof publicAnswerApprovals.$inferSelect
+  >();
+  for (const approval of approvals) {
+    if (!latestApproval.has(approval.publicAnswerId)) {
+      latestApproval.set(approval.publicAnswerId, approval);
+    }
+  }
+  const creatorById = new Map(creators.map((creator) => [creator.id, creator]));
+  const creatorInstructorById = new Map(
+    await Promise.all(
+      creatorIds.map(
+        async (creatorId) =>
+          [
+            creatorId,
+            Boolean(
+              (await getCourseCapabilities(db, creatorId, courseId))
+                ?.isInstructor,
+            ),
+          ] as const,
+      ),
+    ),
+  );
   const decorated = rows.map((answer) => ({
     answer,
-    sourceCount: sourceCount.get(answer.id) ?? 0,
+    backlogQuestionId: backlogIdByAnswer.get(answer.id) ?? null,
+    creatorName: creatorById.get(answer.createdByUserId)?.displayName ?? null,
+    creatorIsInstructor:
+      creatorInstructorById.get(answer.createdByUserId) ?? false,
+    latestApproval: latestApproval.get(answer.id) ?? null,
   }));
+  const active = decorated.filter(
+    (item) =>
+      item.answer.state !== "published" &&
+      item.answer.state !== "unpublished" &&
+      backlogStateById.get(item.backlogQuestionId ?? "") !== "archived",
+  );
   return {
     drafts: decorated.filter((d) => d.answer.state === "draft"),
     scheduled: decorated.filter(
@@ -466,6 +1010,13 @@ export async function listPublicationQueue(
     published: decorated
       .filter((d) => d.answer.state === "published")
       .slice(0, 20),
+    /**
+     * The editorial list keeps the persisted state intact. `latestApproval` is
+     * only a projection for this read model: an approval rejection returns the
+     * PublicAnswer to `draft`, but remains useful as a Rejected filter result
+     * until the next revision or approval decision.
+     */
+    items: active,
   };
 }
 
@@ -482,10 +1033,10 @@ export async function getPublicAnswerForEditing(
     where: eq(publicAnswers.id, publicAnswerId),
   });
   if (!answer) throw new Error("Public answer not found");
-  await requireAnySectionPermission(
+  await requireAnyCoursePermission(
     db,
     actorUserId,
-    answer.sectionId,
+    answer.courseId,
     PUBLICATION_PERMISSIONS,
     { allowArchived: true },
   );
@@ -498,38 +1049,78 @@ export async function getPublicAnswerForEditing(
         where: inArray(studentSubmissionItems.id, itemIds),
       })
     : [];
+  const visibleSources: {
+    id: string;
+    submissionType: (typeof studentSubmissionItems.$inferSelect)["submissionType"];
+    category: (typeof studentSubmissionItems.$inferSelect)["category"];
+    originalText: string;
+  }[] = [];
+  let hiddenSourceCount = 0;
+  for (const item of items) {
+    const { sectionId } = await getItemWithSection(item.id);
+    try {
+      await requireSectionStaff(db, actorUserId, sectionId, "reviewResponses", {
+        allowArchived: true,
+      });
+      visibleSources.push({
+        id: item.id,
+        submissionType: item.submissionType,
+        category: item.category,
+        originalText: item.originalText,
+      });
+    } catch (err) {
+      if (err instanceof AuthzError) {
+        hiddenSourceCount += 1;
+        continue;
+      }
+      throw err;
+    }
+  }
   return {
     answer,
-    sources: items.map((item) => ({
-      id: item.id,
-      submissionType: item.submissionType,
-      category: item.category,
-      originalText: item.originalText,
-    })),
+    sources: visibleSources,
+    hiddenSourceCount,
     backlogSourceCount: links.filter((l) => l.backlogQuestionId).length,
     warnings: anonymityWarnings(answer.publicQuestionText, links.length),
   };
 }
 
 /**
- * Section Q&A archive — the class-facing read model. Access limited to that
- * section's enrolled students and staff. The projection is intentionally
- * identity-free: no source links, no student data, no drafts.
+ * Class Q&A archive — the class-facing read model, one per COURSE (ADR-0005).
+ *
+ * Access is limited to the course's staff and to students holding an active
+ * enrolment in ANY of its sections. A Lab B student reading an answer that
+ * originated in Lab A is the intended behaviour, not a leak: the projection is
+ * identity-free AND provenance-free — no source links, no student data, no
+ * drafts, and no origin section.
+ *
+ * There is deliberately no section filter here. Which class a question came
+ * from is not part of navigating a shared archive, and offering it would invite
+ * exactly the inference the anonymity rules exist to prevent.
  */
-export async function listSectionQa(
+export async function listCourseQa(
   actorUserId: string,
-  sectionId: string,
-  opts: { search?: string; category?: "content" | "logistics" | "misc" } = {},
+  courseId: string,
+  opts: {
+    search?: string;
+    category?: "content" | "logistics" | "misc";
+    sort?: "newest" | "oldest";
+  } = {},
 ) {
-  await requireSectionQaAccess(db, actorUserId, sectionId, { allowArchived: true });
+  await requireCourseQaAccess(db, actorUserId, courseId, {
+    allowArchived: true,
+  });
   const conditions = [
-    eq(publicAnswers.sectionId, sectionId),
+    eq(publicAnswers.courseId, courseId),
     eq(publicAnswers.state, "published"),
   ];
   if (opts.category) {
     conditions.push(
       opts.category === "misc"
-        ? or(eq(publicAnswers.category, "misc"), isNull(publicAnswers.category))!
+        ? or(
+            eq(publicAnswers.category, "misc"),
+            isNull(publicAnswers.category),
+          )!
         : eq(publicAnswers.category, opts.category),
     );
   }
@@ -544,7 +1135,10 @@ export async function listSectionQa(
   }
   const rows = await db.query.publicAnswers.findMany({
     where: and(...conditions),
-    orderBy: desc(publicAnswers.publishedAt),
+    orderBy:
+      opts.sort === "oldest"
+        ? asc(publicAnswers.publishedAt)
+        : desc(publicAnswers.publishedAt),
   });
 
   /**
@@ -576,10 +1170,7 @@ export async function listSectionQa(
   // Anonymous projection for the asker — never include source information.
   // Group matching titles into one question thread while retaining every
   // published answer under it.
-  const grouped = new Map<
-    string,
-    (typeof rows)[number][]
-  >();
+  const grouped = new Map<string, (typeof rows)[number][]>();
   for (const row of rows) {
     const key = normalizePublicQuestionText(row.publicQuestionText);
     const group = grouped.get(key) ?? [];
@@ -595,6 +1186,7 @@ export async function listSectionQa(
         id: row.id,
         answer: row.answerBody,
         publishedAt: row.publishedAt,
+        lastEditedAt: row.lastEditedAt,
         /** the staff member who published it, or null when unattributed */
         answeredByName: row.createdByUserId
           ? (authorById.get(row.createdByUserId) ?? null)
@@ -619,6 +1211,10 @@ export async function getStudentHistory(userId: string, sectionId: string) {
   const record = await requireEnrolledStudent(db, userId, sectionId, {
     allowArchived: true,
   });
+  const section = await db.query.classSections.findFirst({
+    where: eq(classSections.id, sectionId),
+    columns: { timezone: true },
+  });
   // Keyed on the response's own section, so a student in two sections of the
   // same course sees each submission once, under the section they answered
   // through — and never another section's history.
@@ -626,6 +1222,7 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     where: and(
       eq(formResponses.sectionId, sectionId),
       eq(formResponses.studentRecordId, record.id),
+      notInArray(formResponses.lifecycle, ["draft"]),
     ),
   });
   if (responses.length === 0) return [];
@@ -645,20 +1242,31 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     const questions = await db.query.formQuestions.findMany({
       where: eq(formQuestions.cycleId, response.cycleId),
     });
-    const questionById = new Map(questions.map((q) => [q.id, q]));
+    const answerByQuestionId = new Map(answers.map((answer) => [answer.questionId, answer]));
     const items = await db.query.studentSubmissionItems.findMany({
-      where: eq(studentSubmissionItems.responseId, response.id),
+      where: and(
+        eq(studentSubmissionItems.responseId, response.id),
+        isNull(studentSubmissionItems.withdrawnAt),
+      ),
+      orderBy: asc(studentSubmissionItems.ordinal),
     });
 
     const itemViews = [];
     for (const item of items) {
       const privates = await db.query.privateResponses.findMany({
-        where: eq(privateResponses.itemId, item.id),
+        where: and(
+          eq(privateResponses.itemId, item.id),
+          isNull(privateResponses.removedAt),
+        ),
+        orderBy: asc(privateResponses.createdAt),
       });
       const links = await db.query.sourceLinks.findMany({
         where: eq(sourceLinks.itemId, item.id),
       });
       let publicView: {
+        /** deep-links the asker straight to the entry in the course archive */
+        id: string;
+        courseId: string;
         rewordedQuestion: string;
         answer: string | null;
         publishedAt: Date | null;
@@ -672,6 +1280,8 @@ export async function getStudentHistory(userId: string, sectionId: string) {
         });
         if (answer) {
           publicView = {
+            id: answer.id,
+            courseId: answer.courseId,
             rewordedQuestion: answer.publicQuestionText,
             answer: answer.answerBody,
             publishedAt: answer.publishedAt,
@@ -711,6 +1321,8 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     const instance = cycleById.get(response.cycleId) ?? null;
     history.push({
       responseId: response.id,
+      instanceId: response.cycleId,
+      timezone: section?.timezone ?? "Asia/Manila",
       cycleIndex: instance?.cycleIndex ?? null,
       /** what the student was told this form was called */
       formLabel: instance ? instanceLabel(instance) : null,
@@ -719,11 +1331,41 @@ export async function getStudentHistory(userId: string, sectionId: string) {
       openAt: instance?.openAt ?? null,
       submittedAt: response.submittedAt,
       status: "submitted" as const, // neutral; review/validity never exposed
-      answers: answers.map((a) => ({
-        prompt: questionById.get(a.questionId)?.prompt ?? "",
-        value: a.value,
-        freeText: a.freeText,
-      })),
+      answers: [...questions]
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .map((question) => {
+          const answer = answerByQuestionId.get(question.id);
+          const value = (answer?.value ?? {}) as {
+            optionIds?: string[];
+            optionLabels?: string[];
+            scaleValue?: number;
+            boolValue?: boolean;
+            dateValue?: string;
+            timeValue?: string;
+          };
+          const answered = Boolean(
+            answer?.freeText?.trim() ||
+              value.optionIds?.length ||
+              value.optionLabels?.length ||
+              value.scaleValue !== undefined ||
+              value.boolValue !== undefined ||
+              value.dateValue ||
+              value.timeValue,
+          );
+          return {
+            questionId: question.id,
+            prompt: question.prompt,
+            description: question.description,
+            type: question.type,
+            required: question.required,
+            displayOrder: question.displayOrder,
+            options: question.options,
+            scale: question.scale,
+            answered,
+            value: answer?.value ?? null,
+            freeText: answer?.freeText ?? null,
+          };
+        }),
       items: itemViews,
     });
   }
@@ -733,5 +1375,28 @@ export async function getStudentHistory(userId: string, sectionId: string) {
     (a, b) =>
       (a.openAt?.getTime() ?? 0) - (b.openAt?.getTime() ?? 0) ||
       (a.cycleIndex ?? 0) - (b.cycleIndex ?? 0),
+  );
+}
+
+/**
+ * Course-scoped student history. Each response is returned once even when its
+ * form audience includes more than one section the student attends.
+ */
+export async function getStudentCourseHistory(userId: string, courseId: string) {
+  const sectionIds = await activeStudentSectionsForCourse(db, userId, courseId);
+  if (sectionIds.length === 0) {
+    throw new AuthzError("No access to this course");
+  }
+  const histories = await Promise.all(
+    sectionIds.map((sectionId) => getStudentHistory(userId, sectionId)),
+  );
+  const byResponseId = new Map<string, (typeof histories)[number][number]>();
+  for (const history of histories) {
+    for (const entry of history) byResponseId.set(entry.responseId, entry);
+  }
+  return [...byResponseId.values()].sort(
+    (a, b) =>
+      (b.openAt?.getTime() ?? 0) - (a.openAt?.getTime() ?? 0) ||
+      (b.cycleIndex ?? 0) - (a.cycleIndex ?? 0),
   );
 }

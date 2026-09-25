@@ -7,6 +7,11 @@ const config = [
   {
     ignores: [
       ".next/**",
+      // A verification build run while the dev server holds `.next`
+      // (`NEXT_DIST_DIR=.next-verify npm run build` — see `next.config.ts`).
+      // Build output is generated code and linting it reports 1,795 problems
+      // that belong to Next, not to this repository.
+      ".next-verify/**",
       "node_modules/**",
       "drizzle/**",
       "next-env.d.ts",

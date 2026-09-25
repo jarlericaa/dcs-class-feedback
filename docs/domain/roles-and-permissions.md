@@ -19,7 +19,7 @@ Enforcement layers are described in [engineering/architecture-history.md](../eng
 
 ### 2.1 Student **[Confirmed]**
 
-**May:** sign in with an authorized university Google account; access verified sections; complete the weekly form for each class taken; answer teacher-created questions; submit their own question/feedback/concern/clarification/suggestion; submit one completed form per section per cycle; view previous submissions; view private teacher responses to them; view whether their own question was publicly answered; view the reworded public version of their own question; search the class's published anonymous Q&A archive.
+**May:** sign in with an authorized university Google account; access verified sections; complete the weekly form for each class taken; answer teacher-created questions; submit their own question/feedback/concern/clarification/suggestion; submit one completed form per section per cycle; view previous submissions; view private teacher responses to them; view whether their own question was publicly answered; view the reworded public version of their own question; search the **course's** published anonymous Q&A archive — one archive per course, shared by every section of it ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)), so a student in one laboratory section reads answers that originated in another without learning that they did.
 
 **May also:** save a draft and edit their own submission until the deadline; add several separately
 tracked questions plus a distinct general comment; see whether their **own** submission is valid
@@ -37,7 +37,7 @@ Student-visible state projections are defined in [domain/domain-model.md](domain
 
 ### 2.2 Teacher **[Confirmed]**
 
-A teacher is the administrator of the courses/sections they own or are assigned to. They **may:** create/manage courses and sections; import class lists (the imported UP email is what gives each student access); assign teaching staff; configure TA permissions; create recurring schedules; create/manage templates; author form questions; configure required/optional questions; review responses; view student identities; correct submission types/categories; mark responses valid/invalid; send private responses; draft public answers; reword public question text; publish immediately; schedule publication; merge similar questions; import/record legacy questions; manage the course-level backlog; choose which backlog questions become visible to a section; export participation records; manage course materials (post-MVP capability); view audit history.
+A teacher is the administrator of the courses/sections they own or are assigned to. They **may:** create/manage courses and sections; import class lists (the imported UP email is what gives each student access); assign teaching staff; configure TA permissions; create recurring schedules; create/manage templates; author form questions; configure required/optional questions; review responses; view student identities; correct submission types/categories; mark responses valid/invalid; send private responses; draft public answers; reword public question text; publish immediately; schedule publication; merge similar questions; import/record legacy questions; manage the course-level backlog; export participation records; manage course materials (post-MVP capability); view audit history.
 
 > Note: "manage course materials" is listed by the owner under teacher capabilities, but course-material **management** is a post-MVP feature — see [product/scope.md](../product/scope.md). The capability is reserved, not built in MVP.
 
@@ -66,6 +66,18 @@ Student Assistant permissions are **configurable per class section**, controlled
 | ~~`manage_course_materials`~~ | **Reserved, not implemented.** Course-material management is post-MVP, so this flag has **no column** on `section_staff` and is **not** one of the fourteen. It is listed here only because the owner named the capability; it becomes grantable by migration if and when the feature is approved. |
 
 - **[Confirmed]** This catalog exists only at **section** scope. There is no course-wide Student Assistant, and no flag on course-wide standing — see [§2.5](#25-where-staff-standing-comes-from-two-tiers).
+- **[Confirmed — [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md), 2026-09-12]** **What a section flag means now that its object is course-owned.** The Question Backlog and the Class Q&A archive belong to the **course**, but five of these flags are granted per section. The resolved meaning, which the services enforce and the tests assert:
+
+| Flag | Where it admits the holder | What it does **not** grant |
+|------|----------------------------|----------------------------|
+| `draft_public_answers` | drafting in the course's Question Backlog from a source submission **in a section they hold it on** | drafting from another section's submission — including as a co-source in a merge |
+| `reword_public_questions` | editing the public wording of any draft in the course's Question Backlog | reading the source submissions behind an entry they are not authorized for |
+| `publish_public_answers` | publishing an entry from the course's Question Backlog — which reaches the **whole course** | any source-data access |
+| `schedule_publication` | scheduling/cancelling an entry from the course's Question Backlog | any source-data access |
+| `manage_backlog_imports` | the course's one backlog and its legacy imports | reading current submissions; recommending is still subject to Instructor confirmation |
+| `moderate_discussion` | moderating comments on the course's archive | unmasking a commenter to classmates, or reading source identity |
+
+  The principle behind the table: **making the OUTPUTS course-wide did not make SOURCE DATA course-wide.** A collaborative artefact (a draft, a backlog item, a published answer) is reachable by anyone who works on publication anywhere in the course. Student submissions, private replies and identities stay section-scoped, checked per section, every time. A merge spanning two sections requires the permission on both, so it cannot become a bypass.
 - **[Recommended]** Flags are independent; the class owner grants each explicitly. A TA without `view_student_identities` reviews content with identities masked — masked in the **data** the service returns, not merely hidden in the UI.
 - **[Recommended]** Some capabilities imply an identity exposure (e.g. `export_participation` produces identity-bearing files); granting them should surface that implication to the owner.
 
@@ -223,12 +235,36 @@ Hiding a button is never the enforcement mechanism.
 
 ## 6. Decisions affecting roles
 
-- **[Open D3]** Who grants the Teacher role (recommend: platform admin grants; teachers self-serve thereafter). See [decisions/open-decisions.md](../decisions/open-decisions.md).
-- **[Open D24]** Whether adding an address with no account should create an invitation or a pending staff row. Today it is refused by name; see [decisions/open-decisions.md](../decisions/open-decisions.md).
+- **D3 — implemented for the current build:** Platform Admin grants/revokes
+  platform Teacher capability; teachers self-serve courses thereafter. The
+  email-keyed grant may be pending before first sign-in.
+- **[Open D24]** Invitations for course/section staff remain separate from the
+  approved platform Teacher grant flow; unknown staff addresses are still
+  refused by name. See [decisions/open-decisions.md](../decisions/open-decisions.md).
 - **D10 — closed:** a dropped student's enrollment is deactivated; their own history stays readable.
 - **D17 — closed:** export authorization, including the documented deviation above.
 - **ADR-0003:** the course owner alone assigns staff and sets TA permissions.
 - **ADR-0004:** course-wide standing is an owner-granted, Instructor-only tier (§2.5).
+
+## 7. Platform Admin account controls [Implemented]
+
+Platform Administrators manage authenticated accounts from **Accounts** and
+review the platform-wide append-only audit feed from **Audit log**. They do not
+gain course or section content access. Teacher capability is granted by a
+normalized university email through `teacher_access_grants`; a pending grant is
+applied transactionally when that email first signs in. Revocation preserves
+courses, staff assignments and history.
+
+Teacher and Student Assistant are mutually exclusive. Domain services reject a
+Teacher being assigned a `section_staff` TA row and reject a Teacher grant when
+active TA rows already exist; legacy conflicts are preserved and reported rather
+than silently deleted. Account deactivation is reversible, audited, blocks
+authentication, and cannot deactivate the last active Platform Administrator.
+
+Platform Admin impersonation keeps the real administrator and effective account
+principals separate. It is a required-reason, time-limited, read-only support
+session; every audited state-changing action fails server-side while it is
+active. Start/stop events carry only target, reason and correlation metadata.
 
 ## 6. Related documents
 

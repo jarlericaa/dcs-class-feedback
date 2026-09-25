@@ -67,7 +67,7 @@
 
 ### Merging submissions
 
-**[Confirmed]** Merging similar student questions into one public answer is in MVP, with all source links preserved. Merge scope is **[Confirmed]** as within a single class section, and it **may span cycles** — **D8** closed 2026-08-03; cross-section reuse goes through the course backlog ([decisions/open-decisions.md](../decisions/open-decisions.md)). See [domain/public-qa.md](../domain/public-qa.md).
+**[Confirmed]** Merging similar student questions into one public answer is in MVP, with all source links preserved. Merge scope is **[Confirmed]** as within a single **course**, and it **may span cycles and sections** — **D8** closed 2026-08-03, scope widened by [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md) on 2026-09-12 when public Q&A became course-owned. The actor must hold the drafting permission on **every** source section, so a merge never widens access. See [domain/public-qa.md](../domain/public-qa.md).
 
 ## 2. Post-MVP features (not in the first release)
 

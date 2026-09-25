@@ -8,6 +8,7 @@ import { AccessDenied, EmptyState, MetaList } from "@/components/ui";
 import { IconPlus } from "@/components/ui/icons";
 import { AuthzError } from "@/modules/authz";
 import { listTemplatesForCourse } from "@/modules/forms/templates";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * The definition view for a section-scoped template manager.
@@ -76,7 +77,7 @@ export default async function SectionFormsPage({
       title="Forms"
       actions={
         <Link
-          className="button button--primary"
+          className={buttonClass({ variant: "primary" })}
           href={`/teach/courses/${course.id}/forms/new?sectionId=${sectionId}`}
         >
           <IconPlus size={15} />
@@ -136,7 +137,10 @@ export default async function SectionFormsPage({
                       <td>{latestVersion?.versionNumber ?? "—"}</td>
                       <td>
                         <Link
-                          className="button button--secondary button--small"
+                          className={buttonClass({
+                            variant: "secondary",
+                            size: "small",
+                          })}
                           href={`/teach/courses/${course.id}/forms/${template.id}?sectionId=${sectionId}`}
                         >
                           Edit questions

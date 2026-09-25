@@ -19,7 +19,14 @@ import { isLongText, LONG_TEXT_LINES } from "@/lib/long-text";
  * and leaves a screen-reader user with no separate text to read. Here the
  * button says what it does and the answer stays a quotation.
  */
-export function LongText({ text }: { text: string }) {
+export function LongText({
+  text,
+  surface = "quote",
+}: {
+  text: string;
+  /** A quiet bordered answer surface on staff review screens. */
+  surface?: "quote" | "quiet";
+}) {
   const long = isLongText(text);
   /**
    * Both renders agree on "not clamped" until this flips, so there is no
@@ -32,7 +39,7 @@ export function LongText({ text }: { text: string }) {
   const clamped = long && hydrated && !open;
 
   return (
-    <div className="longtext">
+    <div className={`longtext${surface === "quiet" ? " longtext--quiet" : ""}`}>
       <blockquote
         className={`post__words${clamped ? " post__words--clamped" : ""}`}
       >

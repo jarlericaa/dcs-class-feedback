@@ -37,6 +37,26 @@ export function formatDate(
   }).format(value);
 }
 
+/**
+ * "4:38 pm" — the clock half of a timestamp, on its own.
+ *
+ * A list of submissions compares days first and minutes second, so the two
+ * halves are set on two lines and each needs its own formatter. Same explicit
+ * timezone as everything else here: never the server's.
+ */
+export function formatTime(
+  value: Date | null | undefined,
+  timeZone: string = DEFAULT_ZONE,
+): string {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(value);
+}
+
 /** "Friday, 5:00 pm" — the deadline phrasing used across cycle status text. */
 export function formatDeadline(
   value: Date | null | undefined,
@@ -63,6 +83,28 @@ export function timeRemaining(deadline: Date, now: Date = new Date()): string {
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} left`;
   const days = Math.floor(hours / 24);
   return `${days} day${days === 1 ? "" : "s"} left`;
+}
+
+/** Compact relative phrasing for quiet last-edited markers. */
+export function formatRelativeTime(
+  value: Date | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (!value) return "";
+  const elapsedMinutes = Math.floor(
+    Math.max(0, now.getTime() - value.getTime()) / 60_000,
+  );
+  if (elapsedMinutes < 1) return "just now";
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h ago`;
+
+  const elapsedDays = Math.floor(elapsedHours / 24);
+  if (elapsedDays < 7) return `${elapsedDays}d ago`;
+
+  const elapsedWeeks = Math.floor(elapsedDays / 7);
+  return `${elapsedWeeks}w ago`;
 }
 
 /** Initials for the account avatar. */

@@ -1,0 +1,25 @@
+-- The academic term a COURSE is offered in (owner-approved 2026-09-11, `modal.md`).
+--
+-- Why the column exists. A term describes an offering of a course, and until
+-- now the only place it was stored was `class_sections.term` — so every class
+-- list of one course restated the same academic year, and a course with no
+-- class lists yet had no term to show at all. `src/lib/term.ts` said as much in
+-- prose ("`courses` has no term column to read instead — adding one is a
+-- migration") and fell back to guessing the term from the calendar, an
+-- [Assumption] it asked to have confirmed. The create-course dialog now asks
+-- the teacher once, and this is where the answer lands.
+--
+-- NULLABLE on purpose, and it is the reason this is a migration rather than a
+-- data rewrite: every course that already exists has no value here, and
+-- inventing one would be fabricating a fact about somebody's course. Readers
+-- fall back to the terms of a course's sections exactly as they did before, so
+-- an existing course renders identically.
+--
+-- Additive and reversible. Nothing reads this column as NOT NULL, no existing
+-- row is touched, an older build runs unchanged against this schema, and
+-- `ALTER TABLE "courses" DROP COLUMN "term"` is a complete rollback.
+--
+-- Model: src/db/schema/catalog.ts (`courses.term`).
+-- Storage form: `AY<startYear>-<1|2|M>`, per src/lib/term.ts.
+
+ALTER TABLE "courses" ADD COLUMN "term" text;

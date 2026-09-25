@@ -2,14 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { currentUserId } from "@/auth";
 import { db } from "@/db";
 import { courses } from "@/db/schema";
 
 import { formatDateTime, formatDeadline, timeRemaining } from "@/lib/datetime";
 import { AppShell } from "@/components/layout/app-shell";
-import { studentSectionTabs } from "@/components/layout/nav";
 import { primaryNavFor } from "@/lib/nav-context";
 import {
   AccessDenied,
@@ -18,6 +16,7 @@ import {
   Notice,
   Stamp,
 } from "@/components/ui";
+import { Tag } from "@/components/ui/tag";
 import {
   WeeklyForm,
   type FormQuestionView,
@@ -34,6 +33,7 @@ import type { QuestionOption } from "@/modules/forms/questions";
 import { renderRichText } from "@/modules/richtext/render";
 import { AuthzError } from "@/modules/authz";
 import { requireUser, toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
 
 /**
  * One form, as the student sees it.
@@ -103,43 +103,34 @@ export default async function StudentFormPage({
     sequenceLabel,
     focusLabel,
     topicTitle,
-    attributedSectionId,
     showSectionLabel,
     sectionTitle,
     timezone,
   } = current;
-  // `current` resolves this from the authorized audience, but keep the
-  // navigation boundary defensive: a corrupt value must not turn into a set of
-  // links to an arbitrary section path.
-  const safeAttributedSectionId = z.string().uuid().safeParse(attributedSectionId)
-    .success
-    ? attributedSectionId
-    : null;
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, instance.courseId),
   }))!;
   const shell = {
     user: toShellUser(user),
     workspace: "student" as const,
-    /* A form instance is reached through the reader's class, but its URL says
-       nothing about which one, so the page tells the rail. */
+    /* A form instance is reached through the reader's course workspace, but
+       its URL says nothing about which course, so the page tells the rail. */
     navGroups: await primaryNavFor(user, `/forms/${instanceId}`, {
-      fallbackHref: safeAttributedSectionId
-        ? `/sections/${safeAttributedSectionId}`
-        : undefined,
+      fallbackHref: `/courses/${instance.courseId}`,
     }),
-    /* A form instance is what the section's Forms view leads to, not a peer of
-       it, so the strip marks that tab rather than showing nothing selected. */
-    tabs: safeAttributedSectionId
-      ? studentSectionTabs(safeAttributedSectionId, `/forms/${instanceId}`, {
-          activeHref: `/sections/${safeAttributedSectionId}`,
-        })
-      : undefined,
+    /* A form instance is a child of the course's Forms tab, so the course tabs
+       stay out of the detail view and the breadcrumb carries the drill-down. */
     tabsLabel: course.code,
     /* The course code is the identity. The section is not in the label: the
        student's action and this form are identical in every section it went to,
        so naming one would imply a difference that does not exist. */
     contextLabel: course.code,
+    crumbs: [
+      { href: "/courses", label: "My courses" },
+      { href: `/courses/${course.id}`, label: course.code },
+      { label: "Forms" },
+    ],
+    nested: true,
     roomy: true,
   };
 
@@ -172,23 +163,19 @@ export default async function StudentFormPage({
               If a staff member replies to something you wrote, the reply appears
               under your submissions — only you and the teaching team can see it.
             </p>
-            <div className="row" style={{ marginTop: "var(--s5)" }}>
-              {safeAttributedSectionId && (
-                <>
-                  <Link
-                    className="button button--primary"
-                    href={`/sections/${safeAttributedSectionId}/history`}
-                  >
-                    See my submissions
-                  </Link>
-                  <Link
-                    className="button button--secondary"
-                    href={`/sections/${safeAttributedSectionId}/qa`}
-                  >
-                    Class Q&amp;A
-                  </Link>
-                </>
-              )}
+            <div className="row mt-6">
+              <Link
+                className={buttonClass({ variant: "primary" })}
+                href={`/courses/${course.id}/submissions`}
+              >
+                See my submissions
+              </Link>
+              <Link
+                className={buttonClass({ variant: "secondary" })}
+                href={`/courses/${course.id}/qa`}
+              >
+                Class Q&amp;A
+              </Link>
             </div>
           </Notice>
         </div>
@@ -351,10 +338,34 @@ export default async function StudentFormPage({
          when they set one — that is what explains an unfamiliar question. */
       title={formTitle}
       description={
+        /*
+          The week is back in the meta line, not a tag. As a tag it was both
+          too quiet for a heading and physically wrong:
+          `.page-head__description` is a grid, so an inline-flex child stretches
+          to the whole column — the tag drew a full-width box with two small
+          words in it. (Same trap as the forms table's status cell, which needs
+          `justify-items-start` for the same reason.)
+
+          The paragraph that used to close this block is still gone (owner,
+          2026-09-11): "Closes Sunday 13 Sept, 11:59 pm. Your teaching team
+          sees your name beside your answers; your classmates never do." — the
+          deadline is in the status line beside the title and stated in full by
+          the submit bar.
+        */
         <>
+          {/* The week, said loudly. A student opening this needs to know WHICH
+              week they are answering before anything else on the page, and as
+              one item in a dot-separated meta line it was the same size as the
+              focus and the section beside it. `--text-title` is the step below
+              the page title, in the same serif, so it reads as the title's
+              subject rather than as a second heading competing with it. */}
+          {sequenceLabel && (
+            <p className="font-document text-title font-bold text-ink">
+              {sequenceLabel}
+            </p>
+          )}
           <MetaList
             items={[
-              sequenceLabel,
               focusLabel ? `Focus: ${focusLabel}` : null,
               topicTitle && topicTitle !== focusLabel ? topicTitle : null,
               /* The section, only when the student is in more than one class
@@ -362,10 +373,6 @@ export default async function StudentFormPage({
               showSectionLabel ? sectionTitle : null,
             ]}
           />
-          <span>
-            Closes {formatDeadline(instance.deadlineAt, timezone)}. Your teaching
-            team sees your name beside your answers; your classmates never do.
-          </span>
         </>
       }
       status={
@@ -373,9 +380,16 @@ export default async function StudentFormPage({
           <Stamp tone={response ? "green" : "amber"}>
             {response ? "Submitted" : "Not submitted"}
           </Stamp>
-          <span className="meta">
-            {timeRemaining(instance.deadlineAt)} left
-          </span>
+          {/* A tag, matching the stamp beside it (owner, 2026-09-11): the two
+              are the same KIND of fact about this form, and one drawn as a
+              badge next to one drawn as grey text read as an afterthought.
+              `Tag` and not `Stamp`, deliberately — a stamp carries a tone and
+              a shape because it reports a STATE, and "2 days left" is a count
+              (see `ui/tag.tsx`).
+
+              `timeRemaining` already ends in "left"; the caller used to append
+              another one and printed "2 days left left". */}
+          <Tag>{timeRemaining(instance.deadlineAt)}</Tag>
         </>
       }
     >

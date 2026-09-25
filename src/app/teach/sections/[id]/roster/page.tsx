@@ -13,6 +13,7 @@ import {
   MetaList,
   Stamp,
 } from "@/components/ui";
+import { TagList } from "@/components/ui/tag";
 import { RosterImportDialog } from "@/components/staff/roster-import-dialog";
 import { listSectionRosterPage, type RosterState } from "@/modules/catalog";
 import {
@@ -28,6 +29,8 @@ import {
 import { AuthzError } from "@/modules/authz";
 import { formatStudentNumber, studentNumberTail } from "@/lib/student-number";
 import { toShellUser } from "@/lib/session";
+import { buttonClass } from "@/components/ui/button";
+import { Field, Select } from "@/components/ui/form";
 
 /**
  * The class list for one section.
@@ -166,7 +169,9 @@ export default async function SectionRosterPage({
         parsed = parseRosterCsv(pasted);
         source = "pasted class list";
       } else {
-        redirect(back({ error: "Choose a CSV or XLSX file, or paste the rows." }));
+        redirect(
+          back({ error: "Choose a CSV or XLSX file, or paste the rows." }),
+        );
       }
 
       if (parsed.fileError) redirect(back({ error: parsed.fileError }));
@@ -220,7 +225,12 @@ export default async function SectionRosterPage({
       tabsLabel={sectionLabel(course.code, section.title)}
       tabsMode="menu"
       contextLabel={sectionLabel(course.code, section.title)}
-      title="Class list"
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${course.id}`, label: course.code },
+        { href: `/teach/sections/${section.id}`, label: section.title },
+      ]}
+      title={sectionLabel(course.code, section.title)}
       actions={
         <RosterImportDialog action={runImport} sectionTitle={section.title} />
       }
@@ -236,16 +246,16 @@ export default async function SectionRosterPage({
         {stats.missingEmail > 0 && (
           <Alert variant="warning" title="Some rows have no UP email">
             {stats.missingEmail} student
-            {stats.missingEmail === 1 ? " has" : "s have"} no UP email on this list, so
-            they cannot reach this class. Re-import the list with their UP Mail
-            column filled in.
+            {stats.missingEmail === 1 ? " has" : "s have"} no UP email on this
+            list, so they cannot reach this class. Re-import the list with their
+            UP Mail column filled in.
           </Alert>
         )}
 
         <section className="notice">
           <div className="notice__head">
             <div>
-              <h2>Imported students</h2>
+              <h2 className="panel-title">Imported students</h2>
             </div>
             {/* ONE phrase. Two adjacent figures rendered as
                 "2 on the list2 signed in" — two stats with nothing between
@@ -288,9 +298,11 @@ export default async function SectionRosterPage({
                 <label className="visually-hidden" htmlFor="roster-q">
                   Search the class list
                 </label>
-                <input
+                <Field
+                  // was `.roster-search .field` (§3.2): the search box takes
+                  // the row's spare width, the filter beside it does not.
+                  className="flex-[1_1_200px] min-w-0"
                   id="roster-q"
-                  className="field"
                   name="q"
                   type="search"
                   placeholder="Name, UP email, or student number"
@@ -299,9 +311,9 @@ export default async function SectionRosterPage({
                 <label className="visually-hidden" htmlFor="roster-state">
                   Show
                 </label>
-                <select
+                <Select
+                  className="flex-[0_1_170px] min-w-0"
                   id="roster-state"
-                  className="select-field"
                   name="state"
                   defaultValue={rosterState}
                 >
@@ -309,8 +321,11 @@ export default async function SectionRosterPage({
                   <option value="signed_in">Signed in</option>
                   <option value="not_signed_in">Not signed in yet</option>
                   <option value="dropped">Dropped</option>
-                </select>
-                <button className="button button--secondary" type="submit">
+                </Select>
+                <button
+                  className={buttonClass({ variant: "secondary" })}
+                  type="submit"
+                >
                   Search
                 </button>
               </form>
@@ -335,41 +350,43 @@ export default async function SectionRosterPage({
                 </div>
               ) : (
                 <ul className="match-list">
-                  {paged.rows.map(({ record, enrollment, signedIn, studentNumber }) => (
-                    <li className="roster-row" key={record.id}>
-                      <div className="roster-row__main">
-                        <p className="match__name">{record.fullName}</p>
-                        <MetaList
-                          items={[
-                            record.rosterEmail ?? "No UP email on this list",
-                            /* The whole number, in the format it is written
+                  {paged.rows.map(
+                    ({ record, enrollment, signedIn, studentNumber }) => (
+                      <li className="roster-row" key={record.id}>
+                        <div className="roster-row__main">
+                          <p className="match__name">{record.fullName}</p>
+                          <MetaList
+                            items={[
+                              record.rosterEmail ?? "No UP email on this list",
+                              /* The whole number, in the format it is written
                                in. A masked tail is only what remains when the
                                stored value cannot be opened, and it says so
                                rather than passing itself off as complete. */
-                            formatStudentNumber(studentNumber) ??
-                              (studentNumberTail(record.studentNumberLast4)
-                                ? `Student number ${studentNumberTail(record.studentNumberLast4)} — could not be read in full`
-                                : "No student number on this list"),
-                            enrollment.rosterName !== record.fullName
-                              ? `Class list name: ${enrollment.rosterName}`
-                              : null,
-                          ]}
-                        />
-                      </div>
-                      <div className="roster-row__actions">
-                        {enrollment.status === "deactivated" && (
-                          <Stamp tone="neutral">Dropped</Stamp>
-                        )}
-                        {!record.rosterEmail ? (
-                          <Stamp tone="red">No UP email</Stamp>
-                        ) : (
-                          <Stamp tone={signedIn ? "green" : "neutral"}>
-                            {signedIn ? "Signed in" : "Not signed in yet"}
-                          </Stamp>
-                        )}
-                      </div>
-                    </li>
-                  ))}
+                              formatStudentNumber(studentNumber) ??
+                                (studentNumberTail(record.studentNumberLast4)
+                                  ? `Student number ${studentNumberTail(record.studentNumberLast4)} — could not be read in full`
+                                  : "No student number on this list"),
+                              enrollment.rosterName !== record.fullName
+                                ? `Class list name: ${enrollment.rosterName}`
+                                : null,
+                            ]}
+                          />
+                        </div>
+                        <div className="roster-row__actions">
+                          {enrollment.status === "deactivated" && (
+                            <Stamp tone="neutral">Dropped</Stamp>
+                          )}
+                          {!record.rosterEmail ? (
+                            <Stamp tone="red">No UP email</Stamp>
+                          ) : (
+                            <Stamp tone={signedIn ? "green" : "neutral"}>
+                              {signedIn ? "Signed in" : "Not signed in yet"}
+                            </Stamp>
+                          )}
+                        </div>
+                      </li>
+                    ),
+                  )}
                 </ul>
               )}
 
@@ -382,7 +399,10 @@ export default async function SectionRosterPage({
                   <span className="row">
                     {paged.hasPrevious && (
                       <Link
-                        className="button button--quiet button--small"
+                        className={buttonClass({
+                          variant: "quiet",
+                          size: "small",
+                        })}
                         href={pageHref(paged.page - 1)}
                       >
                         Previous
@@ -390,7 +410,10 @@ export default async function SectionRosterPage({
                     )}
                     {paged.hasNext && (
                       <Link
-                        className="button button--quiet button--small"
+                        className={buttonClass({
+                          variant: "quiet",
+                          size: "small",
+                        })}
                         href={pageHref(paged.page + 1)}
                       >
                         Next
@@ -441,14 +464,19 @@ function ImportOutcomePanel({
     <section className="notice">
       <div className="notice__head">
         <div>
-          <h2>Class list imported</h2>
-          <MetaList
+          <h2 className="panel-title">Class list imported</h2>
+          {/* An import outcome is a row of counts, so it reads as one. The
+              source description stays out of the tags: it is a filename or a
+              sentence, not a fact to compare. */}
+          <p className="meta">{outcome.sourceDescription}</p>
+          <TagList
             items={[
-              outcome.sourceDescription,
               `${added} added`,
               `${s.enrolled} newly enrolled here`,
               s.reactivated > 0 ? `${s.reactivated} returned` : null,
-              s.emailsLinked > 0 ? `${s.emailsLinked} UP email links set` : null,
+              s.emailsLinked > 0
+                ? `${s.emailsLinked} UP email links set`
+                : null,
               s.namesUpdated > 0 ? `${s.namesUpdated} names corrected` : null,
               s.unchanged > 0 ? `${s.unchanged} unchanged` : null,
             ]}
@@ -499,7 +527,7 @@ function ImportOutcomePanel({
                       (reason) =>
                         WARNING_LABELS[reason as RowWarning["code"]] ?? reason,
                     )
-                  .join(" ")}
+                    .join(" ")}
                 </li>
               ))}
             </ul>

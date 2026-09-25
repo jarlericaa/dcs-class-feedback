@@ -1,25 +1,54 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   backlogQuestions,
   classSections,
   importBatches,
   publicAnswers,
-  sectionBacklogVisibility,
   sourceLinks,
   studentSubmissionItems,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
 import {
+  AuthzError,
   requireCourseStaffOrSectionGrant,
   requireSectionStaff,
 } from "@/modules/authz";
 import { getItemWithSection } from "@/modules/review";
+import { listCoursePublicationQueue } from "@/modules/publishing";
+
+type PublicationQueue = Awaited<ReturnType<typeof listCoursePublicationQueue>>;
+type PublicationItem = PublicationQueue["items"][number];
+
+/** The small work-oriented vocabulary the Question Backlog presents. */
+export type QuestionBacklogStatus =
+  "imported" | "drafting" | "scheduled" | "archived";
+export type QuestionBacklogCategory = "content" | "logistics" | "misc";
+
+export type QuestionBacklogReadItem =
+  | {
+      key: `question:${string}`;
+      kind: "question";
+      status: QuestionBacklogStatus;
+      question: typeof backlogQuestions.$inferSelect;
+      publication: null;
+      updatedAt: Date;
+    }
+  | {
+      key: `answer:${string}`;
+      kind: "answer";
+      status: QuestionBacklogStatus;
+      question: null;
+      publication: PublicationItem;
+      updatedAt: Date;
+    };
 
 /**
  * Course-level question backlog + legacy import
  * (docs/domain/question-backlog.md, docs/domain/legacy-question-import.md).
- * - the backlog belongs to the COURSE; exposure to a section is explicit
+ * - the backlog belongs to the COURSE, and so does what it publishes into:
+ *   one backlog item becomes ONE course PublicAnswer (ADR-0005). There is no
+ *   per-section exposure step and no section to choose;
  * - legacy imports are ANONYMOUS BY DEFAULT; identity preserved only on
  *   explicit choice
  * - backlog/legacy items never count toward participation (they never create
@@ -56,31 +85,187 @@ export async function listBacklogForCourse(
       (!opts.state || row.state === opts.state) &&
       (!term || row.text.toLowerCase().includes(term)),
   );
-  const visibility = rows.length
-    ? await db.query.sectionBacklogVisibility.findMany({
-        where: inArray(
-          sectionBacklogVisibility.backlogQuestionId,
-          rows.map((r) => r.id),
-        ),
-      })
-    : [];
-  const visibleSections = new Map<string, string[]>();
-  for (const row of visibility) {
-    const list = visibleSections.get(row.backlogQuestionId) ?? [];
-    list.push(row.sectionId);
-    visibleSections.set(row.backlogQuestionId, list);
-  }
   const counts: Record<string, number> = {};
   for (const row of rows) counts[row.state] = (counts[row.state] ?? 0) + 1;
 
+  /**
+   * No per-question section list any more. Under the old model a backlog item
+   * carried the set of sections it had been exposed to, because publishing meant
+   * choosing them; publishing now produces one course-wide answer, so there is
+   * nothing per-section left to report.
+   */
   return {
-    questions: filtered.map((question) => ({
-      question,
-      visibleSectionIds: visibleSections.get(question.id) ?? [],
-    })),
+    questions: filtered.map((question) => ({ question })),
     counts,
     total: rows.length,
   };
+}
+
+/**
+ * The single staff read model for the course's editorial workflow.
+ *
+ * BacklogQuestion and PublicAnswer stay separate records because provenance,
+ * source links, publication and the scheduler each have different invariants.
+ * The reader should not have to know that: a question with a draft answer is
+ * one row, ordered with manual/imported questions by the same updatedAt value.
+ *
+ * The two underlying readers retain their own authorization checks. A staff
+ * member holding only a backlog flag sees backlog questions; one holding only a
+ * publication flag sees answer drafts; course staff see both. A source item's
+ * section authorization is still enforced when the answer is drafted, not
+ * weakened by this course-level list.
+ */
+export async function listQuestionBacklog(
+  actorUserId: string,
+  courseId: string,
+) {
+  const [backlogResult, publicationResult] = await Promise.all([
+    listBacklogForCourse(actorUserId, courseId).catch((error: unknown) => {
+      if (error instanceof AuthzError) return null;
+      throw error;
+    }),
+    listCoursePublicationQueue(actorUserId, courseId).catch(
+      (error: unknown) => {
+        if (error instanceof AuthzError) return null;
+        throw error;
+      },
+    ),
+  ]);
+
+  if (!backlogResult && !publicationResult) {
+    throw new AuthzError("No access to this course's question backlog");
+  }
+
+  const publications = publicationResult?.items ?? [];
+  const linkedBacklogIds = new Set(
+    publications.flatMap((item) =>
+      item.backlogQuestionId ? [item.backlogQuestionId] : [],
+    ),
+  );
+
+  const questionItems: QuestionBacklogReadItem[] = (
+    backlogResult?.questions ?? []
+  )
+    .map(({ question }) => question)
+    // Published questions have left editorial work and live in Class Q&A. A
+    // legacy not_suitable state is presented as archived, not as a rejection.
+    .filter((question) => question.state !== "published")
+    .filter(
+      (question) =>
+        !linkedBacklogIds.has(question.id) ||
+        question.state === "archived" ||
+        question.state === "not_suitable",
+    )
+    .map((question) => ({
+      key: `question:${question.id}` as const,
+      kind: "question" as const,
+      status: backlogQuestionStatus(question),
+      question,
+      publication: null,
+      updatedAt: question.updatedAt,
+    }));
+
+  const answerItems: QuestionBacklogReadItem[] = publications.map((item) => ({
+    key: `answer:${item.answer.id}` as const,
+    kind: "answer" as const,
+    status: publicationStatus(item),
+    question: null,
+    publication: item,
+    updatedAt: item.answer.updatedAt,
+  }));
+
+  const items = [...questionItems, ...answerItems].sort(
+    (left, right) => right.updatedAt.getTime() - left.updatedAt.getTime(),
+  );
+  const counts: Record<QuestionBacklogStatus | "all", number> = {
+    all: items.length,
+    imported: 0,
+    drafting: 0,
+    scheduled: 0,
+    archived: 0,
+  };
+  for (const item of items) {
+    counts[item.status] += 1;
+  }
+  // Archived work remains in the read model so a history link can restore it,
+  // but it is not part of the active backlog total or the All view.
+  counts.all -= counts.archived;
+
+  return {
+    items,
+    counts,
+    total: counts.all,
+    failed: publicationResult?.failed ?? [],
+  };
+}
+
+/** The persisted answer states projected into the three active backlog states. */
+function publicationStatus(item: PublicationItem): QuestionBacklogStatus {
+  if (item.answer.state === "scheduled") return "scheduled";
+  // Rejected and awaiting-approval answers are still active preparation work.
+  // Keep those persisted states intact; the backlog deliberately does not
+  // make a second user-facing state for each approval outcome.
+  return "drafting";
+}
+
+/** The persisted backlog states projected into the work-oriented vocabulary. */
+function backlogQuestionStatus(
+  question: typeof backlogQuestions.$inferSelect,
+): QuestionBacklogStatus {
+  if (question.state === "archived" || question.state === "not_suitable") {
+    return "archived";
+  }
+  if (question.state === "scheduled") return "scheduled";
+  if (question.state === "imported") return "imported";
+  // Needs review, answerable and drafting are all active preparation work.
+  // They remain distinct in the domain state machine and collapse here only
+  // for the approved editorial vocabulary.
+  return "drafting";
+}
+
+/** Add a staff-curated question without inventing a student source. */
+export async function createManualBacklogQuestion(
+  actorUserId: string,
+  courseId: string,
+  input: {
+    text: string;
+    category?: "content" | "logistics" | "misc";
+    internalNote?: string;
+  },
+) {
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "manageBacklogImports",
+  );
+  const text = input.text.trim();
+  if (!text) throw new Error("Question text is required");
+
+  return db.transaction(async (tx) => {
+    const [question] = await tx
+      .insert(backlogQuestions)
+      .values({
+        courseId,
+        text,
+        category: input.category,
+        internalNote: input.internalNote?.trim() || null,
+        state: "needs_review",
+        provenance: "manual_entry",
+        identityPreserved: false,
+        createdByUserId: actorUserId,
+      })
+      .returning();
+    await writeAudit(tx, {
+      actorUserId,
+      action: "backlog.question_created",
+      entityType: "backlog_question",
+      entityId: question!.id,
+      after: { provenance: "manual_entry", courseId },
+      courseId,
+    });
+    return question!;
+  });
 }
 
 /**
@@ -105,6 +290,62 @@ export async function copyOrMoveToBacklog(
   }
 
   return db.transaction(async (tx) => {
+    /*
+     * A row action can be clicked more than once, and the page can be opened
+     * in two tabs. Source-preserving current items are the stable identity for
+     * this workflow, so an existing source link is a successful no-op rather
+     * than another backlog question. The database keeps a non-unique index for
+     * historical imports, so this guard belongs in the domain transaction.
+     */
+    if (opts.preserveSource) {
+      /* The schema deliberately retains a non-unique source index for legacy
+         rows. Serialize this source item while checking it so two quick clicks
+         (or two tabs) cannot both observe "not yet added" and insert a pair. */
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${item.id}, 0))`,
+      );
+      const existing = await tx.query.backlogQuestions.findFirst({
+        where: and(
+          eq(backlogQuestions.courseId, courseId),
+          eq(backlogQuestions.sourceItemId, item.id),
+        ),
+      });
+      if (existing) return existing;
+
+      /*
+       * A current item can already be represented by a PublicAnswer created
+       * directly from the response. The row action is allowed to retry, but
+       * it must not create a second backlog/editorial object around that
+       * answer. The UI normally resolves this state before rendering; this
+       * check protects stale tabs and forged/replayed form submissions.
+       */
+      const existingAnswer = await tx
+        .select({ id: publicAnswers.id })
+        .from(sourceLinks)
+        .innerJoin(
+          publicAnswers,
+          eq(publicAnswers.id, sourceLinks.publicAnswerId),
+        )
+        .where(
+          and(
+            eq(sourceLinks.itemId, item.id),
+            eq(publicAnswers.courseId, courseId),
+            inArray(publicAnswers.state, [
+              "draft",
+              "awaiting_approval",
+              "scheduled",
+              "published",
+            ]),
+          ),
+        )
+        .limit(1);
+      if (existingAnswer.length > 0) {
+        throw new Error(
+          "This question already has an active editorial item. Open it from Question Backlog or Class Q&A.",
+        );
+      }
+    }
+
     const [question] = await tx
       .insert(backlogQuestions)
       .values({
@@ -142,6 +383,169 @@ export async function copyOrMoveToBacklog(
     });
     return question!;
   });
+}
+
+/**
+ * Read the source-preserving backlog membership for an already-authorized
+ * course review list. This is intentionally a bounded lookup by the item ids
+ * currently on screen, not a second unbounded backlog feed.
+ */
+export async function listBacklogSourceItemIds(
+  actorUserId: string,
+  courseId: string,
+  itemIds: string[],
+) {
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "manageBacklogImports",
+    { allowArchived: true },
+  );
+  if (itemIds.length === 0) return new Set<string>();
+  const rows = await db.query.backlogQuestions.findMany({
+    where: and(
+      eq(backlogQuestions.courseId, courseId),
+      inArray(backlogQuestions.sourceItemId, itemIds),
+    ),
+    columns: { sourceItemId: true },
+  });
+  return new Set(
+    rows.flatMap((row) => (row.sourceItemId ? [row.sourceItemId] : [])),
+  );
+}
+
+export type SourceEditorialState = {
+  backlogQuestionId: string | null;
+  backlogQuestionState: (typeof backlogQuestions.$inferSelect)["state"] | null;
+  activeAnswerId: string | null;
+  publishedAnswerId: string | null;
+};
+
+const ACTIVE_PUBLIC_ANSWER_STATES = [
+  "draft",
+  "awaiting_approval",
+  "scheduled",
+] as const;
+
+/**
+ * Resolve the editorial state behind current response items.
+ *
+ * A source-preserving backlog question points at the item, while a public
+ * answer may point directly at the item or at that backlog question. Keeping
+ * this lookup here gives the Responses page one consistent state machine and
+ * also lets old rows (created before both links were written) resolve safely.
+ */
+export async function listSourceEditorialStates(
+  actorUserId: string,
+  courseId: string,
+  itemIds: string[],
+): Promise<Map<string, SourceEditorialState>> {
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    courseId,
+    "reviewResponses",
+    { allowArchived: true },
+  );
+  if (itemIds.length === 0) return new Map();
+
+  const backlogRows = await db.query.backlogQuestions.findMany({
+    where: and(
+      eq(backlogQuestions.courseId, courseId),
+      inArray(backlogQuestions.sourceItemId, itemIds),
+    ),
+    columns: { id: true, sourceItemId: true, state: true },
+    orderBy: desc(backlogQuestions.updatedAt),
+  });
+  const stateByItem = new Map<string, SourceEditorialState>();
+  for (const itemId of itemIds) {
+    stateByItem.set(itemId, {
+      backlogQuestionId: null,
+      backlogQuestionState: null,
+      activeAnswerId: null,
+      publishedAnswerId: null,
+    });
+  }
+  for (const row of backlogRows) {
+    if (!row.sourceItemId) continue;
+    const state = stateByItem.get(row.sourceItemId);
+    if (state && !state.backlogQuestionId) {
+      state.backlogQuestionId = row.id;
+      state.backlogQuestionState = row.state;
+    }
+  }
+
+  const backlogIds = backlogRows.map((row) => row.id);
+  const directLinks = await db
+    .select({
+      itemId: sourceLinks.itemId,
+      answerId: publicAnswers.id,
+      answerState: publicAnswers.state,
+    })
+    .from(sourceLinks)
+    .innerJoin(publicAnswers, eq(publicAnswers.id, sourceLinks.publicAnswerId))
+    .where(
+      and(
+        eq(publicAnswers.courseId, courseId),
+        inArray(sourceLinks.itemId, itemIds),
+      ),
+    );
+  const backlogLinks = backlogIds.length
+    ? await db
+        .select({
+          backlogQuestionId: sourceLinks.backlogQuestionId,
+          answerId: publicAnswers.id,
+          answerState: publicAnswers.state,
+        })
+        .from(sourceLinks)
+        .innerJoin(
+          publicAnswers,
+          eq(publicAnswers.id, sourceLinks.publicAnswerId),
+        )
+        .where(
+          and(
+            eq(publicAnswers.courseId, courseId),
+            inArray(sourceLinks.backlogQuestionId, backlogIds),
+          ),
+        )
+    : [];
+  const itemByBacklogId = new Map(
+    backlogRows.flatMap((row) =>
+      row.sourceItemId ? [[row.id, row.sourceItemId] as const] : [],
+    ),
+  );
+
+  const applyAnswer = (
+    itemId: string | null,
+    answerId: string,
+    answerState: (typeof publicAnswers.$inferSelect)["state"],
+  ) => {
+    if (!itemId) return;
+    const state = stateByItem.get(itemId);
+    if (!state) return;
+    if (answerState === "published") {
+      state.publishedAnswerId ??= answerId;
+    } else if (
+      ACTIVE_PUBLIC_ANSWER_STATES.includes(
+        answerState as (typeof ACTIVE_PUBLIC_ANSWER_STATES)[number],
+      )
+    ) {
+      state.activeAnswerId ??= answerId;
+    }
+  };
+  for (const link of directLinks) {
+    applyAnswer(link.itemId, link.answerId, link.answerState);
+  }
+  for (const link of backlogLinks) {
+    applyAnswer(
+      itemByBacklogId.get(link.backlogQuestionId ?? "") ?? null,
+      link.answerId,
+      link.answerState,
+    );
+  }
+
+  return stateByItem;
 }
 
 export interface LegacyEntry {
@@ -240,7 +644,7 @@ const BACKLOG_TRANSITIONS: Record<string, string[]> = {
   scheduled: ["published", "drafting", "archived"],
   published: ["archived"],
   not_suitable: ["needs_review", "archived"],
-  archived: [],
+  archived: ["needs_review"],
 };
 
 export async function setBacklogState(
@@ -286,83 +690,137 @@ export async function setBacklogState(
 }
 
 /**
- * Explicit per-section exposure. Nothing from the backlog ever reaches a
- * section's archive automatically.
+ * Reclassify one item in the shared editorial workspace without touching its
+ * wording, workflow state, source links, or publication fields.
  */
-export async function makeVisibleToSection(
+export async function setBacklogCategory(
   actorUserId: string,
-  backlogQuestionId: string,
-  sectionId: string,
+  target: { kind: "question" | "answer"; id: string },
+  category: QuestionBacklogCategory,
 ) {
-  const question = await db.query.backlogQuestions.findFirst({
-    where: eq(backlogQuestions.id, backlogQuestionId),
-  });
-  if (!question) throw new Error("Backlog question not found");
-  await requireSectionStaff(db, actorUserId, sectionId, "manageBacklogImports");
-  const section = await db.query.classSections.findFirst({
-    where: eq(classSections.id, sectionId),
-  });
-  if (section?.courseId !== question.courseId) {
-    throw new Error("Section does not belong to this backlog's course");
+  const targetRecord =
+    target.kind === "question"
+      ? await db.query.backlogQuestions.findFirst({
+          where: eq(backlogQuestions.id, target.id),
+          columns: { courseId: true, category: true },
+        })
+      : await db.query.publicAnswers.findFirst({
+          where: eq(publicAnswers.id, target.id),
+          columns: { courseId: true, category: true },
+        });
+  if (!targetRecord) {
+    throw new Error(
+      target.kind === "question"
+        ? "Backlog question not found"
+        : "Public answer not found",
+    );
   }
 
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    targetRecord.courseId,
+    "manageBacklogImports",
+  );
+
+  if (targetRecord.category === category) return;
+
   await db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(sectionBacklogVisibility)
-      .values({
-        backlogQuestionId,
-        sectionId,
-        madeVisibleByUserId: actorUserId,
-      })
-      .onConflictDoNothing()
-      .returning();
-    if (row) {
-      await writeAudit(tx, {
-        actorUserId,
-        action: "backlog.made_visible_to_section",
-        entityType: "backlog_question",
-        entityId: backlogQuestionId,
-        after: { sectionId },
-        // This one act names a single section, so it is scoped to that section
-        // rather than to the course: the other sections were not exposed.
-        sectionId,
-        courseId: question.courseId,
-      });
+    if (target.kind === "question") {
+      await tx
+        .update(backlogQuestions)
+        .set({ category, updatedAt: new Date() })
+        .where(
+          and(
+            eq(backlogQuestions.id, target.id),
+            eq(backlogQuestions.courseId, targetRecord.courseId),
+          ),
+        );
+    } else {
+      await tx
+        .update(publicAnswers)
+        .set({ category, updatedAt: new Date() })
+        .where(
+          and(
+            eq(publicAnswers.id, target.id),
+            eq(publicAnswers.courseId, targetRecord.courseId),
+          ),
+        );
     }
+    await writeAudit(tx, {
+      actorUserId,
+      action: "backlog.metadata_updated",
+      entityType:
+        target.kind === "question" ? "backlog_question" : "public_answer",
+      entityId: target.id,
+      before: { category: targetRecord.category },
+      after: { category },
+      courseId: targetRecord.courseId,
+    });
   });
 }
 
 /**
- * Draft a section PublicAnswer from a backlog question. Requires explicit
- * visibility (created here if missing). The answer links back to the backlog
- * question via SourceLink; a deliberately-anonymous legacy question publishes
- * with that backlog link only — never a student identity. Publishing then
- * uses the normal publishNow/schedulePublication path.
+ * Draft the course's PublicAnswer from a backlog question (ADR-0005).
+ *
+ * One backlog item, one course entry — no target section is asked for and none
+ * is recorded. The answer links back to the backlog question via SourceLink, so
+ * a deliberately-anonymous legacy question publishes with that backlog link
+ * only and never a student identity. Publishing then uses the normal
+ * publishNow/schedulePublication path.
  */
 export async function draftFromBacklog(
   actorUserId: string,
   backlogQuestionId: string,
-  sectionId: string,
-  input: { publicQuestionText?: string; answerBody?: string },
+  input: { publicQuestionText?: string; answerBody?: string } = {},
 ) {
   const question = await db.query.backlogQuestions.findFirst({
     where: eq(backlogQuestions.id, backlogQuestionId),
   });
   if (!question) throw new Error("Backlog question not found");
-  await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
-  if (!["answerable", "drafting"].includes(question.state)) {
+  await requireCourseStaffOrSectionGrant(
+    db,
+    actorUserId,
+    question.courseId,
+    "draftPublicAnswers",
+  );
+  if (question.sourceItemId) {
+    const { sectionId } = await getItemWithSection(question.sourceItemId);
+    // The backlog and its answer are course-owned, but a current submission
+    // remains readable only through the section that authorized the actor.
+    // Keep this check here so opening the shared editorial workspace cannot
+    // turn a course-level draft permission into source-data access.
+    await requireSectionStaff(db, actorUserId, sectionId, "draftPublicAnswers");
+  }
+  if (!["needs_review", "answerable", "drafting"].includes(question.state)) {
     throw new Error(
-      `Backlog question must be answerable/drafting to draft (is ${question.state})`,
+      `Backlog question is not ready to draft (is ${question.state})`,
     );
   }
 
-  await makeVisibleToSection(actorUserId, backlogQuestionId, sectionId);
-
   return db.transaction(async (tx) => {
+    /*
+     * A retry must return the existing editorial item, not mint a second public
+     * answer. The partial source-link index is intentionally not unique across
+     * answers, so serialize this check in the domain transaction.
+     */
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${backlogQuestionId}, 0))`,
+    );
+    const existingLink = await tx.query.sourceLinks.findFirst({
+      where: eq(sourceLinks.backlogQuestionId, backlogQuestionId),
+    });
+    if (existingLink) {
+      const existingAnswer = await tx.query.publicAnswers.findFirst({
+        where: eq(publicAnswers.id, existingLink.publicAnswerId),
+      });
+      if (existingAnswer) return existingAnswer;
+    }
+
     const [answer] = await tx
       .insert(publicAnswers)
       .values({
-        sectionId,
+        courseId: question.courseId,
         publicQuestionText: input.publicQuestionText ?? question.text,
         answerBody:
           input.answerBody ??
@@ -370,7 +828,8 @@ export async function draftFromBacklog(
         state: "draft",
         category: question.category,
         topicId: question.topicId,
-        sourceOrigin: question.provenance === "legacy_import" ? "legacy" : "current",
+        sourceOrigin:
+          question.provenance === "legacy_import" ? "legacy" : "current",
         createdByUserId: actorUserId,
       })
       .returning();
@@ -388,16 +847,45 @@ export async function draftFromBacklog(
       .where(
         and(
           eq(backlogQuestions.id, backlogQuestionId),
-          eq(backlogQuestions.state, "answerable"),
+          eq(backlogQuestions.state, question.state),
         ),
       );
+    if (question.sourceItemId) {
+      /*
+       * Preserve both provenance edges: the backlog link keeps the editorial
+       * item connected to its workflow, and this item link lets the response
+       * read model show the same answer to the original asker. They are two
+       * different source targets, not duplicate links, and each is unique for
+       * this PublicAnswer by the schema's partial indexes.
+       */
+      const [itemLink] = await tx
+        .insert(sourceLinks)
+        .values({
+          publicAnswerId: answer!.id,
+          itemId: question.sourceItemId,
+          createdByUserId: actorUserId,
+        })
+        .returning();
+      await writeAudit(tx, {
+        actorUserId,
+        action: "source_link.created",
+        entityType: "source_link",
+        entityId: itemLink!.id,
+        after: {
+          publicAnswerId: answer!.id,
+          itemId: question.sourceItemId,
+          backlogQuestionId,
+        },
+        courseId: question.courseId,
+      });
+    }
     await writeAudit(tx, {
       actorUserId,
       action: "public_answer.drafted",
       entityType: "public_answer",
       entityId: answer!.id,
-      after: { fromBacklog: backlogQuestionId, sectionId },
-      sectionId,
+      after: { fromBacklog: backlogQuestionId, courseId: question.courseId },
+      courseId: question.courseId,
     });
     await writeAudit(tx, {
       actorUserId,
@@ -405,7 +893,7 @@ export async function draftFromBacklog(
       entityType: "source_link",
       entityId: link!.id,
       after: { publicAnswerId: answer!.id, backlogQuestionId },
-      sectionId,
+      courseId: question.courseId,
     });
     return answer!;
   });

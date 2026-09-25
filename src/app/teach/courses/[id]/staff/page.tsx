@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/ui/submit-button";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { asc, eq } from "drizzle-orm";
@@ -258,9 +259,7 @@ export default async function CourseTeachingTeamPage({
     const uid = await currentUserId();
     if (!uid) redirect("/signin");
     const role = String(formData.get("role") ?? "ta") as
-      | "teacher"
-      | "ta"
-      | "co_teacher";
+      "teacher" | "ta" | "co_teacher";
     try {
       await assignSectionStaff(uid, String(formData.get("sectionId") ?? ""), {
         email: String(formData.get("email") ?? ""),
@@ -305,7 +304,11 @@ export default async function CourseTeachingTeamPage({
       tabGroups={await courseTabGroupsFor(user.id, courseId, path)}
       tabsLabel={course.code}
       contextLabel={course.code}
-      title="Teaching team"
+      crumbs={[
+        { href: "/teach/courses", label: "My courses" },
+        { href: `/teach/courses/${courseId}`, label: course.code },
+      ]}
+      title={course.code}
       actions={
         canManage ? (
           <AddStaffDialog
@@ -318,10 +321,7 @@ export default async function CourseTeachingTeamPage({
       }
       description={
         <MetaList
-          items={[
-            course.title,
-            team.total === 1 ? "1 person" : `${team.total} people`,
-          ]}
+          items={[team.total === 1 ? "1 person" : `${team.total} people`]}
         />
       }
     >
@@ -378,7 +378,6 @@ export default async function CourseTeachingTeamPage({
               total={team.total}
               basePath={path}
               params={{ pageSize }}
-              label="people"
             />
           </>
         )}
@@ -431,7 +430,7 @@ function AccessRow({
             <div className="table-actions">
               <Dialog
                 variant="danger"
-                className="button--small"
+                size="small"
                 label="Remove"
                 title={`Remove ${row.user.displayName} from this course?`}
                 description="They lose access to every section of this course. Sections they were added to individually keep them, and nothing they already did is deleted."
@@ -443,9 +442,9 @@ function AccessRow({
                     value={row.courseStaffId}
                   />
                   <div className="row">
-                    <button className="button button--danger" type="submit">
+                    <SubmitButton variant="danger" pendingLabel="Removing…">
                       Remove course-wide access
-                    </button>
+                    </SubmitButton>
                   </div>
                 </form>
               </Dialog>
@@ -470,7 +469,7 @@ function AccessRow({
               />
               <Dialog
                 variant="danger"
-                className="button--small"
+                size="small"
                 label="Remove"
                 title={`Remove ${row.user.displayName} from ${row.section.title}?`}
                 description="They lose access to this class list only. Nothing they already did is deleted."
@@ -483,9 +482,9 @@ function AccessRow({
                     value={row.section.id}
                   />
                   <div className="row">
-                    <button className="button button--danger" type="submit">
+                    <SubmitButton variant="danger" pendingLabel="Removing…">
                       Remove from this class list
-                    </button>
+                    </SubmitButton>
                   </div>
                 </form>
               </Dialog>

@@ -7,8 +7,10 @@ import {
   makeSchedule,
   makeSection,
   makeUser,
+  enroll,
 } from "./fixtures";
 import {
+  formInstanceSections,
   formInstances,
   formQuestions,
 } from "@/db/schema";
@@ -21,7 +23,9 @@ import {
 import { submitResponse } from "@/modules/forms/submission";
 import { invalidateSubmission, restoreSubmission } from "@/modules/review";
 import {
+  courseWeeklyMatrixCsv,
   deriveParticipation,
+  getCourseParticipationOverview,
   participantListCsv,
   weeklyMatrixCsv,
 } from "@/modules/participation";
@@ -138,6 +142,54 @@ describe("derived participation + exports", () => {
     );
     const matrix = await deriveParticipation(section.id);
     expect(matrix.students.every((s) => s.totalWeeks === 0)).toBe(true);
+  });
+
+  it("combines form participation across the course and deduplicates students", async () => {
+    const { teacher, course, section, cycle1, cycle2, q1 } =
+      await setupTwoWeeks();
+    const secondSection = await makeSection(course.id);
+    await db.insert(formInstanceSections).values([
+      { instanceId: cycle1.id, sectionId: secondSection.id },
+      { instanceId: cycle2.id, sectionId: secondSection.id },
+    ]);
+    const shared = await makeEnrolledStudent(section.id);
+    await enroll(secondSection.id, shared.record.id);
+    const secondSectionStudent = await makeEnrolledStudent(secondSection.id);
+
+    await submitResponse(
+      shared.user.id,
+      cycle1.id,
+      { answers: [{ questionId: q1.id, text: "shared" }] },
+      new Date("2026-01-06T04:00:00Z"),
+    );
+    await submitResponse(
+      secondSectionStudent.user.id,
+      cycle1.id,
+      { answers: [{ questionId: q1.id, text: "second" }] },
+      new Date("2026-01-06T04:00:00Z"),
+    );
+
+    const overview = await getCourseParticipationOverview(
+      teacher.id,
+      course.id,
+    );
+    expect(overview.sections).toHaveLength(2);
+    expect(overview.students).toHaveLength(2);
+    expect(
+      overview.students.find((student) => student.studentRecordId === shared.record.id)
+        ?.totalWeeks,
+    ).toBe(1);
+    expect(
+      overview.students.find(
+        (student) =>
+          student.studentRecordId === secondSectionStudent.record.id,
+      )?.totalWeeks,
+    ).toBe(1);
+
+    const csv = await courseWeeklyMatrixCsv(teacher.id, course.id);
+    expect(csv).toContain("Student name");
+    expect(csv).toContain("Total forms");
+    expect(csv).toContain(shared.record.fullName);
   });
 
   it("weekly matrix CSV has one column per cycle and audits the export", async () => {

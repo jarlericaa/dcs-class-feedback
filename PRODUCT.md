@@ -47,9 +47,11 @@ on phone-heavy student usage.
   section scope: there is no course-wide student assistant. A TA without
   `view_student_identities` must be able to do real review work with identities
   masked, so identity exposure is a UI-level concern, not only a data-level one.
-- **Platform administrators** — grant the Teacher role and handle access, account,
-  and system troubleshooting. Platform-admin capability is deliberately separate
-  from teaching capability; neither implies the other.
+- **Platform administrators** — manage authenticated accounts, grant/revoke
+  email-keyed Teacher access, review platform-wide audit activity, and handle
+  access/account/system troubleshooting. They can open a signed, read-only
+  support view of an active account. Platform-admin capability is deliberately
+  separate from teaching capability; neither implies course access.
 
 ## Product Purpose
 
@@ -137,8 +139,9 @@ form question types with required/optional; one submission per student per secti
 per cycle (DB-enforced); an always-present student-originated question/feedback
 section; teacher review dashboard; private responses; anonymous public answers;
 rewording with the original preserved; merge with all source links preserved;
-immediate and scheduled publication; searchable class Q&A archive; course-level
-question backlog with explicit per-section publish; legacy import that is
+immediate and scheduled publication; one searchable Class Q&A archive per course,
+read by every section of it; a course-level question backlog whose answers publish
+once to that archive; legacy import that is
 anonymous-by-default and never counts toward participation; participation validity,
 weekly tracking, and three CSV exports; student submission history; audit history
 with actor, action, timestamp, entity, and before/after values.
@@ -184,7 +187,7 @@ management UI, Playwright e2e coverage.
 
 ## Brand Commitments
 
-- **Product name:** Class Feedback Platform. **[Implemented]**
+- **Product name:** Forms. **[Implemented]**
 - **Institution:** University of the Philippines, Department of Computer Science.
   Named in copy as the operating unit. Their official visual identity is **not**
   binding on this product — no UP marks, logos, or official color system are to be
@@ -195,8 +198,8 @@ management UI, Playwright e2e coverage.
 - **Anti-reference:** Ed Discussion, Piazza, and Slido are studied for interaction
   patterns in [docs/design/research.md](docs/design/research.md). Their logos, brand
   identity, exact copy, proprietary assets, and layouts must not be copied. The
-  result must read as Class Feedback Platform, not as one of those with the logo
-  removed. **[Confirmed]**
+  result must read as Forms, not as one of those with the logo removed.
+  **[Confirmed]**
 - The palette and visual direction in [DESIGN.md](DESIGN.md) are a design
   authority, not an approved institutional brand. Whether to preserve or replace
   them is a design decision, not a product fact, and is out of scope for this

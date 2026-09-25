@@ -9,6 +9,14 @@ import {
   staffGrantSummary,
   staffScopeSentence,
 } from "@/lib/staff-batch-labels";
+import { buttonClass } from "@/components/ui/button";
+import {
+  Choice,
+  FieldLabel,
+  FieldRow,
+  Select,
+  Textarea,
+} from "@/components/ui/form";
 
 /**
  * Adding staff: one dialog, one permission set, however many people.
@@ -88,9 +96,7 @@ const SECTION_ROLES = [
 ] as const;
 
 /** Course-wide standing is handler-only (ADR-0004): no assistant, no flags. */
-const COURSE_ROLES = [
-  { value: "teacher", label: "Course handler" },
-] as const;
+const COURSE_ROLES = [{ value: "teacher", label: "Course handler" }] as const;
 
 export function AddStaffDialog({
   action,
@@ -99,10 +105,7 @@ export function AddStaffDialog({
   permissions,
   permissionLabels,
 }: {
-  action: (
-    state: AddStaffState,
-    formData: FormData,
-  ) => Promise<AddStaffState>;
+  action: (state: AddStaffState, formData: FormData) => Promise<AddStaffState>;
   /** the course's class lists, for the per-class-list scope */
   sections?: AddStaffSection[];
   /**
@@ -152,10 +155,7 @@ function AddStaffForm({
   permissions,
   permissionLabels,
 }: {
-  action: (
-    state: AddStaffState,
-    formData: FormData,
-  ) => Promise<AddStaffState>;
+  action: (state: AddStaffState, formData: FormData) => Promise<AddStaffState>;
   sections: AddStaffSection[];
   fixedSection?: AddStaffSection;
   permissions: readonly string[];
@@ -233,11 +233,9 @@ function AddStaffForm({
         </Alert>
       )}
 
-      <div className="field-row">
-        <label htmlFor="add-staff-emails">University emails</label>
-        <textarea
+      <FieldRow label="University emails" htmlFor="add-staff-emails">
+        <Textarea
           id="add-staff-emails"
-          className="field"
           name="emails"
           rows={3}
           required
@@ -251,47 +249,45 @@ function AddStaffForm({
           to 50 at a time. Everyone listed gets the same access, and if one
           address cannot be added nobody is.
         </span>
-      </div>
+      </FieldRow>
 
       {fixedSection ? (
         /* Stated, not chosen — but still stated. On this page there is only one
            answer, and a grant whose reach is left implied is how a reader ends
            up believing they granted something narrower than they did. The field
            order matches the other mode so the two do not read as two forms. */
-        <div className="field-row">
-          <span className="field-label">What they can reach</span>
+        <div className="grid gap-tight">
+          <FieldLabel as="span">What they can reach</FieldLabel>
           <span>Only {fixedSection.title}</span>
-          <span className="helper-text">
+          <span className="max-w-measure text-ui-sm text-ink-muted">
             Access to every section of this course is granted on the
             course&rsquo;s own Teaching team page, where such a grant can also
             be seen and undone.
           </span>
         </div>
       ) : (
-        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="field-label">What they can reach</legend>
-          <div className="stack-2" style={{ marginTop: "var(--s2)" }}>
-            <label className="choice">
-              <input
-                type="radio"
-                name="scope"
-                value="course"
-                checked={scope === "course"}
-                onChange={() => setPickedScope("course")}
-              />
-              <span>Every section of this course</span>
-            </label>
-            <label className="choice">
-              <input
-                type="radio"
-                name="scope"
-                value="sections"
-                checked={scope === "sections"}
-                onChange={() => setPickedScope("sections")}
-                disabled={noSections}
-              />
-              <span>Only the class lists I choose</span>
-            </label>
+        <fieldset className="m-0 border-0 p-0">
+          <FieldLabel>What they can reach</FieldLabel>
+          <div className="stack-2 mt-2">
+            <Choice
+              type="radio"
+              name="scope"
+              value="course"
+              checked={scope === "course"}
+              onChange={() => setPickedScope("course")}
+            >
+              Every section of this course
+            </Choice>
+            <Choice
+              type="radio"
+              name="scope"
+              value="sections"
+              checked={scope === "sections"}
+              onChange={() => setPickedScope("sections")}
+              disabled={noSections}
+            >
+              Only the class lists I choose
+            </Choice>
           </div>
           {/* One line, outside the labels: a choice row is a single line by
               design, and a paragraph is not valid inside a label anyway. */}
@@ -306,30 +302,28 @@ function AddStaffForm({
       )}
 
       {scope === "sections" && !fixedSection && !noSections && (
-        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="field-label">Class lists</legend>
-          <div className="form-grid" style={{ marginTop: "var(--s2)" }}>
+        <fieldset className="m-0 border-0 p-0">
+          <FieldLabel>Class lists</FieldLabel>
+          <div className="form-grid mt-2">
             {sections.map((section) => (
-              <label className="choice" key={section.id}>
-                <input
-                  type="checkbox"
-                  name="sectionIds"
-                  value={section.id}
-                  checked={chosen.includes(section.id)}
-                  onChange={() => toggle(chosen, setChosen, section.id)}
-                />
-                <span>{section.title}</span>
-              </label>
+              <Choice
+                key={section.id}
+                type="checkbox"
+                name="sectionIds"
+                value={section.id}
+                checked={chosen.includes(section.id)}
+                onChange={() => toggle(chosen, setChosen, section.id)}
+              >
+                {section.title}
+              </Choice>
             ))}
           </div>
         </fieldset>
       )}
 
-      <div className="field-row">
-        <label htmlFor="add-staff-role">Role</label>
-        <select
+      <FieldRow label="Role" htmlFor="add-staff-role">
+        <Select
           id="add-staff-role"
-          className="select-field"
           name="role"
           value={effectiveRole}
           onChange={(event) => setRole(event.target.value)}
@@ -339,7 +333,7 @@ function AddStaffForm({
               {option.label}
             </option>
           ))}
-        </select>
+        </Select>
         <span className="helper-text">
           {scope === "course"
             ? "A course-wide grant is always full instructor access, so there is no student assistant here."
@@ -347,24 +341,22 @@ function AddStaffForm({
               ? "A teacher or co-teacher holds every capability on this class list."
               : "A teacher or co-teacher holds every capability on the class lists you choose."}
         </span>
-      </div>
+      </FieldRow>
 
       {showPermissions && (
-        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="field-label">
-            SA permissions
-          </legend>
-          <div className="form-grid" style={{ marginTop: "var(--s2)" }}>
+        <fieldset className="m-0 border-0 p-0">
+          <FieldLabel>SA permissions</FieldLabel>
+          <div className="form-grid mt-2">
             {permissions.map((permission) => (
-              <label className="choice" key={permission}>
-                <input
-                  type="checkbox"
-                  name={`perm_${permission}`}
-                  checked={granted.includes(permission)}
-                  onChange={() => toggle(granted, setGranted, permission)}
-                />
-                <span>{permissionLabels[permission]}</span>
-              </label>
+              <Choice
+                key={permission}
+                type="checkbox"
+                name={`perm_${permission}`}
+                checked={granted.includes(permission)}
+                onChange={() => toggle(granted, setGranted, permission)}
+              >
+                {permissionLabels[permission]}
+              </Choice>
             ))}
           </div>
         </fieldset>
@@ -372,7 +364,7 @@ function AddStaffForm({
 
       <div className="row">
         <button
-          className="button button--primary"
+          className={buttonClass({ variant: "primary" })}
           type="submit"
           disabled={pending}
         >

@@ -258,11 +258,17 @@ check "setup keeps only what is per-section" \
   "$(grep -q 'Section details' <<<"$setup" && grep -q 'Teaching team' <<<"$setup" && echo 0 || echo 1)"
 check "setup offers no delivery or schedule control" \
   "$(grep -qvE 'Every week|Custom schedule|Open manually|Delivery mode' <<<"$setup" && echo 0 || echo 1)"
+# The course-owned Question Backlog is the editorial destination; the legacy
+# section publication URL follows the same redirect as the old course URL.
+backlog=$(get "$TJAR" "/teach/courses/$COURSE/backlog")
+check "course Question Backlog renders" \
+  "$(grep -q 'Question Backlog' <<<"$backlog" && echo 0 || echo 1)"
+legacyPubs=$(get "$TJAR" "/teach/sections/$SECTION/publications")
+check "legacy section publications lands in Question Backlog" \
+  "$(grep -q 'Question Backlog' <<<"$legacyPubs" && echo 0 || echo 1)"
 # Issue #13: the published question is the link to its Q&A entry; the
 # live/scheduled stamp is a status marker, not the row's only affordance.
-pubs=$(get "$TJAR" "/teach/sections/$SECTION/publications")
-check "publication queue renders" \
-  "$(grep -q 'Publication queue' <<<"$pubs" && echo 0 || echo 1)"
+pubs="$legacyPubs"
 if grep -q 'Recently published' <<<"$pubs"; then
   check "a recently published question links into the class Q&A" \
     "$(grep -qE "/sections/$SECTION/qa\?selected=" <<<"$pubs" && echo 0 || echo 1)"

@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/ui/submit-button";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -29,6 +30,7 @@ import {
   type InstanceDetail,
 } from "@/modules/forms/instances";
 import { requireUser, toShellUser } from "@/lib/session";
+import { Field, FieldRow, Select } from "@/components/ui/form";
 
 /**
  * One occurrence of a form — the "Customize Week 4" screen.
@@ -174,6 +176,7 @@ export default async function InstanceEditorPage({
           ]}
         />
       }
+      nested
       title={label}
       status={
         <>
@@ -213,19 +216,15 @@ export default async function InstanceEditorPage({
         <section className="notice">
           <div className="notice__head">
             <div>
-              <h2>This one&apos;s focus</h2>
+              <h2 className="panel-title">This one&apos;s focus</h2>
             </div>
           </div>
           <div className="notice__body">
             <form action={saveFocus} className="stack-4">
               <div className="form-grid">
-                <div className="field-row">
-                  <label htmlFor="instance-title">
-                    Name it <span className="optional-mark">optional</span>
-                  </label>
-                  <input
+                <FieldRow label="Name it" htmlFor="instance-title">
+                  <Field
                     id="instance-title"
-                    className="field"
                     name="title"
                     defaultValue={instance.title ?? ""}
                     placeholder={label}
@@ -234,14 +233,10 @@ export default async function InstanceEditorPage({
                   <span className="helper-text" id="instance-title-help">
                     Replaces &ldquo;{label}&rdquo; where students see it.
                   </span>
-                </div>
-                <div className="field-row">
-                  <label htmlFor="instance-focus">
-                    Focus <span className="optional-mark">optional</span>
-                  </label>
-                  <input
+                </FieldRow>
+                <FieldRow label="Focus" htmlFor="instance-focus">
+                  <Field
                     id="instance-focus"
-                    className="field"
                     name="focusLabel"
                     defaultValue={instance.focusLabel ?? ""}
                     placeholder="Normalization"
@@ -251,15 +246,11 @@ export default async function InstanceEditorPage({
                     Shown to students under the form name, so an extra question
                     makes sense.
                   </span>
-                </div>
+                </FieldRow>
                 {detail.topics.length > 0 && (
-                  <div className="field-row">
-                    <label htmlFor="instance-topic">
-                      Topic <span className="optional-mark">optional</span>
-                    </label>
-                    <select
+                  <FieldRow label="Topic" htmlFor="instance-topic">
+                    <Select
                       id="instance-topic"
-                      className="select-field"
                       name="topicId"
                       defaultValue={instance.topicId ?? ""}
                     >
@@ -269,14 +260,14 @@ export default async function InstanceEditorPage({
                           {topic.title}
                         </option>
                       ))}
-                    </select>
-                  </div>
+                    </Select>
+                  </FieldRow>
                 )}
               </div>
               <div>
-                <button className="button button--primary" type="submit">
+                <SubmitButton variant="primary" pendingLabel="Saving…">
                   Save
-                </button>
+                </SubmitButton>
               </div>
             </form>
           </div>
@@ -285,7 +276,7 @@ export default async function InstanceEditorPage({
         <section className="notice">
           <div className="notice__head">
             <div>
-              <h2>Questions on {label}</h2>
+              <h2 className="panel-title">Questions on {label}</h2>
               <MetaList
                 items={[
                   `${questions.length} question${questions.length === 1 ? "" : "s"}`,
@@ -315,19 +306,19 @@ export default async function InstanceEditorPage({
                 extraActions={
                   customized && !editLocked ? (
                     <Dialog
-                      className="button--small"
+                      size="small"
                       label="Reset to the base form"
                       title={`Reset ${label} to the base form?`}
                       description="Everything added or changed here is discarded and the base form's questions are copied in again."
                     >
                       <form action={resetToBase}>
                         <div className="row">
-                          <button
-                            className="button button--danger"
-                            type="submit"
+                          <SubmitButton
+                            variant="danger"
+                            pendingLabel="Resetting…"
                           >
                             Reset {label}
-                          </button>
+                          </SubmitButton>
                         </div>
                       </form>
                     </Dialog>

@@ -2,9 +2,13 @@ import { and, eq, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { publicAnswers } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import { getCourseCapabilities } from "@/modules/authz";
 
 /**
  * Scheduled-publication executor (docs/domain/public-qa.md §7.1).
+ *
+ * Course-scoped since ADR-0005: a due answer publishes ONCE, into its course's
+ * Class Q&A, and there is no per-section fan-out to get wrong.
  * Idempotent: the transition is state-guarded (`scheduled` → `published`
  * only), so re-runs and replays never double-publish. A failure leaves the
  * answer `scheduled` with publishFailed + reason, surfaced in-app for staff
@@ -15,7 +19,9 @@ import { writeAudit } from "@/modules/audit";
 /** More than this past scheduledAt counts as a late (reconciled) publish. */
 const LATE_THRESHOLD_MS = 5 * 60 * 1000;
 
-export async function publishDueAnswers(now: Date = new Date()): Promise<number> {
+export async function publishDueAnswers(
+  now: Date = new Date(),
+): Promise<number> {
   const due = await db.query.publicAnswers.findMany({
     where: and(
       eq(publicAnswers.state, "scheduled"),
@@ -25,6 +31,16 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
   let published = 0;
   for (const answer of due) {
     try {
+      if (!answer.approvedAt) {
+        const creator = await getCourseCapabilities(
+          db,
+          answer.createdByUserId,
+          answer.courseId,
+        );
+        if (!creator?.isInstructor) {
+          throw new Error("Instructor approval is required before publication");
+        }
+      }
       await db.transaction(async (tx) => {
         const late =
           now.getTime() - (answer.scheduledAt?.getTime() ?? now.getTime()) >
@@ -53,7 +69,9 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
           entityType: "public_answer",
           entityId: answer.id,
           metadata: { scheduled: true, ...(late ? { late: true } : {}) },
-          sectionId: answer.sectionId,
+          // Course-scoped: a scheduled publication has no target section
+          // (ADR-0005). It goes to the course's one archive.
+          courseId: answer.courseId,
         });
         published += 1;
       });
@@ -74,7 +92,7 @@ export async function publishDueAnswers(now: Date = new Date()): Promise<number>
         entityType: "public_answer",
         entityId: answer.id,
         metadata: { reason },
-        sectionId: answer.sectionId,
+        courseId: answer.courseId,
       });
     }
   }

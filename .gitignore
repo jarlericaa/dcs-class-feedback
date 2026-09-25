@@ -35,3 +35,6 @@ skills-lock.json
 
 # QA run output — regenerate with the scripts in scripts/qa
 docs/qa/
+
+# Output of a verification build run while the dev server holds .next
+.next-verify

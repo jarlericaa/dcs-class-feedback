@@ -9,12 +9,16 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { commentState, reactionKind } from "./enums";
-import { classSections } from "./catalog";
+import { classSections, courses } from "./catalog";
 import { publicAnswers } from "./publishing";
 import { users } from "./identity";
 
 /**
  * Course-only reactions on a published entry (docs/product/specification.md §8 P2).
+ *
+ * The subject is a course-owned PublicAnswer (ADR-0005), so any eligible
+ * student of the course may react — a Lab B student reacting to an answer that
+ * originated in Lab A is normal, not a leak: nothing here names a section.
  *
  * The user id is stored because a reaction must be toggleable by its owner and
  * because staff moderation needs attribution. It is never included in a
@@ -61,10 +65,19 @@ export const publicAnswerComments = pgTable(
     publicAnswerId: uuid("public_answer_id")
       .notNull()
       .references(() => publicAnswers.id),
-    /** denormalized so moderation queues and authorization scope by section */
-    sectionId: uuid("section_id")
+    /**
+     * Denormalized so moderation queues and authorization scope by COURSE — the
+     * archive the comment lives in is course-wide (ADR-0005), so its moderation
+     * queue is too.
+     */
+    courseId: uuid("course_id")
       .notNull()
-      .references(() => classSections.id),
+      .references(() => courses.id),
+    /**
+     * PROVENANCE ONLY — the section this comment was filed under while the
+     * archive was still section-scoped. Never a visibility or moderation key.
+     */
+    originSectionId: uuid("origin_section_id").references(() => classSections.id),
     authorUserId: uuid("author_user_id")
       .notNull()
       .references(() => users.id),
@@ -91,7 +104,7 @@ export const publicAnswerComments = pgTable(
       t.createdAt,
     ),
     index("public_answer_comments_moderation_idx").on(
-      t.sectionId,
+      t.courseId,
       t.state,
       t.createdAt,
     ),

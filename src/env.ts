@@ -39,7 +39,7 @@ const envSchema = z.object({
 
   /** Email delivery. `log` prints, `fake` records in memory, `smtp` really sends. */
   EMAIL_TRANSPORT: z.enum(["log", "fake", "smtp"]).default("log"),
-  EMAIL_FROM: z.string().default("Class Feedback <no-reply@localhost>"),
+  EMAIL_FROM: z.string().default("Forms <no-reply@localhost>"),
   APP_MAIL_DOMAIN: z.string().default("localhost"),
   EMAIL_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(5),
   /** Comma-separated reminder offsets before a deadline, e.g. "24h,2h". */

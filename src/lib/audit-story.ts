@@ -77,6 +77,12 @@ const SYSTEM_ONLY_ACTIONS: ReadonlySet<string> = new Set<AuditAction>([
   "roster.parsed",
   "roster.preview_edited",
   "user.teacher_role_changed",
+  "teacher_access.granted",
+  "teacher_access.revoked",
+  "user.account_deactivated",
+  "user.account_reactivated",
+  "admin.impersonation_started",
+  "admin.impersonation_ended",
 ]);
 
 /**
@@ -142,6 +148,13 @@ interface Predicate {
 }
 
 const PREDICATES: Record<string, Predicate> = {
+  "teacher_access.granted": { phrase: "granted Teacher access" },
+  "teacher_access.revoked": { phrase: "revoked Teacher access" },
+  "user.teacher_role_changed": { phrase: "changed a user's Teacher access" },
+  "user.account_deactivated": { phrase: "deactivated an account" },
+  "user.account_reactivated": { phrase: "reactivated an account" },
+  "admin.impersonation_started": { phrase: "started a support session" },
+  "admin.impersonation_ended": { phrase: "ended a support session" },
   "course.created": { phrase: "created the course" },
   "course.updated": { phrase: "changed the course settings" },
   "course.archived": { phrase: "archived the course" },

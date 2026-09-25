@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
+  count,
   eq,
   ilike,
   inArray,
@@ -19,6 +20,8 @@ import {
   enrollments,
   sectionStaff,
   studentRecords,
+  teacherAccessGrants,
+  platformAdminAccounts,
   users,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
@@ -38,7 +41,7 @@ import {
   SECTION_PERMISSIONS,
   type SectionPermission,
 } from "@/modules/authz";
-import { checkRosterEmail } from "@/modules/identity/email";
+import { checkRosterEmail, normalizeEmail } from "@/modules/identity/email";
 import {
   EMAIL_LIST_LIMIT,
   parseEmailList,
@@ -51,6 +54,8 @@ import {
   type Page,
 } from "@/lib/pagination";
 import { env } from "@/env";
+import { parseTerm } from "@/lib/term";
+import { assertMutationAllowed } from "@/lib/impersonation";
 
 /**
  * Catalog: courses, class sections, teaching staff, and the per-section TA
@@ -192,6 +197,33 @@ export async function getSectionWithCourse(sectionId: string) {
   });
   if (!course) throw new CatalogError("Course not found");
   return { section, course };
+}
+
+/**
+ * The timezone a COURSE schedules in — one rule, in one place (ADR-0005).
+ *
+ * Publication is course-owned, so "which timezone does this publish at?" can no
+ * longer be answered by reading a section. Picking "the first section" wherever
+ * a timezone was needed would give one course two answers depending on which
+ * query ran, which is the bug this exists to prevent.
+ *
+ * The rule: if every one of the course's sections agrees on a timezone, that is
+ * the course's timezone — the normal case, since sections are created with the
+ * institution default. Otherwise, or when the course has no sections yet, the
+ * configured `INSTITUTION_TIMEZONE` wins. There is one institution timezone in
+ * the current product (decision D7), so disagreement means a per-section
+ * override, and a course-level object must not silently inherit one section's
+ * override as if it applied to the whole course.
+ */
+export async function resolveCourseTimezone(
+  courseId: string,
+): Promise<string> {
+  const sections = await db.query.classSections.findMany({
+    where: eq(classSections.courseId, courseId),
+    columns: { timezone: true },
+  });
+  const distinct = new Set(sections.map((section) => section.timezone));
+  return distinct.size === 1 ? [...distinct][0]! : env.INSTITUTION_TIMEZONE;
 }
 
 /** Teaching staff on a section with their permission flags. Staff-only. */
@@ -827,9 +859,49 @@ function revealOrNull(record: {
 
 // --- courses ---------------------------------------------------------------
 
+/**
+ * The storage form of an academic term, validated rather than trusted.
+ *
+ * `class_sections.term` is free text and always has been, so this does not
+ * tighten what the database accepts — a term somebody typed by hand years ago
+ * is still the truth about that section (`src/lib/term.ts`). What it does is
+ * refuse a value this application itself composed wrongly, which is the only
+ * case it can be sure about.
+ */
+const termSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .refine((value) => parseTerm(value) !== null, {
+    message: "Expected an academic term like AY2026-1",
+  });
+
 const courseInputSchema = z.object({
   code: z.string().trim().min(1).max(64),
-  title: z.string().trim().min(1).max(200),
+  /**
+   * OPTIONAL, owner-confirmed 2026-09-11 (`modal.md`): "Empty title must still
+   * allow the course to be created."
+   *
+   * The code is the course's identity — `CS 33` is what a teacher and a student
+   * both call it, and every heading in the app leads with it — so a title is a
+   * gloss on the code rather than a second required name for the same thing.
+   * The column stays `NOT NULL`; the absence is stored as the empty string, and
+   * `MetaList` already drops empty facts, so a course with no title renders one
+   * line instead of a line with a gap in it.
+   */
+  title: z.string().trim().max(200).default(""),
+  /**
+   * The term this course is offered in. Optional here, required by the
+   * create-course FORM — and the split is deliberate.
+   *
+   * Every course that predates `courses.term` has none, so a service that
+   * demanded one could not read its own data back. The product rule ("Semester
+   * *") belongs to the dialog that collects it, where it is enforced by two
+   * selects that always carry a value; the service's job is to accept the
+   * domain as it actually is.
+   */
+  term: termSchema.optional(),
 });
 
 export async function createCourse(actorUserId: string, rawInput: unknown) {
@@ -842,6 +914,11 @@ export async function createCourse(actorUserId: string, rawInput: unknown) {
       .values({
         code: input.code,
         title: input.title,
+        // `null` rather than `""` when it was not asked for: the column is
+        // nullable precisely so "no term recorded" and "this course runs in
+        // AY2026-1" are different facts, and an empty string would collapse
+        // them into one that `parseTerm` then has to treat as a typo.
+        term: input.term ?? null,
         ownerUserId: actorUserId,
       })
       .returning();
@@ -853,7 +930,11 @@ export async function createCourse(actorUserId: string, rawInput: unknown) {
       action: "course.created",
       entityType: "course",
       entityId: course!.id,
-      after: { code: course!.code, title: course!.title },
+      after: {
+        code: course!.code,
+        title: course!.title,
+        term: course!.term,
+      },
       // Course-scoped like course.updated, so every section this course later
       // gains finds the record of its own creation.
       courseId: course!.id,
@@ -884,6 +965,7 @@ export async function updateCourse(
       .set({
         ...(input.code !== undefined ? { code: input.code } : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.term !== undefined ? { term: input.term } : {}),
         ...(input.active !== undefined ? { active: input.active } : {}),
       })
       .where(eq(courses.id, courseId));
@@ -892,7 +974,12 @@ export async function updateCourse(
       action: "course.updated",
       entityType: "course",
       entityId: courseId,
-      before: { code: before.code, title: before.title, active: before.active },
+      before: {
+        code: before.code,
+        title: before.title,
+        term: before.term,
+        active: before.active,
+      },
       after: input,
       // A course id is reachable from no section, so this is what puts "the
       // course was renamed / archived" into each of its sections' histories.
@@ -1054,6 +1141,20 @@ async function assignSectionStaffTx(
   permissions: Record<SectionPermission, boolean>,
   batchId?: string,
 ): Promise<StaffAssignmentOutcome> {
+  if (role === "ta") {
+    const activeTeacherGrant = await tx.query.teacherAccessGrants.findFirst({
+      where: and(
+        eq(teacherAccessGrants.email, target.email),
+        isNull(teacherAccessGrants.revokedAt),
+      ),
+      columns: { id: true },
+    });
+    if (target.isTeacher || activeTeacherGrant) {
+      throw new CatalogError(
+        "Teachers cannot be assigned as Student Assistants. Revoke Teacher access first.",
+      );
+    }
+  }
   const existing = await tx.query.sectionStaff.findFirst({
     where: and(
       eq(sectionStaff.sectionId, sectionId),
@@ -1126,6 +1227,7 @@ export async function assignSectionStaff(
   sectionId: string,
   rawInput: unknown,
 ) {
+  await assertMutationAllowed();
   const input = staffAssignmentSchema.parse(rawInput);
   const { section } = await getSectionWithCourse(sectionId);
   await requireCourseOwner(db, actorUserId, section.courseId);
@@ -1282,6 +1384,7 @@ export async function assignSectionStaffBatch(
   courseId: string,
   input: AssignSectionStaffBatchInput,
 ): Promise<AssignSectionStaffBatchResult> {
+  await assertMutationAllowed();
   // Authorization comes FIRST, before any part of the request is materialized:
   // only the course owner may staff a section, and a caller without that
   // standing must not learn which sections or accounts exist by the shape of
@@ -1329,6 +1432,24 @@ export async function assignSectionStaffBatch(
 
   const resolved = await resolveStaffTargets(parsed);
   problems.push(...resolved.problems);
+
+  if (role === "ta") {
+    const activeTeacherGrants = resolved.targets.length
+      ? await db.query.teacherAccessGrants.findMany({
+          where: and(
+            inArray(teacherAccessGrants.email, resolved.targets.map((target) => target.email)),
+            isNull(teacherAccessGrants.revokedAt),
+          ),
+          columns: { email: true },
+        })
+      : [];
+    const teacherGrantEmails = new Set(activeTeacherGrants.map((grant) => grant.email));
+    for (const target of resolved.targets) {
+      if (target.isTeacher || teacherGrantEmails.has(target.email)) {
+        problems.push({ email: target.email, reason: "role_not_allowed_for_scope" });
+      }
+    }
+  }
 
   if (problems.length > 0 || !role) return { ok: false, problems };
   const targets = resolved.targets;
@@ -1618,73 +1739,379 @@ export async function removeCourseStaff(
   });
 }
 
-// --- platform administration (Open D3, provisional) ------------------------
+// --- platform administration ------------------------------------------------
 
-/**
- * A platform admin grants/revokes the teacher capability. This grants NO
- * content access on its own: the new teacher owns nothing until they create a
- * course, and admins gain no course access by being admins.
- */
-export async function setTeacherRole(
-  adminUserId: string,
-  rawEmail: unknown,
-  isTeacher: boolean,
-) {
-  await requirePlatformAdmin(db, adminUserId);
-  const email = z.string().trim().toLowerCase().email().parse(rawEmail);
-  const target = await db.query.users.findFirst({
-    where: eq(users.email, email),
-  });
-  if (!target) {
-    throw new CatalogError(
-      `No account exists for ${email}. They must sign in once first.`,
-    );
-  }
-  if (target.isTeacher === isTeacher) return target;
+const accountStudent = sql<boolean>`exists (
+  select 1 from student_records sr
+  inner join enrollments e on e.student_record_id = sr.id
+  where sr.roster_email = ${users.email} and e.status = 'active'
+)`;
+const accountTeacher = sql<boolean>`(${users.isTeacher} OR exists (
+  select 1 from teacher_access_grants tg
+  where tg.email = ${users.email} and tg.revoked_at IS NULL
+))`;
+const accountAssistant = sql<boolean>`exists (
+  select 1 from section_staff ss
+  where ss.user_id = ${users.id} and ss.role = 'ta'
+)`;
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(users)
-      .set({ isTeacher, updatedAt: new Date() })
-      .where(eq(users.id, target.id));
-    await writeAudit(tx, {
-      actorUserId: adminUserId,
-      action: "user.teacher_role_changed",
-      entityType: "user",
-      entityId: target.id,
-      before: { isTeacher: target.isTeacher },
-      after: { isTeacher },
-      metadata: { email },
-    });
-  });
-  return target;
+export interface AdminAccountRow {
+  id: string;
+  principalType: "user" | "platform-admin";
+  email: string | null;
+  username: string | null;
+  displayName: string;
+  isTeacher: boolean;
+  isPlatformAdmin: boolean;
+  isStudent: boolean;
+  isStudentAssistant: boolean;
+  active: boolean;
+  createdAt: Date;
 }
 
-/** Accounts list for the admin console. Platform-admin only; no content data. */
+export interface AdminAccountsOptions {
+  search?: string;
+  role?: "all" | "student" | "teacher" | "assistant" | "admin" | "deactivated";
+  page?: string | number | null;
+  pageSize?: string | number | null;
+}
+
+export interface AdminAccountsPage {
+  rows: AdminAccountRow[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  counts: Record<NonNullable<AdminAccountsOptions["role"]>, number>;
+}
+
+const accountWhere = (options: AdminAccountsOptions) => {
+  const clauses = [] as ReturnType<typeof eq>[];
+  const term = options.search?.trim();
+  if (term) {
+    const pattern = `%${term}%`;
+    clauses.push(or(ilike(users.email, pattern), ilike(users.displayName, pattern))!);
+  }
+  switch (options.role) {
+    case "student":
+      clauses.push(sql`${accountStudent}`);
+      break;
+    case "teacher":
+      clauses.push(sql`${accountTeacher}`);
+      clauses.push(eq(users.active, true));
+      break;
+    case "assistant":
+      clauses.push(sql`${accountAssistant}`);
+      clauses.push(eq(users.active, true));
+      break;
+    case "admin":
+      // Credential-backed admins are merged into the directory below; the
+      // legacy users flag is intentionally not authoritative.
+      clauses.push(sql`false`);
+      break;
+    case "deactivated":
+      clauses.push(eq(users.active, false));
+      break;
+  }
+  return clauses.length ? and(...clauses)! : undefined;
+};
+
+async function countAccounts(adminUserId: string, search?: string) {
+  const roles = ["all", "student", "teacher", "assistant", "admin", "deactivated"] as const;
+  const counts = {} as AdminAccountsPage["counts"];
+  for (const role of roles) {
+    const where = accountWhere({ search, role });
+    const [{ count: total } = { count: 0 }] = await db
+      .select({ count: count() })
+      .from(users)
+      .where(where);
+    counts[role] = Number(total);
+  }
+  const adminWhere = search
+    ? or(ilike(platformAdminAccounts.username, `%${search.trim()}%`), ilike(platformAdminAccounts.displayName, `%${search.trim()}%`))
+    : undefined;
+  const [{ count: adminCount } = { count: 0 }] = await db.select({ count: count() }).from(platformAdminAccounts).where(adminWhere);
+  counts.all += Number(adminCount);
+  counts.admin = Number(adminCount);
+  return counts;
+}
+
+/**
+ * Paginated account projection for the platform console. The string overload
+ * preserves the small read API used by existing callers while all new callers
+ * receive a real database-paginated page.
+ */
 export async function listAccountsForAdmin(
   adminUserId: string,
-  search?: string,
-) {
+  options: string | AdminAccountsOptions = {},
+): Promise<AdminAccountsPage | AdminAccountRow[]> {
   await requirePlatformAdmin(db, adminUserId);
-  const term = search?.trim().toLowerCase();
-  const rows = await db.query.users.findMany({
-    orderBy: asc(users.email),
-    limit: 200,
-  });
-  const filtered = term
-    ? rows.filter(
-        (u) =>
-          u.email.toLowerCase().includes(term) ||
-          u.displayName.toLowerCase().includes(term),
-      )
-    : rows;
-  return filtered.map((u) => ({
-    id: u.id,
-    email: u.email,
-    displayName: u.displayName,
-    isTeacher: u.isTeacher,
-    isPlatformAdmin: u.isPlatformAdmin,
-    active: u.active,
-    createdAt: u.createdAt,
+  const legacy = typeof options === "string";
+  const opts: AdminAccountsOptions = legacy ? { search: options } : options;
+  const params = parsePageParams(opts, 10);
+  const where = opts.role === "admin" ? sql`false` : accountWhere(opts);
+  const [{ count: normalTotal } = { count: 0 }] = await db
+    .select({ count: count() })
+    .from(users)
+    .where(where);
+  const selected = await db
+    .select({
+      user: users,
+      isTeacher: accountTeacher,
+      isStudent: accountStudent,
+      isStudentAssistant: accountAssistant,
+    })
+    .from(users)
+    .where(where)
+    .orderBy(asc(users.displayName), asc(users.email));
+  const rows: AdminAccountRow[] = selected.map(({ user, isTeacher, isStudent, isStudentAssistant }) => ({
+    id: user.id,
+    principalType: "user",
+    email: user.email,
+    username: null,
+    displayName: user.displayName,
+    isTeacher: Boolean(isTeacher),
+    // The historical users.is_platform_admin flag is inert after the
+    // credential-admin migration and must never render as an active role.
+    isPlatformAdmin: false,
+    isStudent: Boolean(isStudent),
+    isStudentAssistant: Boolean(isStudentAssistant),
+    active: user.active,
+    createdAt: user.createdAt,
   }));
+  if (opts.role === "all" || opts.role === "admin" || !opts.role) {
+    const adminWhere = opts.search?.trim()
+      ? or(ilike(platformAdminAccounts.username, `%${opts.search.trim()}%`), ilike(platformAdminAccounts.displayName, `%${opts.search.trim()}%`))
+      : undefined;
+    const admins = await db.query.platformAdminAccounts.findMany({ where: adminWhere, orderBy: [asc(platformAdminAccounts.displayName), asc(platformAdminAccounts.username)] });
+    rows.push(...admins.map((admin) => ({
+      id: admin.id,
+      principalType: "platform-admin" as const,
+      email: null,
+      username: admin.username,
+      displayName: admin.displayName,
+      isTeacher: false,
+      isPlatformAdmin: true,
+      isStudent: false,
+      isStudentAssistant: false,
+      active: admin.active,
+      createdAt: admin.createdAt,
+    })));
+  }
+  rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const total = Number(normalTotal) + ((opts.role === "all" || opts.role === "admin" || !opts.role) ? rows.filter((row) => row.principalType === "platform-admin").length : 0);
+  const pagedRows = legacy ? rows.slice(0, 200) : rows.slice(params.offset, params.offset + params.pageSize);
+  if (legacy) return pagedRows;
+  return {
+    rows: pagedRows,
+    page: params.page,
+    pageSize: params.pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / params.pageSize)),
+    hasPrevious: params.page > 1,
+    hasNext: params.page < Math.max(1, Math.ceil(total / params.pageSize)),
+    counts: await countAccounts(adminUserId, opts.search),
+  };
+}
+
+export async function listPendingTeacherAccess(adminUserId: string) {
+  await requirePlatformAdmin(db, adminUserId);
+  const grants = await db.query.teacherAccessGrants.findMany({
+    where: isNull(teacherAccessGrants.revokedAt),
+    orderBy: asc(teacherAccessGrants.email),
+  });
+  if (!grants.length) return grants;
+  const accounts = await db.query.users.findMany({ where: inArray(users.email, grants.map((grant) => grant.email)), columns: { email: true } });
+  const known = new Set(accounts.map((account) => account.email));
+  return grants.filter((grant) => !known.has(grant.email));
+}
+
+export async function getAccountForAdmin(adminUserId: string, accountId: string) {
+  await requirePlatformAdmin(db, adminUserId);
+  if (!z.string().uuid().safeParse(accountId).success) return null;
+  const admin = await db.query.platformAdminAccounts.findFirst({ where: eq(platformAdminAccounts.id, accountId) });
+  if (admin) return {
+    id: admin.id,
+    principalType: "platform-admin" as const,
+    email: null,
+    username: admin.username,
+    displayName: admin.displayName,
+    isTeacher: false,
+    isPlatformAdmin: true,
+    isStudent: false,
+    isStudentAssistant: false,
+    active: admin.active,
+    createdAt: admin.createdAt,
+  } satisfies AdminAccountRow;
+  const selected = await db
+    .select({ user: users, isTeacher: accountTeacher, isStudent: accountStudent, isStudentAssistant: accountAssistant })
+    .from(users)
+    .where(eq(users.id, accountId))
+    .limit(1);
+  const row = selected[0];
+  if (!row) return null;
+  return {
+    id: row.user.id,
+    principalType: "user" as const,
+    email: row.user.email,
+    username: null,
+    displayName: row.user.displayName,
+    isTeacher: Boolean(row.isTeacher),
+    isPlatformAdmin: false,
+    isStudent: Boolean(row.isStudent),
+    isStudentAssistant: Boolean(row.isStudentAssistant),
+    active: row.user.active,
+    createdAt: row.user.createdAt,
+  } satisfies AdminAccountRow;
+}
+
+function parseTeacherEmail(rawEmail: unknown) {
+  const email = normalizeEmail(z.string().parse(rawEmail));
+  const check = checkRosterEmail(email);
+  if (!check.ok) {
+    throw new CatalogError(
+      check.problem === "disallowed_domain"
+        ? "Teacher access is limited to approved university email addresses."
+        : "Enter a valid email address.",
+    );
+  }
+  return check.email;
+}
+
+/** Grant email-first Teacher capability, including before first sign-in. */
+export async function grantTeacherAccess(adminUserId: string, rawEmail: unknown) {
+  await assertMutationAllowed();
+  const adminActor = await requirePlatformAdmin(db, adminUserId);
+  const legacyAdmin = "email" in adminActor;
+  const actorUserId = legacyAdmin ? adminUserId : null;
+  const actorPlatformAdminId = legacyAdmin ? null : adminUserId;
+  const email = parseTeacherEmail(rawEmail);
+  const target = await db.query.users.findFirst({ where: eq(users.email, email) });
+  if (target) {
+    const assistantCount = await db
+      .select({ count: count() })
+      .from(sectionStaff)
+      .where(and(eq(sectionStaff.userId, target.id), eq(sectionStaff.role, "ta")));
+    if (Number(assistantCount[0]?.count ?? 0) > 0) {
+      throw new CatalogError(
+        "This account is currently assigned as a Student Assistant. Remove those assignments before granting Teacher access.",
+      );
+    }
+  }
+  const now = new Date();
+  return db.transaction(async (tx) => {
+    const existingGrant = await tx.query.teacherAccessGrants.findFirst({
+      where: eq(teacherAccessGrants.email, email),
+    });
+    if (existingGrant && !existingGrant.revokedAt) {
+      if (target && !target.isTeacher) {
+        await tx.update(users).set({ isTeacher: true, updatedAt: now }).where(eq(users.id, target.id));
+      }
+      return { email, pending: !target, changed: false };
+    }
+    const grant = existingGrant
+      ? (await tx.update(teacherAccessGrants).set({ revokedAt: null, grantedByUserId: actorUserId, grantedByPlatformAdminId: actorPlatformAdminId, grantedAt: now, updatedAt: now }).where(eq(teacherAccessGrants.id, existingGrant.id)).returning())[0]
+      : (await tx.insert(teacherAccessGrants).values({ email, grantedByUserId: actorUserId, grantedByPlatformAdminId: actorPlatformAdminId, grantedAt: now, updatedAt: now }).returning())[0];
+    if (target) {
+      await tx.update(users).set({ isTeacher: true, updatedAt: now }).where(eq(users.id, target.id));
+    }
+    await writeAudit(tx, {
+      actorUserId,
+      actorPlatformAdminId,
+      action: "teacher_access.granted",
+      entityType: "teacher_access_grant",
+      entityId: grant!.id,
+      before: existingGrant ? { revokedAt: existingGrant.revokedAt } : null,
+      after: { email, pending: !target },
+      metadata: { email, pending: !target, targetUserId: target?.id ?? null },
+    });
+    if (target) {
+      await writeAudit(tx, {
+        actorUserId,
+        actorPlatformAdminId,
+        action: "user.teacher_role_changed",
+        entityType: "user",
+        entityId: target.id,
+        before: { isTeacher: target.isTeacher },
+        after: { isTeacher: true },
+        metadata: { email },
+      });
+    }
+    return { email, pending: !target, changed: true };
+  });
+}
+
+export async function revokeTeacherAccess(adminUserId: string, rawEmail: unknown) {
+  await assertMutationAllowed();
+  const adminActor = await requirePlatformAdmin(db, adminUserId);
+  const legacyAdmin = "email" in adminActor;
+  const actorUserId = legacyAdmin ? adminUserId : null;
+  const actorPlatformAdminId = legacyAdmin ? null : adminUserId;
+  const email = parseTeacherEmail(rawEmail);
+  const target = await db.query.users.findFirst({ where: eq(users.email, email) });
+  const grant = await db.query.teacherAccessGrants.findFirst({ where: eq(teacherAccessGrants.email, email) });
+  if (!grant || grant.revokedAt) return { email, changed: false };
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx.update(teacherAccessGrants).set({ revokedAt: now, updatedAt: now }).where(eq(teacherAccessGrants.id, grant.id));
+    if (target?.isTeacher) {
+      await tx.update(users).set({ isTeacher: false, updatedAt: now }).where(eq(users.id, target.id));
+      await writeAudit(tx, {
+        actorUserId,
+        actorPlatformAdminId,
+        action: "user.teacher_role_changed",
+        entityType: "user",
+        entityId: target.id,
+        before: { isTeacher: true },
+        after: { isTeacher: false },
+        metadata: { email },
+      });
+    }
+    await writeAudit(tx, {
+      actorUserId,
+      actorPlatformAdminId,
+      action: "teacher_access.revoked",
+      entityType: "teacher_access_grant",
+      entityId: grant.id,
+      before: { email, revokedAt: null },
+      after: { email, revokedAt: now },
+      metadata: { email, targetUserId: target?.id ?? null },
+    });
+  });
+  return { email, changed: true };
+}
+
+/** Backwards-compatible role helper used by existing course/admin tests. */
+export async function setTeacherRole(adminUserId: string, rawEmail: unknown, isTeacher: boolean) {
+  if (isTeacher) return grantTeacherAccess(adminUserId, rawEmail);
+  return revokeTeacherAccess(adminUserId, rawEmail);
+}
+
+export async function setAccountActive(adminUserId: string, targetUserId: string, active: boolean) {
+  await assertMutationAllowed();
+  const adminActor = await requirePlatformAdmin(db, adminUserId);
+  const legacyAdmin = "email" in adminActor;
+  const actorUserId = legacyAdmin ? adminUserId : null;
+  const actorPlatformAdminId = legacyAdmin ? null : adminUserId;
+  if (!z.string().uuid().safeParse(targetUserId).success) throw new CatalogError("Account not found.");
+  if (adminUserId === targetUserId) throw new CatalogError("You cannot deactivate your own account.");
+  const target = await db.query.users.findFirst({ where: eq(users.id, targetUserId) });
+  if (!target) throw new CatalogError("Account not found.");
+  if (target.active === active) return target;
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ active, updatedAt: new Date() }).where(eq(users.id, target.id));
+    await writeAudit(tx, {
+      actorUserId,
+      actorPlatformAdminId,
+      action: active ? "user.account_reactivated" : "user.account_deactivated",
+      entityType: "user",
+      entityId: target.id,
+      before: { active: target.active },
+      after: { active },
+      metadata: { email: target.email },
+    });
+  });
+  return { ...target, active };
 }

@@ -1,4 +1,5 @@
 import {
+  check,
   index,
   jsonb,
   pgTable,
@@ -6,7 +7,8 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { users } from "./identity";
+import { sql } from "drizzle-orm";
+import { platformAdminAccounts, users } from "./identity";
 import { classSections, courses } from "./catalog";
 
 /**
@@ -21,6 +23,10 @@ export const auditEvents = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     /** null for system/scheduler actions */
     actorUserId: uuid("actor_user_id").references(() => users.id),
+    /** Set for human actions performed by a credential-backed Platform Admin. */
+    actorPlatformAdminId: uuid("actor_platform_admin_id").references(
+      () => platformAdminAccounts.id,
+    ),
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(),
     entityId: uuid("entity_id"),
@@ -42,8 +48,13 @@ export const auditEvents = pgTable(
       .defaultNow(),
   },
   (t) => [
+    check(
+      "audit_events_single_human_actor",
+      sql`NOT (${t.actorUserId} IS NOT NULL AND ${t.actorPlatformAdminId} IS NOT NULL)`,
+    ),
     index("audit_events_entity_idx").on(t.entityType, t.entityId),
     index("audit_events_actor_idx").on(t.actorUserId),
+    index("audit_events_admin_actor_idx").on(t.actorPlatformAdminId),
     index("audit_events_created_idx").on(t.createdAt),
     index("audit_events_section_created_idx").on(t.sectionId, t.createdAt),
     index("audit_events_course_created_idx").on(t.courseId, t.createdAt),

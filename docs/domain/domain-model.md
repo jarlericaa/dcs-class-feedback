@@ -14,6 +14,10 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 ### Identity & people
 
 - **User** — an authenticated Google identity. Fields: Google subject id, **normalized** university email (unique), display name (mutable, and never used for identity), platform role flags, active flag. A User is a student exactly when their email is on a class list.
+- **TeacherAccessGrant** — an email-keyed platform capability that may predate a
+  User. Fields: normalized email (unique), granting administrator, granted and
+  revoked timestamps. The active row is applied transactionally during first
+  sign-in; revocation never deletes user history.
 - **StudentRecord** — a roster row for a student, reusable across every section and course that imports the same person. Fields: student number (permanent internal identity, **[Assumption A2]**), **normalized roster email (unique — the access key)**, full name (as imported, a label only), → ImportBatch that created it. Student number is the stable key across name and email changes.
 
   There is **no linking entity.** `User → StudentRecord` is resolved live by `user.email = studentRecord.rosterEmail`, so a roster imported after the account existed grants access with no second login and nothing to reconcile. See [domain/student-identity.md](student-identity.md).
@@ -24,6 +28,9 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 - **CourseStaff** — a teacher authorized on a Course. Fields: → Course, → User, course role (`teacher` / `co_teacher`). A row is **course-wide standing**: full Instructor capability on *every* ClassSection of that Course, including sections created later, with no permission flags to narrow it. Unique on `(Course, User)`. Only the course owner may create or delete one, and the owner's own standing comes from `Course.owner` rather than a row, so it cannot be deleted. Removing a row leaves any separate SectionStaff row intact. See [domain/roles-and-permissions.md §2.5](roles-and-permissions.md#25-where-staff-standing-comes-from-two-tiers) and [ADR-0004](../decisions/ADR-0004-course-wide-staff-standing.md).
 - **ClassSection** — an offering of a Course. Fields: → Course, term/semester label, title, timezone (default from institution; per-section override **deferred** — D7 closed 2026-08-03, [decisions/open-decisions.md](../decisions/open-decisions.md)), active flag.
 - **SectionStaff** — staff membership on a section with per-section permission flags (the TA permission catalog). Fields: → ClassSection, → User, role (teacher/TA/co-teacher), permission flag set. Unique on `(ClassSection, User)`. This is the **only** tier that carries the permission catalog, so a Student Assistant is always scoped to named sections: someone assisting 3 of 8 sections holds three rows, granted in one action but auditable per section. See [domain/roles-and-permissions.md](roles-and-permissions.md).
+- A Teacher capability and a `SectionStaff` TA role are mutually exclusive for
+  new writes. Legacy conflicts are retained for audit/history and surfaced to
+  Platform Admins; no assignment is silently removed by a migration.
 - **Enrollment** — a StudentRecord's membership in a ClassSection. Fields: → ClassSection, → StudentRecord, status (active/deactivated), source → ImportBatch. A student may appear in multiple sections **[Assumption A1]**.
 
 ### Forms & templates
@@ -47,13 +54,13 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 ### Responses & publishing
 
 - **PrivateResponse** — a private reply to a StudentSubmissionItem. Fields: → StudentSubmissionItem, author → User (staff), body, timestamp. Visible only to the asker and authorized staff.
-- **PublicAnswer** — a published/publishable anonymous Q&A entry. Fields: → ClassSection, reworded public question text, answer body, public-answer state (§3.6), scheduled-at, published-at, failure info, → category/topic for archive organization, source origin (current/legacy). Never stores source identity in public-visible fields.
+- **PublicAnswer** — a published/publishable anonymous Q&A entry, **owned by the Course** ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)). One publication is one row, read by every student with an active enrolment in any eligible section of the course; there is never one copy per section. Fields: → Course, reworded public question text, answer body, public-answer state (§3.6), scheduled-at, published-at, failure info, → category/topic for archive organization, source origin (current/legacy), and `originSectionId` — **nullable historical provenance only**, for entries published before the archive became course-scoped. `originSectionId` is never a visibility key, a publishing target, or part of a student payload, and new entries leave it null. Never stores source identity in public-visible fields.
 - **SourceLink** — internal link between a PublicAnswer and its source(s). Fields: → PublicAnswer, → StudentSubmissionItem **or** → BacklogQuestion, created-by, timestamp. **Many-to-one on PublicAnswer** (supports merge). Internal-only; drives "your question was answered" without exposing identity to other students. See [public-qa.md](public-qa.md).
 
 ### Backlog & import
 
-- **BacklogQuestion** — a course-level question awaiting possible public answering. Fields: → Course, text, → optional category/topic, state (§3.7), source provenance (current-copied / legacy-import), → optional source StudentSubmissionItem (only if intentionally linked), identity-preservation flag, → ImportBatch (if imported). Belongs to the **course**, not a section. See [domain/question-backlog.md](question-backlog.md).
-- **SectionBacklogVisibility** — records that a BacklogQuestion has been made visible/publishable to a specific ClassSection. Fields: → BacklogQuestion, → ClassSection, made-visible-by. Explicit and per-section; no automatic public exposure.
+- **BacklogQuestion** — a course-level question awaiting possible public answering. Fields: → Course, text, → optional category/topic, staff-only internal note, state (§3.7), source provenance (current-copied / legacy-import), → optional source StudentSubmissionItem (only if intentionally linked), identity-preservation flag, → ImportBatch (if imported). Belongs to the **course**, not a section. See [domain/question-backlog.md](question-backlog.md).
+- **~~SectionBacklogVisibility~~** — **removed as a mechanism** by [ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md). It recorded that a BacklogQuestion had been made publishable to a specific ClassSection, back when publishing from the backlog was a per-section act. Answering a backlog question now produces one course-wide PublicAnswer, so there is no section to expose it to. Its rows are retained as `backlog_section_exposure_history` — provenance, read by nothing.
 - **ImportBatch** — a roster or legacy import event. Fields: kind (roster/legacy), source description, → Course or → ClassSection, importer → User, row counts/summary, timestamp. See [domain/student-identity.md](student-identity.md) and [domain/legacy-question-import.md](legacy-question-import.md).
 
 ### Added 2026-08-03 for the full `product/specification.md` scope
@@ -81,7 +88,7 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
   path, delivery state, attempts, availability time, lease owner/expiry, provider message id, error.
 - **LegacyImportRow** — one staged legacy row. Always retains the verbatim source text, so per-row
   errors never discard the rest of the file.
-- **PublicAnswerReaction / PublicAnswerComment** — course-only reactions and moderated comments.
+- **PublicAnswerReaction / PublicAnswerComment** — course-only reactions and moderated comments. A comment is scoped to the **Course** (its subject is course-owned), with `originSectionId` retained as provenance only; any eligible enrolled student of the course may take part, subject to moderation.
   Commenters are pseudonymous to classmates (`Student N`, scoped per answer) and identifiable to
   staff. Comments are `Pending` until staff approve.
 
@@ -104,10 +111,10 @@ FormInstance 1─* FormResponse 1─* QuestionAnswer
 Course 1─* ClassSection
 Course 1─* CourseStaff *─1 User
 Course 1─* Lesson/Topic
-Course 1─* BacklogQuestion *─* ClassSection   (via SectionBacklogVisibility)
+Course 1─* BacklogQuestion
 ClassSection 1─* SectionStaff *─1 User
 ClassSection 1─* Enrollment *─1 StudentRecord
-ClassSection 1─* PublicAnswer
+Course 1─* PublicAnswer                          (ADR-0005; NOT per-section)
 FormResponse 1─* StudentSubmissionItem 1─* PrivateResponse
 StudentSubmissionItem *─* PublicAnswer   (via SourceLink; many sources per answer = merge)
 BacklogQuestion *─* PublicAnswer          (via SourceLink)
@@ -264,7 +271,7 @@ States: `Imported`, `Needs review`, `Answerable`, `Drafting`, `Scheduled`, `Publ
 | Drafting | Scheduled / Published | via a PublicAnswer (states mirror §3.6) |
 | any | Archived | staff |
 
-- Backlog questions never auto-appear in any public archive; publishing to a section is explicit (SectionBacklogVisibility + a PublicAnswer). See [domain/question-backlog.md](question-backlog.md).
+- Backlog questions never auto-appear in the Class Q&A archive; answering one is an explicit, audited act that creates **one course-owned PublicAnswer**, with no target section chosen ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)). See [domain/question-backlog.md](question-backlog.md).
 
 ### 3.8 Student identity — deliberately not a state model
 

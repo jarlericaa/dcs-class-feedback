@@ -1,6 +1,8 @@
 "use client";
 
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Dialog } from "@/components/ui/dialog";
+import { Choice, FieldLabel, FieldRow, Select } from "@/components/ui/form";
 
 /**
  * Editing one staff member's permissions.
@@ -47,7 +49,7 @@ export function EditStaffPermissions({
 }) {
   return (
     <Dialog
-      className="button--small"
+      size="small"
       label="Edit permissions"
       title={`Permissions for ${displayName}`}
       description="Permissions apply to an SA. A course handler holds every capability."
@@ -58,43 +60,37 @@ export function EditStaffPermissions({
           <input type="hidden" name="sectionId" value={sectionId} />
         )}
 
-        <div className="field-row">
-          <label htmlFor={`role-${email}`}>Role</label>
-          <select
-            id={`role-${email}`}
-            className="select-field"
-            name="role"
-            defaultValue={role}
-          >
+        <FieldRow label="Role" htmlFor={`role-${email}`}>
+          <Select id={`role-${email}`} name="role" defaultValue={role}>
             {/* Two roles. "Teacher" and "Co-teacher" were never two standings
                 — every instructor on a course holds equal permissions — so
                 offering both invited a choice with no consequence. Rows stored
                 as either read as Course handler. */}
             <option value="ta">SA</option>
             <option value="teacher">Course handler</option>
-          </select>
-        </div>
+          </Select>
+        </FieldRow>
 
-        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="field-label">SA permissions</legend>
-          <div className="form-grid" style={{ marginTop: "var(--s2)" }}>
+        <fieldset className="m-0 border-0 p-0">
+          <FieldLabel>SA permissions</FieldLabel>
+          <div className="form-grid mt-2">
             {permissions.map((permission) => (
-              <label className="choice" key={permission.key}>
-                <input
-                  type="checkbox"
-                  name={`perm_${permission.key}`}
-                  defaultChecked={permission.granted}
-                />
-                <span>{permissionLabels[permission.key]}</span>
-              </label>
+              <Choice
+                key={permission.key}
+                type="checkbox"
+                name={`perm_${permission.key}`}
+                defaultChecked={permission.granted}
+              >
+                {permissionLabels[permission.key]}
+              </Choice>
             ))}
           </div>
         </fieldset>
 
         <div className="row">
-          <button className="button button--primary" type="submit">
+          <SubmitButton variant="primary" pendingLabel="Saving…">
             Save permissions
-          </button>
+          </SubmitButton>
         </div>
       </form>
     </Dialog>

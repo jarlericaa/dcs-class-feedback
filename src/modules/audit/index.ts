@@ -1,9 +1,11 @@
 import {
   and,
+  asc,
   desc,
   eq,
   gte,
   inArray,
+  ilike,
   isNull,
   lt,
   notInArray,
@@ -37,8 +39,9 @@ import {
   studentSubmissionItems,
   submissionValidityEvents,
   users,
+  platformAdminAccounts,
 } from "@/db/schema";
-import { requireNonTaSectionStaff } from "@/modules/authz";
+import { requireNonTaSectionStaff, requirePlatformAdmin } from "@/modules/authz";
 import { instanceIdsForSection } from "@/modules/forms/audience";
 import { instanceLabel } from "@/modules/forms/instances";
 import { richTextToPlain } from "@/modules/richtext/plain";
@@ -50,7 +53,11 @@ import {
   TEACHER_FACING_ACTIONS,
 } from "@/lib/audit-story";
 import { zonedTimeToUtc } from "@/modules/forms/timezone";
-import type { AuditAction } from "./actions";
+import { assertMutationAllowed } from "@/lib/impersonation";
+import { AUDIT_ACTIONS, type AuditAction } from "./actions";
+import { AUDIT_CATEGORIES, auditCategoryForAction, type AuditCategory } from "./categories";
+import { auditActionLabel } from "@/lib/audit-labels";
+import { env } from "@/env";
 
 /** The form value that means "the scheduler", which has no actor row. */
 export const SYSTEM_ACTOR = "system";
@@ -68,6 +75,7 @@ export interface AuditHistoryRow {
   event: typeof auditEvents.$inferSelect;
   /** null actor = a system/scheduler action */
   actor: typeof users.$inferSelect | null;
+  actorPlatformAdmin: typeof platformAdminAccounts.$inferSelect | null;
   /**
    * A short, PLAIN, already-safe label for the thing acted on, or null.
    *
@@ -129,10 +137,13 @@ function dayStart(
 
 export { AUDIT_ACTIONS } from "./actions";
 export type { AuditAction } from "./actions";
+export { AUDIT_CATEGORIES, auditCategoryForAction } from "./categories";
+export type { AuditCategory } from "./categories";
 
 export interface AuditInput {
   /** null = system/scheduler action */
   actorUserId: string | null;
+  actorPlatformAdminId?: string | null;
   action: AuditAction;
   entityType: string;
   entityId?: string | null;
@@ -149,8 +160,13 @@ export interface AuditInput {
 }
 
 export async function writeAudit(dbx: DbOrTx, input: AuditInput) {
+  await assertMutationAllowed();
+  if (input.actorUserId && input.actorPlatformAdminId) {
+    throw new Error("An audit event cannot have both a user actor and a Platform Admin actor.");
+  }
   await dbx.insert(auditEvents).values({
     actorUserId: input.actorUserId,
+    actorPlatformAdminId: input.actorPlatformAdminId ?? null,
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId ?? null,
@@ -199,8 +215,32 @@ async function sectionAuditScope(
         where: inArray(privateResponses.itemId, itemIds),
       })
     : [];
+  /**
+   * Public answers belonging to THIS section's history.
+   *
+   * A public answer is course-owned now (ADR-0005), so "this section's" can no
+   * longer be a column comparison. It means the answers this section's
+   * submissions FED — reached through their source links — plus, for rows
+   * published before the change, the ones that still carry this section as
+   * origin provenance. Both arms are needed: the first is how a current answer
+   * belongs to a section at all, the second is what keeps an old section audit
+   * history reading the way it always did.
+   */
+  const linksFromItems = itemIds.length
+    ? await db.query.sourceLinks.findMany({
+        where: inArray(sourceLinks.itemId, itemIds),
+      })
+    : [];
   const answers = await db.query.publicAnswers.findMany({
-    where: eq(publicAnswers.sectionId, sectionId),
+    where: linksFromItems.length
+      ? or(
+          eq(publicAnswers.originSectionId, sectionId),
+          inArray(
+            publicAnswers.id,
+            linksFromItems.map((l) => l.publicAnswerId),
+          ),
+        )
+      : eq(publicAnswers.originSectionId, sectionId),
   });
   const links = answers.length
     ? await db.query.sourceLinks.findMany({
@@ -243,10 +283,14 @@ async function sectionAuditScope(
   const mergeGroups = await db.query.questionMergeGroups.findMany({
     where: eq(questionMergeGroups.sectionId, sectionId),
   });
-  const comments = await db.query.publicAnswerComments.findMany({
-    where: eq(publicAnswerComments.sectionId, sectionId),
-  });
   const answerIds = answers.map((a) => a.id);
+  // Comments follow their subject, which is course-owned: a comment belongs to
+  // this section's history when the answer it sits under does.
+  const comments = answerIds.length
+    ? await db.query.publicAnswerComments.findMany({
+        where: inArray(publicAnswerComments.publicAnswerId, answerIds),
+      })
+    : [];
   const approvals = answerIds.length
     ? await db.query.publicAnswerApprovals.findMany({
         where: inArray(publicAnswerApprovals.publicAnswerId, answerIds),
@@ -524,6 +568,7 @@ export async function listSectionAuditEvents(
           !studentActor && row.actorUserId
             ? (actorById.get(row.actorUserId) ?? null)
             : null,
+        actorPlatformAdmin: null,
         subject: row.entityId
           ? (subjects.get(subjectKey(row.entityType, row.entityId)) ?? null)
           : null,
@@ -592,12 +637,15 @@ async function resolveSubjects(
     switch (entityType) {
       case "public_answer": {
         const answers = await db.query.publicAnswers.findMany({
-          // Constrained to THIS section as well as to the ids: an id that
+          // Constrained to THIS COURSE as well as to the ids: an id that
           // reached the log by another route resolves to nothing rather than to
-          // another class's published wording.
+          // another course's published wording. Course rather than section
+          // because that is what now owns the answer (ADR-0005) — and a reader
+          // of this section's history is, by construction, staff of this
+          // course, so nothing widens.
           where: and(
             inArray(publicAnswers.id, ids),
-            eq(publicAnswers.sectionId, scope.sectionId),
+            eq(publicAnswers.courseId, scope.courseId),
           ),
           columns: { id: true, publicQuestionText: true },
         });
@@ -740,4 +788,82 @@ export async function listSectionAuditActors(
   }
 
   return options;
+}
+
+export interface PlatformAuditFilter {
+  search?: string;
+  category?: string;
+  actor?: "staff" | "students" | "system";
+  courseId?: string;
+  from?: string;
+  to?: string;
+  page?: string | number | null;
+  pageSize?: string | number | null;
+}
+
+/** Platform-wide, identity-safe audit projection for Platform Admins. */
+export async function listPlatformAuditEvents(adminUserId: string, opts: PlatformAuditFilter = {}) {
+  await requirePlatformAdmin(db, adminUserId);
+  const params = parsePageParams(opts, 25);
+  const clauses: SQL[] = [];
+  const category = AUDIT_CATEGORIES.includes(opts.category as AuditCategory)
+    ? (opts.category as AuditCategory)
+    : undefined;
+  if (category) {
+    clauses.push(inArray(auditEvents.action, AUDIT_ACTIONS.filter((action) => auditCategoryForAction(action) === category)));
+  }
+  if (opts.courseId && z.string().uuid().safeParse(opts.courseId).success) clauses.push(eq(auditEvents.courseId, opts.courseId));
+  if (opts.actor === "system") clauses.push(and(isNull(auditEvents.actorUserId), isNull(auditEvents.actorPlatformAdminId))!);
+  if (opts.actor === "students") clauses.push(inArray(auditEvents.action, [...STUDENT_ACTOR_ACTIONS]));
+  if (opts.actor === "staff") {
+    clauses.push(notInArray(auditEvents.action, [...STUDENT_ACTOR_ACTIONS]));
+    clauses.push(sql`(${auditEvents.actorUserId} IS NOT NULL OR ${auditEvents.actorPlatformAdminId} IS NOT NULL)`);
+  }
+  const from = dayStart(opts.from, env.INSTITUTION_TIMEZONE);
+  const to = dayStart(opts.to, env.INSTITUTION_TIMEZONE, 1);
+  if (from) clauses.push(gte(auditEvents.createdAt, from));
+  if (to) clauses.push(lt(auditEvents.createdAt, to));
+
+  if (opts.search?.trim()) {
+    const term = `%${opts.search.trim()}%`;
+    const [people, admins, matchingCourses] = await Promise.all([
+      db.query.users.findMany({ where: or(ilike(users.displayName, term), ilike(users.email, term)), columns: { id: true } }),
+      db.query.platformAdminAccounts.findMany({ where: or(ilike(platformAdminAccounts.displayName, term), ilike(platformAdminAccounts.username, term)), columns: { id: true } }),
+      db.query.courses.findMany({ where: ilike(courses.code, term), columns: { id: true } }),
+    ]);
+    const actionMatches = AUDIT_ACTIONS.filter((action) => auditActionLabel(action).toLowerCase().includes(opts.search!.trim().toLowerCase()));
+    const searchParts: SQL[] = [];
+    if (people.length) searchParts.push(inArray(auditEvents.actorUserId, people.map((person) => person.id)));
+    if (admins.length) searchParts.push(inArray(auditEvents.actorPlatformAdminId, admins.map((admin) => admin.id)));
+    if (matchingCourses.length) searchParts.push(inArray(auditEvents.courseId, matchingCourses.map((course) => course.id)));
+    if (actionMatches.length) searchParts.push(inArray(auditEvents.action, actionMatches));
+    if (!searchParts.length) return buildPage<AuditHistoryRow>([], 0, params);
+    clauses.push(or(...searchParts)!);
+  }
+
+  const where = clauses.length ? and(...clauses)! : undefined;
+  const [{ count: total } = { count: 0 }] = await db.select({ count: sql<number>`count(*)::int` }).from(auditEvents).where(where);
+  const rows = await db.query.auditEvents.findMany({
+    where,
+    orderBy: [desc(auditEvents.createdAt), desc(auditEvents.id)],
+    limit: params.pageSize,
+    offset: params.offset,
+  });
+  const staffActorIds = [...new Set(rows.filter((row) => !hasStudentActor(row.action)).map((row) => row.actorUserId).filter((id): id is string => !!id))];
+  const adminActorIds = [...new Set(rows.filter((row) => !hasStudentActor(row.action)).map((row) => row.actorPlatformAdminId).filter((id): id is string => !!id))];
+  const actors = staffActorIds.length ? await db.query.users.findMany({ where: inArray(users.id, staffActorIds) }) : [];
+  const adminActors = adminActorIds.length ? await db.query.platformAdminAccounts.findMany({ where: inArray(platformAdminAccounts.id, adminActorIds) }) : [];
+  const actorById = new Map(actors.map((actor) => [actor.id, actor]));
+  const adminActorById = new Map(adminActors.map((actor) => [actor.id, actor]));
+  return buildPage<AuditHistoryRow>(rows.map((row) => ({
+    event: hasStudentActor(row.action) ? { ...row, actorUserId: null } : row,
+    actor: !hasStudentActor(row.action) && row.actorUserId ? actorById.get(row.actorUserId) ?? null : null,
+    actorPlatformAdmin: !hasStudentActor(row.action) && row.actorPlatformAdminId ? adminActorById.get(row.actorPlatformAdminId) ?? null : null,
+    subject: null,
+  })), Number(total), params);
+}
+
+export async function listPlatformAuditCourses(adminUserId: string) {
+  await requirePlatformAdmin(db, adminUserId);
+  return db.query.courses.findMany({ columns: { id: true, code: true }, orderBy: asc(courses.code) });
 }

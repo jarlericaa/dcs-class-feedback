@@ -10,6 +10,15 @@
  * action added later reads plainly rather than breaking.
  */
 const LABELS: Record<string, string> = {
+  "admin.login_succeeded": "Platform Admin signed in",
+  "admin.login_locked": "Platform Admin account locked",
+  "admin.password_changed": "Platform Admin password changed",
+  "teacher_access.granted": "Teacher access granted",
+  "teacher_access.revoked": "Teacher access revoked",
+  "user.account_deactivated": "Account deactivated",
+  "user.account_reactivated": "Account reactivated",
+  "admin.impersonation_started": "Support session started",
+  "admin.impersonation_ended": "Support session ended",
   "cycle.generated": "Form occurrences generated",
   "cycle.opened": "Form opened",
   "cycle.closed": "Form closed",

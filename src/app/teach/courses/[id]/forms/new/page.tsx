@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { RequiredMark } from "@/components/ui/required-mark";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
@@ -15,12 +15,7 @@ import {
   sectionLabel,
   type StaffSectionContext,
 } from "@/lib/staff-section";
-import {
-  AccessDenied,
-  Alert,
-  Breadcrumbs,
-  EmptyState,
-} from "@/components/ui";
+import { AccessDenied, Alert, Breadcrumbs, EmptyState } from "@/components/ui";
 import { DeliveryFields } from "@/components/staff/delivery-fields";
 import { TemplateEditor } from "@/components/staff/template-editor";
 import { AuthzError, requireCourseStaff } from "@/modules/authz";
@@ -34,6 +29,7 @@ import {
 import { InstanceError } from "@/modules/forms/instances";
 import type { QuestionDefinition } from "@/modules/forms/questions";
 import { requireUser, toShellUser } from "@/lib/session";
+import { Field, FieldRow, FormSection } from "@/components/ui/form";
 
 /**
  * Create one form: what it is, who gets it, when it goes out, what it asks.
@@ -102,7 +98,9 @@ export default async function NewFormPage({
   const course = (await db.query.courses.findFirst({
     where: eq(courses.id, courseId),
   }))!;
-  const sections = templateOnly ? [] : await listAudienceOptions(user.id, courseId);
+  const sections = templateOnly
+    ? []
+    : await listAudienceOptions(user.id, courseId);
 
   async function createForm(formData: FormData) {
     "use server";
@@ -161,8 +159,6 @@ export default async function NewFormPage({
         deadlineTime: String(formData.get("deadlineTime") ?? ""),
         startDate: String(formData.get("startDate") ?? ""),
         endDate: String(formData.get("endDate") ?? ""),
-        occurrenceCount:
-          String(formData.get("occurrenceCount") ?? "") || undefined,
         intervalWeeks: String(formData.get("intervalWeeks") ?? "") || undefined,
         openDate: String(formData.get("openDate") ?? ""),
         openAtTime: String(formData.get("openAtTime") ?? ""),
@@ -193,7 +189,9 @@ export default async function NewFormPage({
       user={toShellUser(user)}
       workspace="staff"
       navGroups={await primaryNavFor(user, path, {
-        fallbackHref: templateOnly ? `/teach/sections/${safeSectionId}` : undefined,
+        fallbackHref: templateOnly
+          ? `/teach/sections/${safeSectionId}`
+          : undefined,
       })}
       /* Course staff see the course strip. A section-scoped template manager
          stays in the section context, where the Forms doorway is real and
@@ -226,7 +224,10 @@ export default async function NewFormPage({
               ? [
                   {
                     href: `/teach/sections/${safeSectionId}/forms`,
-                    label: sectionLabel(course.code, templateSection!.section.title),
+                    label: sectionLabel(
+                      course.code,
+                      templateSection!.section.title,
+                    ),
                   },
                   { label: "New form" },
                 ]
@@ -238,6 +239,7 @@ export default async function NewFormPage({
           }
         />
       }
+      nested
       title="New form"
     >
       <div className="stack-4">
@@ -255,15 +257,27 @@ export default async function NewFormPage({
             A form needs at least one section to go to.
           </EmptyState>
         ) : (
-          <form action={createForm}>
-            <section className="notice notice--pad">
-              <h2 className="panel-title">What this form is</h2>
-              <div className="form-grid" style={{ marginTop: "var(--s4)" }}>
-                <div className="field-row">
-                  <label htmlFor="form-title">Form name</label>
-                  <input
+          <form action={createForm} className="grid gap-4">
+            {/*
+              Four numbered steps, in one register. They used to be four
+              headings in two: "What this form is" and "What it asks" were 20px
+              serif panel titles, while "Who gets this form" and "When it goes
+              out" were 11px uppercase chips inside `DeliveryFields` — so the
+              parts of one form read as unrelated blocks. Numbering also makes
+              the template-only branch honest: it genuinely has fewer steps.
+            */}
+            <FormSection step={1} title="Form details">
+              <div className="form-grid">
+                <FieldRow
+                  label={
+                    <>
+                      Form name <RequiredMark />
+                    </>
+                  }
+                  htmlFor="form-title"
+                >
+                  <Field
                     id="form-title"
-                    className="field"
                     name="title"
                     placeholder="Weekly feedback"
                     required
@@ -273,14 +287,10 @@ export default async function NewFormPage({
                     What students see at the top of it. &ldquo;LE 1
                     feedback&rdquo;, &ldquo;Course evaluation&rdquo;.
                   </span>
-                </div>
-                <div className="field-row">
-                  <label htmlFor="form-purpose">
-                    Label <span className="optional-mark">optional</span>
-                  </label>
-                  <input
+                </FieldRow>
+                <FieldRow label="Label" htmlFor="form-purpose">
+                  <Field
                     id="form-purpose"
-                    className="field"
                     name="purpose"
                     placeholder="Long exam"
                     aria-describedby="form-purpose-help"
@@ -288,78 +298,49 @@ export default async function NewFormPage({
                   <span className="helper-text" id="form-purpose-help">
                     Only to help you find it later in a long list.
                   </span>
-                </div>
-                <div className="field-row">
-                  <label htmlFor="form-description">
-                    Short description{" "}
-                    <span className="optional-mark">optional</span>
-                  </label>
-                  <input
-                    id="form-description"
-                    className="field"
-                    name="description"
-                  />
-                </div>
+                </FieldRow>
+                <FieldRow label="Short description" htmlFor="form-description">
+                  <Field id="form-description" name="description" />
+                </FieldRow>
               </div>
-            </section>
+            </FormSection>
 
             {templateOnly ? (
-              <section
-                className="notice notice--pad"
-                style={{ marginTop: "var(--s4)" }}
-              >
-                <h2 className="panel-title">Delivery</h2>
-                <p className="muted" style={{ marginTop: "var(--s3)" }}>
+              <FormSection step={2} title="Delivery">
+                <p className="muted">
                   This saves the form questions only. A course instructor can
                   decide which sections receive it and when it opens.
                 </p>
-              </section>
+              </FormSection>
             ) : (
-              <section
-                className="notice notice--pad"
-                style={{ marginTop: "var(--s4)" }}
-              >
-                <DeliveryFields
-                  sections={sections.map((s) => ({
-                    id: s.id,
-                    title: s.title,
-                    term: s.term,
-                  }))}
-                  courseCode={course.code}
-                />
-              </section>
+              /* Two steps, not one: who gets it and when it goes out are
+                 separate decisions and were already separate fieldsets. */
+              <DeliveryFields
+                sections={sections.map((s) => ({
+                  id: s.id,
+                  title: s.title,
+                  term: s.term,
+                }))}
+                firstStep={2}
+              />
             )}
 
-            <section
-              className="notice notice--pad"
-              style={{ marginTop: "var(--s4)" }}
-            >
-              <h2 className="panel-title">What it asks</h2>
-              <div style={{ marginTop: "var(--s4)" }}>
-                {/* The same editor and the same student preview the rest of the
+            <FormSection step={templateOnly ? 3 : 4} title="Questions">
+              {/* The same editor and the same student preview the rest of the
                     product uses. A shared audience does not mean a copy of the
                     form per section: there is one question list. */}
-                <TemplateEditor
-                  showTitleFields={false}
-                  initialQuestions={[]}
-                  submitLabel="Save form"
-                  versionNote="Later edits create a new version. Forms already sent keep the questions their students answered."
-                />
-              </div>
-            </section>
-
-            <p className="helper-text" style={{ marginTop: "var(--s4)" }}>
-              <Link
-                className="link"
-                href={
+              <TemplateEditor
+                showTitleFields={false}
+                initialQuestions={[]}
+                submitLabel="Save form"
+                cancelHref={
                   templateOnly
                     ? `/teach/sections/${safeSectionId}/forms`
                     : `/teach/courses/${courseId}`
                 }
-              >
-                Cancel and go back to {templateOnly ? "Forms" : course.code}
-              </Link>
-            </p>
+                versionNote="Later edits create a new version. Forms already sent keep the questions their students answered."
+              />
+            </FormSection>
           </form>
         )}
       </div>

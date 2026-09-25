@@ -35,6 +35,7 @@ document instead of copying its full rules.
 ## Current records
 
 - [ADR-0001 — Continue the existing TypeScript modular monolith](ADR-0001-current-stack-and-scheduler.md)
-- [ADR-0002 — Keep public Q&A section-scoped and source-anonymous](ADR-0002-section-scoped-public-qa.md)
+- [ADR-0002 — Keep public Q&A section-scoped and source-anonymous](ADR-0002-section-scoped-public-qa.md) — **superseded by ADR-0005**
 - [ADR-0003 — The course owner alone controls staff assignment and TA permissions](ADR-0003-course-owner-controls-staff-permissions.md)
 - [ADR-0004 — Course-wide staff standing is an owner-granted, Instructor-only tier](ADR-0004-course-wide-staff-standing.md)
+- [ADR-0005 — The course is the collaborative teaching-work boundary](ADR-0005-course-scoped-teaching-workflow.md)

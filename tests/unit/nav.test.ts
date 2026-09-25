@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   FORMS_GROUP,
   courseSetupTabs,
+  coursePublishingTabs,
   courseTabGroups,
   courseTabs,
   firstStaffSectionHref,
   primaryNav,
   staffSectionTabGroups,
   staffSectionTabs,
+  studentCourseTabs,
   studentSectionTabs,
   type NavGroup,
 } from "@/components/layout/nav";
@@ -52,7 +54,10 @@ function access(
 ): SectionAccess {
   const sectionId = overrides.sectionId ?? "sec-1";
   return {
-    section: { id: sectionId, courseId: "course-1" } as SectionAccess["section"],
+    section: {
+      id: sectionId,
+      courseId: "course-1",
+    } as SectionAccess["section"],
     staff:
       overrides.staff === null
         ? null
@@ -96,7 +101,7 @@ describe("primaryNav — stability", () => {
       "/teach/courses/c1/staff",
       "/teach/courses/c1/forms/new",
       "/teach/sections/sec-1/roster",
-      "/teach/sections/sec-1/audit",
+      "/teach/sections/sec-1/participation",
       "/sections/sec-1/qa",
     ];
     const expected = labels(primaryNav("/", teacher));
@@ -135,11 +140,8 @@ describe("primaryNav — stability", () => {
 
   it("lists the teacher's own courses under My courses", () => {
     const groups = primaryNav("/", teacher);
-    expect(labels(groups)).toEqual([
-      ["Workspace", ["Overview"]],
-      ["My courses", ["All courses", "CS 33"]],
-    ]);
-    expect(groups[1]!.items[1]!.href).toBe("/teach/courses/c1");
+    expect(labels(groups)).toEqual([["My courses", ["All courses", "CS 33"]]]);
+    expect(groups[0]!.items[1]!.href).toBe("/teach/courses/c1");
   });
 
   /**
@@ -155,11 +157,8 @@ describe("primaryNav — stability", () => {
       studentSections: [],
       assistedSections: [],
     });
-    expect(labels(grantee)).toEqual([
-      ["Workspace", ["Overview"]],
-      ["My courses", ["CS 33"]],
-    ]);
-    expect(grantee[1]!.items[0]!.href).toBe("/teach/courses/c1");
+    expect(labels(grantee)).toEqual([["My courses", ["CS 33"]]]);
+    expect(grantee[0]!.items[0]!.href).toBe("/teach/courses/c1");
     // NOT the course index: that is where a course is created and it refuses an
     // account without the teacher capability. A rail row that rejects the
     // reader who clicks it is the one thing this rail must not produce.
@@ -219,12 +218,26 @@ describe("primaryNav — stability", () => {
       assistedSections: ASSISTED,
     });
     expect(labels(assistant)).toEqual([
-      ["Workspace", ["Overview"]],
       ["Sections you assist", ["CS 12 · Section B"]],
     ]);
     // The section root, not one of its views: which view a reader lands on is
     // their permissions' business, resolved server-side.
-    expect(assistant[1]!.items[0]!.href).toBe("/teach/sections/sec-9");
+    expect(assistant[0]!.items[0]!.href).toBe("/teach/sections/sec-9");
+  });
+
+  it("gives an enrolled student a course-first rail", () => {
+    const student = primaryNav("/courses/c1", {
+      isTeacher: false,
+      isPlatformAdmin: false,
+      courses: [],
+      studentSections: STUDENT,
+      studentCourses: COURSES,
+      assistedSections: [],
+    });
+    expect(labels(student)).toEqual([
+      ["My courses", ["All courses", "CS 33"]],
+    ]);
+    expect(activeHrefs(student)).toEqual(["/courses/c1"]);
   });
 
   it("omits a group only when the account has no rows for it", () => {
@@ -242,7 +255,12 @@ describe("primaryNav — stability", () => {
       "Sections you assist",
     ]);
     // The fixed group is always open; the ones that grow with the account fold.
-    expect(both.map((g) => !!g.collapsible)).toEqual([false, true, true, true]);
+    expect(both.map((g) => !!g.collapsible)).toEqual([
+      false,
+      true,
+      true,
+      true,
+    ]);
   });
 });
 
@@ -257,7 +275,6 @@ describe("primaryNav — active state", () => {
 
   it("marks exactly one row, everywhere", () => {
     for (const route of [
-      "/",
       "/teach/courses",
       "/teach/courses/c1",
       "/teach/courses/c1/responses",
@@ -270,15 +287,14 @@ describe("primaryNav — active state", () => {
     }
   });
 
-  it("does not light up Overview on every path", () => {
-    expect(activeHrefs(primaryNav("/", input))).toEqual(["/"]);
+  it("marks Platform admin on its own route", () => {
     expect(activeHrefs(primaryNav("/admin", input))).toEqual(["/admin"]);
   });
 
   it("marks the containing destination on a child route", () => {
-    expect(activeHrefs(primaryNav("/teach/courses/c1/forms/new", input))).toEqual(
-      ["/teach/courses/c1"],
-    );
+    expect(
+      activeHrefs(primaryNav("/teach/courses/c1/forms/new", input)),
+    ).toEqual(["/teach/courses/c1"]);
     expect(activeHrefs(primaryNav("/sections/sec-1/history", input))).toEqual([
       "/sections/sec-1",
     ]);
@@ -376,6 +392,19 @@ describe("courseTabs", () => {
     expect(hrefs).not.toContain("/teach/courses/c1/staff");
   });
 
+  it("names one Question Backlog editorial destination, never a queue", () => {
+    const labels = coursePublishingTabs("c1", {
+      draftPublicAnswers: true,
+      rewordPublicQuestions: true,
+      publishPublicAnswers: true,
+      schedulePublication: true,
+      manageBacklogImports: true,
+    }).map((item) => item.label);
+
+    expect(labels).toEqual(["Question Backlog", "Class Q&A"]);
+    expect(labels).not.toContain("Publication Queue");
+  });
+
   it("keeps who-can-reach and who-can-act as separate destinations", () => {
     const hrefs = courseSetupTabs("c1", "/x").map((t) => t.href);
     expect(hrefs).toEqual([
@@ -408,7 +437,6 @@ describe("courseTabs", () => {
     expect(marked.map((t) => t.href)).toEqual(["/teach/courses/c1/staff"]);
   });
 
-
   it("marks Forms for a form, a new form and an occurrence", () => {
     for (const path of [
       "/teach/courses/c1/forms/new",
@@ -418,16 +446,33 @@ describe("courseTabs", () => {
       const tabs = courseTabs("c1", path, {
         activeHref: "/teach/courses/c1",
       });
-      expect(tabs.filter((t) => t.active).map((t) => t.href), path).toEqual([
-        "/teach/courses/c1",
-      ]);
+      expect(
+        tabs.filter((t) => t.active).map((t) => t.href),
+        path,
+      ).toEqual(["/teach/courses/c1"]);
     }
   });
 
   it("shows a review count only when there is one", () => {
     expect(courseTabs("c1", "/x", { needsReview: 3 })[1]!.count).toBe(3);
-    expect(courseTabs("c1", "/x", { needsReview: 0 })[1]!.count).toBeUndefined();
+    expect(
+      courseTabs("c1", "/x", { needsReview: 0 })[1]!.count,
+    ).toBeUndefined();
     expect(courseTabs("c1", "/x")[1]!.count).toBeUndefined();
+  });
+});
+
+describe("studentCourseTabs", () => {
+  it("keeps the student course workspace to three peer views", () => {
+    const tabs = studentCourseTabs("c1", "/courses/c1/submissions");
+    expect(tabs.map((tab) => tab.label)).toEqual([
+      "Forms",
+      "My submissions",
+      "Class Q&A",
+    ]);
+    expect(tabs.find((tab) => tab.active)?.href).toBe(
+      "/courses/c1/submissions",
+    );
   });
 });
 
@@ -460,8 +505,7 @@ describe("staffSectionTabs — permission visibility", () => {
       "Review inbox",
       "Forms",
       // Weekly review leads: it is what a teacher opens a section to do.
-      "Publication queue",
-      "Question backlog",
+      "Question Backlog",
       "Class Q&A",
       "Participation",
       // Setup last, and the class list now sits inside it — configuration the
@@ -469,7 +513,6 @@ describe("staffSectionTabs — permission visibility", () => {
       // is no "Section setup" beside it: that page was a duplicate teaching
       // team, and the course's own table replaced it.
       "Class list",
-      // Audit is not delegable to a TA in the MVP permission catalog.
     ]);
   });
 
@@ -499,7 +542,7 @@ describe("staffSectionTabs — permission visibility", () => {
     ).not.toContain("Class list");
   });
 
-  it("opens the publication queue to any one publication capability", () => {
+  it("opens Question Backlog to any one publication capability", () => {
     for (const flag of [
       "draftPublicAnswers",
       "rewordPublicQuestions",
@@ -510,22 +553,34 @@ describe("staffSectionTabs — permission visibility", () => {
         access({ role: "ta", permissions: { [flag]: true } }),
         "/x",
       );
-      expect(tabs.map((t) => t.label), flag).toContain("Publication queue");
+      expect(
+        tabs.map((t) => t.label),
+        flag,
+      ).toContain("Question Backlog");
     }
   });
 
-  it("withholds Audit from a TA and offers it to a teacher", () => {
-    expect(
-      staffSectionTabs(access({ role: "ta" }), "/x").map((t) => t.label),
-    ).not.toContain("Audit history");
-    expect(
-      staffSectionTabs(access({ role: "teacher" }), "/x").map((t) => t.label),
-    ).toContain("Audit history");
+  /**
+   * The section-scoped audit browser moved to the admin area (owner,
+   * 2026-09-11), so the row is gone for EVERY role — it is no longer a
+   * question of delegation. Asserted rather than deleted: the old test said a
+   * teacher gets this row, and something has to say that they no longer do.
+   */
+  it("offers Audit history to nobody, whatever their role", () => {
+    for (const role of ["ta", "teacher"] as const) {
+      expect(
+        staffSectionTabs(access({ role }), "/x").map((t) => t.label),
+        role,
+      ).not.toContain("Audit history");
+    }
   });
 
   it("puts the review queue in the section only for a reader with no course", () => {
     const withCourse = staffSectionTabs(
-      access({ hasCourseStanding: true, permissions: { reviewResponses: true } }),
+      access({
+        hasCourseStanding: true,
+        permissions: { reviewResponses: true },
+      }),
       "/x",
     );
     // Course staff reach the one course-wide queue from the course strip;
@@ -551,7 +606,7 @@ describe("staffSectionTabs — permission visibility", () => {
     const a = access({ permissions: { viewStudentIdentities: true } });
     const on = (path: string) => staffSectionTabs(a, path).map((t) => t.label);
     expect(on("/teach/sections/sec-1/roster")).toEqual(
-      on("/teach/sections/sec-1/audit"),
+      on("/teach/sections/sec-1/participation"),
     );
   });
 });
@@ -570,10 +625,9 @@ describe("staffSectionTabs — active state", () => {
     expect(active("/teach/sections/sec-1/roster")).toEqual([
       "/teach/sections/sec-1/roster",
     ]);
-    expect(active("/teach/sections/sec-1/audit")).toEqual([
-      "/teach/sections/sec-1/audit",
+    expect(active("/teach/sections/sec-1/participation")).toEqual([
+      "/teach/courses/course-1/participation",
     ]);
-    expect(active("/sections/sec-1/qa")).toEqual(["/sections/sec-1/qa"]);
   });
 
   /**
@@ -587,7 +641,7 @@ describe("staffSectionTabs — active state", () => {
 
   it("does not let the participation export unmark participation", () => {
     expect(active("/teach/sections/sec-1/participation/export")).toEqual([
-      "/teach/sections/sec-1/participation",
+      "/teach/courses/course-1/participation",
     ]);
   });
 });
@@ -612,8 +666,8 @@ describe("staffSectionTabGroups", () => {
     expect(labels(groups)).toEqual([
       ["Review", ["Review inbox"]],
       ["Forms", ["Forms"]],
-      ["Weekly review", ["Publication queue", "Question backlog", "Class Q&A"]],
-      ["Reports", ["Participation", "Audit history"]],
+      ["Weekly review", ["Question Backlog", "Class Q&A"]],
+      ["Reports", ["Participation"]],
       // The class list is configuration, so it sits in Setup — not in a
       // heading of its own between the week's work and the reports.
       ["Setup", ["Class list"]],
@@ -621,17 +675,16 @@ describe("staffSectionTabGroups", () => {
   });
 
   it("omits a group's heading entirely when every item in it is hidden", () => {
-    // A TA: no roster access (drops Class list), no participation export and
-    // no audit (drops Reports), no template/cycle management (drops Setup).
+    // A TA: no roster access (drops Class list), no participation export
+    // (drops Reports, now that audit has left it), no template/cycle
+    // management (drops Setup).
     // An empty "Reports" strip label naming nothing would be worse than no
     // label — the group must not render at all.
     const groups = staffSectionTabGroups(
       access({ role: "ta", hasCourseStanding: false }),
       "/x",
     );
-    expect(labels(groups)).toEqual([
-      ["Weekly review", ["Class Q&A"]],
-    ]);
+    expect(labels(groups)).toEqual([["Weekly review", ["Class Q&A"]]]);
   });
 
   it("flattens to the same list staffSectionTabs returns", () => {
@@ -666,9 +719,12 @@ describe("staffSectionTabGroups", () => {
       "/teach/courses/course-1/responses",
     ]);
     // And the section's own groups still follow it.
+    /* No "Reports": this reader holds `viewStudentIdentities` and nothing
+       else, and Reports is now exactly `exportParticipation` — audit history,
+       which used to keep the group alive for any non-TA, has moved to the
+       admin area. */
     expect(groups.slice(1).map((g) => g.label)).toEqual([
       "Weekly review",
-      "Reports",
       "Setup",
     ]);
     /**
@@ -694,9 +750,9 @@ describe("staffSectionTabGroups", () => {
       "/teach/sections/sec-1/roster",
     );
     expect(groups.map((g) => g.label)).not.toContain("Course");
-    expect(
-      groups.flatMap((g) => g.items.map((i) => i.href)),
-    ).not.toContain("/teach/courses/course-1");
+    expect(groups.flatMap((g) => g.items.map((i) => i.href))).not.toContain(
+      "/teach/courses/course-1",
+    );
   });
 
   it("still marks exactly one destination with the strip present", () => {
@@ -707,7 +763,7 @@ describe("staffSectionTabGroups", () => {
     for (const path of [
       "/teach/sections/sec-1/roster",
       "/teach/courses/course-1/responses",
-      "/sections/sec-1/qa",
+      "/courses/course-1/qa",
     ]) {
       expect(activeHrefs(staffSectionTabGroups(a, path)).length, path).toBe(1);
     }
@@ -735,7 +791,6 @@ describe("staffSectionTabGroups", () => {
     expect(groups.map((g) => g.label)).toEqual([
       FORMS_GROUP,
       "Weekly review",
-      "Reports",
       "Setup",
     ]);
     // And ONE Setup heading, with course scope leading section scope inside
@@ -749,13 +804,77 @@ describe("staffSectionTabGroups", () => {
     ]);
   });
 
+  it("builds a multi-section assistant's course navigation from effective permissions", () => {
+    const groups = courseTabGroups(
+      "course-1",
+      "/teach/courses/course-1/backlog",
+      {},
+      null,
+      {
+        hasCourseStanding: false,
+        permissions: perms({
+          reviewResponses: true,
+          draftPublicAnswers: true,
+        }),
+      },
+    );
+    const hrefs = groups.flatMap((group) =>
+      group.items.map((item) => item.href),
+    );
+
+    expect(hrefs).toContain("/teach/courses/course-1/responses");
+    expect(hrefs).toContain("/teach/courses/course-1/backlog");
+    expect(hrefs).toContain("/courses/course-1/qa");
+    expect(hrefs).not.toContain("/teach/courses/course-1");
+    expect(hrefs).not.toContain("/teach/courses/course-1/sections");
+    expect(hrefs).not.toContain("/teach/courses/course-1/staff");
+  });
+
+  it("offers course-scoped Participation to a multi-section exporter", () => {
+    const groups = courseTabGroups(
+      "course-1",
+      "/teach/courses/course-1/participation",
+      {},
+      null,
+      {
+        hasCourseStanding: false,
+        permissions: perms({ exportParticipation: true }),
+      },
+    );
+    expect(
+      groups.flatMap((group) => group.items).map((item) => item.href),
+    ).toContain("/teach/courses/course-1/participation");
+  });
+
+  it("hides Question Backlog when an assistant has no backlog capability", () => {
+    const groups = courseTabGroups(
+      "course-1",
+      "/courses/course-1/qa",
+      {},
+      null,
+      {
+        hasCourseStanding: false,
+        permissions: perms({ reviewResponses: true }),
+      },
+    );
+    const hrefs = groups.flatMap((group) =>
+      group.items.map((item) => item.href),
+    );
+
+    expect(hrefs).not.toContain("/teach/courses/course-1/backlog");
+    expect(hrefs).toContain("/courses/course-1/qa");
+  });
+
   it("marks active across every group at once, not per group", () => {
     const a = access({
       permissions: { viewStudentIdentities: true, exportParticipation: true },
     });
-    const groups = staffSectionTabGroups(a, "/teach/sections/sec-1/participation");
-    expect(activeHrefs(groups)).toEqual([
+    const groups = staffSectionTabGroups(
+      a,
       "/teach/sections/sec-1/participation",
+    );
+    expect(activeHrefs(groups)).toEqual([
+      "/teach/courses/course-1/participation",
     ]);
   });
 });
@@ -765,31 +884,46 @@ describe("studentSectionTabs", () => {
     for (const path of [
       "/sections/sec-1",
       "/sections/sec-1/history",
-      "/sections/sec-1/qa",
+      "/courses/course-1/qa",
     ]) {
-      expect(studentSectionTabs("sec-1", path).map((t) => t.label)).toEqual([
-        "This week's form",
-        "My submissions",
-        "Class Q&A",
-      ]);
+      expect(
+        studentSectionTabs("sec-1", "course-1", path).map((t) => t.label),
+      ).toEqual(["This week's form", "My submissions", "Class Q&A"]);
     }
+  });
+
+  /**
+   * Two of the three are the SECTION's; Class Q&A is the COURSE's one archive
+   * (ADR-0005), so it is addressed at course scope even though it is listed
+   * beside them.
+   */
+  it("addresses Class Q&A at course scope", () => {
+    expect(
+      studentSectionTabs("sec-1", "course-1", "/sections/sec-1").map(
+        (t) => t.href,
+      ),
+    ).toEqual([
+      "/sections/sec-1",
+      "/sections/sec-1/history",
+      "/courses/course-1/qa",
+    ]);
   });
 
   it("marks exactly one, and the right one", () => {
     const active = (path: string) =>
-      studentSectionTabs("sec-1", path)
+      studentSectionTabs("sec-1", "course-1", path)
         .filter((t) => t.active)
         .map((t) => t.href);
     expect(active("/sections/sec-1")).toEqual(["/sections/sec-1"]);
     expect(active("/sections/sec-1/history")).toEqual([
       "/sections/sec-1/history",
     ]);
-    expect(active("/sections/sec-1/qa")).toEqual(["/sections/sec-1/qa"]);
+    expect(active("/courses/course-1/qa")).toEqual(["/courses/course-1/qa"]);
   });
 
   it("marks Forms while a form instance is open", () => {
     expect(
-      studentSectionTabs("sec-1", "/forms/i1", {
+      studentSectionTabs("sec-1", "course-1", "/forms/i1", {
         activeHref: "/sections/sec-1",
       })
         .filter((t) => t.active)
@@ -813,7 +947,7 @@ describe("firstStaffSectionHref", () => {
 
   it("falls through to the archive when nothing else is granted", () => {
     expect(firstStaffSectionHref(access({ role: "ta" }))).toBe(
-      "/sections/sec-1/qa",
+      "/courses/course-1/qa",
     );
   });
 
@@ -837,35 +971,49 @@ describe("firstStaffSectionHref", () => {
       firstStaffSectionHref(
         access({ role: "ta", permissions: { exportParticipation: true } }),
       ),
-    ).toBe("/teach/sections/sec-1/participation");
+    ).toBe("/teach/courses/course-1/participation");
     expect(
       firstStaffSectionHref(
         access({ role: "ta", permissions: { draftPublicAnswers: true } }),
       ),
-    ).toBe("/teach/sections/sec-1/publications");
+    ).toBe("/teach/courses/course-1/backlog");
   });
 
-  /**
-   * And it resolves a SECTION, never the course it belongs to — the flat list
-   * it reads excludes the course strip for exactly this reason.
-   */
-  it("resolves a section, not the course a reader also holds", () => {
+  /** Participation is course-scoped, even when the reader also holds the
+   * course and the source report itself remains section-derived. */
+  it("resolves course-scoped participation for a course-standing reader", () => {
     const href = firstStaffSectionHref(
       access({
         hasCourseStanding: true,
-        permissions: { viewStudentIdentities: true },
+        /* `exportParticipation` is what gives this reader a section
+           destination at all. Their class list is the course's INDEX — the
+           section roster is deliberately absent for a course-standing reader —
+           and since ADR-0005 the queue, backlog and archive are course-owned
+           too, so a reader holding only `viewStudentIdentities` now genuinely
+           has nothing inside the section. The property under test is that a
+           section destination OUTRANKS a course one, which needs one to exist. */
+        permissions: { viewStudentIdentities: true, exportParticipation: true },
       }),
     );
-    /**
-     * Asserted as a property rather than as one page. The reader holds the
-     * course, so their class list is the course's index and is deliberately
-     * absent from the section's own list — but whatever this resolves to must
-     * still be a destination INSIDE the section, never a course href, because
-     * the caller uses it to answer "/teach/sections/[id]".
-     */
-    expect(href).not.toBeNull();
-    expect(href).not.toContain("/teach/courses/");
-    expect(href).toContain("sec-1");
+    expect(href).toBe("/teach/courses/course-1/participation");
+  });
+
+  /**
+   * ...but a reader whose ONLY work is publishing has no section destination
+   * at all, because the queue, the backlog and the archive are course-owned
+   * (ADR-0005). Returning null for them would read as "no access" on a section
+   * they genuinely hold, so the course's destinations are the fallback.
+   */
+  it("falls back to the course's Question Backlog for a publish-only assistant", () => {
+    expect(
+      firstStaffSectionHref(
+        access({
+          role: "ta",
+          hasCourseStanding: false,
+          permissions: { publishPublicAnswers: true },
+        }),
+      ),
+    ).toBe("/teach/courses/course-1/backlog");
   });
 
   it("is null without staff standing, so the caller must refuse", () => {

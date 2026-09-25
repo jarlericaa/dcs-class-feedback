@@ -12,6 +12,7 @@ import {
 import {
   formInstances,
   formQuestions,
+  publicAnswerApprovals,
   publicAnswers,
   sourceLinks,
   studentSubmissionItems,
@@ -31,10 +32,11 @@ import {
   anonymityWarnings,
   draftPublicAnswer,
   getStudentHistory,
-  listSectionQa,
+  listCourseQa,
   publishNow,
   rewordPublicQuestion,
   schedulePublication,
+  submitPublicAnswerForApproval,
 } from "@/modules/publishing";
 import { publishDueAnswers } from "@/modules/publishing/publish";
 import { AuthzError } from "@/modules/authz";
@@ -103,7 +105,7 @@ describe("review + publishing + source links", () => {
   });
 
   it("merged public answer links every source; each asker sees 'answered'; archive stays anonymous", async () => {
-    const { teacher, section, cycle, question } = await fullSetup();
+    const { teacher, course, section, cycle, question } = await fullSetup();
     const a = await submitWithItem(
       section.id,
       teacher.id,
@@ -120,7 +122,7 @@ describe("review + publishing + source links", () => {
     );
 
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [a.studentItemId!, b.studentItemId!],
       publicQuestionText: "Several students asked: how does recursion work?",
       answerBody: "Recursion is when a function calls itself...",
@@ -148,7 +150,7 @@ describe("review + publishing + source links", () => {
     }
 
     // The class archive projection carries NO identity or source fields.
-    const archive = await listSectionQa(a.student.user.id, section.id);
+    const archive = await listCourseQa(a.student.user.id, course.id);
     expect(archive).toHaveLength(1);
     const entry = archive[0]! as Record<string, unknown>;
     expect(entry.question).toMatch(/Several students/);
@@ -165,7 +167,7 @@ describe("review + publishing + source links", () => {
    * a public statement to them. The answerer is staff putting their name to it.
    */
   it("names the staff member who answered, and still hides the asker", async () => {
-    const { section, cycle, question } = await fullSetup();
+    const { course, section, cycle, question } = await fullSetup();
     const publisher = await makeUser({
       isTeacher: true,
       displayName: "Maria Santos",
@@ -180,14 +182,14 @@ describe("review + publishing + source links", () => {
     );
 
     const answer = await draftPublicAnswer(publisher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [asker.studentItemId!],
       publicQuestionText: "When is the practice set available?",
       answerBody: "Friday.",
     });
     await publishNow(publisher.id, answer.id, { anonymityAcknowledged: true });
 
-    const archive = await listSectionQa(asker.student.user.id, section.id);
+    const archive = await listCourseQa(asker.student.user.id, course.id);
     expect(archive).toHaveLength(1);
     expect(archive[0]!.answers[0]!.answeredByName).toBe("Maria Santos");
 
@@ -214,7 +216,7 @@ describe("review + publishing + source links", () => {
    * copy needs revisiting.
    */
   it("refuses to strip the author from a published answer", async () => {
-    const { teacher, section, cycle, question } = await fullSetup();
+    const { teacher, course, section, cycle, question } = await fullSetup();
     const asker = await submitWithItem(
       section.id,
       teacher.id,
@@ -223,7 +225,7 @@ describe("review + publishing + source links", () => {
       "Who wrote this?",
     );
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [asker.studentItemId!],
       publicQuestionText: "Who wrote this?",
       answerBody: "Nobody in particular.",
@@ -246,7 +248,7 @@ describe("review + publishing + source links", () => {
   });
 
   it("groups separately published answers with the same public question", async () => {
-    const { teacher, section, cycle, question } = await fullSetup();
+    const { teacher, course, section, cycle, question } = await fullSetup();
     const a = await submitWithItem(
       section.id,
       teacher.id,
@@ -263,7 +265,7 @@ describe("review + publishing + source links", () => {
     );
 
     const first = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [a.studentItemId!],
       publicQuestionText: "What is the integral of x^3?",
       answerBody: "Use the power rule.",
@@ -271,7 +273,7 @@ describe("review + publishing + source links", () => {
     await publishNow(teacher.id, first.id, { anonymityAcknowledged: true });
 
     const second = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [b.studentItemId!],
       publicQuestionText: "  what is the integral of x^3?  ",
       answerBody: "Integrate term by term.",
@@ -282,11 +284,11 @@ describe("review + publishing + source links", () => {
 
     expect(
       await db.query.publicAnswers.findMany({
-        where: eq(publicAnswers.sectionId, section.id),
+        where: eq(publicAnswers.courseId, course.id),
       }),
     ).toHaveLength(2);
     expect(await db.query.sourceLinks.findMany()).toHaveLength(2);
-    const archive = await listSectionQa(a.student.user.id, section.id);
+    const archive = await listCourseQa(a.student.user.id, course.id);
     expect(archive).toHaveLength(1);
     expect(archive[0]!.answers).toHaveLength(2);
     expect(archive[0]!.answers.map((answer) => answer.answer)).toEqual([
@@ -295,13 +297,16 @@ describe("review + publishing + source links", () => {
     ]);
 
     for (const student of [a, b]) {
-      const history = await getStudentHistory(student.student.user.id, section.id);
+      const history = await getStudentHistory(
+        student.student.user.id,
+        section.id,
+      );
       expect(history[0]!.items[0]!.status).toBe("answered");
     }
   });
 
   it("rewording updates the public text only; the original student wording is immutable", async () => {
-    const { teacher, section, cycle, question } = await fullSetup();
+    const { teacher, course, section, cycle, question } = await fullSetup();
     const a = await submitWithItem(
       section.id,
       teacher.id,
@@ -310,7 +315,7 @@ describe("review + publishing + source links", () => {
       "my ORIGINAL words",
     );
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [a.studentItemId!],
       publicQuestionText: "first public wording",
       answerBody: "answer",
@@ -328,7 +333,7 @@ describe("review + publishing + source links", () => {
   });
 
   it("drafts and scheduled answers are invisible to students; scheduled publish is idempotent", async () => {
-    const { teacher, section, cycle, question } = await fullSetup();
+    const { teacher, course, section, cycle, question } = await fullSetup();
     const a = await submitWithItem(
       section.id,
       teacher.id,
@@ -337,14 +342,14 @@ describe("review + publishing + source links", () => {
       "question A",
     );
     const answer = await draftPublicAnswer(teacher.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [a.studentItemId!],
       publicQuestionText: "public Q",
       answerBody: "body",
     });
 
     // Draft: not in archive, student sees plain "submitted".
-    expect(await listSectionQa(a.student.user.id, section.id)).toHaveLength(0);
+    expect(await listCourseQa(a.student.user.id, course.id)).toHaveLength(0);
     let history = await getStudentHistory(a.student.user.id, section.id);
     expect(history[0]!.items[0]!.status).toBe("submitted");
 
@@ -354,12 +359,12 @@ describe("review + publishing + source links", () => {
       new Date("2026-01-07T00:00:00Z"),
       { anonymityAcknowledged: true },
     );
-    expect(await listSectionQa(a.student.user.id, section.id)).toHaveLength(0);
+    expect(await listCourseQa(a.student.user.id, course.id)).toHaveLength(0);
 
     // Due publication publishes exactly once (idempotent re-run).
     expect(await publishDueAnswers(new Date("2026-01-07T01:00:00Z"))).toBe(1);
     expect(await publishDueAnswers(new Date("2026-01-07T02:00:00Z"))).toBe(0);
-    const archive = await listSectionQa(a.student.user.id, section.id);
+    const archive = await listCourseQa(a.student.user.id, course.id);
     expect(archive).toHaveLength(1);
     expect(archive[0]!.category).toBe("misc");
     history = await getStudentHistory(a.student.user.id, section.id);
@@ -401,7 +406,7 @@ describe("review + publishing + source links", () => {
   });
 
   it("unauthorized users cannot draft/publish/list; TA flags gate publishing", async () => {
-    const { teacher, section, cycle, question } = await fullSetup();
+    const { teacher, course, section, cycle, question } = await fullSetup();
     const a = await submitWithItem(
       section.id,
       teacher.id,
@@ -413,7 +418,7 @@ describe("review + publishing + source links", () => {
 
     await expect(
       draftPublicAnswer(outsiderTeacher.id, {
-        sectionId: section.id,
+        courseId: course.id,
         itemIds: [a.studentItemId!],
         publicQuestionText: "x",
       }),
@@ -424,7 +429,7 @@ describe("review + publishing + source links", () => {
       draftPublicAnswers: true, // but NOT publishPublicAnswers
     });
     const answer = await draftPublicAnswer(ta.id, {
-      sectionId: section.id,
+      courseId: course.id,
       itemIds: [a.studentItemId!],
       publicQuestionText: "reworded",
       answerBody: "body",
@@ -433,6 +438,152 @@ describe("review + publishing + source links", () => {
       publishNow(ta.id, answer.id, { anonymityAcknowledged: true }),
     ).rejects.toBeInstanceOf(AuthzError);
     await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true }); // teacher may
+  });
+
+  it("requires Instructor approval before an SA-authored answer can publish or schedule", async () => {
+    const { teacher, course, section, cycle, question } = await fullSetup();
+    const submission = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "Can we see another example?",
+    );
+    const assistant = await makeUser();
+    await addSectionStaff(section.id, assistant.id, "ta", {
+      draftPublicAnswers: true,
+      publishPublicAnswers: true,
+      schedulePublication: true,
+    });
+    const answer = await draftPublicAnswer(assistant.id, {
+      courseId: course.id,
+      itemIds: [submission.studentItemId!],
+      publicQuestionText: "Can we see another example?",
+      answerBody: "Yes. We will add one after class.",
+    });
+
+    await expect(
+      publishNow(assistant.id, answer.id, { anonymityAcknowledged: true }),
+    ).rejects.toBeInstanceOf(AuthzError);
+    await expect(
+      schedulePublication(
+        assistant.id,
+        answer.id,
+        new Date(Date.now() + 86_400_000),
+        { anonymityAcknowledged: true },
+      ),
+    ).rejects.toBeInstanceOf(AuthzError);
+
+    await submitPublicAnswerForApproval(assistant.id, answer.id);
+    expect(
+      await db.query.publicAnswers.findFirst({
+        where: eq(publicAnswers.id, answer.id),
+      }),
+    ).toMatchObject({
+      state: "awaiting_approval",
+      submittedByUserId: assistant.id,
+      approvedAt: null,
+    });
+    expect(
+      await db.query.publicAnswerApprovals.findMany({
+        where: eq(publicAnswerApprovals.publicAnswerId, answer.id),
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        decision: "requested",
+        actorUserId: assistant.id,
+      }),
+    ]);
+
+    await publishNow(teacher.id, answer.id, { anonymityAcknowledged: true });
+    expect(
+      await db.query.publicAnswers.findFirst({
+        where: eq(publicAnswers.id, answer.id),
+      }),
+    ).toMatchObject({
+      state: "published",
+      approvedByUserId: teacher.id,
+    });
+    expect(
+      (
+        await db.query.publicAnswerApprovals.findMany({
+          where: eq(publicAnswerApprovals.publicAnswerId, answer.id),
+        })
+      ).map((row) => row.decision),
+    ).toEqual(["requested", "approved"]);
+  });
+
+  it("lets an SA with publish permission publish an Instructor-authored draft", async () => {
+    const { teacher, course, section, cycle, question } = await fullSetup();
+    const submission = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "Will examples be posted?",
+    );
+    const answer = await draftPublicAnswer(teacher.id, {
+      courseId: course.id,
+      itemIds: [submission.studentItemId!],
+      publicQuestionText: "Will examples be posted?",
+      answerBody: "Yes, after the lecture.",
+    });
+    const assistant = await makeUser();
+    await addSectionStaff(section.id, assistant.id, "ta", {
+      draftPublicAnswers: true,
+      publishPublicAnswers: true,
+    });
+
+    await expect(
+      submitPublicAnswerForApproval(assistant.id, answer.id),
+    ).rejects.toThrow(/does not require Instructor approval/);
+    await publishNow(assistant.id, answer.id, { anonymityAcknowledged: true });
+    expect(
+      await db.query.publicAnswers.findFirst({
+        where: eq(publicAnswers.id, answer.id),
+      }),
+    ).toMatchObject({ state: "published", approvedAt: null });
+  });
+
+  it("does not let reconciliation publish an unapproved SA-authored schedule", async () => {
+    const { teacher, course, section, cycle, question } = await fullSetup();
+    const submission = await submitWithItem(
+      section.id,
+      teacher.id,
+      cycle.id,
+      question.id,
+      "Will this be in the reviewer?",
+    );
+    const assistant = await makeUser();
+    await addSectionStaff(section.id, assistant.id, "ta", {
+      draftPublicAnswers: true,
+      schedulePublication: true,
+    });
+    const answer = await draftPublicAnswer(assistant.id, {
+      courseId: course.id,
+      itemIds: [submission.studentItemId!],
+      publicQuestionText: "Will this be in the reviewer?",
+      answerBody: "Yes.",
+    });
+    // Simulate a legacy/pre-fix scheduled row. The reconciler is a second
+    // authorization boundary and must fail closed even if a caller bypassed
+    // the scheduling service in an older build.
+    await db
+      .update(publicAnswers)
+      .set({ state: "scheduled", scheduledAt: new Date(Date.now() - 1_000) })
+      .where(eq(publicAnswers.id, answer.id));
+
+    await expect(publishDueAnswers(new Date())).resolves.toBe(0);
+    expect(
+      await db.query.publicAnswers.findFirst({
+        where: eq(publicAnswers.id, answer.id),
+      }),
+    ).toMatchObject({
+      state: "scheduled",
+      publishFailed: true,
+      publishFailureReason:
+        "Instructor approval is required before publication",
+    });
   });
 
   it("review list masks identity for TAs without viewStudentIdentities", async () => {
