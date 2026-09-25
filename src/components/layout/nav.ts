@@ -232,7 +232,6 @@ export function primaryNav(
         : [{ href: "/", label: "Overview", icon: "overview" }];
   if (input.isPlatformAdmin) {
     workspace.push(
-      { href: "/admin/overview", label: "Overview", icon: "overview" },
       { href: "/admin", label: "Accounts", icon: "admin" },
       { href: "/admin/audit", label: "Audit log", icon: "audit" },
     );
@@ -330,7 +329,6 @@ export function primaryNav(
 /** Static rail for the credential-backed Platform Admin principal. */
 export function platformAdminNav(currentPath: string): NavGroup[] {
   const items: NavItem[] = [
-    { href: "/admin/overview", label: "Overview", icon: "overview" },
     { href: "/admin", label: "Accounts", icon: "admin" },
     { href: "/admin/audit", label: "Audit log", icon: "audit" },
   ];

@@ -1,4 +1,6 @@
 /** Secure local operator tool for credential-backed Platform Admins. */
+import { createInterface } from "node:readline/promises";
+
 async function main() {
   try { process.loadEnvFile(); } catch { /* environment may already be loaded */ }
   const { createPlatformAdminAccount, changePlatformAdminPassword, normalizePlatformAdminUsername } = await import("../src/modules/platform-admin/credentials");
@@ -23,22 +25,13 @@ async function main() {
   }
 }
 
-function prompt(question: string): Promise<string> {
-  process.stdout.write(question);
-  return new Promise((resolve) => {
-    let value = "";
-    const onData = (chunk: Buffer) => {
-      const text = chunk.toString();
-      if (text.includes("\n") || text.includes("\r")) {
-        process.stdin.off("data", onData);
-        process.stdout.write("\n");
-        resolve(value.trim());
-      } else {
-        value += text;
-      }
-    };
-    process.stdin.on("data", onData);
-  });
+async function prompt(question: string): Promise<string> {
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await readline.question(question)).trim();
+  } finally {
+    readline.close();
+  }
 }
 
 function promptSecret(question: string): Promise<string> {
