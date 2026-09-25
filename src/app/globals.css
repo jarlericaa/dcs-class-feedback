@@ -1,5 +1,5 @@
 /**
- * Class Feedback — the departmental noticeboard.
+ * Forms — the departmental noticeboard.
  *
  * One stylesheet, one system. The authority for everything in it is DESIGN.md
  * at the repository root; read that first. In short:
@@ -11,7 +11,7 @@
  *     links, active navigation, focus, a checked choice, a positive state.
  *     Amber and red are signals held in reserve. The accent is never a
  *     decorative container, a tinted input stroke, an icon colour or a brand
- *     fill — the interface belongs to Class Feedback, not to an institution;
+ *     fill — the interface belongs to Forms, not to an institution;
  *   - status as a text-only stamp: a word reinforced by tone, never colour alone;
  *   - borders carry the structure; nothing has a resting shadow;
  *   - chrome that works before hydration (<details> drawer, filter and

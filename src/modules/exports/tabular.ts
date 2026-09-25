@@ -58,7 +58,7 @@ function safeSheetName(name: string): string {
  */
 export async function toXlsxBuffer(sheets: Sheet[]): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Class Feedback";
+  workbook.creator = "Forms";
   for (const sheet of sheets) {
     const worksheet = workbook.addWorksheet(safeSheetName(sheet.name));
     worksheet.addRow(sheet.header.map((h) => neutralizeFormula(h)));

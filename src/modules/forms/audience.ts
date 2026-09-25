@@ -17,6 +17,7 @@ import {
   type AuthzOptions,
   type SectionPermission,
 } from "@/modules/authz";
+import { assertMutationAllowed } from "@/lib/impersonation";
 
 /**
  * Form audiences: who may receive a form, and what that means for access.
@@ -144,6 +145,7 @@ export async function setInstanceAudience(
   instanceId: string,
   sectionIds: string[],
 ) {
+  await assertMutationAllowed();
   if (sectionIds.length === 0) {
     throw new AudienceError("A form instance must target at least one section.");
   }

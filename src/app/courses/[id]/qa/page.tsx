@@ -99,7 +99,7 @@ export default async function QaArchivePage({
           user={toShellUser(user)}
           workspace={user.isTeacher ? "staff" : "student"}
           navGroups={await primaryNavFor(user, base)}
-          contextLabel="Class Feedback"
+          contextLabel="Forms"
           title="Class Q&A"
         >
           <AccessDenied what="this course's Class Q&A" />
@@ -118,7 +118,7 @@ export default async function QaArchivePage({
         user={toShellUser(user)}
         workspace={user.isTeacher ? "staff" : "student"}
         navGroups={await primaryNavFor(user, base)}
-        contextLabel="Class Feedback"
+        contextLabel="Forms"
         title="Class Q&A"
       >
         <AccessDenied what="this course's Class Q&A" />

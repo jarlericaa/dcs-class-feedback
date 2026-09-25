@@ -116,7 +116,7 @@ export default async function StudentSubmissionsPage({
                             className="font-semibold text-accent-deep underline decoration-1 underline-offset-2 hover:decoration-2"
                             href={`/courses/${courseId}/submissions/${entry.instanceId}`}
                           >
-                            {entry.formLabel ?? "Class feedback"}
+                            {entry.formLabel ?? "Form"}
                           </Link>
                           <MetaList items={[entry.sequenceLabel]} />
                         </span>

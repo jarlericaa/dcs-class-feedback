@@ -15,16 +15,16 @@ async function main() {
   // Dynamic imports so .env is loaded before src/env.ts parses process.env
   // (static imports would hoist above loadEnvFile).
   const { db } = await import("../src/db");
-  const { classSections, courses, courseStaff, sectionStaff, users } =
+  const { classSections, courses, courseStaff, sectionStaff, users, platformAdminAccounts } =
     await import("../src/db/schema");
   const { and, desc, eq, inArray, isNull } = await import("drizzle-orm");
   const { env } = await import("../src/env");
+  const { hashPlatformAdminPassword } = await import("../src/modules/platform-admin/credentials");
 
   async function upsertUser(u: {
     email: string;
     displayName: string;
     isTeacher?: boolean;
-    isPlatformAdmin?: boolean;
   }) {
     const existing = await db.query.users.findFirst({
       where: eq(users.email, u.email),
@@ -36,17 +36,23 @@ async function main() {
         email: u.email,
         displayName: u.displayName,
         isTeacher: u.isTeacher ?? false,
-        isPlatformAdmin: u.isPlatformAdmin ?? false,
       })
       .returning();
     return row!;
   }
 
-  const admin = await upsertUser({
-    email: "admin@up.edu.ph",
-    displayName: "Platform Admin",
-    isPlatformAdmin: true,
+  const bootstrapPassword = process.env.DEV_PLATFORM_ADMIN_PASSWORD;
+  const existingAdmin = await db.query.platformAdminAccounts.findFirst({
+    where: eq(platformAdminAccounts.username, "admin"),
   });
+  const admin = existingAdmin ?? (bootstrapPassword
+    ? (await db.insert(platformAdminAccounts).values({
+        username: "admin",
+        displayName: "Platform Admin",
+        passwordHash: await hashPlatformAdminPassword(bootstrapPassword),
+        passwordChangedAt: new Date(),
+      }).returning())[0]
+    : null);
   const teacher = await upsertUser({
     email: "teacher@up.edu.ph",
     displayName: "Teacher Demo",
@@ -949,7 +955,7 @@ async function main() {
   });
 
   console.log("Seed complete:", {
-    admin: admin.email,
+    admin: admin ? `${admin.displayName} (${admin.username})` : "not bootstrapped (set DEV_PLATFORM_ADMIN_PASSWORD)",
     teacher: teacher.email,
     ta: ta.email,
     student: "student@up.edu.ph (Juan Dela Cruz, 2026-00001 — Lab A, no claim step)",

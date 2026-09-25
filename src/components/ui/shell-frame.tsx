@@ -54,10 +54,10 @@ export function ShellFrame({
             showed a green mark and the page that replaced it a maroon one —
             a flash of the wrong brand on every slow navigation. */}
         <span className="grid size-7 place-items-center rounded-control bg-red-deep text-stamp font-bold text-paper">
-          cf
+          f
         </span>
         <span className="text-ui-sm font-semibold text-ink">
-          Class Feedback
+          Forms
         </span>
       </header>
 

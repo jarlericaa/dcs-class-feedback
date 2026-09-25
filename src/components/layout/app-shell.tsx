@@ -4,6 +4,8 @@ import { WorkspaceShell, type ShellUser } from "./workspace-shell";
 import { SubNav } from "./sub-nav";
 import { Breadcrumbs } from "@/components/ui";
 import type { NavGroup, NavItem } from "./nav";
+import { getImpersonationContext } from "@/lib/impersonation";
+import { stopImpersonationAction } from "@/app/admin/actions";
 
 /**
  * Single-column pages (the weekly form, history, setup, participation, admin,
@@ -25,7 +27,7 @@ const WORKSPACE_LABEL: Record<Workspace, string | undefined> = {
   home: "Your workspace",
 };
 
-export function AppShell({
+export async function AppShell({
   children,
   user,
   workspace,
@@ -122,6 +124,7 @@ export function AppShell({
         ]
       : null;
   const workspaceLabel = WORKSPACE_LABEL[workspace];
+  const impersonation = await getImpersonationContext();
 
   return (
     <WorkspaceShell
@@ -140,6 +143,14 @@ export function AppShell({
         the top of the content column is the right place for them.
       */
     >
+      {impersonation && (
+        <div className="mb-4 flex items-center justify-between gap-4 border border-accent/40 bg-accent-wash px-4 py-3 text-ui-sm" role="status">
+          <p className="m-0"><strong>Viewing as {user.displayName}</strong> · Read-only support session</p>
+          <form action={stopImpersonationAction}>
+            <button className="text-ui-sm font-semibold text-accent-deep underline underline-offset-2" type="submit">Stop impersonating</button>
+          </form>
+        </div>
+      )}
       {(title || description || actions || breadcrumbs) && (
         <div className={cn("page-head", roomy && "mb-12")}>
           <div className="page-head__text">

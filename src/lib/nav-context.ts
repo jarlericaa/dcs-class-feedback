@@ -75,7 +75,7 @@ const loadNavSections = cache(async (userId: string) => {
 });
 
 export async function primaryNavFor(
-  user: Pick<SessionUser, "id" | "isTeacher" | "isPlatformAdmin">,
+  user: Pick<SessionUser, "id" | "isTeacher">,
   currentPath: string,
   opts: {
     /**
@@ -92,7 +92,9 @@ export async function primaryNavFor(
     currentPath,
     {
       isTeacher: user.isTeacher,
-      isPlatformAdmin: user.isPlatformAdmin,
+      // Platform Admins have a separate principal and never reach this
+      // normal-user navigation builder. The legacy users flag is inert.
+      isPlatformAdmin: false,
       courses,
       studentSections,
       studentCourses,

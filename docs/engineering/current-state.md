@@ -173,10 +173,10 @@ Not present:
 | `npm run typecheck` | **Pass** |
 | `npm test` | **Pass** — **213 unit tests in 14 tracked files.** A local run also picks up an untracked `tests/unit/form-errors.test.ts` (6 tests), giving 219 in 15 files; **213 is the reproducible number for a clean checkout** |
 | `npm run test:integration` | **Pass** — 22 files, **388** integration tests. Run with an explicit local Postgres URL rather than the Compose default: `TEST_DATABASE_URL=postgres://feedback:feedback@127.0.0.1:5432/feedback_test npm run test:integration` |
-| `npm run build` | **Pass** — 26 application routes (29 build entries, including `/_not-found` and the two `/api` handlers) |
+| `npm run build` | **Pass** — includes the Platform Admin Accounts and Audit log routes |
 | `bash scripts/verify/http-matrix.sh` | **Pass** — 133 checks against a seeded database, including the negative-authorization cases |
 | `impeccable detect` | **Pass** — 0 findings across `src/` |
-| Migrations, clean database | **Pass** — `0000` → `0006` from an empty schema |
+| Migrations, clean database | **Pass** — `0000` → `0010` from an empty schema |
 | Migrations, existing database | **Pass** — `0006` applied over a live `0000`–`0005` schema |
 | `npm run test:e2e` | **Not implemented** |
 | Backup/restore verification | **Not implemented** |
@@ -207,13 +207,28 @@ drizzle's migrator wraps all pending files in one transaction:
    review column (GitHub issue #6). Additive and reversible: nothing is added to
    an existing table and no data is touched, so an older build runs unchanged
    against this schema and `DROP TABLE "response_reads"` is a complete rollback.
-7. `0000`–`0006` are the migrations that exist today. The student-number
+7. `0000`–`0012` are the migrations that exist today. The student-number
    plaintext column is still present and nullable: run
    `npm run db:backfill:student-numbers` (idempotent; refuses to finish unless it
    can prove there are no unsealed rows, no hash collisions, and that a sample
    decrypts correctly), then drop the column in a **follow-up migration after the
    backfill, applied as its own `db:migrate` run**. That migration has not been
    written yet; the script prints the exact steps.
+8. `0010_teacher_access_grants` adds the email-keyed, revocable Teacher
+   capability. Existing `users.is_teacher = true` rows are backfilled as active
+   grants except accounts already carrying a Student Assistant assignment; the
+   migration creates no fake users and emits no synthetic user-facing audit
+   events. `0011_platform_admin_identity` adds the separate username/password
+   Platform Admin identity and audit actor, while leaving the historical
+   `users.is_platform_admin` flag inert. `0012_audit_actor_invariant` enforces
+   that an audit row cannot name both human actor types.
+
+The running Platform Admin surface includes server-paginated Accounts,
+email-first Teacher access (including pending first-sign-in grants), reversible
+normal-account deactivation, signed read-only support impersonation, and a
+platform-wide human-readable Audit log backed by the existing `audit_events`
+table. Platform Admin authentication is a separate username/password realm;
+admins have no email or Google identity and bootstrap through the operator CLI.
 
 ## Immediate next work
 

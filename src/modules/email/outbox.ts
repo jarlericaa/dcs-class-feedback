@@ -25,6 +25,7 @@ import { formatDeadline } from "@/lib/datetime";
 import { getInstanceAudience } from "@/modules/forms/audience";
 import { buildEmail, type EmailEvent, type TemplateContext } from "./templates";
 import { getEmailProvider } from "./index";
+import { assertMutationAllowed } from "@/lib/impersonation";
 
 /**
  * Idempotent email outbox (docs/product/specification.md §12: "safe retry behavior that does
@@ -73,6 +74,7 @@ export async function enqueueEmail(
   dbx: DbOrTx,
   input: EnqueueInput,
 ): Promise<boolean> {
+  await assertMutationAllowed();
   const built = buildEmail(input.eventType, input.context);
   const inserted = await dbx
     .insert(emailOutbox)

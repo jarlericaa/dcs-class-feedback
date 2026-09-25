@@ -15,7 +15,7 @@ import type { ShellUser } from "./workspace-shell";
  * that the previous rail did not:
  *
  * **The sidebar owns navigation; the header owns identity.** The rail carries no
- * product mark, no "Class Feedback", no workspace name at the top — §1 and §16
+ * product mark, no "Forms", no workspace name at the top — §1 and §16
  * are explicit, and the header already says all three. What the rail keeps at
  * the bottom is the *account*, because §10 puts the profile there.
  *
@@ -141,7 +141,7 @@ export function Rail({
             )}
           >
             {workspaceLabel && <span>{workspaceLabel}</span>}
-            <span className="wrap-anywhere">{user.email}</span>
+            <span className="wrap-anywhere">{user.email ?? user.username}</span>
           </span>
         </div>
 

@@ -223,13 +223,19 @@ export function primaryNav(
     input.isTeacher || input.courses.length > 0 || input.assistedSections.length > 0;
   const studentCourses = input.studentCourses ?? [];
   const hasStudentCourses = studentCourses.length > 0;
-  const workspace: NavItem[] = hasStaffDestinations
+  const workspace: NavItem[] = input.isPlatformAdmin
     ? []
-    : hasStudentCourses
+    : hasStaffDestinations
       ? []
-      : [{ href: "/", label: "Overview", icon: "overview" }];
+      : hasStudentCourses
+        ? []
+        : [{ href: "/", label: "Overview", icon: "overview" }];
   if (input.isPlatformAdmin) {
-    workspace.push({ href: "/admin", label: "Platform admin", icon: "admin" });
+    workspace.push(
+      { href: "/admin/overview", label: "Overview", icon: "overview" },
+      { href: "/admin", label: "Accounts", icon: "admin" },
+      { href: "/admin/audit", label: "Audit log", icon: "audit" },
+    );
   }
 
   const groups: NavGroup[] = workspace.length
@@ -319,6 +325,16 @@ export function primaryNav(
   }
 
   return markGroups(groups, currentPath, opts.fallbackHref);
+}
+
+/** Static rail for the credential-backed Platform Admin principal. */
+export function platformAdminNav(currentPath: string): NavGroup[] {
+  const items: NavItem[] = [
+    { href: "/admin/overview", label: "Overview", icon: "overview" },
+    { href: "/admin", label: "Accounts", icon: "admin" },
+    { href: "/admin/audit", label: "Audit log", icon: "audit" },
+  ];
+  return [{ label: "Workspace", items: mark(items, currentPath) }];
 }
 
 /**

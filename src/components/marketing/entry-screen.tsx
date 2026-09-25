@@ -1,185 +1,125 @@
-import { SubmitButton } from "@/components/ui/submit-button";
-import { redirect, unstable_rethrow } from "next/navigation";
-import { signIn } from "@/auth";
-import { env } from "@/env";
-import { Alert } from "@/components/ui";
-import { IconCheck } from "@/components/ui/icons";
-import { Field } from "@/components/ui/form";
+"use client";
 
-/**
- * The signed-out front door, shared by `/` and `/signin`.
- *
- * One posted notice on the board: what this is, who may come in, what happens
- * to what you write, and the way in. Not a marketing funnel — there is nothing
- * to sell here, and everything to be clear about, because a student decides
- * whether to trust the anonymity promise before they ever sign in.
- *
- * The terms below describe what the system actually does. Never state a
- * stronger anonymity guarantee than the product provides.
- */
-export function EntryScreen({ error }: { error?: string }) {
-  const googleConfigured = !!(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
-  const domains = env.allowedEmailDomains;
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Alert } from "@/components/ui";
+import { Field } from "@/components/ui/form";
+import { SubmitButton } from "@/components/ui/submit-button";
+import {
+  devLoginAction,
+  googleSignInAction,
+  platformAdminSignInAction,
+} from "@/app/signin/actions";
+
+type LoginMode = "google" | "admin";
+
+function errorMessage(error?: string) {
+  if (error === "AccessDenied") return "That Google account is not allowed to sign in.";
+  if (error === "CredentialsSignin") return "Incorrect username or password.";
+  if (error === "DevLogin") return "No active development account matches that email.";
+  if (error === "Google") return "Google sign-in could not be completed. Try again.";
+  return error ? "Sign-in could not be completed. Try again." : null;
+}
+
+/** One quiet, shared signed-out front door for `/` and `/signin`. */
+export function EntryScreen({
+  error,
+  initialMode = "google",
+  googleConfigured = false,
+  devAuthEnabled = false,
+}: {
+  error?: string;
+  initialMode?: LoginMode;
+  googleConfigured?: boolean;
+  devAuthEnabled?: boolean;
+}) {
+  const router = useRouter();
+  const [mode, setMode] = useState<LoginMode>(initialMode);
+  const message = errorMessage(error);
+  const switchMode = (nextMode: LoginMode) => {
+    setMode(nextMode);
+    router.replace(nextMode === "admin" ? "/signin?method=admin" : "/signin", { scroll: false });
+  };
 
   return (
-    <div className="entry">
-      <div className="entry__mast">
-        <span className="ws-brand__mark" aria-hidden="true">
-          cf
-        </span>
-        <span className="ws-brand__name">Class Feedback</span>
-      </div>
+    <main className="grid min-h-dvh place-items-start bg-board px-4 py-16 text-ink sm:place-items-center sm:py-20">
+      <div className="w-full max-w-[29rem]">
+        <p className="m-0 text-left text-xl font-bold tracking-[-0.03em]">Forms</p>
+        <h1 className="m-0 mt-10 text-left font-document text-headline font-bold">
+          Log in
+        </h1>
 
-      <main className="entry__sheet" id="main-content">
-        <div className="entry__grid">
-          <section className="entry__about">
-            <h1>Say what would help this week.</h1>
-            <p className="entry__lede">
-              One short form per class, every week. Your teaching team reads it,
-              replies to you privately, and publishes the answers the whole
-              class needs — without your name attached.
-            </p>
-
-            <ul className="entry__terms">
-              <li>
-                <IconCheck size={15} />
-                <span>
-                  Only your teaching team can see who wrote a submission.
-                  Classmates never can.
-                </span>
-              </li>
-              <li>
-                <IconCheck size={15} />
-                <span>
-                  Answers published to the class are anonymous, and your
-                  original wording is never shown — staff rewrite the question
-                  before it goes up.
-                </span>
-              </li>
-              <li>
-                <IconCheck size={15} />
-                <span>
-                  Nothing here is on the public internet. Each class section
-                  sees only its own archive.
-                </span>
-              </li>
-              <li>
-                <IconCheck size={15} />
-                {/* This said a submitted form can never be edited, which the
-                    product does not do: a week stays editable until its
-                    deadline. Overstating a restriction is as much a broken
-                    promise as overstating the anonymity. */}
-                <span>
-                  You can keep editing a week&apos;s form until its deadline.
-                  After that it is fixed.
-                </span>
-              </li>
-            </ul>
-          </section>
-
-          <section className="entry__signin" aria-labelledby="entry-signin">
-            <h2 id="entry-signin">Sign in</h2>
-            <p>
-              {domains.length > 0
-                ? `Use your university Google account (${domains.join(", ")}). Other accounts are turned away.`
-                : "Use your university Google account. Other accounts are turned away."}
-            </p>
-
-            {error && (
-              <div className="mt-4">
-                <Alert variant="error" title="Sign-in failed">
-                  {error === "AccessDenied"
-                    ? "That account is not allowed to sign in. Use your university Google account instead."
-                    : error === "DevLogin"
-                      ? "No active account matches that email. Development sign-in only works for an account that already exists — try one of the seeded addresses."
-                      : "Something went wrong signing you in. Try again, and tell your teacher if it keeps happening."}
-                </Alert>
-              </div>
-            )}
-
-            <div className="entry__actions">
-              {googleConfigured ? (
-                <form
-                  action={async () => {
-                    "use server";
-                    try {
-                      await signIn("google", { redirectTo: "/" });
-                    } catch (err) {
-                      // signIn signals success by throwing a redirect, so hand
-                      // Next's own control-flow errors straight back.
-                      unstable_rethrow(err);
-                      redirect("/signin?error=Google");
-                    }
-                  }}
-                >
-                  <SubmitButton variant="primary" pendingLabel="Redirecting…">
-                    Continue with Google
-                  </SubmitButton>
-                </form>
-              ) : (
-                <Alert
-                  variant="warning"
-                  title="Google sign-in is not configured"
-                >
-                  Set <code>AUTH_GOOGLE_ID</code> and{" "}
-                  <code>AUTH_GOOGLE_SECRET</code> to enable university sign-in.
-                  See the README.
-                </Alert>
-              )}
+        <section className="mt-6 rounded-panel border border-rule bg-paper p-6 sm:p-8" aria-label="Log in">
+          {message && (
+            <div className="mb-5" role="alert" aria-live="assertive">
+              <Alert variant="error">{message}</Alert>
             </div>
+          )}
 
-            {env.devAuthEnabled && (
-              <div className="entry__dev">
-                <h3>Development sign-in</h3>
-                <p>
-                  Local development only. Signs in an existing seeded account by
-                  email, with no password. Impossible to enable in a production
-                  build.
-                </p>
-                <form
-                  action={async (formData: FormData) => {
-                    "use server";
-                    try {
-                      await signIn("dev-login", {
-                        email: String(formData.get("email") ?? ""),
-                        redirectTo: "/",
-                      });
-                    } catch (err) {
-                      // A successful sign-in throws a redirect, so hand Next's
-                      // own control-flow errors back untouched. Anything else
-                      // means the credentials were rejected: show a message
-                      // rather than a 500 page.
-                      unstable_rethrow(err);
-                      redirect("/signin?error=DevLogin");
-                    }
-                  }}
+          {mode === "google" ? (
+            <div className="grid gap-4">
+              <form action={googleSignInAction}>
+                <SubmitButton
+                  className="w-full justify-center"
+                  disabled={!googleConfigured}
+                  variant="secondary"
+                  pendingLabel="Opening Google…"
+                  title={!googleConfigured ? "Google sign-in is not configured" : undefined}
                 >
-                  <label className="visually-hidden" htmlFor="dev-email">
-                    Email of an existing user
-                  </label>
-                  <Field
-                    // was `.entry__dev .field` (§3.2)
-                    className="mb-2"
-                    id="dev-email"
-                    name="email"
-                    type="email"
-                    placeholder="teacher@up.edu.ph"
-                    required
-                  />
-                  <SubmitButton variant="secondary" pendingLabel="Signing in…">
-                    Development sign in
-                  </SubmitButton>
-                </form>
-              </div>
-            )}
-          </section>
-        </div>
-      </main>
+                  <span aria-hidden="true" className="mr-2 text-lg font-bold text-[#4285f4]">G</span>
+                  Sign in with Google
+                </SubmitButton>
+              </form>
+              {!googleConfigured && (
+                <p className="m-0 text-center text-ui-xs text-ink-muted">
+                  Google sign-in is not configured in this environment.
+                </p>
+              )}
 
-      <p className="entry__foot">
-        Class Feedback · University of the Philippines, Department of Computer
-        Science
-      </p>
-    </div>
+              <button
+                className="min-h-control w-full rounded-control border border-rule-strong bg-paper-quiet px-4 py-2 text-ui-sm font-semibold text-ink transition-colors duration-120 hover:bg-board-deep focus-visible:outline focus-visible:outline-3 focus-visible:outline-focus focus-visible:outline-offset-2"
+                type="button"
+                onClick={() => switchMode("admin")}
+              >
+                Use username and password instead
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p className="m-0 text-ui-sm font-semibold text-ink-soft">Platform administrator sign-in</p>
+              <form action={platformAdminSignInAction} className="mt-5 grid gap-4">
+                <div className="grid gap-1.5">
+                  <label className="text-ui-sm font-semibold" htmlFor="admin-username">Username</label>
+                  <Field autoComplete="username" autoCapitalize="none" autoCorrect="off" id="admin-username" name="username" required spellCheck={false} type="text" />
+                </div>
+                <div className="grid gap-1.5">
+                  <label className="text-ui-sm font-semibold" htmlFor="admin-password">Password</label>
+                  <Field autoComplete="current-password" id="admin-password" name="password" required type="password" />
+                </div>
+                <SubmitButton className="mt-2 w-full justify-center" variant="primary" pendingLabel="Signing in…">Log in</SubmitButton>
+              </form>
+              <button
+                className="mt-5 min-h-touch text-ui-sm font-semibold text-ink-muted underline underline-offset-4 transition-colors duration-120 hover:text-ink focus-visible:outline focus-visible:outline-3 focus-visible:outline-focus focus-visible:outline-offset-2"
+                type="button"
+                onClick={() => switchMode("google")}
+              >
+                Back to Google sign-in
+              </button>
+            </div>
+          )}
+
+          {devAuthEnabled && (
+            <details className="mt-6 border-t border-rule pt-4 text-ui-xs text-ink-muted">
+              <summary className="cursor-pointer font-semibold">Development sign-in</summary>
+              <form action={devLoginAction} className="mt-3 grid gap-2">
+                <label htmlFor="dev-email">Existing user email</label>
+                <Field id="dev-email" name="email" placeholder="teacher@up.edu.ph" required type="email" />
+                <SubmitButton className="justify-center" variant="secondary" size="small" pendingLabel="Signing in…">Sign in locally</SubmitButton>
+              </form>
+            </details>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }

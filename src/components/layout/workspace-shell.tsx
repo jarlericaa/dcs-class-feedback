@@ -25,7 +25,7 @@ import { Announcer } from "@/components/ui/announcer";
  * belongs to the current page goes in `tabs`, the page header, or the list
  * pane's filters.
  *
- * The visual world is Class Feedback's own (DESIGN.md). No third-party logo,
+ * The visual world is Forms' own (DESIGN.md). No third-party logo,
  * product name, brand colour or asset is reproduced.
  *
  * Everything the rail offers is derived from the SAME effective permissions the
@@ -34,7 +34,8 @@ import { Announcer } from "@/components/ui/announcer";
 
 export interface ShellUser {
   displayName: string;
-  email: string;
+  email?: string;
+  username?: string;
 }
 
 export async function WorkspaceShell({
@@ -125,9 +126,9 @@ export async function WorkspaceShell({
       <header className="ws-topbar">
         <Link className="ws-brand" href="/">
           <span className="ws-brand__mark" aria-hidden="true">
-            cf
+            f
           </span>
-          <span className="ws-brand__name">Class Feedback</span>
+          <span className="ws-brand__name">Forms</span>
         </Link>
         {contextTitle && (
           <>
@@ -157,7 +158,7 @@ export async function WorkspaceShell({
             <span className="ws-account__mark" aria-hidden="true">
               {initials(user.displayName)}
             </span>
-            <span className="ws-account__email">{user.email}</span>
+            <span className="ws-account__email">{user.email ?? user.username}</span>
           </span>
         </div>
       </header>

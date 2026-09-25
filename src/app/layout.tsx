@@ -36,9 +36,9 @@ const documentFace = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Class Feedback",
+  title: "Forms",
   description:
-    "Class feedback for university sections: submit, review, answer privately, and publish anonymous answers to your class.",
+    "Weekly forms for university classes: submit, review, answer privately, and share anonymous answers.",
 };
 
 export const viewport: Viewport = {

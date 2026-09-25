@@ -16,7 +16,8 @@ import { listCoursesForUser, listSectionsForUser } from "@/modules/catalog";
 import { listOpenInstancesForStudent } from "@/modules/forms/submission";
 import { listCourseForms } from "@/modules/forms/instances";
 import { requireUser, toShellUser } from "@/lib/session";
-import { currentUserId } from "@/auth";
+import { currentPrincipal, currentUserId } from "@/auth";
+import { env } from "@/env";
 import { EntryScreen } from "@/components/marketing/entry-screen";
 
 /**
@@ -87,7 +88,16 @@ async function studentFormCards(
 export default async function HomePage() {
   // Signed out: render the entry screen here instead of bouncing to /signin,
   // so the root is a finished screen rather than a redirect.
-  if (!(await currentUserId())) return <EntryScreen />;
+  const principal = await currentPrincipal();
+  if (principal?.type === "platform-admin") redirect("/admin");
+  if (!(await currentUserId())) {
+    return (
+      <EntryScreen
+        googleConfigured={!!(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET)}
+        devAuthEnabled={env.devAuthEnabled}
+      />
+    );
+  }
 
   const user = await requireUser();
 

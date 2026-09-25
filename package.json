@@ -18,6 +18,8 @@
     "test:integration": "vitest run --project integration",
     "test:watch": "vitest --project unit",
     "db:backfill:student-numbers": "tsx scripts/backfill-student-numbers.ts",
+    "admin:create": "tsx scripts/platform-admin.ts create",
+    "admin:password": "tsx scripts/platform-admin.ts password",
     "design:check": "node scripts/qa/design-check.mjs"
   },
   "dependencies": {

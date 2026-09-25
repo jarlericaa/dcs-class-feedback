@@ -1,5 +1,5 @@
 ---
-name: Class Feedback
+name: Forms
 description: A university weekly-feedback workspace built like a departmental noticeboard — typed notices on a matte board, stamped, dated, and never rounded into cards.
 colors:
   board: "#f1f0ee"
@@ -203,7 +203,7 @@ components:
     height: "52px"
 ---
 
-# Design context: Class Feedback
+# Design context: Forms
 
 This document is the design authority for the interface. Product truth lives in
 [PRODUCT.md](PRODUCT.md) and [AGENTS.md](AGENTS.md); this file never overrides a
@@ -425,7 +425,7 @@ this app is a `Stamp` with the state written out (§9), so a maroon tab label
 cannot be mistaken for an invalid stamp. The discipline never depended on
 maroon's exclusivity, only on status never being carried by colour alone.
 
-**A second job, added 2026-09-11:** the **product mark** — the `cf` square in
+**A second job, added 2026-09-11:** the **product mark** — the `f` square in
 the top bar — is `--red-deep`, the official UP Maroon, with paper on it at
 10.9:1. It was a grey `--ink` square. This is the safest place in the app for
 the colour and the reason is structural rather than aesthetic: a product mark
@@ -745,7 +745,7 @@ gone. Decorative icons are `aria-hidden`; an icon-only control carries an
 ## 7. Navigation behaviour
 
 **Chrome, not brand.** A 52px white top bar with a 1px `--rule-strong` bottom
-edge. It carries the product mark (a 24px `--ink` square with `cf` — identity,
+edge. It carries the product mark (a 24px `--ink` square with `f` — identity,
 not action, so it does not take the accent), the current
 context, and the account. There is no coloured brand band: the rail below it is
 a dark ground the interface stands on (§3), not a stripe of paint across the

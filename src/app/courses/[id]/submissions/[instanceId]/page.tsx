@@ -223,7 +223,7 @@ export default async function StudentSubmissionDetailPage({
       workspace="student"
       navGroups={await primaryNavFor(user, path)}
       contextLabel={course.code}
-      title={entry.formLabel ?? "Class feedback"}
+      title={entry.formLabel ?? "Form"}
       status={<Stamp tone="green">Submitted</Stamp>}
       description={
         <MetaList

@@ -2,6 +2,7 @@ import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db";
 import { formResponseRevisions, formResponses, weeklyCycles } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import { assertMutationAllowed } from "@/lib/impersonation";
 
 /**
  * Deadline locking (docs/product/specification.md §6.3 step 5: "On deadline, the latest
@@ -21,6 +22,7 @@ export async function lockResponsesForCycle(
   courseId: string,
   sectionId?: string,
 ): Promise<number> {
+  await assertMutationAllowed();
   const locked = await dbx
     .update(formResponses)
     // The revision is bumped so the lock gets its own entry in the trail:
@@ -81,6 +83,7 @@ export async function unlockResponsesForCycle(
   courseId: string,
   sectionId?: string,
 ): Promise<number> {
+  await assertMutationAllowed();
   const unlocked = await dbx
     .update(formResponses)
     .set({

@@ -14,6 +14,10 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 ### Identity & people
 
 - **User** — an authenticated Google identity. Fields: Google subject id, **normalized** university email (unique), display name (mutable, and never used for identity), platform role flags, active flag. A User is a student exactly when their email is on a class list.
+- **TeacherAccessGrant** — an email-keyed platform capability that may predate a
+  User. Fields: normalized email (unique), granting administrator, granted and
+  revoked timestamps. The active row is applied transactionally during first
+  sign-in; revocation never deletes user history.
 - **StudentRecord** — a roster row for a student, reusable across every section and course that imports the same person. Fields: student number (permanent internal identity, **[Assumption A2]**), **normalized roster email (unique — the access key)**, full name (as imported, a label only), → ImportBatch that created it. Student number is the stable key across name and email changes.
 
   There is **no linking entity.** `User → StudentRecord` is resolved live by `user.email = studentRecord.rosterEmail`, so a roster imported after the account existed grants access with no second login and nothing to reconcile. See [domain/student-identity.md](student-identity.md).
@@ -24,6 +28,9 @@ Fields listed are conceptual, not a schema. "→" denotes a reference to another
 - **CourseStaff** — a teacher authorized on a Course. Fields: → Course, → User, course role (`teacher` / `co_teacher`). A row is **course-wide standing**: full Instructor capability on *every* ClassSection of that Course, including sections created later, with no permission flags to narrow it. Unique on `(Course, User)`. Only the course owner may create or delete one, and the owner's own standing comes from `Course.owner` rather than a row, so it cannot be deleted. Removing a row leaves any separate SectionStaff row intact. See [domain/roles-and-permissions.md §2.5](roles-and-permissions.md#25-where-staff-standing-comes-from-two-tiers) and [ADR-0004](../decisions/ADR-0004-course-wide-staff-standing.md).
 - **ClassSection** — an offering of a Course. Fields: → Course, term/semester label, title, timezone (default from institution; per-section override **deferred** — D7 closed 2026-08-03, [decisions/open-decisions.md](../decisions/open-decisions.md)), active flag.
 - **SectionStaff** — staff membership on a section with per-section permission flags (the TA permission catalog). Fields: → ClassSection, → User, role (teacher/TA/co-teacher), permission flag set. Unique on `(ClassSection, User)`. This is the **only** tier that carries the permission catalog, so a Student Assistant is always scoped to named sections: someone assisting 3 of 8 sections holds three rows, granted in one action but auditable per section. See [domain/roles-and-permissions.md](roles-and-permissions.md).
+- A Teacher capability and a `SectionStaff` TA role are mutually exclusive for
+  new writes. Legacy conflicts are retained for audit/history and surfaced to
+  Platform Admins; no assignment is silently removed by a migration.
 - **Enrollment** — a StudentRecord's membership in a ClassSection. Fields: → ClassSection, → StudentRecord, status (active/deactivated), source → ImportBatch. A student may appear in multiple sections **[Assumption A1]**.
 
 ### Forms & templates

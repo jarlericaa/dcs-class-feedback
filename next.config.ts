@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Keep Turbopack rooted at this app. The workspace parent may contain
+  // unrelated lockfiles, which otherwise makes Next resolve devtools from the
+  // wrong directory and turns the first route request into a 500.
+  turbopack: {
+    root: process.cwd(),
+  },
   /**
    * Where the build output goes, overridable by the environment.
    *

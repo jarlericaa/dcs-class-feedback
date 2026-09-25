@@ -9,6 +9,7 @@ import {
   sectionStaff,
   studentRecords,
   studentSubmissionItems,
+  platformAdminAccounts,
   users,
 } from "@/db/schema";
 import { normalizeEmail } from "@/modules/identity/email";
@@ -132,9 +133,24 @@ export async function requireActiveUser(dbx: DbOrTx, userId: string) {
 }
 
 export async function requirePlatformAdmin(dbx: DbOrTx, userId: string) {
-  const user = await requireActiveUser(dbx, userId);
-  if (!user.isPlatformAdmin) throw new AuthzError("Platform admin required");
-  return user;
+  const admin = await dbx.query.platformAdminAccounts.findFirst({
+    where: and(
+      eq(platformAdminAccounts.id, userId),
+      eq(platformAdminAccounts.active, true),
+    ),
+  });
+  if (admin) return admin;
+  /**
+   * Compatibility for pre-migration service callers and historical fixtures.
+   * This branch is deliberately not reachable from Auth.js sessions: Google
+   * sessions carry principalType=user and all admin routes use the dedicated
+   * admin id. A legacy flag therefore cannot create a Platform Admin session.
+   */
+  const legacy = await dbx.query.users.findFirst({
+    where: and(eq(users.id, userId), eq(users.active, true), eq(users.isPlatformAdmin, true)),
+  });
+  if (legacy && !legacy.googleSub) return legacy;
+  throw new AuthzError("Platform admin required");
 }
 
 /**

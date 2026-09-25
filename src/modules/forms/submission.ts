@@ -17,6 +17,7 @@ import {
   templateVersions,
 } from "@/db/schema";
 import { writeAudit } from "@/modules/audit";
+import { assertMutationAllowed } from "@/lib/impersonation";
 import {
   activeStudentSectionsForCourse,
   AuthzError,
@@ -449,6 +450,7 @@ async function saveResponse(
   requestedPhase: Phase,
   now: Date,
 ) {
+  await assertMutationAllowed();
   if (!z.string().uuid().safeParse(cycleId).success) {
     throw new SubmissionError("Form not found");
   }
@@ -882,7 +884,7 @@ export async function getStudentFormStateForInstance(
     instance,
     cycle: instance,
     formTitle:
-      instance.title ?? version?.title ?? template?.title ?? "Class feedback",
+      instance.title ?? version?.title ?? template?.title ?? "Form",
     sequenceLabel: hasSequence(instance) ? instanceLabel(instance) : null,
     focusLabel: instance.focusLabel,
     topicTitle: topic?.title ?? null,
@@ -968,7 +970,7 @@ export async function listOpenInstancesForStudent(
     return {
       instance,
       formTitle:
-        instance.title ?? version?.title ?? template?.title ?? "Class feedback",
+        instance.title ?? version?.title ?? template?.title ?? "Form",
       sequenceLabel: hasSequence(instance) ? instanceLabel(instance) : null,
       focusLabel: instance.focusLabel,
       alreadySubmitted:
@@ -1063,7 +1065,7 @@ export async function listStudentCourseForms(
       instanceId: instance.id,
       courseId: instance.courseId,
       formTitle:
-        instance.title ?? version?.title ?? template?.title ?? "Class feedback",
+        instance.title ?? version?.title ?? template?.title ?? "Form",
       deliveryMode: instance.deliveryMode,
       sequenceLabel: hasSequence(instance) ? instanceLabel(instance) : null,
       focusLabel: instance.focusLabel,

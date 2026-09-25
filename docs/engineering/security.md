@@ -41,6 +41,20 @@ detail.
   bad email cell can never silently drop somebody from a class.
 - Section staff access is resource-scoped; TA permissions are explicit.
 - Platform-admin status does not automatically grant course content access.
+- Platform Admin authentication is a separate username/password identity with
+  scrypt-hashed credentials and durable account lockout; it has no email or
+  Google subject. Platform Admin account impersonation is signed, HTTP-only, and keeps the real
+  administrator separate from the effective read principal. The support session
+  is read-only: mutation auditing is guarded centrally and transactions roll
+  back if a state-changing action reaches the audit boundary. Inactive accounts,
+  nested sessions, self-impersonation and other Platform Admin targets are
+  refused. Start/stop events record a target, reason and correlation id, never a
+  cookie or token.
+- Teacher access is an email-keyed grant (`teacher_access_grants`), normalized
+  with the same university-domain rule as roster identity. It may precede a
+  first sign-in, is applied transactionally during provisioning, and is
+  revoked without deleting content or staff history. Teacher and Student
+  Assistant are mutually exclusive through domain-service checks.
 - Public Q&A is only for enrolled students and authorized staff of that **course** — an active enrolment in any one of its sections, or staff standing on the course or any section of it ([ADR-0005](../decisions/ADR-0005-course-scoped-teaching-workflow.md)). Never the open internet, and never an unenrolled account.
 - The original student wording remains immutable and is never used as the public
   text without the publish warning/review flow.

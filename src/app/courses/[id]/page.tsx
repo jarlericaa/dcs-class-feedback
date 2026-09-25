@@ -24,7 +24,6 @@ import { resolveCourseTimezone } from "@/modules/catalog";
 
 function formAction(
   form: Awaited<ReturnType<typeof listStudentCourseForms>>[number],
-  courseId: string,
 ) {
   if (form.state !== "open") return null;
   return {
@@ -121,7 +120,7 @@ export default async function StudentFormsPage({
               </thead>
               <tbody>
                 {forms.map((form) => {
-                  const action = formAction(form, courseId);
+                  const action = formAction(form);
                   return (
                     <tr key={form.instanceId}>
                       <th className="whitespace-normal" scope="row">

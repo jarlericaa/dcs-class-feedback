@@ -1744,7 +1744,7 @@ kbd {
 /* The product mark is identity, not action, so it does NOT take the accent —
    the accent has to mean "this is the thing to click". */
 /**
- * The product mark: `cf` on UP Maroon.
+ * The product mark: `f` on UP Maroon.
  *
  * It was `--ink` — a dark grey square, which is a placeholder rather than a
  * mark. Maroon here on 2026-09-11 (owner: "i kinda want to add more maroon
@@ -2992,136 +2992,6 @@ kbd {
 }
 
 /* ==========================================================================
-   Entry screen — the signed-out front door at / and /signin
-   ==========================================================================
-   One posted notice on the board: what this is, who may enter, and the way
-   in. No marketing funnel, no gradient, no illustration. */
-
-.entry {
-  min-height: 100vh;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  padding: var(--s5);
-  background: var(--board);
-}
-.entry__mast {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  width: min(880px, 100%);
-  margin: 0 auto;
-}
-.entry__sheet {
-  width: min(880px, 100%);
-  margin: var(--s6) auto;
-  align-self: center;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r-panel);
-  background: var(--paper);
-  /* Clips .entry__signin's own fill to the rounded corners. */
-  overflow: hidden;
-}
-.entry__grid {
-  display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-}
-.entry__about {
-  padding: var(--s7) var(--s6);
-  border-right: 1px solid var(--rule);
-}
-/* The entry screen's one headline — the largest step in the ramp, and the only
-   place it is used (§3.5). It was restating all three of the step's values. */
-.entry__about h1 {
-  max-width: 20ch;
-  font-family: var(--serif);
-  font-size: var(--text-headline);
-  line-height: var(--text-headline--line-height);
-  letter-spacing: var(--text-headline--letter-spacing);
-  font-weight: 700;
-}
-.entry__lede {
-  max-width: 42ch;
-  margin-top: var(--s4);
-  font-family: var(--serif);
-  font-size: 17px;
-  line-height: 1.6;
-  color: var(--ink-soft);
-}
-.entry__terms {
-  display: grid;
-  gap: var(--s3);
-  margin: var(--s6) 0 0;
-  padding: var(--s4) 0 0;
-  border-top: 1px solid var(--rule);
-  list-style: none;
-}
-.entry__terms li {
-  display: grid;
-  grid-template-columns: 16px 1fr;
-  gap: var(--s3);
-  max-width: 46ch;
-  color: var(--ink-soft);
-  font-size: 13px;
-  line-height: 1.5;
-}
-/* Neutral: a tick beside a commitment is punctuation, not an action. */
-.entry__terms svg {
-  margin-top: var(--s1);
-  color: var(--ink-faint);
-}
-.entry__signin {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--s7) var(--s6);
-  background: var(--paper-quiet);
-}
-.entry__signin h2 {
-  font-family: var(--serif);
-  font-size: 20px;
-  font-weight: 700;
-}
-.entry__signin > p {
-  margin-top: var(--s2);
-  max-width: 40ch;
-  color: var(--ink-muted);
-  font-size: 13px;
-}
-.entry__actions {
-  display: grid;
-  gap: var(--s3);
-  margin-top: var(--s5);
-}
-.entry__actions .button {
-  width: 100%;
-  min-height: var(--h-touch);
-}
-.entry__dev {
-  margin-top: var(--s5);
-  padding: var(--s4);
-  border: 1px dashed var(--rule-strong);
-  border-radius: var(--r-panel);
-  background: var(--paper);
-}
-.entry__dev h3 {
-  font-size: var(--text-ui-sm);
-  line-height: var(--text-ui-sm--line-height);
-}
-.entry__dev p {
-  margin: var(--s1) 0 var(--s3);
-  color: var(--ink-muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-/* Moved onto the control as `mb-2` (§3.2). */
-.entry__foot {
-  width: min(880px, 100%);
-  margin: 0 auto;
-  color: var(--ink-muted);
-  font-size: 12px;
-}
-
-/* ==========================================================================
    Student weekly form
    ========================================================================== */
 
@@ -3493,13 +3363,6 @@ kbd {
   .ws-page__inner {
     width: calc(100% - var(--s7));
   }
-  .entry__grid {
-    grid-template-columns: 1fr;
-  }
-  .entry__about {
-    border-right: 0;
-    border-bottom: 1px solid var(--rule);
-  }
 }
 
 @media (max-width: 860px) {
@@ -3645,13 +3508,6 @@ kbd {
   }
   .record {
     padding: var(--s4);
-  }
-  .entry {
-    padding: var(--s4);
-  }
-  .entry__about,
-  .entry__signin {
-    padding: var(--s5) var(--s4);
   }
   .figure-row {
     grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));

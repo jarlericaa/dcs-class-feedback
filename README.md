@@ -1,4 +1,4 @@
-# Class Feedback Platform
+# Forms
 
 A centralized web platform for recurring weekly class feedback — replaces a
 Google Forms + manually-compiled answer-document workflow. Students submit one
@@ -61,9 +61,10 @@ production** — the provider is not registered when `NODE_ENV=production`
 regardless of environment variables. Do not deploy with it in mind.
 
 Seeded users: `teacher@up.edu.ph` (teacher), `sa@up.edu.ph` (SA with limited flags),
-`admin@up.edu.ph` (platform admin), `student@up.edu.ph` (student — the seeded class
-list carries this address for `2026-0001, Juan Dela Cruz`, so signing in shows the
-seeded section immediately, with nothing to claim or confirm).
+and `student@up.edu.ph` (student — the seeded class list carries this address for
+`2026-0001, Juan Dela Cruz`, so signing in shows the seeded section immediately,
+with nothing to claim or confirm). Platform Admins are separate username-based
+identities; create one with `npm run admin:create`.
 
 ## Scripts
 
@@ -75,6 +76,8 @@ seeded section immediately, with nothing to claim or confirm).
 | `npm run db:reset -- --yes` | **Destructively** reset the local dev DB, migrate, and reseed |
 | `npm run db:migrate` | Apply migrations |
 | `npm run db:seed` | Idempotent demo seed |
+| `npm run admin:create` | Securely create a username/password Platform Admin |
+| `npm run admin:password` | Securely change a Platform Admin password |
 | `npm run scheduler:dev` | Reconciliation poller loop (60 s) |
 | `npm test` | Unit tests (pure logic, no DB) |
 | `npm run test:integration` | Integration tests (needs the `db-test` container) |

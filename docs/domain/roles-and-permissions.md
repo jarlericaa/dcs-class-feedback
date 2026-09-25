@@ -235,12 +235,36 @@ Hiding a button is never the enforcement mechanism.
 
 ## 6. Decisions affecting roles
 
-- **[Open D3]** Who grants the Teacher role (recommend: platform admin grants; teachers self-serve thereafter). See [decisions/open-decisions.md](../decisions/open-decisions.md).
-- **[Open D24]** Whether adding an address with no account should create an invitation or a pending staff row. Today it is refused by name; see [decisions/open-decisions.md](../decisions/open-decisions.md).
+- **D3 — implemented for the current build:** Platform Admin grants/revokes
+  platform Teacher capability; teachers self-serve courses thereafter. The
+  email-keyed grant may be pending before first sign-in.
+- **[Open D24]** Invitations for course/section staff remain separate from the
+  approved platform Teacher grant flow; unknown staff addresses are still
+  refused by name. See [decisions/open-decisions.md](../decisions/open-decisions.md).
 - **D10 — closed:** a dropped student's enrollment is deactivated; their own history stays readable.
 - **D17 — closed:** export authorization, including the documented deviation above.
 - **ADR-0003:** the course owner alone assigns staff and sets TA permissions.
 - **ADR-0004:** course-wide standing is an owner-granted, Instructor-only tier (§2.5).
+
+## 7. Platform Admin account controls [Implemented]
+
+Platform Administrators manage authenticated accounts from **Accounts** and
+review the platform-wide append-only audit feed from **Audit log**. They do not
+gain course or section content access. Teacher capability is granted by a
+normalized university email through `teacher_access_grants`; a pending grant is
+applied transactionally when that email first signs in. Revocation preserves
+courses, staff assignments and history.
+
+Teacher and Student Assistant are mutually exclusive. Domain services reject a
+Teacher being assigned a `section_staff` TA row and reject a Teacher grant when
+active TA rows already exist; legacy conflicts are preserved and reported rather
+than silently deleted. Account deactivation is reversible, audited, blocks
+authentication, and cannot deactivate the last active Platform Administrator.
+
+Platform Admin impersonation keeps the real administrator and effective account
+principals separate. It is a required-reason, time-limited, read-only support
+session; every audited state-changing action fails server-side while it is
+active. Start/stop events carry only target, reason and correlation metadata.
 
 ## 6. Related documents
 

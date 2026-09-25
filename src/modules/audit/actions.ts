@@ -14,7 +14,16 @@
  * database module.
  */
 export const AUDIT_ACTIONS = [
+  "admin.login_succeeded",
+  "admin.login_locked",
+  "admin.password_changed",
   "user.teacher_role_changed",
+  "teacher_access.granted",
+  "teacher_access.revoked",
+  "user.account_deactivated",
+  "user.account_reactivated",
+  "admin.impersonation_started",
+  "admin.impersonation_ended",
   "course.created",
   "course.updated",
   "section.created",
